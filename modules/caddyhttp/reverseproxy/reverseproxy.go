@@ -409,9 +409,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		return caddyhttp.Error(http.StatusInternalServerError,
 			fmt.Errorf("preparing request for upstream round-trip: %v", err))
 	}
-	// websocket over http2, assuming backend doesn't support this, the request will be modified to http1.1 upgrade
+	
+	// websocket over http2 or http3, assuming backend doesn't support this, the request will be modified to http1.1 upgrade
 	// TODO: once we can reliably detect backend support this, it can be removed for those backends
-	if r.ProtoMajor == 2 && r.Method == http.MethodConnect && r.Header.Get(":protocol") == "websocket" {
+	if (r.ProtoMajor == 2 && r.Method == http.MethodConnect && r.Header.Get(":protocol") == "websocket") || 
+	   (r.ProtoMajor == 3 && r.Method == http.MethodConnect && r.Proto == "websocket") {
 		clonedReq.Header.Del(":protocol")
 		// keep the body for later use. http1.1 upgrade uses http.NoBody
 		caddyhttp.SetVar(clonedReq.Context(), "h2_websocket_body", clonedReq.Body)
