@@ -411,7 +411,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	}
 
 	// websocket over http2 or http3, assuming backend doesn't support this, the request will be modified to http1.1 upgrade
-	// The go-quic http3 implementation also puts :protocol in r.Proto for CONNECT requests (quic-go/quic-go/headers.go@70-72,185,203)
+	// The quic-go http3 implementation also puts :protocol in r.Proto for CONNECT requests (quic-go/http3/headers.go@70-72,185,203)
 	// TODO: once we can reliably detect backend support this, it can be removed for those backends
 	if (r.ProtoMajor == 2 && r.Method == http.MethodConnect && r.Header.Get(":protocol") == "websocket") ||
 		(r.ProtoMajor == 3 && r.Method == http.MethodConnect && r.Proto == "websocket") {
