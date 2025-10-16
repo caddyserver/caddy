@@ -24,6 +24,7 @@ import (
 	weakrand "math/rand"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"reflect"
 	"slices"
@@ -267,15 +268,15 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 	}
 
 	dialContext := func(ctx context.Context, network, address string) (net.Conn, error) {
-		// For unix socket upstreams, we need to recover the dial info from
-		// the request's context, because the Host on the request's URL
-		// will have been modified by directing the request, overwriting
-		// the unix socket filename.
-		// Also, we need to avoid overwriting the address at this point
-		// when not necessary, because http.ProxyFromEnvironment may have
-		// modified the address according to the user's env proxy config.
+		// The network is usually tcp, and the address is the host in http.Request.URL.Host
+		// and that's been overwritten in directRequest
+		// However, if proxy is used according to http.ProxyFromEnvironment or proxy providers,
+		// address will be the address of the proxy server.
+
+		// This means we can safely use the address in dialInfo if proxy is not used (the address and network will be same any way)
+		// or if the upstream is unix (because there is no way socks or http proxy can be used for unix address).
 		if dialInfo, ok := GetDialInfo(ctx); ok {
-			if strings.HasPrefix(dialInfo.Network, "unix") {
+			if caddyhttp.GetVar(ctx, proxyVarKey) == nil || strings.HasPrefix(dialInfo.Network, "unix") {
 				network = dialInfo.Network
 				address = dialInfo.Address
 			}
@@ -376,9 +377,19 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 			return nil, fmt.Errorf("network_proxy module is not `(func(*http.Request) (*url.URL, error))``")
 		}
 	}
+	// we need to keep track if a proxy is used for a request
+	proxyWrapper := func(req *http.Request) (*url.URL, error) {
+		u, err := proxy(req)
+		if u == nil || err != nil {
+			return u, err
+		}
+		// there must be a proxy for this request
+		caddyhttp.SetVar(req.Context(), proxyVarKey, u)
+		return u, nil
+	}
 
 	rt := &http.Transport{
-		Proxy:                  proxy,
+		Proxy:                  proxyWrapper,
 		DialContext:            dialContext,
 		MaxConnsPerHost:        h.MaxConnsPerHost,
 		ResponseHeaderTimeout:  time.Duration(h.ResponseHeaderTimeout),
@@ -455,14 +466,6 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 		rt.MaxIdleConns = h.KeepAlive.MaxIdleConns
 		rt.MaxIdleConnsPerHost = h.KeepAlive.MaxIdleConnsPerHost
 		rt.IdleConnTimeout = time.Duration(h.KeepAlive.IdleConnTimeout)
-	}
-
-	// The proxy protocol header can only be sent once right after opening the connection.
-	// So single connection must not be used for multiple requests, which can potentially
-	// come from different clients.
-	if !rt.DisableKeepAlives && h.ProxyProtocol != "" {
-		caddyCtx.Logger().Warn("disabling keepalives, they are incompatible with using PROXY protocol")
-		rt.DisableKeepAlives = true
 	}
 
 	if h.Compression != nil {

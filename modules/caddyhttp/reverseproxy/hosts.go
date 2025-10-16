@@ -285,3 +285,6 @@ type ProxyProtocolInfo struct {
 // tlsH1OnlyVarKey is the key used that indicates the connection will use h1 only for TLS.
 // https://github.com/caddyserver/caddy/issues/7292
 const tlsH1OnlyVarKey = "reverse_proxy.tls_h1_only"
+
+// proxyVarKey is the key used that indicates the proxy server used for a request.
+const proxyVarKey = "reverse_proxy.proxy"
