@@ -410,14 +410,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 			fmt.Errorf("preparing request for upstream round-trip: %v", err))
 	}
 
-	// websocket over http2 or http3, assuming backend doesn't support this, the request will be modified to http1.1 upgrade
+	// websocket over http2 or http3 if extended connect is enabled, assuming backend doesn't support this, the request will be modified to http1.1 upgrade
+	// Both use the same upgrade mechanism: server advertizes extended connect support, and client sends the pseudo header :protocol in a CONNECT request
 	// The quic-go http3 implementation also puts :protocol in r.Proto for CONNECT requests (quic-go/http3/headers.go@70-72,185,203)
 	// TODO: once we can reliably detect backend support this, it can be removed for those backends
 	if (r.ProtoMajor == 2 && r.Method == http.MethodConnect && r.Header.Get(":protocol") == "websocket") ||
 		(r.ProtoMajor == 3 && r.Method == http.MethodConnect && r.Proto == "websocket") {
 		clonedReq.Header.Del(":protocol")
 		// keep the body for later use. http1.1 upgrade uses http.NoBody
-		caddyhttp.SetVar(clonedReq.Context(), "websocket_body", clonedReq.Body)
+		caddyhttp.SetVar(clonedReq.Context(), "extended_connect_websocket_body", clonedReq.Body)
 		clonedReq.Body = http.NoBody
 		clonedReq.Method = http.MethodGet
 		clonedReq.Header.Set("Upgrade", "websocket")
