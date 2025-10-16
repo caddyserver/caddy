@@ -1,0 +1,38 @@
+{
+	resolvers 1.1.1.1 8.8.8.8
+}
+
+example.com {
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		},
+		"tls": {
+			"resolvers": [
+				"1.1.1.1",
+				"8.8.8.8"
+			]
+		}
+	}
+}

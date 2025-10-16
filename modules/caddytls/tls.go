@@ -125,6 +125,12 @@ type TLS struct {
 	DNSRaw json.RawMessage `json:"dns,omitempty" caddy:"namespace=dns.providers inline_key=name"`
 	dns    any             // technically, it should be any/all of the libdns interfaces (RecordSetter, RecordAppender, etc.)
 
+	// The default DNS resolvers to use when performing DNS queries for ACME DNS challenges.
+	// If not specified, the system default resolvers will be used.
+	//
+	// EXPERIMENTAL: Subject to change.
+	Resolvers []string `json:"resolvers,omitempty"`
+
 	certificateLoaders []CertificateLoader
 	automateNames      map[string]struct{}
 	ctx                caddy.Context
