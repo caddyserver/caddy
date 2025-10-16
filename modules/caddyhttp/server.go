@@ -202,6 +202,13 @@ type Server struct {
 	// This option is disabled by default.
 	TrustedProxiesStrict int `json:"trusted_proxies_strict,omitempty"`
 
+	// If greater than zero, enables trusting socket connections
+	// (e.g. Unix domain sockets) as coming from a trusted
+	// proxy.
+	//
+	// This option is disabled by default.
+	TrustedProxiesUnix bool `json:"trusted_proxies_unix,omitempty"`
+
 	// Enables access logging and configures how access logs are handled
 	// in this server. To minimally enable access logs, simply set this
 	// to a non-null, empty struct.
@@ -941,6 +948,17 @@ func determineTrustedProxy(r *http.Request, s *Server) (bool, string) {
 		return false, ""
 	}
 
+	if s.TrustedProxiesUnix && r.RemoteAddr == "@" {
+		if s.TrustedProxiesStrict > 0 {
+			ipRanges := []netip.Prefix{}
+			if s.trustedProxies != nil {
+				ipRanges = s.trustedProxies.GetIPRanges(r)
+			}
+			return true, strictUntrustedClientIp(r, s.ClientIPHeaders, ipRanges, "@")
+		} else {
+			return true, trustedRealClientIP(r, s.ClientIPHeaders, "@")
+		}
+	}
 	// Parse the remote IP, ignore the error as non-fatal,
 	// but the remote IP is required to continue, so we
 	// just return early. This should probably never happen
