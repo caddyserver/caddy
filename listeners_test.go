@@ -15,6 +15,7 @@
 package caddy
 
 import (
+	"os"
 	"reflect"
 	"testing"
 
@@ -649,6 +650,289 @@ func TestSplitUnixSocketPermissionsBits(t *testing.T) {
 		// fileMode.Perm().String() parses 0 to "----------"
 		if !tc.expectErr && actualFileMode.Perm().String() != tc.expectFileMode {
 			t.Errorf("Test %d: Expected perms '%s' but got '%s'", i, tc.expectFileMode, actualFileMode.Perm().String())
+		}
+	}
+}
+
+// TestGetFdByName tests the getFdByName function for systemd socket activation.
+func TestGetFdByName(t *testing.T) {
+	// Save original environment
+	originalFdNames := os.Getenv("LISTEN_FDNAMES")
+
+	// Restore environment after test
+	defer func() {
+		if originalFdNames != "" {
+			os.Setenv("LISTEN_FDNAMES", originalFdNames)
+		} else {
+			os.Unsetenv("LISTEN_FDNAMES")
+		}
+	}()
+
+	tests := []struct {
+		name        string
+		fdNames     string
+		socketName  string
+		expectedFd  int
+		expectError bool
+	}{
+		{
+			name:       "simple http socket",
+			fdNames:    "http",
+			socketName: "http",
+			expectedFd: 3,
+		},
+		{
+			name:       "multiple different sockets - first",
+			fdNames:    "http:https:dns",
+			socketName: "http",
+			expectedFd: 3,
+		},
+		{
+			name:       "multiple different sockets - second",
+			fdNames:    "http:https:dns",
+			socketName: "https",
+			expectedFd: 4,
+		},
+		{
+			name:       "multiple different sockets - third",
+			fdNames:    "http:https:dns",
+			socketName: "dns",
+			expectedFd: 5,
+		},
+		{
+			name:       "duplicate names - first occurrence (no index)",
+			fdNames:    "web:web:api",
+			socketName: "web",
+			expectedFd: 3,
+		},
+		{
+			name:       "duplicate names - first occurrence (explicit index 0)",
+			fdNames:    "web:web:api",
+			socketName: "web:0",
+			expectedFd: 3,
+		},
+		{
+			name:       "duplicate names - second occurrence (index 1)",
+			fdNames:    "web:web:api",
+			socketName: "web:1",
+			expectedFd: 4,
+		},
+		{
+			name:       "complex duplicates - first api",
+			fdNames:    "web:api:web:api:dns",
+			socketName: "api:0",
+			expectedFd: 4,
+		},
+		{
+			name:       "complex duplicates - second api",
+			fdNames:    "web:api:web:api:dns",
+			socketName: "api:1",
+			expectedFd: 6,
+		},
+		{
+			name:       "complex duplicates - first web",
+			fdNames:    "web:api:web:api:dns",
+			socketName: "web:0",
+			expectedFd: 3,
+		},
+		{
+			name:       "complex duplicates - second web",
+			fdNames:    "web:api:web:api:dns",
+			socketName: "web:1",
+			expectedFd: 5,
+		},
+		{
+			name:        "socket not found",
+			fdNames:     "http:https",
+			socketName:  "missing",
+			expectError: true,
+		},
+		{
+			name:        "empty socket name",
+			fdNames:     "http",
+			socketName:  "",
+			expectError: true,
+		},
+		{
+			name:        "missing LISTEN_FDNAMES",
+			fdNames:     "",
+			socketName:  "http",
+			expectError: true,
+		},
+		{
+			name:        "index out of range",
+			fdNames:     "web:web",
+			socketName:  "web:2",
+			expectError: true,
+		},
+		{
+			name:        "negative index",
+			fdNames:     "web",
+			socketName:  "web:-1",
+			expectError: true,
+		},
+		{
+			name:        "invalid index format",
+			fdNames:     "web",
+			socketName:  "web:abc",
+			expectError: true,
+		},
+		{
+			name:        "too many colons",
+			fdNames:     "web",
+			socketName:  "web:0:extra",
+			expectError: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Set up environment
+			if tc.fdNames != "" {
+				os.Setenv("LISTEN_FDNAMES", tc.fdNames)
+			} else {
+				os.Unsetenv("LISTEN_FDNAMES")
+			}
+
+			// Test the function
+			fd, err := getFdByName(tc.socketName)
+
+			if tc.expectError {
+				if err == nil {
+					t.Errorf("Expected error but got none")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Expected no error but got: %v", err)
+				}
+				if fd != tc.expectedFd {
+					t.Errorf("Expected FD %d but got %d", tc.expectedFd, fd)
+				}
+			}
+		})
+	}
+}
+
+// TestParseNetworkAddressFdName tests parsing of fdname and fdgramname addresses.
+func TestParseNetworkAddressFdName(t *testing.T) {
+	// Save and restore environment
+	originalFdNames := os.Getenv("LISTEN_FDNAMES")
+	defer func() {
+		if originalFdNames != "" {
+			os.Setenv("LISTEN_FDNAMES", originalFdNames)
+		} else {
+			os.Unsetenv("LISTEN_FDNAMES")
+		}
+	}()
+
+	// Set up test environment
+	os.Setenv("LISTEN_FDNAMES", "http:https:dns")
+
+	tests := []struct {
+		input      string
+		expectAddr NetworkAddress
+		expectErr  bool
+	}{
+		{
+			input: "fdname/http",
+			expectAddr: NetworkAddress{
+				Network: "fd",
+				Host:    "3",
+			},
+		},
+		{
+			input: "fdname/https",
+			expectAddr: NetworkAddress{
+				Network: "fd",
+				Host:    "4",
+			},
+		},
+		{
+			input: "fdname/dns",
+			expectAddr: NetworkAddress{
+				Network: "fd",
+				Host:    "5",
+			},
+		},
+		{
+			input: "fdname/http:0",
+			expectAddr: NetworkAddress{
+				Network: "fd",
+				Host:    "3",
+			},
+		},
+		{
+			input: "fdname/https:0",
+			expectAddr: NetworkAddress{
+				Network: "fd",
+				Host:    "4",
+			},
+		},
+		{
+			input: "fdgramname/http",
+			expectAddr: NetworkAddress{
+				Network: "fdgram",
+				Host:    "3",
+			},
+		},
+		{
+			input: "fdgramname/https",
+			expectAddr: NetworkAddress{
+				Network: "fdgram",
+				Host:    "4",
+			},
+		},
+		{
+			input: "fdgramname/http:0",
+			expectAddr: NetworkAddress{
+				Network: "fdgram",
+				Host:    "3",
+			},
+		},
+		{
+			input:     "fdname/nonexistent",
+			expectErr: true,
+		},
+		{
+			input:     "fdgramname/nonexistent",
+			expectErr: true,
+		},
+		{
+			input:     "fdname/http:99",
+			expectErr: true,
+		},
+		{
+			input:     "fdname/invalid:abc",
+			expectErr: true,
+		},
+		// Test that old fd/N syntax still works
+		{
+			input: "fd/7",
+			expectAddr: NetworkAddress{
+				Network: "fd",
+				Host:    "7",
+			},
+		},
+		{
+			input: "fdgram/8",
+			expectAddr: NetworkAddress{
+				Network: "fdgram",
+				Host:    "8",
+			},
+		},
+	}
+
+	for i, tc := range tests {
+		actualAddr, err := ParseNetworkAddress(tc.input)
+
+		if tc.expectErr && err == nil {
+			t.Errorf("Test %d (%s): Expected error but got none", i, tc.input)
+		}
+		if !tc.expectErr && err != nil {
+			t.Errorf("Test %d (%s): Expected no error but got: %v", i, tc.input, err)
+		}
+		if !tc.expectErr && !reflect.DeepEqual(tc.expectAddr, actualAddr) {
+			t.Errorf("Test %d (%s): Expected %+v but got %+v", i, tc.input, tc.expectAddr, actualAddr)
 		}
 	}
 }
