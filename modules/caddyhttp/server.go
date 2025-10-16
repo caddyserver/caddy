@@ -207,7 +207,6 @@ type Server struct {
 	// proxy.
 	//
 	// This option is disabled by default.
-
 	TrustedProxiesUnix bool `json:"trusted_proxies_unix,omitempty"`
 
 	// Enables access logging and configures how access logs are handled
