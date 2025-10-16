@@ -36,6 +36,12 @@ func (h *http2Listener) Accept() (net.Conn, error) {
 		return nil, err
 	}
 
+	// *tls.Conn doesn't need to be wrapped because we already removed unwanted alpns
+	// and handshake won't succeed without mutually supported alpns
+	if tlsConn, ok := conn.(*tls.Conn); ok {
+		return tlsConn, nil
+	}
+
 	_, isConnectionStater := conn.(connectionStater)
 	// emit a warning
 	if h.useTLS && !isConnectionStater {
@@ -46,6 +52,9 @@ func (h *http2Listener) Accept() (net.Conn, error) {
 
 	// if both h1 and h2 are enabled, we don't need to check the preface
 	if h.useH1 && h.useH2 {
+		if isConnectionStater {
+			return tlsStateConn{conn}, nil
+		}
 		return conn, nil
 	}
 
@@ -53,12 +62,24 @@ func (h *http2Listener) Accept() (net.Conn, error) {
 	// or else the listener wouldn't be created
 	h2Conn := &http2Conn{
 		h2Expected: h.useH2,
+		logger:     h.logger,
 		Conn:       conn,
 	}
 	if isConnectionStater {
-		return http2StateConn{h2Conn}, nil
+		return tlsStateConn{http2StateConn{h2Conn}}, nil
 	}
 	return h2Conn, nil
+}
+
+// tlsStateConn wraps a net.Conn that implements connectionStater to hide that method
+// we can call netConn to get the original net.Conn and get the tls connection state
+// golang 1.25 will call that method, and it breaks h2 with connections other than *tls.Conn
+type tlsStateConn struct {
+	net.Conn
+}
+
+func (conn tlsStateConn) tlsNetConn() net.Conn {
+	return conn.Conn
 }
 
 type http2StateConn struct {
