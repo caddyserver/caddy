@@ -23,6 +23,11 @@ type Metrics struct {
 	// managed by Caddy.
 	PerHost bool `json:"per_host,omitempty"`
 
+	// Labels allows users to define custom labels for metrics.
+	// The value can use placeholders like {http.request.scheme}, {http.request.proto}, {http.request.remote}, etc.
+	// These labels will be added to all HTTP metrics.
+	Labels map[string]string `json:"labels,omitempty"`
+
 	init        sync.Once
 	httpMetrics *httpMetrics `json:"-"`
 }
@@ -44,6 +49,12 @@ func initHTTPMetrics(ctx caddy.Context, metrics *Metrics) {
 	if metrics.PerHost {
 		basicLabels = append(basicLabels, "host")
 	}
+	if metrics.Labels != nil {
+		for key := range metrics.Labels {
+			basicLabels = append(basicLabels, key)
+		}
+	}
+
 	metrics.httpMetrics.requestInFlight = promauto.With(registry).NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: ns,
 		Subsystem: sub,
@@ -71,6 +82,12 @@ func initHTTPMetrics(ctx caddy.Context, metrics *Metrics) {
 	if metrics.PerHost {
 		httpLabels = append(httpLabels, "host")
 	}
+	if metrics.Labels != nil {
+		for key := range metrics.Labels {
+			httpLabels = append(httpLabels, key)
+		}
+	}
+
 	metrics.httpMetrics.requestDuration = promauto.With(registry).NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: ns,
 		Subsystem: sub,
@@ -111,6 +128,36 @@ func serverNameFromContext(ctx context.Context) string {
 	return srv.name
 }
 
+// processCustomLabels processes custom labels by replacing placeholders with actual values.
+func (h *metricsInstrumentedHandler) processCustomLabels(r *http.Request) prometheus.Labels {
+	labels := make(prometheus.Labels)
+
+	if h.metrics.Labels == nil {
+		return labels
+	}
+
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	if repl == nil {
+		repl = caddy.NewReplacer()
+	}
+
+	for key, value := range h.metrics.Labels {
+		if strings.Contains(value, "{") && strings.Contains(value, "}") {
+			replaced := repl.ReplaceAll(value, "")
+
+			if replaced == "" || replaced == value {
+				replaced = "unknown"
+			}
+
+			labels[key] = replaced
+		} else {
+			labels[key] = value
+		}
+	}
+
+	return labels
+}
+
 type metricsInstrumentedHandler struct {
 	handler string
 	mh      MiddlewareHandler
@@ -136,6 +183,12 @@ func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 	if h.metrics.PerHost {
 		labels["host"] = strings.ToLower(r.Host)
 		statusLabels["host"] = strings.ToLower(r.Host)
+	}
+
+	customLabels := h.processCustomLabels(r)
+	for key, value := range customLabels {
+		labels[key] = value
+		statusLabels[key] = value
 	}
 
 	inFlight := h.metrics.httpMetrics.requestInFlight.With(labels)
