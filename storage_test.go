@@ -55,68 +55,61 @@ func TestHomeDir_CrossPlatform(t *testing.T) {
 		expected  string
 	}{
 		{
-			name: "normal HOME set",
+			name:   "normal HOME set",
+			skipOS: []string{"windows"}, // Skip on Windows - HOME isn't typically used on Windows
 			envVars: map[string]string{
-				"HOME": func() string {
-					if runtime.GOOS == "windows" {
-						return "C:\\Users\\user"
-					}
-					return "/home/user"
-				}(),
+				"HOME": "/home/user",
 			},
 			unsetVars: []string{"HOMEDRIVE", "HOMEPATH", "USERPROFILE", "home"},
-			expected: func() string {
-				if runtime.GOOS == "windows" {
-					return "C:\\Users\\user"
-				}
-				return "/home/user"
-			}(),
+			expected:  "/home/user",
 		},
 		{
 			name:      "no environment variables",
 			unsetVars: []string{"HOME", "HOMEDRIVE", "HOMEPATH", "USERPROFILE", "home"},
 			expected:  ".", // Fallback to current directory
 		},
+	}
+
+	// Windows-specific tests
+	windowsTests := []struct {
+		name      string
+		envVars   map[string]string
+		unsetVars []string
+		expected  string
+	}{
 		{
-			name: "windows style with HOMEDRIVE and HOMEPATH",
+			name: "windows HOMEDRIVE and HOMEPATH",
 			envVars: map[string]string{
 				"HOMEDRIVE": "C:",
 				"HOMEPATH":  "\\Users\\user",
 			},
 			unsetVars: []string{"HOME", "USERPROFILE", "home"},
-			expected: func() string {
-				if runtime.GOOS == "windows" {
-					return "C:\\Users\\user"
-				}
-				return "." // Non-windows systems fall back to current dir
-			}(),
+			expected:  "C:\\Users\\user",
 		},
 		{
-			name: "windows style with USERPROFILE",
+			name: "windows USERPROFILE",
 			envVars: map[string]string{
 				"USERPROFILE": "C:\\Users\\user",
 			},
 			unsetVars: []string{"HOME", "HOMEDRIVE", "HOMEPATH", "home"},
-			expected: func() string {
-				if runtime.GOOS == "windows" {
-					return "C:\\Users\\user"
-				}
-				return "."
-			}(),
+			expected:  "C:\\Users\\user",
 		},
+	}
+
+	// Plan9-specific tests
+	plan9Tests := []struct {
+		name      string
+		envVars   map[string]string
+		unsetVars []string
+		expected  string
+	}{
 		{
-			name:   "plan9 style",
-			skipOS: []string{"windows"}, // Skip on Windows
+			name: "plan9 home variable",
 			envVars: map[string]string{
 				"home": "/usr/user",
 			},
 			unsetVars: []string{"HOME", "HOMEDRIVE", "HOMEPATH", "USERPROFILE"},
-			expected: func() string {
-				if runtime.GOOS == "plan9" {
-					return "/usr/user"
-				}
-				return "."
-			}(),
+			expected:  "/usr/user",
 		},
 	}
 
@@ -148,6 +141,46 @@ func TestHomeDir_CrossPlatform(t *testing.T) {
 				t.Error("HomeDir should never return empty string")
 			}
 		})
+	}
+
+	// Run Windows-specific tests only on Windows
+	if runtime.GOOS == "windows" {
+		for _, test := range windowsTests {
+			t.Run(test.name, func(t *testing.T) {
+				for key, value := range test.envVars {
+					os.Setenv(key, value)
+				}
+				for _, key := range test.unsetVars {
+					os.Unsetenv(key)
+				}
+
+				result := HomeDir()
+
+				if result != test.expected {
+					t.Errorf("Expected '%s', got '%s'", test.expected, result)
+				}
+			})
+		}
+	}
+
+	// Run Plan9-specific tests only on Plan9
+	if runtime.GOOS == "plan9" {
+		for _, test := range plan9Tests {
+			t.Run(test.name, func(t *testing.T) {
+				for key, value := range test.envVars {
+					os.Setenv(key, value)
+				}
+				for _, key := range test.unsetVars {
+					os.Unsetenv(key)
+				}
+
+				result := HomeDir()
+
+				if result != test.expected {
+					t.Errorf("Expected '%s', got '%s'", test.expected, result)
+				}
+			})
+		}
 	}
 }
 
