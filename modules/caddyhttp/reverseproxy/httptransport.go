@@ -409,6 +409,14 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 				repl := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 				tlsConfig := rt.TLSClientConfig.Clone()
 				tlsConfig.ServerName = repl.ReplaceAll(tlsConfig.ServerName, "")
+
+				// h1 only
+				if caddyhttp.GetVar(ctx, tlsH1OnlyVarKey) == true {
+					// stdlib does this
+					// https://github.com/golang/go/blob/4837fbe4145cd47b43eed66fee9eed9c2b988316/src/net/http/transport.go#L1701
+					tlsConfig.NextProtos = nil
+				}
+
 				tlsConn := tls.Client(conn, tlsConfig)
 
 				// complete the handshake before returning the connection

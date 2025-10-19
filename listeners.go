@@ -382,7 +382,7 @@ func SplitNetworkAddress(a string) (network, host, port string, err error) {
 		a = afterSlash
 		if IsUnixNetwork(network) || IsFdNetwork(network) {
 			host = a
-			return
+			return network, host, port, err
 		}
 	}
 
@@ -402,7 +402,7 @@ func SplitNetworkAddress(a string) (network, host, port string, err error) {
 		err = errors.Join(firstErr, err)
 	}
 
-	return
+	return network, host, port, err
 }
 
 // JoinNetworkAddress combines network, host, and port into a single

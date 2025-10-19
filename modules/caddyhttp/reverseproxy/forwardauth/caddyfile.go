@@ -84,7 +84,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 	// create the reverse proxy handler
 	rpHandler := &reverseproxy.Handler{
 		// set up defaults for header_up; reverse_proxy already deals with
-		// adding  the other three X-Forwarded-* headers, but for this flow,
+		// adding the other three X-Forwarded-* headers, but for this flow,
 		// we want to also send along the incoming method and URI since this
 		// request will have a rewritten URI and method.
 		Headers: &headers.Handler{

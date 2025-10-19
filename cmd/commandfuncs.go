@@ -231,8 +231,9 @@ func cmdRun(fl Flags) (int, error) {
 	}
 	// we don't use 'else' here since this value might have been changed in 'if' block; i.e. not mutually exclusive
 	var configFile string
+	var adapterUsed string
 	if !resumeFlag {
-		config, configFile, err = LoadConfig(configFlag, configAdapterFlag)
+		config, configFile, adapterUsed, err = LoadConfig(configFlag, configAdapterFlag)
 		if err != nil {
 			logBuffer.FlushTo(defaultLogger)
 			return caddy.ExitCodeFailedStartup, err
@@ -247,6 +248,19 @@ func cmdRun(fl Flags) (int, error) {
 				zap.String("pidfile", pidfileFlag),
 				zap.Error(err))
 		}
+	}
+
+	// If we have a source config file (we're running via 'caddy run --config ...'),
+	// record it so SIGUSR1 can reload from the same file. Also provide a callback
+	// that knows how to load/adapt that source when requested by the main process.
+	if configFile != "" {
+		caddy.SetLastConfig(configFile, adapterUsed, func(file, adapter string) error {
+			cfg, _, _, err := LoadConfig(file, adapter)
+			if err != nil {
+				return err
+			}
+			return caddy.Load(cfg, true)
+		})
 	}
 
 	// run the initial config
@@ -295,7 +309,7 @@ func cmdRun(fl Flags) (int, error) {
 	// if enabled, reload config file automatically on changes
 	// (this better only be used in dev!)
 	if watchFlag {
-		go watchConfigFile(configFile, configAdapterFlag)
+		go watchConfigFile(configFile, adapterUsed)
 	}
 
 	// warn if the environment does not provide enough information about the disk
@@ -350,7 +364,7 @@ func cmdReload(fl Flags) (int, error) {
 	forceFlag := fl.Bool("force")
 
 	// get the config in caddy's native format
-	config, configFile, err := LoadConfig(configFlag, configAdapterFlag)
+	config, configFile, adapterUsed, err := LoadConfig(configFlag, configAdapterFlag)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, err
 	}
@@ -368,6 +382,10 @@ func cmdReload(fl Flags) (int, error) {
 	if forceFlag {
 		headers.Set("Cache-Control", "must-revalidate")
 	}
+	// Provide the source file/adapter to the running process so it can
+	// preserve its last-config knowledge if this reload came from the same source.
+	headers.Set("Caddy-Config-Source-File", configFile)
+	headers.Set("Caddy-Config-Source-Adapter", adapterUsed)
 
 	resp, err := AdminAPIRequest(adminAddr, http.MethodPost, "/load", headers, bytes.NewReader(config))
 	if err != nil {
@@ -582,7 +600,7 @@ func cmdValidateConfig(fl Flags) (int, error) {
 			fmt.Errorf("input file required when there is no Caddyfile in current directory (use --config flag)")
 	}
 
-	input, _, err := LoadConfig(configFlag, adapterFlag)
+	input, _, _, err := LoadConfig(configFlag, adapterFlag)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, err
 	}
@@ -797,7 +815,7 @@ func DetermineAdminAPIAddress(address string, config []byte, configFile, configA
 		loadedConfig := config
 		if len(loadedConfig) == 0 {
 			// get the config in caddy's native format
-			loadedConfig, loadedConfigFile, err = LoadConfig(configFile, configAdapter)
+			loadedConfig, loadedConfigFile, _, err = LoadConfig(configFile, configAdapter)
 			if err != nil {
 				return "", err
 			}

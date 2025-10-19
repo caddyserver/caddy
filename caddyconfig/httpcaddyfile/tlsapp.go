@@ -554,6 +554,7 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]any) e
 	globalPreferredChains := options["preferred_chains"]
 	globalCertLifetime := options["cert_lifetime"]
 	globalHTTPPort, globalHTTPSPort := options["http_port"], options["https_port"]
+	globalDefaultBind := options["default_bind"]
 
 	if globalEmail != nil && acmeIssuer.Email == "" {
 		acmeIssuer.Email = globalEmail.(string)
@@ -564,22 +565,21 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]any) e
 	if globalACMECARoot != nil && !slices.Contains(acmeIssuer.TrustedRootsPEMFiles, globalACMECARoot.(string)) {
 		acmeIssuer.TrustedRootsPEMFiles = append(acmeIssuer.TrustedRootsPEMFiles, globalACMECARoot.(string))
 	}
-	if globalACMEDNSok {
+	if globalACMEDNSok && (acmeIssuer.Challenges == nil || acmeIssuer.Challenges.DNS == nil || acmeIssuer.Challenges.DNS.ProviderRaw == nil) {
 		globalDNS := options["dns"]
-		if globalDNS != nil {
-			// If global `dns` is set, do NOT set provider in issuer, just set empty dns config
-			acmeIssuer.Challenges = &caddytls.ChallengesConfig{
-				DNS: &caddytls.DNSChallengeConfig{},
-			}
-		} else if globalACMEDNS != nil {
-			// Set a global DNS provider if `acme_dns` is set and `dns` is NOT set
-			acmeIssuer.Challenges = &caddytls.ChallengesConfig{
-				DNS: &caddytls.DNSChallengeConfig{
-					ProviderRaw: caddyconfig.JSONModuleObject(globalACMEDNS, "name", globalACMEDNS.(caddy.Module).CaddyModule().ID.Name(), nil),
-				},
-			}
-		} else {
+		if globalDNS == nil && globalACMEDNS == nil {
 			return fmt.Errorf("acme_dns specified without DNS provider config, but no provider specified with 'dns' global option")
+		}
+		if acmeIssuer.Challenges == nil {
+			acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
+		}
+		if acmeIssuer.Challenges.DNS == nil {
+			acmeIssuer.Challenges.DNS = new(caddytls.DNSChallengeConfig)
+		}
+		// If global `dns` is set, do NOT set provider in issuer, just set empty dns config
+		if globalDNS == nil && acmeIssuer.Challenges.DNS.ProviderRaw == nil {
+			// Set a global DNS provider if `acme_dns` is set and `dns` is NOT set
+			acmeIssuer.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(globalACMEDNS, "name", globalACMEDNS.(caddy.Module).CaddyModule().ID.Name(), nil)
 		}
 	}
 	if globalACMEEAB != nil && acmeIssuer.ExternalAccount == nil {
@@ -606,6 +606,20 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]any) e
 			acmeIssuer.Challenges.TLSALPN = new(caddytls.TLSALPNChallengeConfig)
 		}
 		acmeIssuer.Challenges.TLSALPN.AlternatePort = globalHTTPSPort.(int)
+	}
+	// If BindHost is still unset, fall back to the first default_bind address if set
+	// This avoids binding the automation policy to the wildcard socket, which is unexpected behavior when a more selective socket is specified via default_bind
+	// In BSD it is valid to bind to the wildcard socket even though a more selective socket is already open (still unexpected behavior by the caller though)
+	// In Linux the same call will error with EADDRINUSE whenever the listener for the automation policy is opened
+	if acmeIssuer.Challenges == nil || (acmeIssuer.Challenges.DNS == nil && acmeIssuer.Challenges.BindHost == "") {
+		if defBinds, ok := globalDefaultBind.([]ConfigValue); ok && len(defBinds) > 0 {
+			if abp, ok := defBinds[0].Value.(addressesWithProtocols); ok && len(abp.addresses) > 0 {
+				if acmeIssuer.Challenges == nil {
+					acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
+				}
+				acmeIssuer.Challenges.BindHost = abp.addresses[0]
+			}
+		}
 	}
 	if globalCertLifetime != nil && acmeIssuer.CertificateLifetime == 0 {
 		acmeIssuer.CertificateLifetime = globalCertLifetime.(caddy.Duration)

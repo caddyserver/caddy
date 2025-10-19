@@ -91,7 +91,7 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 //	    curves    <curves...>
 //	    client_auth {
 //	        mode                   [request|require|verify_if_given|require_and_verify]
-//	        trust_pool			   <module_name> [...]
+//	        trust_pool             <module_name> [...]
 //	        trusted_leaf_cert      <base64_der>
 //	        trusted_leaf_cert_file <filename>
 //	    }
@@ -481,7 +481,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	// Validate DNS challenge config: any DNS challenge option except "dns" requires a DNS provider
 	if acmeIssuer != nil && acmeIssuer.Challenges != nil && acmeIssuer.Challenges.DNS != nil {
 		dnsCfg := acmeIssuer.Challenges.DNS
-		providerSet := dnsCfg.ProviderRaw != nil || h.Option("dns") != nil
+		providerSet := dnsCfg.ProviderRaw != nil || h.Option("dns") != nil || h.Option("acme_dns") != nil
 		if len(dnsOptionsSet) > 0 && !providerSet {
 			return nil, h.Errf(
 				"setting DNS challenge options [%s] requires a DNS provider (set with the 'dns' subdirective or 'acme_dns' global option)",

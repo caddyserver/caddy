@@ -1,9 +1,11 @@
 {
-	acme_dns mock foo
+	servers {
+		trusted_proxies_unix
+	}
 }
 
 example.com {
-	respond "Hello World"
+	reverse_proxy https://local:8080
 }
 ----------
 {
@@ -30,8 +32,16 @@ example.com {
 										{
 											"handle": [
 												{
-													"body": "Hello World",
-													"handler": "static_response"
+													"handler": "reverse_proxy",
+													"transport": {
+														"protocol": "http",
+														"tls": {}
+													},
+													"upstreams": [
+														{
+															"dial": "local:8080"
+														}
+													]
 												}
 											]
 										}
@@ -40,29 +50,9 @@ example.com {
 							],
 							"terminal": true
 						}
-					]
+					],
+					"trusted_proxies_unix": true
 				}
-			}
-		},
-		"tls": {
-			"automation": {
-				"policies": [
-					{
-						"issuers": [
-							{
-								"challenges": {
-									"dns": {
-										"provider": {
-											"argument": "foo",
-											"name": "mock"
-										}
-									}
-								},
-								"module": "acme"
-							}
-						]
-					}
-				]
 			}
 		}
 	}

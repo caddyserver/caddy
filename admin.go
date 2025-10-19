@@ -1029,6 +1029,13 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 
+		// If this request changed the config, clear the last
+		// config info we have stored, if it is different from
+		// the original source.
+		ClearLastConfigIfDifferent(
+			r.Header.Get("Caddy-Config-Source-File"),
+			r.Header.Get("Caddy-Config-Source-Adapter"))
+
 	default:
 		return APIError{
 			HTTPStatus: http.StatusMethodNotAllowed,

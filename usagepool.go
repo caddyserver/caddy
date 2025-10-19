@@ -106,7 +106,7 @@ func (up *UsagePool) LoadOrNew(key any, construct Constructor) (value any, loade
 		}
 		upv.Unlock()
 	}
-	return
+	return value, loaded, err
 }
 
 // LoadOrStore loads the value associated with key from the pool if it
@@ -134,7 +134,7 @@ func (up *UsagePool) LoadOrStore(key, val any) (value any, loaded bool) {
 		up.Unlock()
 		value = val
 	}
-	return
+	return value, loaded
 }
 
 // Range iterates the pool similarly to how sync.Map.Range() does:
@@ -191,7 +191,7 @@ func (up *UsagePool) Delete(key any) (deleted bool, err error) {
 				upv.value, upv.refs))
 		}
 	}
-	return
+	return deleted, err
 }
 
 // References returns the number of references (count of usages) to a
