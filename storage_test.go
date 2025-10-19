@@ -57,10 +57,20 @@ func TestHomeDir_CrossPlatform(t *testing.T) {
 		{
 			name: "normal HOME set",
 			envVars: map[string]string{
-				"HOME": "/home/user",
+				"HOME": func() string {
+					if runtime.GOOS == "windows" {
+						return "C:\\Users\\user"
+					}
+					return "/home/user"
+				}(),
 			},
 			unsetVars: []string{"HOMEDRIVE", "HOMEPATH", "USERPROFILE", "home"},
-			expected:  "/home/user",
+			expected: func() string {
+				if runtime.GOOS == "windows" {
+					return "C:\\Users\\user"
+				}
+				return "/home/user"
+			}(),
 		},
 		{
 			name:      "no environment variables",
@@ -440,17 +450,30 @@ func TestAppDataDir_Android_SpecialCase(t *testing.T) {
 
 func TestHomeDir_Android_SpecialCase(t *testing.T) {
 	// Save original environment
-	originalHOME := os.Getenv("HOME")
+	originalEnv := map[string]string{
+		"HOME":        os.Getenv("HOME"),
+		"HOMEDRIVE":   os.Getenv("HOMEDRIVE"),
+		"HOMEPATH":    os.Getenv("HOMEPATH"),
+		"USERPROFILE": os.Getenv("USERPROFILE"),
+		"home":        os.Getenv("home"),
+	}
 	defer func() {
-		if originalHOME == "" {
-			os.Unsetenv("HOME")
-		} else {
-			os.Setenv("HOME", originalHOME)
+		for key, value := range originalEnv {
+			if value == "" {
+				os.Unsetenv(key)
+			} else {
+				os.Setenv(key, value)
+			}
 		}
 	}()
 
 	// Test Android fallback when HOME is not set
+	// Also unset Windows and Plan9 specific variables
 	os.Unsetenv("HOME")
+	os.Unsetenv("HOMEDRIVE")
+	os.Unsetenv("HOMEPATH")
+	os.Unsetenv("USERPROFILE")
+	os.Unsetenv("home")
 
 	result := HomeDir()
 
