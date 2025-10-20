@@ -755,6 +755,345 @@ func TestDirectory_Creation_Validation(t *testing.T) {
 	}
 }
 
+// TestAppConfigDir_ErrorFallback tests the error handling when os.UserConfigDir() fails
+// This is difficult to test directly, but we can at least test the fallback behavior
+func TestAppConfigDir_ErrorFallback(t *testing.T) {
+	// Save original environment
+	originalXDG := os.Getenv("XDG_CONFIG_HOME")
+	defer func() {
+		if originalXDG == "" {
+			os.Unsetenv("XDG_CONFIG_HOME")
+		} else {
+			os.Setenv("XDG_CONFIG_HOME", originalXDG)
+		}
+	}()
+
+	// Clear XDG to force use of os.UserConfigDir()
+	os.Unsetenv("XDG_CONFIG_HOME")
+
+	// Call AppConfigDir - it should not panic even if there are issues
+	result := AppConfigDir()
+
+	// Result should never be empty
+	if result == "" {
+		t.Error("AppConfigDir should never return empty string")
+	}
+
+	// Should contain "caddy" or "Caddy"
+	if !strings.Contains(result, "caddy") && !strings.Contains(result, "Caddy") {
+		t.Errorf("AppConfigDir should contain 'caddy' or 'Caddy': got '%s'", result)
+	}
+}
+
+// TestAppDataDir_Darwin_Path tests macOS-specific path construction
+func TestAppDataDir_Darwin_Path(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS-specific test")
+	}
+
+	// Save original environment
+	originalXDG := os.Getenv("XDG_DATA_HOME")
+	defer func() {
+		if originalXDG == "" {
+			os.Unsetenv("XDG_DATA_HOME")
+		} else {
+			os.Setenv("XDG_DATA_HOME", originalXDG)
+		}
+	}()
+
+	// Clear XDG to use platform-specific logic
+	os.Unsetenv("XDG_DATA_HOME")
+
+	result := AppDataDir()
+
+	// On macOS, should contain "Library/Application Support/Caddy"
+	if !strings.Contains(result, "Library") || !strings.Contains(result, "Application Support") {
+		t.Errorf("macOS AppDataDir should contain 'Library/Application Support': got '%s'", result)
+	}
+
+	if !strings.HasSuffix(result, "Caddy") {
+		t.Errorf("macOS AppDataDir should end with 'Caddy': got '%s'", result)
+	}
+}
+
+// TestAppDataDir_Windows_Path tests Windows-specific path construction
+func TestAppDataDir_Windows_Path(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-specific test")
+	}
+
+	// Save original environment
+	originalXDG := os.Getenv("XDG_DATA_HOME")
+	originalAppData := os.Getenv("AppData")
+	defer func() {
+		if originalXDG == "" {
+			os.Unsetenv("XDG_DATA_HOME")
+		} else {
+			os.Setenv("XDG_DATA_HOME", originalXDG)
+		}
+		if originalAppData == "" {
+			os.Unsetenv("AppData")
+		} else {
+			os.Setenv("AppData", originalAppData)
+		}
+	}()
+
+	// Clear XDG to use platform-specific logic
+	os.Unsetenv("XDG_DATA_HOME")
+
+	// Set AppData
+	os.Setenv("AppData", "C:\\Users\\TestUser\\AppData\\Roaming")
+
+	result := AppDataDir()
+
+	// On Windows, should use AppData and end with "Caddy"
+	if !strings.Contains(result, "AppData") {
+		t.Errorf("Windows AppDataDir should contain 'AppData': got '%s'", result)
+	}
+
+	if !strings.HasSuffix(result, "Caddy") {
+		t.Errorf("Windows AppDataDir should end with 'Caddy': got '%s'", result)
+	}
+}
+
+// TODO: Should this be kept? We cannot test plan9. We don't have plan9 CI.
+// TestAppDataDir_Plan9_Path tests Plan9-specific path construction
+// func TestAppDataDir_Plan9_Path(t *testing.T) {
+// 	if runtime.GOOS != "plan9" {
+// 		t.Skip("Plan9-specific test")
+// 	}
+
+// 	// Save original environment
+// 	originalXDG := os.Getenv("XDG_DATA_HOME")
+// 	originalHome := os.Getenv("home")
+// 	defer func() {
+// 		if originalXDG == "" {
+// 			os.Unsetenv("XDG_DATA_HOME")
+// 		} else {
+// 			os.Setenv("XDG_DATA_HOME", originalXDG)
+// 		}
+// 		if originalHome == "" {
+// 			os.Unsetenv("home")
+// 		} else {
+// 			os.Setenv("home", originalHome)
+// 		}
+// 	}()
+
+// 	// Clear XDG to use platform-specific logic
+// 	os.Unsetenv("XDG_DATA_HOME")
+// 	os.Setenv("home", "/usr/testuser")
+
+// 	result := AppDataDir()
+
+// 	// On Plan9, should contain "lib/caddy"
+// 	expectedPath := filepath.Join("/usr/testuser", "lib", "caddy")
+// 	if result != expectedPath {
+// 		t.Errorf("Plan9 AppDataDir: expected '%s', got '%s'", expectedPath, result)
+// 	}
+// }
+
+// TestAppDataDir_Linux_Path tests Linux/Unix-specific path construction
+func TestAppDataDir_Linux_Path(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("Linux-specific test")
+	}
+
+	// Save original environment
+	originalXDG := os.Getenv("XDG_DATA_HOME")
+	originalHOME := os.Getenv("HOME")
+	defer func() {
+		if originalXDG == "" {
+			os.Unsetenv("XDG_DATA_HOME")
+		} else {
+			os.Setenv("XDG_DATA_HOME", originalXDG)
+		}
+		if originalHOME == "" {
+			os.Unsetenv("HOME")
+		} else {
+			os.Setenv("HOME", originalHOME)
+		}
+	}()
+
+	// Clear XDG to use platform-specific logic
+	os.Unsetenv("XDG_DATA_HOME")
+	os.Setenv("HOME", "/home/testuser")
+
+	result := AppDataDir()
+
+	// On Linux, should contain ".local/share/caddy"
+	expectedPath := filepath.Join("/home/testuser", ".local", "share", "caddy")
+	if result != expectedPath {
+		t.Errorf("Linux AppDataDir: expected '%s', got '%s'", expectedPath, result)
+	}
+}
+
+// TODO: Should this be kept? We cannot test plan9. We don't have plan9 CI.
+// TestHomeDirUnsafe_Plan9 tests Plan9-specific home directory detection
+// func TestHomeDirUnsafe_Plan9(t *testing.T) {
+// 	if runtime.GOOS != "plan9" {
+// 		t.Skip("Plan9-specific test")
+// 	}
+
+// 	// Save original environment
+// 	originalHome := os.Getenv("HOME")
+// 	originalHomeLC := os.Getenv("home")
+// 	defer func() {
+// 		if originalHome == "" {
+// 			os.Unsetenv("HOME")
+// 		} else {
+// 			os.Setenv("HOME", originalHome)
+// 		}
+// 		if originalHomeLC == "" {
+// 			os.Unsetenv("home")
+// 		} else {
+// 			os.Setenv("home", originalHomeLC)
+// 		}
+// 	}()
+
+// 	// Test with Plan9's lowercase "home" variable
+// 	os.Unsetenv("HOME")
+// 	os.Setenv("home", "/usr/plan9user")
+
+// 	result := homeDirUnsafe()
+
+// 	if result != "/usr/plan9user" {
+// 		t.Errorf("Plan9 homeDirUnsafe: expected '/usr/plan9user', got '%s'", result)
+// 	}
+// }
+
+// TestHomeDirUnsafe_Windows tests Windows-specific home directory detection
+func TestHomeDirUnsafe_Windows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-specific test")
+	}
+
+	// Save original environment
+	originalEnv := map[string]string{
+		"HOME":        os.Getenv("HOME"),
+		"HOMEDRIVE":   os.Getenv("HOMEDRIVE"),
+		"HOMEPATH":    os.Getenv("HOMEPATH"),
+		"USERPROFILE": os.Getenv("USERPROFILE"),
+	}
+	defer func() {
+		for key, value := range originalEnv {
+			if value == "" {
+				os.Unsetenv(key)
+			} else {
+				os.Setenv(key, value)
+			}
+		}
+	}()
+
+	// Test HOMEDRIVE + HOMEPATH combination
+	os.Unsetenv("HOME")
+	os.Setenv("HOMEDRIVE", "C:")
+	os.Setenv("HOMEPATH", "\\Users\\TestUser")
+	os.Unsetenv("USERPROFILE")
+
+	result := homeDirUnsafe()
+	expected := "C:\\Users\\TestUser"
+
+	if result != expected {
+		t.Errorf("Windows homeDirUnsafe with HOMEDRIVE+HOMEPATH: expected '%s', got '%s'", expected, result)
+	}
+
+	// Test USERPROFILE fallback when HOMEDRIVE or HOMEPATH is missing
+	os.Unsetenv("HOME")
+	os.Unsetenv("HOMEDRIVE")
+	os.Setenv("HOMEPATH", "\\Users\\TestUser")
+	os.Setenv("USERPROFILE", "C:\\Users\\TestUser")
+
+	result = homeDirUnsafe()
+	expected = "C:\\Users\\TestUser"
+
+	if result != expected {
+		t.Errorf("Windows homeDirUnsafe with USERPROFILE: expected '%s', got '%s'", expected, result)
+	}
+
+	// Test when only HOMEDRIVE is set (should use USERPROFILE)
+	os.Unsetenv("HOME")
+	os.Setenv("HOMEDRIVE", "C:")
+	os.Unsetenv("HOMEPATH")
+	os.Setenv("USERPROFILE", "C:\\Users\\TestUser")
+
+	result = homeDirUnsafe()
+	expected = "C:\\Users\\TestUser"
+
+	if result != expected {
+		t.Errorf("Windows homeDirUnsafe with only HOMEDRIVE: expected '%s', got '%s'", expected, result)
+	}
+}
+
+// TestConfigAutosavePath_NotEmpty tests that ConfigAutosavePath is always set
+func TestConfigAutosavePath_NotEmpty(t *testing.T) {
+	if ConfigAutosavePath == "" {
+		t.Error("ConfigAutosavePath should not be empty")
+	}
+
+	if !strings.HasSuffix(ConfigAutosavePath, "autosave.json") {
+		t.Errorf("ConfigAutosavePath should end with 'autosave.json': got '%s'", ConfigAutosavePath)
+	}
+
+	// Should be an absolute path
+	if !filepath.IsAbs(ConfigAutosavePath) {
+		t.Errorf("ConfigAutosavePath should be absolute: got '%s'", ConfigAutosavePath)
+	}
+}
+
+// TestDefaultStorage_NotNil tests that DefaultStorage is initialized
+func TestDefaultStorage_NotNil(t *testing.T) {
+	if DefaultStorage == nil {
+		t.Fatal("DefaultStorage should not be nil")
+	}
+
+	if DefaultStorage.Path == "" {
+		t.Error("DefaultStorage.Path should not be empty")
+	}
+
+	// Path should be absolute
+	if !filepath.IsAbs(DefaultStorage.Path) {
+		t.Errorf("DefaultStorage.Path should be absolute: got '%s'", DefaultStorage.Path)
+	}
+}
+
+// TestAppDataDir_NoHome_Fallback tests fallback when no home directory can be determined
+func TestAppDataDir_NoHome_Fallback(t *testing.T) {
+	// Skip on platforms where we can't easily clear all home-related variables
+	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" || runtime.GOOS == "plan9" {
+		t.Skip("Skipping on platforms where clearing home is complex")
+	}
+
+	// Save original environment
+	originalEnv := map[string]string{
+		"XDG_DATA_HOME": os.Getenv("XDG_DATA_HOME"),
+		"HOME":          os.Getenv("HOME"),
+		"AppData":       os.Getenv("AppData"),
+		"home":          os.Getenv("home"),
+	}
+	defer func() {
+		for key, value := range originalEnv {
+			if value == "" {
+				os.Unsetenv(key)
+			} else {
+				os.Setenv(key, value)
+			}
+		}
+	}()
+
+	// Clear all relevant environment variables
+	os.Unsetenv("XDG_DATA_HOME")
+	os.Unsetenv("HOME")
+	os.Unsetenv("AppData")
+	os.Unsetenv("home")
+
+	result := AppDataDir()
+
+	// Should fall back to "./caddy"
+	if result != "./caddy" {
+		t.Errorf("AppDataDir with no home should return './caddy', got '%s'", result)
+	}
+}
+
 func BenchmarkHomeDir(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		HomeDir()
