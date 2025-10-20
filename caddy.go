@@ -975,11 +975,11 @@ func Version() (simple, full string) {
 		if CustomVersion != "" {
 			full = CustomVersion
 			simple = CustomVersion
-			return
+			return simple, full
 		}
 		full = "unknown"
 		simple = "unknown"
-		return
+		return simple, full
 	}
 	// find the Caddy module in the dependency list
 	for _, dep := range bi.Deps {
@@ -1059,7 +1059,7 @@ func Version() (simple, full string) {
 		}
 	}
 
-	return
+	return simple, full
 }
 
 // Event represents something that has happened or is happening.
@@ -1196,6 +1196,91 @@ var (
 	// essentially synchronizes config changes/reloads.
 	rawCfgMu sync.RWMutex
 )
+
+// lastConfigFile and lastConfigAdapter remember the source config
+// file and adapter used when Caddy was started via the CLI "run" command.
+// These are consulted by the SIGUSR1 handler to attempt reloading from
+// the same source. They are intentionally not set for other entrypoints
+// such as "caddy start" or subcommands like file-server.
+var (
+	lastConfigMu      sync.RWMutex
+	lastConfigFile    string
+	lastConfigAdapter string
+)
+
+// reloadFromSourceFunc is the type of stored callback
+// which is called when we receive a SIGUSR1 signal.
+type reloadFromSourceFunc func(file, adapter string) error
+
+// reloadFromSourceCallback is the stored callback
+// which is called when we receive a SIGUSR1 signal.
+var reloadFromSourceCallback reloadFromSourceFunc
+
+// errReloadFromSourceUnavailable is returned when no reload-from-source callback is set.
+var errReloadFromSourceUnavailable = errors.New("reload from source unavailable in this process") //nolint:unused
+
+// SetLastConfig records the given source file and adapter as the
+// last-known external configuration source. Intended to be called
+// only when starting via "caddy run --config <file> --adapter <adapter>".
+func SetLastConfig(file, adapter string, fn reloadFromSourceFunc) {
+	lastConfigMu.Lock()
+	lastConfigFile = file
+	lastConfigAdapter = adapter
+	reloadFromSourceCallback = fn
+	lastConfigMu.Unlock()
+}
+
+// ClearLastConfigIfDifferent clears the recorded last-config if the provided
+// source file/adapter do not match the recorded last-config. If both srcFile
+// and srcAdapter are empty, the last-config is cleared.
+func ClearLastConfigIfDifferent(srcFile, srcAdapter string) {
+	if (srcFile != "" || srcAdapter != "") && lastConfigMatches(srcFile, srcAdapter) {
+		return
+	}
+	SetLastConfig("", "", nil)
+}
+
+// getLastConfig returns the last-known config file and adapter.
+func getLastConfig() (file, adapter string, fn reloadFromSourceFunc) {
+	lastConfigMu.RLock()
+	f, a, cb := lastConfigFile, lastConfigAdapter, reloadFromSourceCallback
+	lastConfigMu.RUnlock()
+	return f, a, cb
+}
+
+// lastConfigMatches returns true if the provided source file and/or adapter
+// matches the recorded last-config. Matching rules (in priority order):
+//  1. If srcAdapter is provided and differs from the recorded adapter, no match.
+//  2. If srcFile exactly equals the recorded file, match.
+//  3. If both sides can be made absolute and equal, match.
+//  4. If basenames are equal, match.
+func lastConfigMatches(srcFile, srcAdapter string) bool {
+	lf, la, _ := getLastConfig()
+
+	// If adapter is provided, it must match.
+	if srcAdapter != "" && srcAdapter != la {
+		return false
+	}
+
+	// Quick equality check.
+	if srcFile == lf {
+		return true
+	}
+
+	// Try absolute path comparison.
+	sAbs, sErr := filepath.Abs(srcFile)
+	lAbs, lErr := filepath.Abs(lf)
+	if sErr == nil && lErr == nil && sAbs == lAbs {
+		return true
+	}
+
+	// Final fallback: basename equality.
+	if filepath.Base(srcFile) == filepath.Base(lf) {
+		return true
+	}
+
+	return false
+}
 
 // errSameConfig is returned if the new config is the same
 // as the old one. This isn't usually an actual, actionable

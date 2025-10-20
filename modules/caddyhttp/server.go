@@ -80,8 +80,24 @@ type Server struct {
 
 	// KeepAliveInterval is the interval at which TCP keepalive packets
 	// are sent to keep the connection alive at the TCP layer when no other
-	// data is being transmitted. The default is 15s.
+	// data is being transmitted.
+	// If zero, the default is 15s.
+	// If negative, keepalive packets are not sent and other keepalive parameters
+	// are ignored.
 	KeepAliveInterval caddy.Duration `json:"keepalive_interval,omitempty"`
+
+	// KeepAliveIdle is the time that the connection must be idle before
+	// the first TCP keep-alive probe is sent when no other data is being
+	// transmitted.
+	// If zero, the default is 15s.
+	// If negative, underlying socket value is unchanged.
+	KeepAliveIdle caddy.Duration `json:"keepalive_idle,omitempty"`
+
+	// KeepAliveCount is the maximum number of TCP keep-alive probes that
+	// should be sent before dropping a connection.
+	// If zero, the default is 9.
+	// If negative, underlying socket value is unchanged.
+	KeepAliveCount int `json:"keepalive_count,omitempty"`
 
 	// MaxHeaderBytes is the maximum size to parse from a client's
 	// HTTP request headers.
@@ -190,6 +206,13 @@ type Server struct {
 	// This option is disabled by default.
 	TrustedProxiesStrict int `json:"trusted_proxies_strict,omitempty"`
 
+	// If greater than zero, enables trusting socket connections
+	// (e.g. Unix domain sockets) as coming from a trusted
+	// proxy.
+	//
+	// This option is disabled by default.
+	TrustedProxiesUnix bool `json:"trusted_proxies_unix,omitempty"`
+
 	// Enables access logging and configures how access logs are handled
 	// in this server. To minimally enable access logs, simply set this
 	// to a non-null, empty struct.
@@ -270,14 +293,9 @@ type Server struct {
 // ServeHTTP is the entry point for all HTTP requests.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// If there are listener wrappers that process tls connections but don't return a *tls.Conn, this field will be nil.
-	// TODO: Scheduled to be removed later because https://github.com/golang/go/pull/56110 has been merged.
 	if r.TLS == nil {
-		// not all requests have a conn (like virtual requests) - see #5698
-		if conn, ok := r.Context().Value(ConnCtxKey).(net.Conn); ok {
-			if csc, ok := conn.(connectionStater); ok {
-				r.TLS = new(tls.ConnectionState)
-				*r.TLS = csc.ConnectionState()
-			}
+		if tlsConnStateFunc, ok := r.Context().Value(tlsConnectionStateFuncCtxKey).(func() *tls.ConnectionState); ok {
+			r.TLS = tlsConnStateFunc()
 		}
 	}
 
@@ -930,6 +948,17 @@ func determineTrustedProxy(r *http.Request, s *Server) (bool, string) {
 		return false, ""
 	}
 
+	if s.TrustedProxiesUnix && r.RemoteAddr == "@" {
+		if s.TrustedProxiesStrict > 0 {
+			ipRanges := []netip.Prefix{}
+			if s.trustedProxies != nil {
+				ipRanges = s.trustedProxies.GetIPRanges(r)
+			}
+			return true, strictUntrustedClientIp(r, s.ClientIPHeaders, ipRanges, "@")
+		} else {
+			return true, trustedRealClientIP(r, s.ClientIPHeaders, "@")
+		}
+	}
 	// Parse the remote IP, ignore the error as non-fatal,
 	// but the remote IP is required to continue, so we
 	// just return early. This should probably never happen
@@ -1086,10 +1115,13 @@ const (
 	// originally came into the server's entry handler
 	OriginalRequestCtxKey caddy.CtxKey = "original_request"
 
-	// For referencing underlying net.Conn
-	// This will eventually be deprecated and not used. To refer to the underlying connection, implement a middleware plugin
+	// DEPRECATED: not used anymore.
+	// To refer to the underlying connection, implement a middleware plugin
 	// that RegisterConnContext during provisioning.
 	ConnCtxKey caddy.CtxKey = "conn"
+
+	// used to get the tls connection state in the context, if available
+	tlsConnectionStateFuncCtxKey caddy.CtxKey = "tls_connection_state_func"
 
 	// For tracking whether the client is a trusted proxy
 	TrustedProxyVarKey string = "trusted_proxy"

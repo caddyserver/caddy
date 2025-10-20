@@ -170,13 +170,15 @@ func (App) CaddyModule() caddy.ModuleInfo {
 // Provision sets up the app.
 func (app *App) Provision(ctx caddy.Context) error {
 	// store some references
+	app.logger = ctx.Logger()
+	app.ctx = ctx
+
+	// provision TLS and events apps
 	tlsAppIface, err := ctx.App("tls")
 	if err != nil {
 		return fmt.Errorf("getting tls app: %v", err)
 	}
 	app.tlsApp = tlsAppIface.(*caddytls.TLS)
-	app.ctx = ctx
-	app.logger = ctx.Logger()
 
 	eventsAppIface, err := ctx.App("events")
 	if err != nil {
@@ -478,7 +480,14 @@ func (app *App) Start() error {
 			ErrorLog:          serverLogger,
 			Protocols:         new(http.Protocols),
 			ConnContext: func(ctx context.Context, c net.Conn) context.Context {
-				return context.WithValue(ctx, ConnCtxKey, c)
+				if nc, ok := c.(interface{ tlsNetConn() net.Conn }); ok {
+					getTlsConStateFunc := sync.OnceValue(func() *tls.ConnectionState {
+						tlsConnState := nc.tlsNetConn().(connectionStater).ConnectionState()
+						return &tlsConnState
+					})
+					ctx = context.WithValue(ctx, tlsConnectionStateFuncCtxKey, getTlsConStateFunc)
+				}
+				return ctx
 			},
 		}
 
@@ -550,6 +559,8 @@ func (app *App) Start() error {
 						KeepAliveConfig: net.KeepAliveConfig{
 							Enable:   srv.KeepAliveInterval >= 0,
 							Interval: time.Duration(srv.KeepAliveInterval),
+							Idle:     time.Duration(srv.KeepAliveIdle),
+							Count:    srv.KeepAliveCount,
 						},
 					})
 					if err != nil {

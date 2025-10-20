@@ -456,6 +456,22 @@ type ChallengesConfig struct {
 	// Optionally customize the host to which a listener
 	// is bound if required for solving a challenge.
 	BindHost string `json:"bind_host,omitempty"`
+
+	// Whether distributed solving is enabled. This is
+	// enabled by default, so this is only used to
+	// disable it, which should only need to be done if
+	// you cannot reliably or affordably use storage
+	// backend for writing/distributing challenge info.
+	// (Applies to HTTP and TLS-ALPN challenges.)
+	// If set to false, challenges can only be solved
+	// from the Caddy instance that initiated the
+	// challenge, with the exception of HTTP challenges
+	// initiated with the same ACME account that this
+	// config uses. (Caddy can still solve those challenges
+	// without explicitly writing the info to storage.)
+	//
+	// Default: true
+	Distributed *bool `json:"distributed,omitempty"`
 }
 
 // HTTPChallengeConfig configures the ACME HTTP challenge.

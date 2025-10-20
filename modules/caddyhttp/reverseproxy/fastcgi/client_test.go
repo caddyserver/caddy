@@ -120,7 +120,7 @@ func sendFcgi(reqType int, fcgiParams map[string]string, data []byte, posts map[
 	conn, err := net.Dial("tcp", ipPort)
 	if err != nil {
 		log.Println("err:", err)
-		return
+		return content
 	}
 
 	fcgi := client{rwc: conn, reqID: 1}
@@ -162,7 +162,7 @@ func sendFcgi(reqType int, fcgiParams map[string]string, data []byte, posts map[
 
 	if err != nil {
 		log.Println("err:", err)
-		return
+		return content
 	}
 
 	defer resp.Body.Close()
@@ -176,7 +176,7 @@ func sendFcgi(reqType int, fcgiParams map[string]string, data []byte, posts map[
 		globalt.Error("Server return failed message")
 	}
 
-	return
+	return content
 }
 
 func generateRandFile(size int) (p string, m string) {
@@ -206,7 +206,7 @@ func generateRandFile(size int) (p string, m string) {
 		}
 	}
 	m = fmt.Sprintf("%x", h.Sum(nil))
-	return
+	return p, m
 }
 
 func DisabledTest(t *testing.T) {
