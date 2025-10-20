@@ -107,7 +107,8 @@ func listenReusable(ctx context.Context, lnKey string, network, address string, 
 	if err != nil {
 		return nil, err
 	}
-	return &fakeCloseListener{sharedListener: sharedLn.(*sharedListener), keepAlivePeriod: config.KeepAlive}, nil
+
+	return &fakeCloseListener{sharedListener: sharedLn.(*sharedListener), keepAliveConfig: config.KeepAliveConfig}, nil
 }
 
 // fakeCloseListener is a private wrapper over a listener that
@@ -121,12 +122,11 @@ func listenReusable(ctx context.Context, lnKey string, network, address string, 
 type fakeCloseListener struct {
 	closed          int32 // accessed atomically; belongs to this struct only
 	*sharedListener       // embedded, so we also become a net.Listener
-	keepAlivePeriod time.Duration
+	keepAliveConfig net.KeepAliveConfig
 }
 
-type canSetKeepAlive interface {
-	SetKeepAlivePeriod(d time.Duration) error
-	SetKeepAlive(bool) error
+type canSetKeepAliveConfig interface {
+	SetKeepAliveConfig(config net.KeepAliveConfig) error
 }
 
 func (fcl *fakeCloseListener) Accept() (net.Conn, error) {
@@ -140,12 +140,8 @@ func (fcl *fakeCloseListener) Accept() (net.Conn, error) {
 	if err == nil {
 		// if 0, do nothing, Go's default is already set
 		// and if the connection allows setting KeepAlive, set it
-		if tconn, ok := conn.(canSetKeepAlive); ok && fcl.keepAlivePeriod != 0 {
-			if fcl.keepAlivePeriod > 0 {
-				err = tconn.SetKeepAlivePeriod(fcl.keepAlivePeriod)
-			} else { // negative
-				err = tconn.SetKeepAlive(false)
-			}
+		if tconn, ok := conn.(canSetKeepAliveConfig); ok && fcl.keepAliveConfig.Enable {
+			err = tconn.SetKeepAliveConfig(fcl.keepAliveConfig)
 			if err != nil {
 				Log().With(zap.String("server", fcl.sharedListener.key)).Warn("unable to set keepalive for new connection:", zap.Error(err))
 			}
@@ -265,14 +261,14 @@ func (fcpc *fakeClosePacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err e
 		if atomic.LoadInt32(&fcpc.closed) == 1 {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				if err = fcpc.SetReadDeadline(time.Time{}); err != nil {
-					return
+					return n, addr, err
 				}
 			}
 		}
-		return
+		return n, addr, err
 	}
 
-	return
+	return n, addr, err
 }
 
 // Close won't close the underlying socket unless there is no more reference, then listenerPool will close it.

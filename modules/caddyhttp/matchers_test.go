@@ -947,7 +947,7 @@ func BenchmarkHeaderREMatcher(b *testing.B) {
 	ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
 	req = req.WithContext(ctx)
 	addHTTPVarsToReplacer(repl, req, httptest.NewRecorder())
-	for run := 0; run < b.N; run++ {
+	for b.Loop() {
 		match.MatchWithError(req)
 	}
 }
@@ -992,8 +992,6 @@ func TestVarREMatcher(t *testing.T) {
 			expect: true,
 		},
 	} {
-		i := i   // capture range value
-		tc := tc // capture range value
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
 			// compile the regexp and validate its name
@@ -1180,8 +1178,7 @@ func BenchmarkLargeHostMatcher(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		matcher.MatchWithError(req)
 	}
 }
@@ -1194,8 +1191,7 @@ func BenchmarkHostMatcherWithoutPlaceholder(b *testing.B) {
 
 	match := MatchHost{"localhost"}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		match.MatchWithError(req)
 	}
 }
@@ -1212,8 +1208,7 @@ func BenchmarkHostMatcherWithPlaceholder(b *testing.B) {
 	req = req.WithContext(ctx)
 	match := MatchHost{"{env.GO_BENCHMARK_DOMAIN}"}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		match.MatchWithError(req)
 	}
 }

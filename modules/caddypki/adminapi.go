@@ -220,13 +220,13 @@ func (a *adminAPI) getCAFromAPIRequestPath(r *http.Request) (*CA, error) {
 func rootAndIntermediatePEM(ca *CA) (root, inter []byte, err error) {
 	root, err = pemEncodeCert(ca.RootCertificate().Raw)
 	if err != nil {
-		return
+		return root, inter, err
 	}
 	inter, err = pemEncodeCert(ca.IntermediateCertificate().Raw)
 	if err != nil {
-		return
+		return root, inter, err
 	}
-	return
+	return root, inter, err
 }
 
 // caInfo is the response structure for the CA info API endpoint.

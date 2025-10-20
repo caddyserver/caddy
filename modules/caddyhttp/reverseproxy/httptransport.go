@@ -171,11 +171,24 @@ func (HTTPTransport) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
+var (
+	allowedVersions       = []string{"1.1", "2", "h2c", "3"}
+	allowedVersionsString = strings.Join(allowedVersions, ", ")
+)
+
 // Provision sets up h.Transport with a *http.Transport
 // that is ready to use.
 func (h *HTTPTransport) Provision(ctx caddy.Context) error {
 	if len(h.Versions) == 0 {
 		h.Versions = []string{"1.1", "2"}
+	}
+	// some users may provide http versions not recognized by caddy, instead of trying to
+	// guess the version, we just error out and let the user fix their config
+	// see: https://github.com/caddyserver/caddy/issues/7111
+	for _, v := range h.Versions {
+		if !slices.Contains(allowedVersions, v) {
+			return fmt.Errorf("unsupported HTTP version: %s, supported version: %s", v, allowedVersionsString)
+		}
 	}
 
 	rt, err := h.NewTransport(ctx)
@@ -396,6 +409,14 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 				repl := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 				tlsConfig := rt.TLSClientConfig.Clone()
 				tlsConfig.ServerName = repl.ReplaceAll(tlsConfig.ServerName, "")
+
+				// h1 only
+				if caddyhttp.GetVar(ctx, tlsH1OnlyVarKey) == true {
+					// stdlib does this
+					// https://github.com/golang/go/blob/4837fbe4145cd47b43eed66fee9eed9c2b988316/src/net/http/transport.go#L1701
+					tlsConfig.NextProtos = nil
+				}
+
 				tlsConn := tls.Client(conn, tlsConfig)
 
 				// complete the handshake before returning the connection
@@ -415,7 +436,19 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 	}
 
 	if h.KeepAlive != nil {
+		// according to https://pkg.go.dev/net#Dialer.KeepAliveConfig,
+		// KeepAlive is ignored if KeepAliveConfig.Enable is true.
+		// If configured to 0, a system-dependent default is used.
+		// To disable tcp keepalive, choose a negative value,
+		// so KeepAliveConfig.Enable is false and KeepAlive is negative.
+
+		// This is different from http keepalive where a tcp connection
+		// can transfer multiple http requests/responses.
 		dialer.KeepAlive = time.Duration(h.KeepAlive.ProbeInterval)
+		dialer.KeepAliveConfig = net.KeepAliveConfig{
+			Enable:   h.KeepAlive.ProbeInterval > 0,
+			Interval: time.Duration(h.KeepAlive.ProbeInterval),
+		}
 		if h.KeepAlive.Enabled != nil {
 			rt.DisableKeepAlives = !*h.KeepAlive.Enabled
 		}

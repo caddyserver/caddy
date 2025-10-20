@@ -946,7 +946,7 @@ func (h adminHandler) originAllowed(origin *url.URL) bool {
 	return false
 }
 
-// etagHasher returns a the hasher we used on the config to both
+// etagHasher returns the hasher we used on the config to both
 // produce and verify ETags.
 func etagHasher() hash.Hash { return xxhash.New() }
 
@@ -1028,6 +1028,13 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 		if err != nil && !errors.Is(err, errSameConfig) {
 			return err
 		}
+
+		// If this request changed the config, clear the last
+		// config info we have stored, if it is different from
+		// the original source.
+		ClearLastConfigIfDifferent(
+			r.Header.Get("Caddy-Config-Source-File"),
+			r.Header.Get("Caddy-Config-Source-Adapter"))
 
 	default:
 		return APIError{

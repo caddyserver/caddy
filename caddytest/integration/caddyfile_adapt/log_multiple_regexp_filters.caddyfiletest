@@ -1,0 +1,95 @@
+:80
+
+log {
+	output stdout
+	format filter {
+		wrap console
+		
+		# Multiple regexp filters for the same field - this should work now!
+		request>headers>Authorization regexp "Bearer\s+([A-Za-z0-9_-]+)" "Bearer [REDACTED]"
+		request>headers>Authorization regexp "Basic\s+([A-Za-z0-9+/=]+)" "Basic [REDACTED]"
+		request>headers>Authorization regexp "token=([^&\s]+)" "token=[REDACTED]"
+		
+		# Single regexp filter - this should continue to work as before
+		request>headers>Cookie regexp "sessionid=[^;]+" "sessionid=[REDACTED]"
+		
+		# Mixed filters (non-regexp) - these should work normally
+		request>headers>Server delete
+		request>remote_ip ip_mask {
+			ipv4 24
+			ipv6 32
+		}
+	}
+}
+----------
+{
+	"logging": {
+		"logs": {
+			"default": {
+				"exclude": [
+					"http.log.access.log0"
+				]
+			},
+			"log0": {
+				"writer": {
+					"output": "stdout"
+				},
+				"encoder": {
+					"fields": {
+						"request\u003eheaders\u003eAuthorization": {
+							"filter": "multi_regexp",
+							"operations": [
+								{
+									"regexp": "Bearer\\s+([A-Za-z0-9_-]+)",
+									"value": "Bearer [REDACTED]"
+								},
+								{
+									"regexp": "Basic\\s+([A-Za-z0-9+/=]+)",
+									"value": "Basic [REDACTED]"
+								},
+								{
+									"regexp": "token=([^\u0026\\s]+)",
+									"value": "token=[REDACTED]"
+								}
+							]
+						},
+						"request\u003eheaders\u003eCookie": {
+							"filter": "regexp",
+							"regexp": "sessionid=[^;]+",
+							"value": "sessionid=[REDACTED]"
+						},
+						"request\u003eheaders\u003eServer": {
+							"filter": "delete"
+						},
+						"request\u003eremote_ip": {
+							"filter": "ip_mask",
+							"ipv4_cidr": 24,
+							"ipv6_cidr": 32
+						}
+					},
+					"format": "filter",
+					"wrap": {
+						"format": "console"
+					}
+				},
+				"include": [
+					"http.log.access.log0"
+				]
+			}
+		}
+	},
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"logs": {
+						"default_logger_name": "log0"
+					}
+				}
+			}
+		}
+	}
+} 

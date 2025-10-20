@@ -167,6 +167,8 @@ type FileServer struct {
 	// If set, file Etags will be read from sidecar files
 	// with any of these suffixes, instead of generating
 	// our own Etag.
+	// Keep in mind that the Etag values in the files have to be quoted as per RFC7232.
+	// See https://datatracker.ietf.org/doc/html/rfc7232#section-2.3 for a few examples.
 	EtagFileExtensions []string `json:"etag_file_extensions,omitempty"`
 
 	fsmap caddy.FileSystems
@@ -455,7 +457,14 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		}
 		defer file.Close()
 		respHeader.Set("Content-Encoding", ae)
-		respHeader.Del("Accept-Ranges")
+
+		// stdlib won't set Content-Length for non-range requests if Content-Encoding is set.
+		// see: https://github.com/caddyserver/caddy/issues/7040
+		// Setting the Range header manually will result in 206 Partial Content.
+		// see: https://github.com/caddyserver/caddy/issues/7250
+		if r.Header.Get("Range") == "" {
+			respHeader.Set("Content-Length", strconv.FormatInt(compressedInfo.Size(), 10))
+		}
 
 		// try to get the etag from pre computed files if an etag suffix list was provided
 		if etag == "" && fsrv.EtagFileExtensions != nil {
@@ -684,11 +693,11 @@ func fileHidden(filename string, hide []string) bool {
 					return true
 				}
 			}
-		} else if strings.HasPrefix(filename, h) {
+		} else if after, ok := strings.CutPrefix(filename, h); ok {
 			// if there is a separator in h, and filename is exactly
 			// prefixed with h, then we can do a prefix match so that
 			// "/foo" matches "/foo/bar" but not "/foobar".
-			withoutPrefix := strings.TrimPrefix(filename, h)
+			withoutPrefix := after
 			if strings.HasPrefix(withoutPrefix, separator) {
 				return true
 			}

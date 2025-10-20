@@ -379,28 +379,23 @@ func (p *parser) doImport(nesting int) error {
 	if len(blockTokens) > 0 {
 		// use such tokens to create a new dispenser, and then use it to parse each block
 		bd := NewDispenser(blockTokens)
+
+		// one iteration processes one sub-block inside the import
 		for bd.Next() {
-			// see if we can grab a key
-			var currentMappingKey string
-			if bd.Val() == "{" {
+			currentMappingKey := bd.Val()
+
+			if currentMappingKey == "{" {
 				return p.Err("anonymous blocks are not supported")
 			}
-			currentMappingKey = bd.Val()
-			currentMappingTokens := []Token{}
-			// read all args until end of line / {
-			if bd.NextArg() {
+
+			// load up all arguments (if there even are any)
+			currentMappingTokens := bd.RemainingArgsAsTokens()
+
+			// load up the entire block
+			for mappingNesting := bd.Nesting(); bd.NextBlock(mappingNesting); {
 				currentMappingTokens = append(currentMappingTokens, bd.Token())
-				for bd.NextArg() {
-					currentMappingTokens = append(currentMappingTokens, bd.Token())
-				}
-				// TODO(elee1766): we don't enter another mapping here because it's annoying to extract the { and } properly.
-				// maybe someone can do that in the future
-			} else {
-				// attempt to enter a block and add tokens to the currentMappingTokens
-				for mappingNesting := bd.Nesting(); bd.NextBlock(mappingNesting); {
-					currentMappingTokens = append(currentMappingTokens, bd.Token())
-				}
 			}
+
 			blockMapping[currentMappingKey] = currentMappingTokens
 		}
 	}
@@ -538,29 +533,24 @@ func (p *parser) doImport(nesting int) error {
 		}
 		// if it is {block}, we substitute with all tokens in the block
 		// if it is {blocks.*}, we substitute with the tokens in the mapping for the *
-		var skip bool
 		var tokensToAdd []Token
+		foundBlockDirective := false
 		switch {
 		case token.Text == "{block}":
+			foundBlockDirective = true
 			tokensToAdd = blockTokens
 		case strings.HasPrefix(token.Text, "{blocks.") && strings.HasSuffix(token.Text, "}"):
+			foundBlockDirective = true
 			// {blocks.foo.bar} will be extracted to key `foo.bar`
 			blockKey := strings.TrimPrefix(strings.TrimSuffix(token.Text, "}"), "{blocks.")
 			val, ok := blockMapping[blockKey]
 			if ok {
 				tokensToAdd = val
 			}
-		default:
-			skip = true
 		}
-		if !skip {
-			if len(tokensToAdd) == 0 {
-				// if there is no content in the snippet block, don't do any replacement
-				// this allows snippets which contained {block}/{block.*} before this change to continue functioning as normal
-				tokensCopy = append(tokensCopy, token)
-			} else {
-				tokensCopy = append(tokensCopy, tokensToAdd...)
-			}
+
+		if foundBlockDirective {
+			tokensCopy = append(tokensCopy, tokensToAdd...)
 			continue
 		}
 

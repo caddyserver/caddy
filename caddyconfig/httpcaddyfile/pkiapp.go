@@ -15,6 +15,8 @@
 package httpcaddyfile
 
 import (
+	"slices"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -178,6 +180,15 @@ func (st ServerType) buildPKIApp(
 	if _, ok := options["skip_install_trust"]; ok {
 		skipInstallTrust = true
 	}
+
+	// check if auto_https is off - in that case we should not create
+	// any PKI infrastructure even with skip_install_trust directive
+	autoHTTPS := []string{}
+	if ah, ok := options["auto_https"].([]string); ok {
+		autoHTTPS = ah
+	}
+	autoHTTPSOff := slices.Contains(autoHTTPS, "off")
+
 	falseBool := false
 
 	// Load the PKI app configured via global options
@@ -218,7 +229,8 @@ func (st ServerType) buildPKIApp(
 	// if there was no CAs defined in any of the servers,
 	// and we were requested to not install trust, then
 	// add one for the default/local CA to do so
-	if len(pkiApp.CAs) == 0 && skipInstallTrust {
+	// only if auto_https is not completely disabled
+	if len(pkiApp.CAs) == 0 && skipInstallTrust && !autoHTTPSOff {
 		ca := new(caddypki.CA)
 		ca.ID = caddypki.DefaultCAID
 		ca.InstallTrust = &falseBool

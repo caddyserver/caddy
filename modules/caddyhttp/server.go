@@ -76,8 +76,24 @@ type Server struct {
 
 	// KeepAliveInterval is the interval at which TCP keepalive packets
 	// are sent to keep the connection alive at the TCP layer when no other
-	// data is being transmitted. The default is 15s.
+	// data is being transmitted.
+	// If zero, the default is 15s.
+	// If negative, keepalive packets are not sent and other keepalive parameters
+	// are ignored.
 	KeepAliveInterval caddy.Duration `json:"keepalive_interval,omitempty"`
+
+	// KeepAliveIdle is the time that the connection must be idle before
+	// the first TCP keep-alive probe is sent when no other data is being
+	// transmitted.
+	// If zero, the default is 15s.
+	// If negative, underlying socket value is unchanged.
+	KeepAliveIdle caddy.Duration `json:"keepalive_idle,omitempty"`
+
+	// KeepAliveCount is the maximum number of TCP keep-alive probes that
+	// should be sent before dropping a connection.
+	// If zero, the default is 9.
+	// If negative, underlying socket value is unchanged.
+	KeepAliveCount int `json:"keepalive_count,omitempty"`
 
 	// MaxHeaderBytes is the maximum size to parse from a client's
 	// HTTP request headers.
@@ -186,6 +202,13 @@ type Server struct {
 	// This option is disabled by default.
 	TrustedProxiesStrict int `json:"trusted_proxies_strict,omitempty"`
 
+	// If greater than zero, enables trusting socket connections
+	// (e.g. Unix domain sockets) as coming from a trusted
+	// proxy.
+	//
+	// This option is disabled by default.
+	TrustedProxiesUnix bool `json:"trusted_proxies_unix,omitempty"`
+
 	// Enables access logging and configures how access logs are handled
 	// in this server. To minimally enable access logs, simply set this
 	// to a non-null, empty struct.
@@ -235,7 +258,8 @@ type Server struct {
 	primaryHandlerChain Handler
 	errorHandlerChain   Handler
 	listenerWrappers    []caddy.ListenerWrapper
-	listeners           []net.Listener
+	listeners           []net.Listener       // stdlib http.Server will close these
+	quicListeners       []http3.QUICListener // http3 now leave the quic.Listener management to us
 
 	tlsApp       *caddytls.TLS
 	events       *caddyevents.App
@@ -245,10 +269,9 @@ type Server struct {
 	traceLogger  *zap.Logger
 	ctx          caddy.Context
 
-	server      *http.Server
-	h3server    *http3.Server
-	h2listeners []*http2Listener
-	addresses   []caddy.NetworkAddress
+	server    *http.Server
+	h3server  *http3.Server
+	addresses []caddy.NetworkAddress
 
 	trustedProxies IPRangeSource
 
@@ -265,14 +288,9 @@ type Server struct {
 // ServeHTTP is the entry point for all HTTP requests.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// If there are listener wrappers that process tls connections but don't return a *tls.Conn, this field will be nil.
-	// TODO: Can be removed if https://github.com/golang/go/pull/56110 is ever merged.
 	if r.TLS == nil {
-		// not all requests have a conn (like virtual requests) - see #5698
-		if conn, ok := r.Context().Value(ConnCtxKey).(net.Conn); ok {
-			if csc, ok := conn.(connectionStateConn); ok {
-				r.TLS = new(tls.ConnectionState)
-				*r.TLS = csc.ConnectionState()
-			}
+		if tlsConnStateFunc, ok := r.Context().Value(tlsConnectionStateFuncCtxKey).(func() *tls.ConnectionState); ok {
+			r.TLS = tlsConnStateFunc()
 		}
 	}
 
@@ -626,6 +644,8 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 		}
 	}
 
+	s.quicListeners = append(s.quicListeners, h3ln)
+
 	//nolint:errcheck
 	go s.h3server.ServeListener(h3ln)
 
@@ -923,6 +943,17 @@ func determineTrustedProxy(r *http.Request, s *Server) (bool, string) {
 		return false, ""
 	}
 
+	if s.TrustedProxiesUnix && r.RemoteAddr == "@" {
+		if s.TrustedProxiesStrict > 0 {
+			ipRanges := []netip.Prefix{}
+			if s.trustedProxies != nil {
+				ipRanges = s.trustedProxies.GetIPRanges(r)
+			}
+			return true, strictUntrustedClientIp(r, s.ClientIPHeaders, ipRanges, "@")
+		} else {
+			return true, trustedRealClientIP(r, s.ClientIPHeaders, "@")
+		}
+	}
 	// Parse the remote IP, ignore the error as non-fatal,
 	// but the remote IP is required to continue, so we
 	// just return early. This should probably never happen
@@ -982,10 +1013,10 @@ func trustedRealClientIP(r *http.Request, headers []string, clientIP string) str
 
 	// Since there can be many header values, we need to
 	// join them together before splitting to get the full list
-	allValues := strings.Split(strings.Join(values, ","), ",")
+	allValues := strings.SplitSeq(strings.Join(values, ","), ",")
 
 	// Get first valid left-most IP address
-	for _, part := range allValues {
+	for part := range allValues {
 		// Some proxies may retain the port number, so split if possible
 		host, _, err := net.SplitHostPort(part)
 		if err != nil {
@@ -1079,8 +1110,13 @@ const (
 	// originally came into the server's entry handler
 	OriginalRequestCtxKey caddy.CtxKey = "original_request"
 
-	// For referencing underlying net.Conn
+	// DEPRECATED: not used anymore.
+	// To refer to the underlying connection, implement a middleware plugin
+	// that RegisterConnContext during provisioning.
 	ConnCtxKey caddy.CtxKey = "conn"
+
+	// used to get the tls connection state in the context, if available
+	tlsConnectionStateFuncCtxKey caddy.CtxKey = "tls_connection_state_func"
 
 	// For tracking whether the client is a trusted proxy
 	TrustedProxyVarKey string = "trusted_proxy"
