@@ -283,3 +283,6 @@ const proxyProtocolInfoVarKey = "reverse_proxy.proxy_protocol_info"
 type ProxyProtocolInfo struct {
 	AddrPort netip.AddrPort
 }
+
+// proxyVarKey is the key used that indicates the proxy server used for a request.
+const proxyVarKey = "reverse_proxy.proxy"

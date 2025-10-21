@@ -1175,7 +1175,7 @@ func (lb LoadBalancing) tryAgain(ctx caddy.Context, start time.Time, retries int
 
 // directRequest modifies only req.URL so that it points to the upstream
 // in the given DialInfo. It must modify ONLY the request URL.
-func (Handler) directRequest(req *http.Request, di DialInfo) {
+func (h *Handler) directRequest(req *http.Request, di DialInfo) {
 	// we need a host, so set the upstream's host address
 	reqHost := di.Address
 
@@ -1184,6 +1184,13 @@ func (Handler) directRequest(req *http.Request, di DialInfo) {
 	if (req.URL.Scheme == "http" && di.Port == "80") ||
 		(req.URL.Scheme == "https" && di.Port == "443") {
 		reqHost = di.Host
+	}
+
+	// add client address to the host to let transport differentiate requests from different clients
+	if ht, ok := h.Transport.(*HTTPTransport); ok && ht.ProxyProtocol != "" {
+		if proxyProtocolInfo, ok := caddyhttp.GetVar(req.Context(), proxyProtocolInfoVarKey).(ProxyProtocolInfo); ok {
+			reqHost = proxyProtocolInfo.AddrPort.String() + "->" + reqHost
+		}
 	}
 
 	req.URL.Host = reqHost
