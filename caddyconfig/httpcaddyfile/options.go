@@ -472,8 +472,20 @@ func unmarshalCaddyfileMetricsOptions(d *caddyfile.Dispenser) (any, error) {
 		switch d.Val() {
 		case "per_host":
 			metrics.PerHost = true
+		case "labels":
+			if metrics.Labels == nil {
+				metrics.Labels = make(map[string]string)
+			}
+			for nesting := d.Nesting(); d.NextBlock(nesting); {
+				key := d.Val()
+				if !d.NextArg() {
+					return nil, d.ArgErr()
+				}
+				value := d.Val()
+				metrics.Labels[key] = value
+			}
 		default:
-			return nil, d.Errf("unrecognized servers option '%s'", d.Val())
+			return nil, d.Errf("unrecognized metrics option '%s'", d.Val())
 		}
 	}
 	return metrics, nil

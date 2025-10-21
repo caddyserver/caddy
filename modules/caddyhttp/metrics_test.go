@@ -379,6 +379,82 @@ func TestMetricsInstrumentedHandlerPerHost(t *testing.T) {
 	}
 }
 
+func TestMetricsInstrumentedHandlerCustomLabels(t *testing.T) {
+	ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+	metrics := &Metrics{
+		Labels: map[string]string{
+			"proto":     "{http.request.proto}",
+			"client_ip": "IP: {http.request.remote}",
+			"host":      "Host is {http.request.host}",
+			"version":   "v1.0.0",
+		},
+		init:        sync.Once{},
+		httpMetrics: &httpMetrics{},
+	}
+
+	h := HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+		w.Write([]byte("hello world!"))
+		return nil
+	})
+
+	mh := middlewareHandlerFunc(func(w http.ResponseWriter, r *http.Request, h Handler) error {
+		return h.ServeHTTP(w, r)
+	})
+
+	ih := newMetricsInstrumentedHandler(ctx, "custom_labels", mh, metrics)
+
+	r := httptest.NewRequest("GET", "/", nil)
+	r.Host = "example.com"
+	r.RemoteAddr = "192.168.1.1:12345"
+
+	repl := caddy.NewReplacer()
+	reqCtx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl)
+	r = r.WithContext(reqCtx)
+
+	w := httptest.NewRecorder()
+
+	addHTTPVarsToReplacer(repl, r, w)
+
+	if err := ih.ServeHTTP(w, r, h); err != nil {
+		t.Errorf("Received unexpected error: %v", err)
+	}
+
+	expected := `
+	# HELP caddy_http_request_size_bytes Total size of the request. Includes body
+	# TYPE caddy_http_request_size_bytes histogram
+	caddy_http_request_size_bytes_bucket{client_ip="IP: 192.168.1.1:12345",code="200",handler="custom_labels",host="Host is example.com",method="GET",proto="HTTP/1.1",server="UNKNOWN",version="v1.0.0",le="256"} 1
+	caddy_http_request_size_bytes_bucket{client_ip="IP: 192.168.1.1:12345",code="200",handler="custom_labels",host="Host is example.com",method="GET",proto="HTTP/1.1",server="UNKNOWN",version="v1.0.0",le="1024"} 1
+	caddy_http_request_size_bytes_bucket{client_ip="IP: 192.168.1.1:12345",code="200",handler="custom_labels",host="Host is example.com",method="GET",proto="HTTP/1.1",server="UNKNOWN",version="v1.0.0",le="4096"} 1
+	caddy_http_request_size_bytes_bucket{client_ip="IP: 192.168.1.1:12345",code="200",handler="custom_labels",host="Host is example.com",method="GET",proto="HTTP/1.1",server="UNKNOWN",version="v1.0.0",le="16384"} 1
+	caddy_http_request_size_bytes_bucket{client_ip="IP: 192.168.1.1:12345",code="200",handler="custom_labels",host="Host is example.com",method="GET",proto="HTTP/1.1",server="UNKNOWN",version="v1.0.0",le="65536"} 1
+	caddy_http_request_size_bytes_bucket{client_ip="IP: 192.168.1.1:12345",code="200",handler="custom_labels",host="Host is example.com",method="GET",proto="HTTP/1.1",server="UNKNOWN",version="v1.0.0",le="262144"} 1
+	caddy_http_request_size_bytes_bucket{client_ip="IP: 192.168.1.1:12345",code="200",handler="custom_labels",host="Host is example.com",method="GET",proto="HTTP/1.1",server="UNKNOWN",version="v1.0.0",le="1.048576e+06"} 1
+	caddy_http_request_size_bytes_bucket{client_ip="IP: 192.168.1.1:12345",code="200",handler="custom_labels",host="Host is example.com",method="GET",proto="HTTP/1.1",server="UNKNOWN",version="v1.0.0",le="4.194304e+06"} 1
+	caddy_http_request_size_bytes_bucket{client_ip="IP: 192.168.1.1:12345",code="200",handler="custom_labels",host="Host is example.com",method="GET",proto="HTTP/1.1",server="UNKNOWN",version="v1.0.0",le="+Inf"} 1
+	caddy_http_request_size_bytes_sum{client_ip="IP: 192.168.1.1:12345",code="200",handler="custom_labels",host="Host is example.com",method="GET",proto="HTTP/1.1",server="UNKNOWN",version="v1.0.0"} 23
+	caddy_http_request_size_bytes_count{client_ip="IP: 192.168.1.1:12345",code="200",handler="custom_labels",host="Host is example.com",method="GET",proto="HTTP/1.1",server="UNKNOWN",version="v1.0.0"} 1
+	# HELP caddy_http_response_size_bytes Size of the returned response.
+    # TYPE caddy_http_response_size_bytes histogram
+    caddy_http_response_size_bytes_bucket{client_ip="IP: 192.168.1.1:12345",code="200",handler="custom_labels",host="Host is example.com",method="GET",proto="HTTP/1.1",server="UNKNOWN",version="v1.0.0",le="256"} 1
+    caddy_http_response_size_bytes_bucket{client_ip="IP: 192.168.1.1:12345",code="200",handler="custom_labels",host="Host is example.com",method="GET",proto="HTTP/1.1",server="UNKNOWN",version="v1.0.0",le="1024"} 1
+    caddy_http_response_size_bytes_bucket{client_ip="IP: 192.168.1.1:12345",code="200",handler="custom_labels",host="Host is example.com",method="GET",proto="HTTP/1.1",server="UNKNOWN",version="v1.0.0",le="4096"} 1
+    caddy_http_response_size_bytes_bucket{client_ip="IP: 192.168.1.1:12345",code="200",handler="custom_labels",host="Host is example.com",method="GET",proto="HTTP/1.1",server="UNKNOWN",version="v1.0.0",le="16384"} 1
+    caddy_http_response_size_bytes_bucket{client_ip="IP: 192.168.1.1:12345",code="200",handler="custom_labels",host="Host is example.com",method="GET",proto="HTTP/1.1",server="UNKNOWN",version="v1.0.0",le="65536"} 1
+    caddy_http_response_size_bytes_bucket{client_ip="IP: 192.168.1.1:12345",code="200",handler="custom_labels",host="Host is example.com",method="GET",proto="HTTP/1.1",server="UNKNOWN",version="v1.0.0",le="262144"} 1
+    caddy_http_response_size_bytes_bucket{client_ip="IP: 192.168.1.1:12345",code="200",handler="custom_labels",host="Host is example.com",method="GET",proto="HTTP/1.1",server="UNKNOWN",version="v1.0.0",le="1.048576e+06"} 1
+    caddy_http_response_size_bytes_bucket{client_ip="IP: 192.168.1.1:12345",code="200",handler="custom_labels",host="Host is example.com",method="GET",proto="HTTP/1.1",server="UNKNOWN",version="v1.0.0",le="4.194304e+06"} 1
+    caddy_http_response_size_bytes_bucket{client_ip="IP: 192.168.1.1:12345",code="200",handler="custom_labels",host="Host is example.com",method="GET",proto="HTTP/1.1",server="UNKNOWN",version="v1.0.0",le="+Inf"} 1
+    caddy_http_response_size_bytes_sum{client_ip="IP: 192.168.1.1:12345",code="200",handler="custom_labels",host="Host is example.com",method="GET",proto="HTTP/1.1",server="UNKNOWN",version="v1.0.0"} 12
+    caddy_http_response_size_bytes_count{client_ip="IP: 192.168.1.1:12345",code="200",handler="custom_labels",host="Host is example.com",method="GET",proto="HTTP/1.1",server="UNKNOWN",version="v1.0.0"} 1
+	`
+	if err := testutil.GatherAndCompare(ctx.GetMetricsRegistry(), strings.NewReader(expected),
+		"caddy_http_request_size_bytes",
+		"caddy_http_response_size_bytes",
+	); err != nil {
+		t.Errorf("received unexpected error: %s", err)
+	}
+}
+
 type middlewareHandlerFunc func(http.ResponseWriter, *http.Request, Handler) error
 
 func (f middlewareHandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request, h Handler) error {
