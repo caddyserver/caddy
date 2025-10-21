@@ -665,7 +665,7 @@ func celMatcherJSONMacroExpander(funcName string) parser.MacroExpander {
 // map literals containing heterogeneous values, in this case string and list
 // of string.
 func CELValueToMapStrList(data ref.Val) (map[string][]string, error) {
-	mapStrType := reflect.TypeOf(map[string]any{})
+	mapStrType := reflect.TypeFor[map[string]any]()
 	mapStrRaw, err := data.ConvertToNative(mapStrType)
 	if err != nil {
 		return nil, err
