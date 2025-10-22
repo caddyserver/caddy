@@ -40,12 +40,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/caddyserver/caddy/v2/caddyconfig/warning"
 	"github.com/caddyserver/certmagic"
 	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+
+	"github.com/caddyserver/caddy/v2/caddyconfig/warning"
 )
 
 // testCertMagicStorageOverride is a package-level test hook. Tests may set
