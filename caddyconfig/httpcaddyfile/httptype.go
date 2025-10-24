@@ -391,11 +391,11 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 		// As a special case, fold multiple "servers" options together
 		// in an array instead of overwriting a possible existing value
 		if opt == "servers" {
-			existingOpts, ok := options[opt].([]serverOptions)
+			existingOpts, ok := options[opt].([]ServerOptions)
 			if !ok {
-				existingOpts = []serverOptions{}
+				existingOpts = []ServerOptions{}
 			}
-			serverOpts, ok := val.(serverOptions)
+			serverOpts, ok := val.(ServerOptions)
 			if !ok {
 				return nil, fmt.Errorf("unexpected type from 'servers' global options: %T", val)
 			}
@@ -435,7 +435,7 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 	}
 
 	// If we got "servers" options, we'll sort them by their listener address
-	if serverOpts, ok := options["servers"].([]serverOptions); ok {
+	if serverOpts, ok := options["servers"].([]ServerOptions); ok {
 		sort.Slice(serverOpts, func(i, j int) bool {
 			return len(serverOpts[i].ListenerAddress) > len(serverOpts[j].ListenerAddress)
 		})

@@ -197,6 +197,13 @@ func RegisterGlobalOption(opt string, setupFunc UnmarshalGlobalFunc) {
 	registeredGlobalOptions[opt] = setupFunc
 }
 
+// GetGlobalOption retrieves a registered global option by name.
+// Returns the unmarshal function and true if found, nil and false otherwise.
+func GetGlobalOption(opt string) (UnmarshalGlobalFunc, bool) {
+	fn, ok := registeredGlobalOptions[opt]
+	return fn, ok
+}
+
 // Helper is a type which helps setup a value from
 // Caddyfile tokens.
 type Helper struct {

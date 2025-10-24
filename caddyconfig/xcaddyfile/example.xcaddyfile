@@ -1,0 +1,32 @@
+# Example XCaddyfile demonstrating multiple block types in a single file
+
+# Global configuration block
+[global] {
+	admin unix//run/caddy/admin.socket
+	debug
+}
+
+# HTTP server blocks
+[http] https://example.com {
+	root * /var/www/site
+	file_server
+}
+
+[http] https://api.example.com {
+	reverse_proxy localhost:8080
+}
+
+# Future extensions could include:
+# [layer4] 0.0.0.0:22 {
+#     @ssh ssh
+#     route @ssh {
+#         proxy 127.0.0.1:1234
+#     }
+# }
+
+# [pggat] 0.0.0.0:5432 {
+#     ssl self_signed
+#     pool default {
+#         address localhost:15432
+#     }
+# }
