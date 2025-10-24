@@ -388,46 +388,13 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 			return nil, fmt.Errorf("parsing caddyfile tokens for '%s': %v", opt, err)
 		}
 
-		// As a special case, fold multiple "servers" options together
-		// in an array instead of overwriting a possible existing value
-		if opt == "servers" {
-			existingOpts, ok := options[opt].([]ServerOptions)
-			if !ok {
-				existingOpts = []ServerOptions{}
+		// Some options need to be folded/appended rather than replaced
+		if folder := GetGlobalOptionFolder(opt); folder != nil {
+			folded, err := folder.Fold(options[opt], val)
+			if err != nil {
+				return nil, err
 			}
-			serverOpts, ok := val.(ServerOptions)
-			if !ok {
-				return nil, fmt.Errorf("unexpected type from 'servers' global options: %T", val)
-			}
-			options[opt] = append(existingOpts, serverOpts)
-			continue
-		}
-		// Additionally, fold multiple "log" options together into an
-		// array so that multiple loggers can be configured.
-		if opt == "log" {
-			existingOpts, ok := options[opt].([]ConfigValue)
-			if !ok {
-				existingOpts = []ConfigValue{}
-			}
-			logOpts, ok := val.([]ConfigValue)
-			if !ok {
-				return nil, fmt.Errorf("unexpected type from 'log' global options: %T", val)
-			}
-			options[opt] = append(existingOpts, logOpts...)
-			continue
-		}
-		// Also fold multiple "default_bind" options together into an
-		// array so that server blocks can have multiple binds by default.
-		if opt == "default_bind" {
-			existingOpts, ok := options[opt].([]ConfigValue)
-			if !ok {
-				existingOpts = []ConfigValue{}
-			}
-			defaultBindOpts, ok := val.([]ConfigValue)
-			if !ok {
-				return nil, fmt.Errorf("unexpected type from 'default_bind' global options: %T", val)
-			}
-			options[opt] = append(existingOpts, defaultBindOpts...)
+			options[opt] = folded
 			continue
 		}
 

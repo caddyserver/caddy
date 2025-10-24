@@ -63,45 +63,13 @@ func Setup(cfg *caddy.Config, blocks []caddyfile.ServerBlock, options map[string
 				return warnings, fmt.Errorf("parsing caddyfile tokens for '%s': %v", opt, err)
 			}
 
-			// Special case: fold multiple "servers" options together
-			if opt == "servers" {
-				existingOpts, ok := options[opt].([]httpcaddyfile.ServerOptions)
-				if !ok {
-					existingOpts = []httpcaddyfile.ServerOptions{}
+			// Some options need to be folded/appended rather than replaced
+			if folder := httpcaddyfile.GetGlobalOptionFolder(opt); folder != nil {
+				folded, err := folder.Fold(options[opt], val)
+				if err != nil {
+					return warnings, err
 				}
-				serverOpts, ok := val.(httpcaddyfile.ServerOptions)
-				if !ok {
-					return warnings, fmt.Errorf("unexpected type from 'servers' global options: %T", val)
-				}
-				options[opt] = append(existingOpts, serverOpts)
-				continue
-			}
-
-			// Special case: fold multiple "log" options together
-			if opt == "log" {
-				existingOpts, ok := options[opt].([]httpcaddyfile.ConfigValue)
-				if !ok {
-					existingOpts = []httpcaddyfile.ConfigValue{}
-				}
-				logOpts, ok := val.([]httpcaddyfile.ConfigValue)
-				if !ok {
-					return warnings, fmt.Errorf("unexpected type from 'log' global options: %T", val)
-				}
-				options[opt] = append(existingOpts, logOpts...)
-				continue
-			}
-
-			// Special case: fold multiple "default_bind" options together
-			if opt == "default_bind" {
-				existingOpts, ok := options[opt].([]httpcaddyfile.ConfigValue)
-				if !ok {
-					existingOpts = []httpcaddyfile.ConfigValue{}
-				}
-				defaultBindOpts, ok := val.([]httpcaddyfile.ConfigValue)
-				if !ok {
-					return warnings, fmt.Errorf("unexpected type from 'default_bind' global options: %T", val)
-				}
-				options[opt] = append(existingOpts, defaultBindOpts...)
+				options[opt] = folded
 				continue
 			}
 
