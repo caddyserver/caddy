@@ -20,9 +20,9 @@ import (
 
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 
-	// Import to register global and http block types
-	_ "github.com/caddyserver/caddy/v2/caddyconfig/blocktypes/globalblock"
-	_ "github.com/caddyserver/caddy/v2/caddyconfig/blocktypes/httpblock"
+	// Import to register global and http.server block types
+	_ "github.com/caddyserver/caddy/v2/caddyconfig/xcaddyfile/blocktypes/globalblock"
+	_ "github.com/caddyserver/caddy/v2/caddyconfig/xcaddyfile/blocktypes/httpserverblock"
 )
 
 func TestXCaddyfileBasic(t *testing.T) {
@@ -31,7 +31,7 @@ func TestXCaddyfileBasic(t *testing.T) {
 	admin off
 }
 
-[http] example.com {
+[http.server] example.com {
 	respond "Hello World"
 }
 `
@@ -48,7 +48,8 @@ func TestXCaddyfileBasic(t *testing.T) {
 	}
 }
 
-func TestXCaddyfileRequiresBlockType(t *testing.T) {
+func TestXCaddyfileBackwardsCompatibility(t *testing.T) {
+	// Test that standard Caddyfile syntax works (implicit http.server)
 	input := `
 example.com {
 	respond "Hello World"
@@ -57,13 +58,38 @@ example.com {
 
 	adapter := caddyfile.Adapter{ServerType: XCaddyfileType{}}
 
-	_, _, err := adapter.Adapt([]byte(input), nil)
-	if err == nil {
-		t.Fatal("Expected error for missing block type, got nil")
+	_, warnings, err := adapter.Adapt([]byte(input), nil)
+	if err != nil {
+		t.Fatalf("Adapt() should work with standard Caddyfile syntax, error = %v", err)
 	}
 
-	if !strings.Contains(err.Error(), "block type declaration") {
-		t.Errorf("Error should mention block type declaration requirement, got: %v", err)
+	if len(warnings) > 0 {
+		t.Logf("Warnings: %v", warnings)
+	}
+}
+
+func TestXCaddyfileBackwardsCompatibilityGlobalBlock(t *testing.T) {
+	// Test that anonymous first block is treated as global
+	input := `
+{
+	admin off
+	grace_period 30s
+}
+
+example.com {
+	respond "Hello World"
+}
+`
+
+	adapter := caddyfile.Adapter{ServerType: XCaddyfileType{}}
+
+	_, warnings, err := adapter.Adapt([]byte(input), nil)
+	if err != nil {
+		t.Fatalf("Adapt() should work with standard Caddyfile global block, error = %v", err)
+	}
+
+	if len(warnings) > 0 {
+		t.Logf("Warnings: %v", warnings)
 	}
 }
 
@@ -90,13 +116,14 @@ func TestXCaddyfileMultipleBlockTypes(t *testing.T) {
 	input := `
 [global] {
 	admin off
+	grace_period 30s
 }
 
-[http] example.com {
+[http.server] example.com {
 	respond "Hello from HTTP"
 }
 
-[http] another.com {
+[http.server] another.com {
 	respond "Hello from another"
 }
 `

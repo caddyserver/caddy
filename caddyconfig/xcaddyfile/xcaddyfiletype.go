@@ -20,10 +20,11 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
-	"github.com/caddyserver/caddy/v2/caddyconfig/blocktypes"
-	_ "github.com/caddyserver/caddy/v2/caddyconfig/blocktypes/globalblock"
-	_ "github.com/caddyserver/caddy/v2/caddyconfig/blocktypes/httpblock"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/caddyconfig/xcaddyfile/blocktypes"
+	_ "github.com/caddyserver/caddy/v2/caddyconfig/xcaddyfile/blocktypes/globalblock"
+	_ "github.com/caddyserver/caddy/v2/caddyconfig/xcaddyfile/blocktypes/httpserverblock"
+	"github.com/caddyserver/caddy/v2/caddyconfig/xcaddyfile/configbuilder"
 )
 
 func init() {
@@ -31,85 +32,137 @@ func init() {
 }
 
 // XCaddyfileType is a Caddy config adapter that processes extended Caddyfiles
-// with explicit block type declarations using [type] syntax. Unlike the standard
-// Caddyfile adapter, xcaddyfile requires all blocks to specify their type explicitly.
+// with explicit block type declarations using [type] syntax. For backwards
+// compatibility with standard Caddyfile, it also supports implicit types:
+// - First block with no keys is treated as [global]
+// - Blocks without [type] are treated as [http.server]
 type XCaddyfileType struct{}
 
+// extractBlockType extracts the block type from a server block if it has
+// explicit [type] syntax. Returns empty string if no explicit type is found.
+func extractBlockType(sblock *caddyfile.ServerBlock) (blockType string, err error) {
+	if len(sblock.Keys) == 0 {
+		return "", nil
+	}
+
+	firstKey := sblock.Keys[0].Text
+
+	// Check if this uses explicit [type] syntax
+	if strings.HasPrefix(firstKey, "[") && strings.HasSuffix(firstKey, "]") {
+		// Extract the block type name
+		blockType = strings.TrimSuffix(strings.TrimPrefix(firstKey, "["), "]")
+		if blockType == "" {
+			return "", fmt.Errorf("%s:%d: empty block type declaration []",
+				sblock.Keys[0].File, sblock.Keys[0].Line)
+		}
+
+		// Remove the [type] token from the keys
+		sblock.Keys = sblock.Keys[1:]
+		return blockType, nil
+	}
+
+	// No explicit type
+	return "", nil
+}
+
 // Setup processes the server blocks from an xcaddyfile and builds a complete Caddy configuration.
-// It expects all server blocks to have a block type prefix like [http], [global], [layer4], etc.
+// It expects all server blocks to have a block type prefix like [http], [caddy], [layer4], etc.
 func (XCaddyfileType) Setup(
 	inputServerBlocks []caddyfile.ServerBlock,
 	options map[string]any,
 ) (*caddy.Config, []caddyconfig.Warning, error) {
 	var warnings []caddyconfig.Warning
 
-	// Group server blocks by their block type
-	blocksByType := make(map[string][]caddyfile.ServerBlock)
+	// Track block types in order of appearance
+	type blockGroup struct {
+		blockType string
+		blocks    []caddyfile.ServerBlock
+	}
+	var orderedBlocks []blockGroup
+	seenTypes := make(map[string]int) // maps block type to index in orderedBlocks
 
-	for _, sblock := range inputServerBlocks {
-		// Every block must have at least one key, and the first key must be the block type
-		if len(sblock.Keys) == 0 {
-			return nil, warnings, fmt.Errorf("xcaddyfile requires all blocks to have a [type] declaration")
+	for i, sblock := range inputServerBlocks {
+		// Extract explicit block type if present
+		blockType, err := extractBlockType(&sblock)
+		if err != nil {
+			return nil, warnings, err
 		}
 
-		// Extract the block type from the first key
-		firstKey := sblock.Keys[0].Text
-		if !strings.HasPrefix(firstKey, "[") || !strings.HasSuffix(firstKey, "]") {
-			return nil, warnings, fmt.Errorf("%s:%d: xcaddyfile requires block type declaration like [http] or [global], got: %s",
-				sblock.Keys[0].File, sblock.Keys[0].Line, firstKey)
-		}
-
-		// Extract the block type name
-		blockType := strings.TrimSuffix(strings.TrimPrefix(firstKey, "["), "]")
+		// Apply backwards compatibility defaults
 		if blockType == "" {
-			return nil, warnings, fmt.Errorf("%s:%d: empty block type declaration []",
-				sblock.Keys[0].File, sblock.Keys[0].Line)
+			// First block with no keys is treated as global config
+			if i == 0 && len(sblock.Keys) == 0 {
+				blockType = "global"
+			} else {
+				// Default to http.server for backwards compatibility with Caddyfile
+				blockType = "http.server"
+			}
 		}
 
-		// Remove the [type] token from the keys
-		sblock.Keys = sblock.Keys[1:]
-
-		// Add to the group for this block type
-		blocksByType[blockType] = append(blocksByType[blockType], sblock)
+		// Add to the appropriate group, preserving order
+		if idx, seen := seenTypes[blockType]; seen {
+			// Append to existing group
+			orderedBlocks[idx].blocks = append(orderedBlocks[idx].blocks, sblock)
+		} else {
+			// Create new group
+			seenTypes[blockType] = len(orderedBlocks)
+			orderedBlocks = append(orderedBlocks, blockGroup{
+				blockType: blockType,
+				blocks:    []caddyfile.ServerBlock{sblock},
+			})
+		}
 	}
 
-	// Create the config that will be mutated by each block type handler
-	cfg := &caddy.Config{
-		AppsRaw: make(caddy.ModuleMap),
-	}
+	// Create the config builder
+	builder := configbuilder.New()
 
-	// Process each block type group
-	// Process [global] blocks first if they exist, since they set up global options
-	if globalBlocks, hasGlobal := blocksByType["global"]; hasGlobal {
-		handler, ok := blocktypes.GetBlockType("global")
+	// Process block types in the order they appear, but ensure parent blocks
+	// are processed before their children
+	processed := make(map[string]bool)
+
+	var processBlock func(blockType string) error
+	processBlock = func(blockType string) error {
+		if processed[blockType] {
+			return nil
+		}
+
+		// Get block type info to check for parent
+		info, ok := blocktypes.GetBlockTypeInfo(blockType)
 		if !ok {
-			return nil, warnings, fmt.Errorf("block type 'global' is not registered")
-		}
-
-		blockWarnings, err := handler(cfg, globalBlocks, options)
-		warnings = append(warnings, blockWarnings...)
-		if err != nil {
-			return nil, warnings, fmt.Errorf("processing [global] blocks: %w", err)
-		}
-
-		delete(blocksByType, "global") // Remove so we don't process it again
-	}
-
-	// Process all other block types
-	for blockType, blocks := range blocksByType {
-		handler, ok := blocktypes.GetBlockType(blockType)
-		if !ok {
-			// Provide helpful error message with available block types
 			available := blocktypes.RegisteredBlockTypes()
-			return nil, warnings, fmt.Errorf("block type '%s' is not registered; available types: %v", blockType, available)
+			return fmt.Errorf("block type '%s' is not registered; available types: %v", blockType, available)
 		}
 
-		blockWarnings, err := handler(cfg, blocks, options)
-		warnings = append(warnings, blockWarnings...)
-		if err != nil {
-			return nil, warnings, fmt.Errorf("processing [%s] blocks: %w", blockType, err)
+		// Process parent first if it exists
+		if info.Parent != "" {
+			if err := processBlock(info.Parent); err != nil {
+				return err
+			}
+		}
+
+		// Find and process this block type's blocks
+		for _, group := range orderedBlocks {
+			if group.blockType == blockType {
+				blockWarnings, err := info.SetupFunc(builder, group.blocks, options)
+				warnings = append(warnings, blockWarnings...)
+				if err != nil {
+					return fmt.Errorf("processing [%s] blocks: %w", blockType, err)
+				}
+				processed[blockType] = true
+				break
+			}
+		}
+
+		return nil
+	}
+
+	// Process each block type
+	for _, group := range orderedBlocks {
+		if err := processBlock(group.blockType); err != nil {
+			return nil, warnings, err
 		}
 	}
 
-	return cfg, warnings, nil
+	// Config() automatically finalizes structured apps
+	return builder.Config(), warnings, nil
 }

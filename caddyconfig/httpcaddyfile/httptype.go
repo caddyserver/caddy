@@ -362,6 +362,167 @@ func (st ServerType) Setup(
 	return cfg, warnings, nil
 }
 
+// ServerBlockPairings represents the association between listen addresses
+// and server blocks. This is needed for building TLS and PKI apps.
+type ServerBlockPairings []sbAddrAssociation
+
+// BuildServersOnly processes server blocks and builds the HTTP app without
+// processing a global options block. This is useful for xcaddyfile which
+// handles global options separately. It returns the populated HTTP app and
+// the pairings data structure needed for building TLS/PKI apps.
+//
+// Note: This has some code duplication with Setup(), but refactoring to share
+// the code path caused issues because Setup needs additional data structures
+// (pairings) for TLS/PKI apps, and running directives twice breaks some tests.
+func BuildServersOnly(inputServerBlocks []caddyfile.ServerBlock, options map[string]any) (*caddyhttp.App, ServerBlockPairings, []caddyconfig.Warning, error) {
+	var warnings []caddyconfig.Warning
+	st := ServerType{}
+	gc := counter{new(int)}
+	state := make(map[string]any)
+
+	// load all the server blocks and associate them with a "pile" of config values
+	originalServerBlocks := make([]serverBlock, 0, len(inputServerBlocks))
+	for _, sblock := range inputServerBlocks {
+		for j, k := range sblock.Keys {
+			if j == 0 && strings.HasPrefix(k.Text, "@") {
+				return nil, nil, warnings, fmt.Errorf("%s:%d: cannot define a matcher outside of a site block: '%s'", k.File, k.Line, k.Text)
+			}
+			if _, ok := registeredDirectives[k.Text]; ok {
+				return nil, nil, warnings, fmt.Errorf("%s:%d: parsed '%s' as a site address, but it is a known directive; directives must appear in a site block", k.File, k.Line, k.Text)
+			}
+		}
+		originalServerBlocks = append(originalServerBlocks, serverBlock{
+			block: sblock,
+			pile:  make(map[string][]ConfigValue),
+		})
+	}
+
+	// this will replace both static and user-defined placeholder shorthands
+	// with actual identifiers used by Caddy
+	replacer := NewShorthandReplacer()
+
+	originalServerBlocks, err := st.extractNamedRoutes(originalServerBlocks, options, &warnings, replacer)
+	if err != nil {
+		return nil, nil, warnings, err
+	}
+
+	for _, sb := range originalServerBlocks {
+		for i := range sb.block.Segments {
+			replacer.ApplyToSegment(&sb.block.Segments[i])
+		}
+
+		if len(sb.block.Keys) == 0 {
+			return nil, nil, warnings, fmt.Errorf("server block without any key is global configuration, and if used, it must be first")
+		}
+
+		// extract matcher definitions
+		matcherDefs := make(map[string]caddy.ModuleMap)
+		for _, segment := range sb.block.Segments {
+			if dir := segment.Directive(); strings.HasPrefix(dir, matcherPrefix) {
+				d := sb.block.DispenseDirective(dir)
+				err := parseMatcherDefinitions(d, matcherDefs)
+				if err != nil {
+					return nil, nil, warnings, err
+				}
+			}
+		}
+
+		// evaluate each directive ("segment") in this block
+		for _, segment := range sb.block.Segments {
+			dir := segment.Directive()
+
+			if strings.HasPrefix(dir, matcherPrefix) {
+				// matcher definitions were pre-processed
+				continue
+			}
+
+			dirFunc, ok := registeredDirectives[dir]
+			if !ok {
+				tkn := segment[0]
+				message := "%s:%d: unrecognized directive: %s"
+				if !sb.block.HasBraces {
+					message += "\nDid you mean to define a second site? If so, you must use curly braces around each site to separate their configurations."
+				}
+				return nil, nil, warnings, fmt.Errorf(message, tkn.File, tkn.Line, dir)
+			}
+
+			h := Helper{
+				Dispenser:    caddyfile.NewDispenser(segment),
+				options:      options,
+				warnings:     &warnings,
+				matcherDefs:  matcherDefs,
+				parentBlock:  sb.block,
+				groupCounter: gc,
+				State:        state,
+			}
+
+			results, err := dirFunc(h)
+			if err != nil {
+				return nil, nil, warnings, fmt.Errorf("parsing caddyfile tokens for '%s': %v", dir, err)
+			}
+
+			dir = normalizeDirectiveName(dir)
+
+			for _, result := range results {
+				result.directive = dir
+				sb.pile[result.Class] = append(sb.pile[result.Class], result)
+			}
+
+			// specially handle named routes that were pulled out from
+			// the invoke directive, which could be nested anywhere within
+			// some subroutes in this directive; we add them to the pile
+			// for this server block
+			if state[namedRouteKey] != nil {
+				for name := range state[namedRouteKey].(map[string]struct{}) {
+					result := ConfigValue{Class: namedRouteKey, Value: name}
+					sb.pile[result.Class] = append(sb.pile[result.Class], result)
+				}
+				state[namedRouteKey] = nil
+			}
+		}
+	}
+
+	// map
+	sbmap, err := st.mapAddressToProtocolToServerBlocks(originalServerBlocks, options)
+	if err != nil {
+		return nil, nil, warnings, err
+	}
+
+	// reduce
+	pairings := st.consolidateAddrMappings(sbmap)
+
+	// each pairing of listener addresses to list of server
+	// blocks is basically a server definition
+	servers, err := st.serversFromPairings(pairings, options, &warnings, gc)
+	if err != nil {
+		return nil, nil, warnings, err
+	}
+
+	// hoist the metrics config from per-server to global
+	metrics, _ := options["metrics"].(*caddyhttp.Metrics)
+	for _, s := range servers {
+		if s.Metrics != nil {
+			metrics = cmp.Or(metrics, &caddyhttp.Metrics{})
+			metrics = &caddyhttp.Metrics{
+				PerHost: metrics.PerHost || s.Metrics.PerHost,
+			}
+			s.Metrics = nil // we don't need it anymore
+		}
+	}
+
+	// now that each server is configured, make the HTTP app
+	httpApp := &caddyhttp.App{
+		HTTPPort:      tryInt(options["http_port"], &warnings),
+		HTTPSPort:     tryInt(options["https_port"], &warnings),
+		GracePeriod:   tryDuration(options["grace_period"], &warnings),
+		ShutdownDelay: tryDuration(options["shutdown_delay"], &warnings),
+		Metrics:       metrics,
+		Servers:       servers,
+	}
+
+	return httpApp, pairings, warnings, nil
+}
+
 // evaluateGlobalOptionsBlock evaluates the global options block,
 // which is expected to be the first server block if it has zero
 // keys. It returns the updated list of server blocks with the

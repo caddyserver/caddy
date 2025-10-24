@@ -33,6 +33,17 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 )
 
+// BuildTLSApp builds the TLS app from server block pairings and global options.
+// This is exported for use by xcaddyfile and other adapters.
+func BuildTLSApp(
+	pairings ServerBlockPairings,
+	options map[string]any,
+	warnings []caddyconfig.Warning,
+) (*caddytls.TLS, []caddyconfig.Warning, error) {
+	st := ServerType{}
+	return st.buildTLSApp(pairings, options, warnings)
+}
+
 func (st ServerType) buildTLSApp(
 	pairings []sbAddrAssociation,
 	options map[string]any,
