@@ -204,11 +204,16 @@ func (h *HTTPTransport) Provision(ctx caddy.Context) error {
 func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, error) {
 	// Set keep-alive defaults if it wasn't otherwise configured
 	if h.KeepAlive == nil {
-		h.KeepAlive = &KeepAlive{
-			ProbeInterval:       caddy.Duration(30 * time.Second),
-			IdleConnTimeout:     caddy.Duration(2 * time.Minute),
-			MaxIdleConnsPerHost: 32, // seems about optimal, see #2805
-		}
+		h.KeepAlive = new(KeepAlive)
+	}
+	if h.KeepAlive.ProbeInterval == 0 {
+		h.KeepAlive.ProbeInterval = caddy.Duration(30 * time.Second)
+	}
+	if h.KeepAlive.IdleConnTimeout == 0 {
+		h.KeepAlive.IdleConnTimeout = caddy.Duration(2 * time.Minute)
+	}
+	if h.KeepAlive.MaxIdleConnsPerHost == 0 {
+		h.KeepAlive.MaxIdleConnsPerHost = 32 // seems about optimal, see #2805
 	}
 
 	// Set a relatively short default dial timeout.
