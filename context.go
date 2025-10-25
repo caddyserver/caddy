@@ -49,7 +49,7 @@ type Context struct {
 	ancestry        []Module
 	cleanupFuncs    []func()                // invoked at every config unload
 	exitFuncs       []func(context.Context) // invoked at config unload ONLY IF the process is exiting (EXPERIMENTAL)
-	metricsRegistry *prometheus.Registry
+	metricsRegistry *registryGatherer
 }
 
 // NewContext provides a new context derived from the given
@@ -61,7 +61,8 @@ type Context struct {
 // modules which are loaded will be properly unloaded.
 // See standard library context package's documentation.
 func NewContext(ctx Context) (Context, context.CancelFunc) {
-	newCtx := Context{moduleInstances: make(map[string][]Module), cfg: ctx.cfg, metricsRegistry: prometheus.NewPedanticRegistry()}
+	r := prometheus.NewPedanticRegistry()
+	newCtx := Context{moduleInstances: make(map[string][]Module), cfg: ctx.cfg, metricsRegistry: &registryGatherer{registry: r, gatherer: r}}
 	c, cancel := context.WithCancel(ctx.Context)
 	wrappedCancel := func() {
 		cancel()
@@ -103,7 +104,7 @@ func (ctx *Context) FileSystems() FileSystems {
 
 // Returns the active metrics registry for the context
 // EXPERIMENTAL: This API is subject to change.
-func (ctx *Context) GetMetricsRegistry() *prometheus.Registry {
+func (ctx *Context) GetMetricsRegistry() MetricsRegistererGatherer {
 	return ctx.metricsRegistry
 }
 
