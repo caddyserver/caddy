@@ -80,7 +80,7 @@ jobs:
       - name: govulncheck
         uses: golang/govulncheck-action@b625fbe08f3bccbe446d94fbf87fcc875a4f50ee # v1.0.4
         with:
-          go-version-input: '~1.25.0'
+          go-version-input: '~1.25.3'
           check-latest: true
   
   dependency-review:
