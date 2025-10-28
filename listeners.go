@@ -1049,6 +1049,8 @@ func isInterfaceName(s string) bool {
 			// Check if the last part is a valid binding mode
 			lastPart := parts[2]
 			if lastPart == string(InterfaceBindingAuto) ||
+				lastPart == string(InterfaceBindingFirstIPv4) ||
+				lastPart == string(InterfaceBindingFirstIPv6) ||
 				lastPart == string(InterfaceBindingIPv4) ||
 				lastPart == string(InterfaceBindingIPv6) ||
 				lastPart == string(InterfaceBindingAll) {
@@ -1113,6 +1115,8 @@ func tryParseInterfaceWithModeInHost(host string) (interfaceWithMode, bool) {
 
 	// Check if the last part is a valid binding mode
 	if parts[2] != string(InterfaceBindingAuto) &&
+		parts[2] != string(InterfaceBindingFirstIPv4) &&
+		parts[2] != string(InterfaceBindingFirstIPv6) &&
 		parts[2] != string(InterfaceBindingIPv4) &&
 		parts[2] != string(InterfaceBindingIPv6) &&
 		parts[2] != string(InterfaceBindingAll) {
@@ -1162,6 +1166,10 @@ func parseInterfaceAddress(network, host, port string) (NetworkAddress, error) {
 			switch modeStr {
 			case "auto":
 				mode = InterfaceBindingAuto
+			case "firstipv4":
+				mode = InterfaceBindingFirstIPv4
+			case "firstipv6":
+				mode = InterfaceBindingFirstIPv6
 			case "ipv4":
 				mode = InterfaceBindingIPv4
 			case "ipv6":
@@ -1169,7 +1177,7 @@ func parseInterfaceAddress(network, host, port string) (NetworkAddress, error) {
 			case "all":
 				mode = InterfaceBindingAll
 			default:
-				return NetworkAddress{}, fmt.Errorf("unknown interface binding mode: %s (supported: auto, ipv4, ipv6, all)", modeStr)
+				return NetworkAddress{}, fmt.Errorf("unknown interface binding mode: %s (supported: auto, firstipv4, firstipv6, ipv4, ipv6, all)", modeStr)
 			}
 		}
 	} else {

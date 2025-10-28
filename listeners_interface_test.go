@@ -149,6 +149,10 @@ func TestIsInterfaceNameWithModes(t *testing.T) {
 		{"br-901e40e4488d:3000:ipv6", true, "docker bridge with IPv6 mode"},
 		{"veth1308dcd:8080:auto", true, "veth pair with auto mode"},
 		{"eth0:8080:all", true, "ethernet interface with all mode"},
+		{"eth0:8080:firstipv4", true, "ethernet interface with firstipv4 mode"},
+		{"wlan0:443:firstipv6", true, "wireless interface with firstipv6 mode"},
+		{"docker0:9000:firstipv4", true, "docker interface with firstipv4 mode"},
+		{"enp0s3:8080:firstipv6", true, "predictable interface with firstipv6 mode"},
 
 		// Invalid - wrong modes
 		{"eth0:8080:invalid", false, "interface with invalid mode"},
@@ -496,11 +500,17 @@ func TestParseInterfaceAddress(t *testing.T) {
 		{"tcp", "enp0s3", "9000:auto", "enp0s3" + InterfaceDelimiter + "auto", false, "valid interface with explicit auto mode"},
 		{"tcp", "eth0", "443:all", "eth0" + InterfaceDelimiter + "all", false, "valid interface with all mode"},
 		{"tcp", "wlan0", "8080-8090:all", "wlan0" + InterfaceDelimiter + "all", false, "port range with all mode"},
+		{"tcp", "eth0", "443:firstipv4", "eth0" + InterfaceDelimiter + "firstipv4", false, "valid interface with firstipv4 mode"},
+		{"tcp", "wlan0", "8080:firstipv6", "wlan0" + InterfaceDelimiter + "firstipv6", false, "valid interface with firstipv6 mode"},
+		{"tcp", "docker0", "9000:firstipv4", "docker0" + InterfaceDelimiter + "firstipv4", false, "docker interface with firstipv4 mode"},
+		{"tcp", "enp0s3", "8080:firstipv6", "enp0s3" + InterfaceDelimiter + "firstipv6", false, "predictable interface with firstipv6 mode"},
 
 		// Valid cases - port ranges with binding modes
 		{"tcp", "eth0", "8080-8090:ipv4", "eth0" + InterfaceDelimiter + "ipv4", false, "port range with IPv4 mode"},
 		{"tcp", "wlan0", "443-445:ipv6", "wlan0" + InterfaceDelimiter + "ipv6", false, "port range with IPv6 mode"},
 		{"tcp", "docker0", "3000-3010:auto", "docker0" + InterfaceDelimiter + "auto", false, "port range with auto mode"},
+		{"tcp", "eth0", "8080-8090:firstipv4", "eth0" + InterfaceDelimiter + "firstipv4", false, "port range with firstipv4 mode"},
+		{"tcp", "wlan0", "443-445:firstipv6", "wlan0" + InterfaceDelimiter + "firstipv6", false, "port range with firstipv6 mode"},
 
 		// Error cases - invalid hosts
 		{"tcp", "192.168.1.1", "80", "", true, "IP address should fail"},
@@ -588,6 +598,10 @@ func TestTryParseInterfaceWithModeInHost(t *testing.T) {
 		{"tailscale0:8090:ipv4", "tailscale0", "8090:ipv4", true, "Tailscale interface with IPv4 mode"},
 		{"docker0:3000:ipv6", "docker0", "3000:ipv6", true, "Docker bridge interface with IPv6 mode"},
 		{"wlan0:443:all", "wlan0", "443:all", true, "Wireless interface with all mode"},
+		{"eth0:8080:firstipv4", "eth0", "8080:firstipv4", true, "Ethernet interface with firstipv4 mode"},
+		{"wlan0:443:firstipv6", "wlan0", "443:firstipv6", true, "Wireless interface with firstipv6 mode"},
+		{"docker0:9000:firstipv4", "docker0", "9000:firstipv4", true, "Docker interface with firstipv4 mode"},
+		{"enp0s3:8080:firstipv6", "enp0s3", "8080:firstipv6", true, "Predictable interface with firstipv6 mode"},
 
 		// Invalid cases - not enough parts
 		{"eth0", "", "", false, "Interface name only"},
