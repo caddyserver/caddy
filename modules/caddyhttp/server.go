@@ -1124,34 +1124,3 @@ const (
 	// For tracking the real client IP (affected by trusted_proxy)
 	ClientIPVarKey string = "client_ip"
 )
-
-var networkTypesHTTP3 = map[string]string{
-	"unixgram": "unixgram",
-	"udp":      "udp",
-	"udp4":     "udp4",
-	"udp6":     "udp6",
-	"tcp":      "udp",
-	"tcp4":     "udp4",
-	"tcp6":     "udp6",
-	"fdgram":   "fdgram",
-}
-
-// RegisterNetworkHTTP3 registers a mapping from non-HTTP/3 network to HTTP/3
-// network. This should be called during init() and will panic if the network
-// type is standard, reserved, or already registered.
-//
-// EXPERIMENTAL: Subject to change.
-func RegisterNetworkHTTP3(originalNetwork, h3Network string) {
-	if _, ok := networkTypesHTTP3[strings.ToLower(originalNetwork)]; ok {
-		panic("network type " + originalNetwork + " is already registered")
-	}
-	networkTypesHTTP3[originalNetwork] = h3Network
-}
-
-func getHTTP3Network(originalNetwork string) (string, error) {
-	h3Network, ok := networkTypesHTTP3[strings.ToLower(originalNetwork)]
-	if !ok {
-		return "", fmt.Errorf("network '%s' cannot handle HTTP/3 connections", originalNetwork)
-	}
-	return h3Network, nil
-}
