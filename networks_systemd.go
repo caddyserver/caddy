@@ -4,13 +4,13 @@ package caddy
 
 import (
 	"context"
-	"net"
-	"sync"
-	"os"
 	"errors"
-	"strconv"
 	"fmt"
+	"net"
+	"os"
+	"strconv"
 	"strings"
+	"sync"
 )
 
 func IsSdNetwork(network string) bool {
@@ -128,7 +128,7 @@ func getListenerFromNetwork(ctx context.Context, network, host, port string, por
 			return nil, fmt.Errorf("invalid network: %s", network)
 		}
 
-		na, err := ParseNetworkAddress(JoinNetworkAddress(fdNetwork, strconv.FormatUint(uint64(file),10), port))
+		na, err := ParseNetworkAddress(JoinNetworkAddress(fdNetwork, strconv.FormatUint(uint64(file), 10), port))
 		if err != nil {
 			return nil, err
 		}
@@ -140,15 +140,24 @@ func getListenerFromNetwork(ctx context.Context, network, host, port string, por
 
 func getHTTP3Network(originalNetwork string) (string, error) {
 	switch originalNetwork {
-		case "unixgram": return "unixgram", nil
-		case "udp":      return "udp", nil
-		case "udp4":     return "udp4", nil
-		case "udp6":     return "udp6", nil
-		case "tcp":      return "udp", nil
-		case "tcp4":     return "udp4", nil
-		case "tcp6":     return "udp6", nil
-		case "fdgram":   return "fdgram", nil
-		case "sdgram":   return "sdgram", nil
+	case "unixgram":
+		return "unixgram", nil
+	case "udp":
+		return "udp", nil
+	case "udp4":
+		return "udp4", nil
+	case "udp6":
+		return "udp6", nil
+	case "tcp":
+		return "udp", nil
+	case "tcp4":
+		return "udp4", nil
+	case "tcp6":
+		return "udp6", nil
+	case "fdgram":
+		return "fdgram", nil
+	case "sdgram":
+		return "sdgram", nil
 	}
 	return getHTTP3Plugin(originalNetwork)
 }

@@ -15,12 +15,12 @@
 package caddy
 
 import (
-	"strings"
 	"context"
-	"net"
-	"sync"
-	"go.uber.org/zap"
 	"fmt"
+	"go.uber.org/zap"
+	"net"
+	"strings"
+	"sync"
 )
 
 // IsUnixNetwork returns true if the netw is a unix network.

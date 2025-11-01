@@ -134,8 +134,8 @@ func (na NetworkAddress) ListenAll(ctx context.Context, config net.ListenConfig)
 // while an existing socket is unlinked.
 func (na NetworkAddress) Listen(ctx context.Context, portOffset uint, config net.ListenConfig) (any, error) {
 	var (
-		ln           any
-		err          error
+		ln  any
+		err error
 	)
 
 	// check to see if network provides a listener

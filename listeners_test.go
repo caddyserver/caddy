@@ -17,8 +17,8 @@ package caddy
 import (
 	"os"
 	"reflect"
-	"testing"
 	"strconv"
+	"testing"
 
 	"github.com/caddyserver/caddy/v2/internal"
 )
@@ -837,8 +837,8 @@ func TestGetFdByName(t *testing.T) {
 			// Test the function
 			var (
 				listenFdsWithNames map[string][]uint
-				err error
-				fd uint
+				err                error
+				fd                 uint
 			)
 			listenFdsWithNames, err = sdListenFdsWithNames()
 			if err == nil {
@@ -1000,21 +1000,23 @@ func TestParseNetworkAddressFdName(t *testing.T) {
 		actualAddr, err := ParseNetworkAddress(tc.input)
 		var (
 			listenFdsWithNames map[string][]uint
-			fd uint
+			fd                 uint
 		)
 		if err == nil {
 			switch actualAddr.Network {
-				case "fd": fallthrough
-				case "fdgram":
-					var fd64 uint64
-					fd64, err = strconv.ParseUint(actualAddr.Host, 0, strconv.IntSize)
-					if err == nil {
-						fd = uint(fd64)
-					}
-				case "sd": fallthrough
-				case "sdgram":
-					listenFdsWithNames, err = sdListenFdsWithNames()
-					fd, err = sdListenFd(listenFdsWithNames, actualAddr.Host, 0)
+			case "fd":
+				fallthrough
+			case "fdgram":
+				var fd64 uint64
+				fd64, err = strconv.ParseUint(actualAddr.Host, 0, strconv.IntSize)
+				if err == nil {
+					fd = uint(fd64)
+				}
+			case "sd":
+				fallthrough
+			case "sdgram":
+				listenFdsWithNames, err = sdListenFdsWithNames()
+				fd, err = sdListenFd(listenFdsWithNames, actualAddr.Host, 0)
 			}
 		}
 
