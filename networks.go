@@ -26,7 +26,7 @@ import (
 
 // IsUnixNetwork returns true if the netw is a unix network.
 func IsUnixNetwork(netw string) bool {
-	return netw == "unix" || netw == "unixgram" || netw == "unixpacket"
+	return netw == "unix" || netw == "unixgram" || netw == "unixpacket" || netw == "unix+h2c"
 }
 
 // IsIpNetwork returns true if the netw is an ip network.
