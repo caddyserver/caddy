@@ -109,11 +109,11 @@ jobs:
         git verify-tag "${{ steps.vars.outputs.version_tag }}" || exit 1
 
     - name: Install Cosign
-      uses: sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62 # main
+      uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # main
     - name: Cosign version
       run: cosign version
     - name: Install Syft
-      uses: anchore/sbom-action/download-syft@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # main
+      uses: anchore/sbom-action/download-syft@8e94d75ddd33f69f691467e42275782e4bfefe84 # main
     - name: Syft version
       run: syft version
     - name: Install xcaddy
