@@ -9,8 +9,8 @@ import (
 	"testing"
 )
 
-// TestSdListenFd tests the sdListenFd function for systemd socket activation.
-func TestSdListenFd(t *testing.T) {
+// TestGetSdFd tests the getSdFd function for systemd socket activation.
+func TestGetSdFd(t *testing.T) {
 	// Save original environment
 	originalFdNames := os.Getenv("LISTEN_FDNAMES")
 	originalFds := os.Getenv("LISTEN_FDS")
@@ -196,7 +196,7 @@ func TestSdListenFd(t *testing.T) {
 			)
 			listenFdsWithNames, err = sdListenFdsWithNames()
 			if err == nil {
-				fd, err = sdListenFd(listenFdsWithNames, tc.socketName, 0)
+				fd, err = getSdFd(listenFdsWithNames, tc.socketName, 0)
 			}
 
 			if tc.expectError {
@@ -370,7 +370,7 @@ func TestParseNetworkAddressSd(t *testing.T) {
 				fallthrough
 			case "sdgram":
 				listenFdsWithNames, err = sdListenFdsWithNames()
-				fd, err = sdListenFd(listenFdsWithNames, actualAddr.Host, 0)
+				fd, err = getSdFd(listenFdsWithNames, actualAddr.Host, 0)
 			}
 		}
 

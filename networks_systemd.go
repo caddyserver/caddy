@@ -26,29 +26,38 @@ func IsReservedNetwork(network string) bool {
 		IsSdNetwork(network)
 }
 
-func sdListenFdsWithNames() (map[string][]uint, error) {
-	const lnFdsStart = 3
-
+func sdListenFds() (int, error) {
 	lnPid, ok := os.LookupEnv("LISTEN_PID")
 	if !ok {
-		return nil, errors.New("LISTEN_PID is unset.")
+		return 0, errors.New("LISTEN_PID is unset.")
 	}
 
-	pid, err := strconv.ParseUint(lnPid, 0, strconv.IntSize)
+	pid, err := strconv.Atoi(lnPid)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 
-	if pid != uint64(os.Getpid()) {
-		return nil, fmt.Errorf("LISTEN_PID does not match pid: %d != %d", pid, os.Getpid())
+	if pid != os.Getpid() {
+		return 0, fmt.Errorf("LISTEN_PID does not match pid: %d != %d", pid, os.Getpid())
 	}
 
 	lnFds, ok := os.LookupEnv("LISTEN_FDS")
 	if !ok {
-		return nil, errors.New("LISTEN_FDS is unset.")
+		return 0, errors.New("LISTEN_FDS is unset.")
 	}
 
-	fds, err := strconv.ParseUint(lnFds, 0, strconv.IntSize)
+	fds, err := strconv.Atoi(lnFds)
+	if err != nil {
+		return 0, err
+	}
+
+	return fds, nil
+}
+
+func sdListenFdsWithNames() (map[string][]uint, error) {
+	const lnFdsStart = 3
+
+	fds, err := sdListenFds()
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +68,7 @@ func sdListenFdsWithNames() (map[string][]uint, error) {
 	}
 
 	fdNames := strings.Split(lnFdnames, ":")
-	if fds != uint64(len(fdNames)) {
+	if fds != len(fdNames) {
 		return nil, fmt.Errorf("LISTEN_FDS does not match LISTEN_FDNAMES length: %d != %d", fds, len(fdNames))
 	}
 
@@ -71,7 +80,7 @@ func sdListenFdsWithNames() (map[string][]uint, error) {
 	return nameToFiles, nil
 }
 
-func sdListenFd(nameToFiles map[string][]uint, host string, portOffset uint) (uint, error) {
+func getSdFd(nameToFiles map[string][]uint, host string, portOffset uint) (uint, error) {
 	name, index, li := host, portOffset, strings.LastIndex(host, "/")
 	if li >= 0 {
 		name = host[:li]
@@ -100,40 +109,46 @@ var (
 	initNameToFilesMu  sync.Mutex
 )
 
-func getListenerFromNetwork(ctx context.Context, network, host, port string, portOffset uint, config net.ListenConfig) (any, error) {
-	if IsSdNetwork(network) {
+func getListenerFromSd(ctx context.Context, network, host, port string, portOffset uint, config net.ListenConfig) (any, error) {
+	func() {
 		initNameToFilesMu.Lock()
 		defer initNameToFilesMu.Unlock()
 
 		if initNameToFiles == nil && initNameToFilesErr == nil {
 			initNameToFiles, initNameToFilesErr = sdListenFdsWithNames()
 		}
+	}()
 
-		if initNameToFilesErr != nil {
-			return nil, initNameToFilesErr
-		}
+	if initNameToFilesErr != nil {
+		return nil, initNameToFilesErr
+	}
 
-		file, err := sdListenFd(initNameToFiles, host, portOffset)
-		if err != nil {
-			return nil, err
-		}
+	file, err := getSdFd(initNameToFiles, host, portOffset)
+	if err != nil {
+		return nil, err
+	}
 
-		var fdNetwork string
-		switch network {
-		case "sd":
-			fdNetwork = "fd"
-		case "sdgram":
-			fdNetwork = "fdgram"
-		default:
-			return nil, fmt.Errorf("invalid network: %s", network)
-		}
+	var fdNetwork string
+	switch network {
+	case "sd":
+		fdNetwork = "fd"
+	case "sdgram":
+		fdNetwork = "fdgram"
+	default:
+		return nil, fmt.Errorf("invalid network: %s", network)
+	}
 
-		na, err := ParseNetworkAddress(JoinNetworkAddress(fdNetwork, strconv.FormatUint(uint64(file), 10), port))
-		if err != nil {
-			return nil, err
-		}
+	na, err := ParseNetworkAddress(JoinNetworkAddress(fdNetwork, strconv.FormatUint(uint64(file), 10), port))
+	if err != nil {
+		return nil, err
+	}
 
-		return na.Listen(ctx, portOffset, config)
+	return na.Listen(ctx, portOffset, config)
+}
+
+func getListenerFromNetwork(ctx context.Context, network, host, port string, portOffset uint, config net.ListenConfig) (any, error) {
+	if IsSdNetwork(network) {
+		return getListenerFromSd(ctx, network, host, port, portOffset, config)
 	}
 	return getListenerFromPlugin(ctx, network, host, port, portOffset, config)
 }
