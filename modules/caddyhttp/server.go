@@ -620,7 +620,7 @@ func (s *Server) findLastRouteWithHostMatcher() int {
 // not already done, and then uses that server to serve HTTP/3 over
 // the listener, with Server s as the handler.
 func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error {
-	h3net, err := getHTTP3Network(addr.Network)
+	h3net, err := caddy.GetHTTP3Network(addr.Network)
 	if err != nil {
 		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
 	}

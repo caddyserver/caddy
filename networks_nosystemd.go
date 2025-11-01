@@ -14,7 +14,7 @@ func getListenerFromNetwork(ctx context.Context, network, host, port string, por
 	return getListenerFromPlugin(ctx, network, host, port, portOffset, config)
 }
 
-func getHTTP3Network(originalNetwork string) (string, error) {
+func GetHTTP3Network(originalNetwork string) (string, error) {
 	switch originalNetwork {
 	case "unixgram":
 		return "unixgram", nil
