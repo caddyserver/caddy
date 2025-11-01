@@ -2,6 +2,11 @@
 
 package caddy
 
+import (
+	"context"
+	"net"
+)
+
 func IsReservedNetwork(network string) bool {
 	return network == "tcp" || network == "tcp4" || network == "tcp6" ||
 		network == "udp" || network == "udp4" || network == "udp6" ||
