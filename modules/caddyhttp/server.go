@@ -1124,3 +1124,8 @@ const (
 	// For tracking the real client IP (affected by trusted_proxy)
 	ClientIPVarKey string = "client_ip"
 )
+
+// DEPRECATED: moved to caddy.RegisterNetworkHTTP3
+func RegisterNetworkHTTP3(originalNetwork, h3Network string) {
+	caddy.RegisterNetworkHTTP3(originalNetwork, h3Network)
+}
