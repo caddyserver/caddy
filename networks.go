@@ -17,10 +17,11 @@ package caddy
 import (
 	"context"
 	"fmt"
-	"go.uber.org/zap"
 	"net"
 	"strings"
 	"sync"
+
+	"go.uber.org/zap"
 )
 
 // IsUnixNetwork returns true if the netw is a unix network.
@@ -44,8 +45,10 @@ func IsFdNetwork(netw string) bool {
 // both need the same listener. EXPERIMENTAL and subject to change.
 type ListenerFunc func(ctx context.Context, network, host, portRange string, portOffset uint, cfg net.ListenConfig) (any, error)
 
-var networkPlugins = map[string]ListenerFunc{}
-var networkPluginsMu sync.RWMutex
+var (
+	networkPlugins   = map[string]ListenerFunc{}
+	networkPluginsMu sync.RWMutex
+)
 
 // RegisterNetwork registers a network plugin with Caddy so that if a listener is
 // created for that network plugin, getListener will be invoked to get the listener.
@@ -84,8 +87,10 @@ func getListenerFromPlugin(ctx context.Context, network, host, port string, port
 	return nil, nil
 }
 
-var networkHTTP3Plugins = map[string]string{}
-var networkHTTP3PluginsMu sync.RWMutex
+var (
+	networkHTTP3Plugins   = map[string]string{}
+	networkHTTP3PluginsMu sync.RWMutex
+)
 
 // RegisterNetworkHTTP3 registers a mapping from non-HTTP/3 network to HTTP/3
 // network. This should be called during init() and will panic if the network
