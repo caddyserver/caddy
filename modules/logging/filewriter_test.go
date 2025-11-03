@@ -385,3 +385,225 @@ func TestFileModeModification(t *testing.T) {
 		t.Errorf("file mode is %v, want %v", st.Mode(), want)
 	}
 }
+
+func TestDirMode_Inherit(t *testing.T) {
+	m := syscall.Umask(0)
+	defer syscall.Umask(m)
+
+	parent := t.TempDir()
+	if err := os.Chmod(parent, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	targetDir := filepath.Join(parent, "a", "b")
+	fw := &FileWriter{
+		Filename: filepath.Join(targetDir, "test.log"),
+		DirMode:  "inherit",
+		Mode:     0o640,
+		Roll:     func() *bool { f := false; return &f }(),
+	}
+	w, err := fw.OpenWriter()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = w.Close()
+
+	st, err := os.Stat(targetDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := st.Mode().Perm(); got != 0o755 {
+		t.Fatalf("dir perm = %o, want 0755", got)
+	}
+}
+
+func TestDirMode_FromFile(t *testing.T) {
+	m := syscall.Umask(0)
+	defer syscall.Umask(m)
+
+	base := t.TempDir()
+
+	dir1 := filepath.Join(base, "logs1")
+	fw1 := &FileWriter{
+		Filename: filepath.Join(dir1, "app.log"),
+		DirMode:  "from_file",
+		Mode:     0o644, // => dir 0755
+		Roll:     func() *bool { f := false; return &f }(),
+	}
+	w1, err := fw1.OpenWriter()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = w1.Close()
+
+	st1, err := os.Stat(dir1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := st1.Mode().Perm(); got != 0o755 {
+		t.Fatalf("dir perm = %o, want 0755", got)
+	}
+
+	dir2 := filepath.Join(base, "logs2")
+	fw2 := &FileWriter{
+		Filename: filepath.Join(dir2, "app.log"),
+		DirMode:  "from_file",
+		Mode:     0o600, // => dir 0700
+		Roll:     func() *bool { f := false; return &f }(),
+	}
+	w2, err := fw2.OpenWriter()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = w2.Close()
+
+	st2, err := os.Stat(dir2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := st2.Mode().Perm(); got != 0o700 {
+		t.Fatalf("dir perm = %o, want 0700", got)
+	}
+}
+
+func TestDirMode_ExplicitOctal(t *testing.T) {
+	m := syscall.Umask(0)
+	defer syscall.Umask(m)
+
+	base := t.TempDir()
+	dest := filepath.Join(base, "logs3")
+	fw := &FileWriter{
+		Filename: filepath.Join(dest, "app.log"),
+		DirMode:  "0750",
+		Mode:     0o640,
+		Roll:     func() *bool { f := false; return &f }(),
+	}
+	w, err := fw.OpenWriter()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = w.Close()
+
+	st, err := os.Stat(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := st.Mode().Perm(); got != 0o750 {
+		t.Fatalf("dir perm = %o, want 0750", got)
+	}
+}
+
+func TestDirMode_Default0700(t *testing.T) {
+	m := syscall.Umask(0)
+	defer syscall.Umask(m)
+
+	base := t.TempDir()
+	dest := filepath.Join(base, "logs4")
+	fw := &FileWriter{
+		Filename: filepath.Join(dest, "app.log"),
+		Mode:     0o640,
+		Roll:     func() *bool { f := false; return &f }(),
+	}
+	w, err := fw.OpenWriter()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = w.Close()
+
+	st, err := os.Stat(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := st.Mode().Perm(); got != 0o700 {
+		t.Fatalf("dir perm = %o, want 0700", got)
+	}
+}
+
+func TestDirMode_UmaskInteraction(t *testing.T) {
+	_ = syscall.Umask(0o022) // typical umask; restore after
+	defer syscall.Umask(0)
+
+	base := t.TempDir()
+	dest := filepath.Join(base, "logs5")
+	fw := &FileWriter{
+		Filename: filepath.Join(dest, "app.log"),
+		DirMode:  "0755",
+		Mode:     0o644,
+		Roll:     func() *bool { f := false; return &f }(),
+	}
+	w, err := fw.OpenWriter()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = w.Close()
+
+	st, err := os.Stat(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 0755 &^ 0022 still 0755 for dirs; this just sanity-checks we didn't get stricter unexpectedly
+	if got := st.Mode().Perm(); got != 0o755 {
+		t.Fatalf("dir perm = %o, want 0755 (considering umask)", got)
+	}
+}
+
+func TestCaddyfile_DirMode_Inherit(t *testing.T) {
+	d := caddyfile.NewTestDispenser(`
+file /var/log/app.log {
+    dir_mode inherit
+    mode 0640
+}`)
+	var fw FileWriter
+	if err := fw.UnmarshalCaddyfile(d); err != nil {
+		t.Fatal(err)
+	}
+	if fw.DirMode != "inherit" {
+		t.Fatalf("got %q", fw.DirMode)
+	}
+	if fw.Mode != 0o640 {
+		t.Fatalf("mode = %o", fw.Mode)
+	}
+}
+
+func TestCaddyfile_DirMode_FromFile(t *testing.T) {
+	d := caddyfile.NewTestDispenser(`
+file /var/log/app.log {
+    dir_mode from_file
+    mode 0600
+}`)
+	var fw FileWriter
+	if err := fw.UnmarshalCaddyfile(d); err != nil {
+		t.Fatal(err)
+	}
+	if fw.DirMode != "from_file" {
+		t.Fatalf("got %q", fw.DirMode)
+	}
+	if fw.Mode != 0o600 {
+		t.Fatalf("mode = %o", fw.Mode)
+	}
+}
+
+func TestCaddyfile_DirMode_Octal(t *testing.T) {
+	d := caddyfile.NewTestDispenser(`
+file /var/log/app.log {
+    dir_mode 0755
+}`)
+	var fw FileWriter
+	if err := fw.UnmarshalCaddyfile(d); err != nil {
+		t.Fatal(err)
+	}
+	if fw.DirMode != "0755" {
+		t.Fatalf("got %q", fw.DirMode)
+	}
+}
+
+func TestCaddyfile_DirMode_Invalid(t *testing.T) {
+	d := caddyfile.NewTestDispenser(`
+file /var/log/app.log {
+    dir_mode nope
+}`)
+	var fw FileWriter
+	if err := fw.UnmarshalCaddyfile(d); err == nil {
+		t.Fatal("expected error for invalid dir_mode")
+	}
+}
