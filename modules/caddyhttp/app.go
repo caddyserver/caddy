@@ -198,6 +198,8 @@ func (app *App) Provision(ctx caddy.Context) error {
 	if app.Metrics != nil {
 		app.Metrics.init = sync.Once{}
 		app.Metrics.httpMetrics = &httpMetrics{}
+		// Scan config for allowed hosts to prevent cardinality explosion
+		app.Metrics.scanConfigForHosts(app)
 	}
 	// prepare each server
 	oldContext := ctx.Context

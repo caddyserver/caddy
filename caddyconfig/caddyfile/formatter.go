@@ -52,17 +52,16 @@ func Format(input []byte) []byte {
 
 		newLines int // count of newlines consumed
 
-		comment bool // whether we're in a comment
-		quoted  bool // whether we're in a quoted segment
-		escaped bool // whether current char is escaped
+		comment bool   // whether we're in a comment
+		quotes  string // encountered quotes ('', '`', '"', '"`', '`"')
+		escaped bool   // whether current char is escaped
 
 		heredoc              heredocState // whether we're in a heredoc
 		heredocEscaped       bool         // whether heredoc is escaped
 		heredocMarker        []rune
 		heredocClosingMarker []rune
 
-		nesting         int // indentation level
-		withinBackquote bool
+		nesting int // indentation level
 	)
 
 	write := func(ch rune) {
@@ -89,12 +88,8 @@ func Format(input []byte) []byte {
 			}
 			panic(err)
 		}
-		if ch == '`' {
-			withinBackquote = !withinBackquote
-		}
-
 		// detect whether we have the start of a heredoc
-		if !quoted && (heredoc == heredocClosed && !heredocEscaped) &&
+		if quotes == "" && (heredoc == heredocClosed && !heredocEscaped) &&
 			space && last == '<' && ch == '<' {
 			write(ch)
 			heredoc = heredocOpening
@@ -180,16 +175,38 @@ func Format(input []byte) []byte {
 			continue
 		}
 
-		if quoted {
+		if ch == '`' {
+			switch quotes {
+			case "\"`":
+				quotes = "\""
+			case "`":
+				quotes = ""
+			case "\"":
+				quotes = "\"`"
+			default:
+				quotes = "`"
+			}
+		}
+
+		if quotes == "\"" {
 			if ch == '"' {
-				quoted = false
+				quotes = ""
 			}
 			write(ch)
 			continue
 		}
 
-		if space && ch == '"' {
-			quoted = true
+		if ch == '"' {
+			switch quotes {
+			case "":
+				if space {
+					quotes = "\""
+				}
+			case "`\"":
+				quotes = "`"
+			case "\"`":
+				quotes = ""
+			}
 		}
 
 		if unicode.IsSpace(ch) {
@@ -245,7 +262,7 @@ func Format(input []byte) []byte {
 				write(' ')
 			}
 			openBraceWritten = false
-			if withinBackquote {
+			if quotes == "`" {
 				write('{')
 				openBraceWritten = true
 				continue
@@ -253,7 +270,7 @@ func Format(input []byte) []byte {
 			continue
 
 		case ch == '}' && (spacePrior || !openBrace):
-			if withinBackquote {
+			if quotes == "`" {
 				write('}')
 				continue
 			}
