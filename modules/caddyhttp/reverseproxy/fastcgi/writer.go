@@ -112,8 +112,7 @@ func encodeSize(b []byte, size uint32) int {
 		binary.BigEndian.PutUint32(b, size)
 		return 4
 	}
-	// #nosec G602 - b input as [>=4]byte; index 0 is always in-bounds
-	b[0] = byte(size)
+	b[0] = byte(size) //nolint:gosec // false positive; b is made 8 bytes long, then this function is always called with b being at least 4 or 1 byte long
 	return 1
 }
 
