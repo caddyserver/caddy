@@ -4,7 +4,7 @@ go 1.25
 
 require (
 	github.com/BurntSushi/toml v1.5.0
-	github.com/DeRuina/timberjack v1.3.8
+	github.com/DeRuina/timberjack v1.3.9
 	github.com/KimMachineGun/automemlimit v0.7.4
 	github.com/Masterminds/sprig/v3 v3.3.0
 	github.com/alecthomas/chroma/v2 v2.20.0
