@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"net"
 	"strings"
-	"sync"
 
 	"go.uber.org/zap"
 )
@@ -53,10 +52,7 @@ func IsReservedNetwork(network string) bool {
 // both need the same listener. EXPERIMENTAL and subject to change.
 type ListenerFunc func(ctx context.Context, network, host, portRange string, portOffset uint, cfg net.ListenConfig) (any, error)
 
-var (
-	networkPlugins   = map[string]ListenerFunc{}
-	networkPluginsMu sync.RWMutex
-)
+var networkPlugins = map[string]ListenerFunc{}
 
 // RegisterNetwork registers a network plugin with Caddy so that if a listener is
 // created for that network plugin, getListener will be invoked to get the listener.
@@ -73,9 +69,6 @@ func RegisterNetwork(network string, getListener ListenerFunc) {
 		panic("network type " + network + " is already registered")
 	}
 
-	networkPluginsMu.Lock()
-	defer networkPluginsMu.Unlock()
-
 	networkPlugins[network] = getListener
 }
 
@@ -83,9 +76,6 @@ func RegisterNetwork(network string, getListener ListenerFunc) {
 // if a plugin has registered the network name. It may return (nil, nil) if
 // no plugin can provide a listener.
 func getListenerFromPlugin(ctx context.Context, network, host, port string, portOffset uint, config net.ListenConfig) (any, error) {
-	networkPluginsMu.RLock()
-	defer networkPluginsMu.RUnlock()
-
 	// get listener from plugin if network is registered
 	if getListener, ok := networkPlugins[network]; ok {
 		Log().Debug("getting listener from plugin", zap.String("network", network))
