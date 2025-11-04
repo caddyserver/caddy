@@ -15,7 +15,6 @@
 package xcaddyfile
 
 import (
-	"encoding/json"
 	"fmt"
 	"slices"
 	"sort"
@@ -254,37 +253,13 @@ func processLogs(cfg *caddy.Config, options map[string]any, warnings *[]caddycon
 		}
 	}
 
-	// Collect server-specific logs from the HTTP app
-	if httpAppJSON, ok := cfg.AppsRaw["http"]; ok {
-		var httpApp struct {
-			Servers map[string]struct {
-				Logs struct {
-					LoggerNames map[string][]string `json:"logger_names,omitempty"`
-				} `json:"logs,omitempty"`
-			} `json:"servers,omitempty"`
-		}
-		if err := json.Unmarshal(httpAppJSON, &httpApp); err == nil {
-			for _, srv := range httpApp.Servers {
-				for loggerName := range srv.Logs.LoggerNames {
-					// Create a basic custom log for each server-specific logger
-					// The actual configuration should come from options or defaults
-					if loggerName != "" && loggerName != caddy.DefaultLoggerName {
-						// Check if this logger was already configured via options
-						found := false
-						for _, cl := range customLogs {
-							if cl.name == loggerName {
-								found = true
-								break
-							}
-						}
-						if !found {
-							// This is a server-specific logger that needs to be created
-							// Look for it in the HTTP directive options
-							addCustomLog(loggerName, &caddy.CustomLog{})
-						}
-					}
-				}
-			}
+	// Collect server-specific log options from options["__xcaddyfile_server_logs__"]
+	if options["__xcaddyfile_server_logs__"] != nil {
+		for _, logValue := range options["__xcaddyfile_server_logs__"].([]httpcaddyfile.ConfigValue) {
+			nclValue := logValue.Value
+			name := httpcaddyfile.GetNamedCustomLogName(nclValue)
+			log := httpcaddyfile.GetNamedCustomLogLog(nclValue)
+			addCustomLog(name, log)
 		}
 	}
 
