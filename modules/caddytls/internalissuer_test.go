@@ -43,6 +43,8 @@ func TestInternalIssuer_Issue(t *testing.T) {
 		Subject:    pkix.Name{CommonName: "test-root"},
 		IsCA:       true,
 		MaxPathLen: 3,
+		NotAfter:   time.Now().Add(7 * 24 * time.Hour),
+		NotBefore:  time.Now().Add(-7 * 24 * time.Hour),
 	}
 	rootBytes, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, rootSigner.Public(), rootSigner)
 	if err != nil {
@@ -63,7 +65,8 @@ func TestInternalIssuer_Issue(t *testing.T) {
 		Subject:    pkix.Name{CommonName: "test-first-intermediate"},
 		IsCA:       true,
 		MaxPathLen: 2,
-		NotAfter:   time.Now().Add(time.Hour),
+		NotAfter:   time.Now().Add(24 * time.Hour),
+		NotBefore:  time.Now().Add(-24 * time.Hour),
 	}, root, firstIntermediateSigner.Public(), rootSigner)
 	if err != nil {
 		t.Fatalf("Creating intermediate certificate failed: %v", err)
@@ -83,7 +86,8 @@ func TestInternalIssuer_Issue(t *testing.T) {
 		Subject:    pkix.Name{CommonName: "test-second-intermediate"},
 		IsCA:       true,
 		MaxPathLen: 2,
-		NotAfter:   time.Now().Add(time.Hour),
+		NotAfter:   time.Now().Add(24 * time.Hour),
+		NotBefore:  time.Now().Add(-24 * time.Hour),
 	}, firstIntermediate, secondIntermediateSigner.Public(), firstIntermediateSigner)
 	if err != nil {
 		t.Fatalf("Creating second intermediate certificate failed: %v", err)

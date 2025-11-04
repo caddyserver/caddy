@@ -145,13 +145,15 @@ func (ca *CA) Provision(ctx caddy.Context, id string, log *zap.Logger) error {
 	if err != nil {
 		return err
 	}
-	actualRootLifetime := time.Until(rootCert.NotAfter)
-	if time.Duration(ca.IntermediateLifetime) >= actualRootLifetime {
-		return fmt.Errorf("intermediate certificate lifetime must be less than actual root certificate lifetime (%s)", actualRootLifetime)
-	}
+
 	if ca.Intermediate != nil {
 		interCertChain, interKey, err = ca.Intermediate.Load()
 	} else {
+		actualRootLifetime := time.Until(rootCert.NotAfter)
+		if time.Duration(ca.IntermediateLifetime) >= actualRootLifetime {
+			return fmt.Errorf("intermediate certificate lifetime must be less than actual root certificate lifetime (%s)", actualRootLifetime)
+		}
+
 		interCertChain, interKey, err = ca.loadOrGenIntermediate(rootCert, rootKey)
 	}
 	if err != nil {
