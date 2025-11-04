@@ -374,7 +374,7 @@ func TestReplacerMap(t *testing.T) {
 func TestReplacerNew(t *testing.T) {
 	repl := NewReplacer()
 
-	if len(repl.providers) != 3 {
+	if len(repl.providers) != 4 {
 		t.Errorf("Expected providers length '%v' got length '%v'", 3, len(repl.providers))
 	}
 

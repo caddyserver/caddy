@@ -37,7 +37,7 @@ func reuseUnixSocket(_, _ string) (any, error) {
 func listenReusable(ctx context.Context, lnKey string, network, address string, config net.ListenConfig) (any, error) {
 	var socketFile *os.File
 
-	fd := slices.Contains([]string{"fd", "fdgram"}, network)
+	fd := IsFdNetwork(network)
 	if fd {
 		socketFd, err := strconv.ParseUint(address, 0, strconv.IntSize)
 		if err != nil {
@@ -49,8 +49,8 @@ func listenReusable(ctx context.Context, lnKey string, network, address string, 
 			defer socketFilesMu.Unlock()
 
 			socketFdWide := uintptr(socketFd)
-			var ok bool
 
+			var ok bool
 			socketFile, ok = socketFiles[socketFdWide]
 
 			if !ok {

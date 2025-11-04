@@ -18,7 +18,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"net/netip"
 	"strings"
 	"sync"
 
@@ -40,9 +39,12 @@ func IsFdNetwork(netw string) bool {
 	return netw == "fd" || netw == "fdgram"
 }
 
-// IsIfaceNetwork returns true if the netw is an iface network.
-func IsIfaceNetwork(netw string) bool {
-	return netw == "iface" || netw == "iface4" || netw == "iface6" || netw == "ifacegram" || netw == "ifacegram4" || netw == "ifacegram6"
+func IsReservedNetwork(network string) bool {
+	return network == "tcp" || network == "tcp4" || network == "tcp6" ||
+		network == "udp" || network == "udp4" || network == "udp6" ||
+		IsUnixNetwork(network) ||
+		IsIpNetwork(network) ||
+		IsFdNetwork(network)
 }
 
 // ListenerFunc is a function that can return a listener given a network and address.
@@ -77,73 +79,6 @@ func RegisterNetwork(network string, getListener ListenerFunc) {
 	networkPlugins[network] = getListener
 }
 
-func getListenerFromIface(ctx context.Context, network, host, port string, portOffset uint, config net.ListenConfig) (any, error) {
-	iface, err := net.InterfaceByName(host)
-	if err != nil {
-		return nil, err
-	}
-
-	var (
-		addrs []net.Addr
-		err error
-	)
-	switch network {
-		case "iface": fallthrough
-		case "iface4": fallthrough
-		case "iface6":
-			unicast, err = iface.Addrs()
-			if err != nil {
-				//todo
-			} else {
-				addrs = append(addrs, unicast...)
-			}
-		case "ifacegram": fallthrough
-		case "ifacegram4": fallthrough
-		case "ifacegram6":
-			multicast, err = iface.MulticastAddrs()
-			if err != nil {
-				//todo
-			} else {
-				addrs = append(addrs, multicast...)
-			}
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	for _, addr := range addrs {
-		switch addrt := addr.(type) {
-			case *net.IPAddr:
-
-			case *net.IPNet:
-
-		}
-		prefix, err := netip.ParsePrefix(addr.String())
-		preaddr := prefix.Addr()
-		if(preaddr.Is4()) {
-			switch network {
-				case "iface": fallthrough
-				case "iface4": fallthrough
-				case "ifacegram": fallthrough
-				case "ifacegram4":
-					//todo
-			}
-		}
-		if(preaddr.Is6()) {
-			switch network {
-				case "iface": fallthrough
-				case "iface6": fallthrough
-				case "ifacegram": fallthrough
-				case "ifacegram6":
-					//todo
-			}
-		}
-		if err != nil {
-			continue
-		}
-	}
-}
-
 // getListenerFromPlugin returns a listener on the given network and address
 // if a plugin has registered the network name. It may return (nil, nil) if
 // no plugin can provide a listener.
@@ -160,10 +95,7 @@ func getListenerFromPlugin(ctx context.Context, network, host, port string, port
 	return nil, nil
 }
 
-var (
-	networkHTTP3Plugins   = map[string]string{}
-	networkHTTP3PluginsMu sync.RWMutex
-)
+var networkHTTP3Plugins = map[string]string{}
 
 // RegisterNetworkHTTP3 registers a mapping from non-HTTP/3 network to HTTP/3
 // network. This should be called during init() and will panic if the network
@@ -178,20 +110,36 @@ func RegisterNetworkHTTP3(originalNetwork, h3Network string) {
 		panic("network type " + originalNetwork + " is already registered")
 	}
 
-	networkHTTP3PluginsMu.Lock()
-	defer networkHTTP3PluginsMu.Unlock()
-
 	networkHTTP3Plugins[originalNetwork] = h3Network
 }
 
 func getHTTP3Plugin(originalNetwork string) (string, error) {
-	networkHTTP3PluginsMu.RLock()
-	defer networkHTTP3PluginsMu.RUnlock()
-
 	h3Network, ok := networkHTTP3Plugins[strings.ToLower(originalNetwork)]
 	if !ok {
 		return "", fmt.Errorf("network '%s' cannot handle HTTP/3 connections", originalNetwork)
 	}
 
 	return h3Network, nil
+}
+
+func GetHTTP3Network(originalNetwork string) (string, error) {
+	switch originalNetwork {
+	case "unixgram":
+		return "unixgram", nil
+	case "udp":
+		return "udp", nil
+	case "udp4":
+		return "udp4", nil
+	case "udp6":
+		return "udp6", nil
+	case "tcp":
+		return "udp", nil
+	case "tcp4":
+		return "udp4", nil
+	case "tcp6":
+		return "udp6", nil
+	case "fdgram":
+		return "fdgram", nil
+	}
+	return getHTTP3Plugin(originalNetwork)
 }

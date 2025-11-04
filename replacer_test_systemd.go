@@ -9,8 +9,8 @@ import (
 	"testing"
 )
 
-// TestGetSdFd tests the getSdFd function for systemd socket activation.
-func TestGetSdFd(t *testing.T) {
+// TestGetSdListenFd tests the getSdListenFd function for systemd socket activation.
+func TestGetSdListenFd(t *testing.T) {
 	// Save original environment
 	originalFdNames := os.Getenv("LISTEN_FDNAMES")
 	originalFds := os.Getenv("LISTEN_FDS")
@@ -82,42 +82,42 @@ func TestGetSdFd(t *testing.T) {
 			name:       "duplicate names - first occurrence (explicit index 0)",
 			fdNames:    "web:web:api",
 			fds:        "3",
-			socketName: "web/0",
+			socketName: "web:0",
 			expectedFd: 3,
 		},
 		{
 			name:       "duplicate names - second occurrence (index 1)",
 			fdNames:    "web:web:api",
 			fds:        "3",
-			socketName: "web/1",
+			socketName: "web:1",
 			expectedFd: 4,
 		},
 		{
 			name:       "complex duplicates - first api",
 			fdNames:    "web:api:web:api:dns",
 			fds:        "5",
-			socketName: "api/0",
+			socketName: "api:0",
 			expectedFd: 4,
 		},
 		{
 			name:       "complex duplicates - second api",
 			fdNames:    "web:api:web:api:dns",
 			fds:        "5",
-			socketName: "api/1",
+			socketName: "api:1",
 			expectedFd: 6,
 		},
 		{
 			name:       "complex duplicates - first web",
 			fdNames:    "web:api:web:api:dns",
 			fds:        "5",
-			socketName: "web/0",
+			socketName: "web:0",
 			expectedFd: 3,
 		},
 		{
 			name:       "complex duplicates - second web",
 			fdNames:    "web:api:web:api:dns",
 			fds:        "5",
-			socketName: "web/1",
+			socketName: "web:1",
 			expectedFd: 5,
 		},
 		{
@@ -145,28 +145,28 @@ func TestGetSdFd(t *testing.T) {
 			name:        "index out of range",
 			fdNames:     "web:web",
 			fds:         "2",
-			socketName:  "web/2",
+			socketName:  "web:2",
 			expectError: true,
 		},
 		{
 			name:        "negative index",
 			fdNames:     "web",
 			fds:         "1",
-			socketName:  "web/-1",
+			socketName:  "web:-1",
 			expectError: true,
 		},
 		{
 			name:        "invalid index format",
 			fdNames:     "web",
 			fds:         "1",
-			socketName:  "web/abc",
+			socketName:  "web:abc",
 			expectError: true,
 		},
 		{
 			name:        "too many colons",
 			fdNames:     "web",
 			fds:         "1",
-			socketName:  "web/0/extra",
+			socketName:  "web:0:extra",
 			expectError: true,
 		},
 	}
@@ -196,7 +196,7 @@ func TestGetSdFd(t *testing.T) {
 			)
 			listenFdsWithNames, err = sdListenFdsWithNames()
 			if err == nil {
-				fd, err = getSdFd(listenFdsWithNames, tc.socketName, 0)
+				fd, err = getSdListenFd(listenFdsWithNames, tc.socketName)
 			}
 
 			if tc.expectError {
@@ -215,8 +215,8 @@ func TestGetSdFd(t *testing.T) {
 	}
 }
 
-// TestParseNetworkAddressSd tests parsing of sd and sdgram addresses.
-func TestParseNetworkAddressSd(t *testing.T) {
+// TestParseSystemdListenPlaceholder tests parsing of {systemd.listen.name} placeholders.
+func TestParseSystemdListenPlaceholder(t *testing.T) {
 	// Save and restore environment
 	originalFdNames := os.Getenv("LISTEN_FDNAMES")
 	originalFds := os.Getenv("LISTEN_FDS")
@@ -252,83 +252,83 @@ func TestParseNetworkAddressSd(t *testing.T) {
 		expectErr    bool
 	}{
 		{
-			input: "sd/http",
+			input: "fd/{systemd.listen.http}",
 			expectedAddr: NetworkAddress{
-				Network: "sd",
-				Host:    "http",
+				Network: "fd",
+				Host:    "{systemd.listen.http}",
 			},
 			expectedFd: 3,
 		},
 		{
-			input: "sd/https",
+			input: "fd/{systemd.listen.https}",
 			expectedAddr: NetworkAddress{
-				Network: "sd",
-				Host:    "https",
+				Network: "fd",
+				Host:    "{systemd.listen.https}",
 			},
 			expectedFd: 4,
 		},
 		{
-			input: "sd/dns",
+			input: "fd/{systemd.listen.dns}",
 			expectedAddr: NetworkAddress{
-				Network: "sd",
-				Host:    "dns",
+				Network: "fd",
+				Host:    "{systemd.listen.dns}",
 			},
 			expectedFd: 5,
 		},
 		{
-			input: "sd/http/0",
+			input: "fd/{systemd.listen.http:0}",
 			expectedAddr: NetworkAddress{
-				Network: "sd",
-				Host:    "http/0",
+				Network: "fd",
+				Host:    "{systemd.listen.http:0}",
 			},
 			expectedFd: 3,
 		},
 		{
-			input: "sd/https/0",
+			input: "fd/{systemd.listen.https:0}",
 			expectedAddr: NetworkAddress{
-				Network: "sd",
-				Host:    "https/0",
+				Network: "fd",
+				Host:    "{systemd.listen.https:0}",
 			},
 			expectedFd: 4,
 		},
 		{
-			input: "sdgram/http",
+			input: "fdgram/{systemd.listen.http}",
 			expectedAddr: NetworkAddress{
-				Network: "sdgram",
-				Host:    "http",
+				Network: "fdgram",
+				Host:    "{systemd.listen.http}",
 			},
 			expectedFd: 3,
 		},
 		{
-			input: "sdgram/https",
+			input: "fdgram/{systemd.listen.https}",
 			expectedAddr: NetworkAddress{
-				Network: "sdgram",
-				Host:    "https",
+				Network: "fdgram",
+				Host:    "{systemd.listen.https}",
 			},
 			expectedFd: 4,
 		},
 		{
-			input: "sdgram/http/0",
+			input: "fdgram/{systemd.listen.http:0}",
 			expectedAddr: NetworkAddress{
-				Network: "sdgram",
-				Host:    "http/0",
+				Network: "fdgram",
+				Host:    "http:0",
 			},
 			expectedFd: 3,
 		},
 		{
-			input:     "sd/nonexistent",
+			input:     "fd/{systemd.listen.nonexistent}",
 			expectErr: true,
 		},
 		{
-			input:     "sd/nonexistent",
+			input:     "fdgram/{systemd.listen.nonexistent}",
 			expectErr: true,
 		},
 		{
-			input:     "sd/http/99",
+			input:     "fd/{systemd.listen.http:99}",
 			expectErr: true,
 		},
 		{
-			input:     "sd/invalid/abc",
+			input:     "fd/{systemd.listen.invalid:abc}",
 			expectErr: true,
 		},
 		// Test that old fd/N syntax still works
@@ -352,39 +352,25 @@ func TestParseNetworkAddressSd(t *testing.T) {
 
 	for i, tc := range tests {
 		actualAddr, err := ParseNetworkAddress(tc.input)
-		var (
-			listenFdsWithNames map[string][]uint
-			fd                 uint
-		)
 		if err == nil {
-			switch actualAddr.Network {
-			case "fd":
-				fallthrough
-			case "fdgram":
-				var fd64 uint64
-				fd64, err = strconv.ParseUint(actualAddr.Host, 0, strconv.IntSize)
-				if err == nil {
-					fd = uint(fd64)
-				}
-			case "sd":
-				fallthrough
-			case "sdgram":
-				listenFdsWithNames, err = sdListenFdsWithNames()
-				fd, err = getSdFd(listenFdsWithNames, actualAddr.Host, 0)
+			var fd uint
+			fdWide, err := strconv.ParseUint(actualAddr.Host, 0, strconv.IntSize)
+			if err == nil {
+				fd = uint(fdWide)
 			}
-		}
 
-		if tc.expectErr && err == nil {
-			t.Errorf("Test %d (%s): Expected error but got none", i, tc.input)
-		}
-		if !tc.expectErr && err != nil {
-			t.Errorf("Test %d (%s): Expected no error but got: %v", i, tc.input, err)
-		}
-		if !tc.expectErr && !reflect.DeepEqual(tc.expectedAddr, actualAddr) {
-			t.Errorf("Test %d (%s): Expected %+v but got %+v", i, tc.input, tc.expectedAddr, actualAddr)
-		}
-		if !tc.expectErr && fd != tc.expectedFd {
-			t.Errorf("Expected FD %d but got %d", tc.expectedFd, fd)
+			if tc.expectErr && err == nil {
+				t.Errorf("Test %d (%s): Expected error but got none", i, tc.input)
+			}
+			if !tc.expectErr && err != nil {
+				t.Errorf("Test %d (%s): Expected no error but got: %v", i, tc.input, err)
+			}
+			if !tc.expectErr && !reflect.DeepEqual(tc.expectedAddr, actualAddr) {
+				t.Errorf("Test %d (%s): Expected %+v but got %+v", i, tc.input, tc.expectedAddr, actualAddr)
+			}
+			if !tc.expectErr && fd != tc.expectedFd {
+				t.Errorf("Expected FD %d but got %d", tc.expectedFd, fd)
+			}
 		}
 	}
 }

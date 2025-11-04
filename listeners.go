@@ -138,8 +138,8 @@ func (na NetworkAddress) Listen(ctx context.Context, portOffset uint, config net
 		err error
 	)
 
-	// check to see if network provides a listener
-	if ln, err = getListenerFromNetwork(ctx, na.Network, na.Host, na.port(), portOffset, config); ln != nil || err != nil {
+	// check to see if plugin provides a listener
+	if ln, err = getListenerFromPlugin(ctx, na.Network, na.Host, na.port(), portOffset, config); ln != nil || err != nil {
 		return ln, err
 	}
 
@@ -161,7 +161,12 @@ func (na NetworkAddress) Listen(ctx context.Context, portOffset uint, config net
 			return nil, err
 		}
 	} else if na.IsFdNetwork() {
-		address = na.Host
+		socketFd, err := strconv.ParseUint(na.Host, 0, strconv.IntSize)
+		if err != nil {
+			return nil, fmt.Errorf("invalid file descriptor: %v", err)
+		}
+
+		address = strconv.FormatUint(uint64(uint(socketFd)+portOffset), 10)
 	} else {
 		address = na.JoinHostPort(portOffset)
 	}
@@ -208,7 +213,6 @@ func (na NetworkAddress) IsUnixNetwork() bool {
 	return IsUnixNetwork(na.Network)
 }
 
-
 // IsIpNetwork returns true if na.Network starts with
 // ip: ip4: or ip6:
 func (na NetworkAddress) IsIpNetwork() bool {
@@ -219,12 +223,6 @@ func (na NetworkAddress) IsIpNetwork() bool {
 // fd or fdgram.
 func (na NetworkAddress) IsFdNetwork() bool {
 	return IsFdNetwork(na.Network)
-}
-
-// IsIfaceNetwork returns true if na.Network is
-// iface, iface4, iface6, ifacegram, ifacegram4, or ifacegram6.
-func (na NetworkAddress) IsIfaceNetwork() bool {
-	return IsIfaceNetwork(na.Network)
 }
 
 // JoinHostPort is like net.JoinHostPort, but where the port
