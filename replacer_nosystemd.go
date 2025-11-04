@@ -2,7 +2,7 @@
 
 package caddy
 
-const globalReplacementProviders = []replacementProvider{
+var globalReplacementProviders = []replacementProvider{
 	defaultReplacementProvider{},
 	fileReplacementProvider{},
 }
