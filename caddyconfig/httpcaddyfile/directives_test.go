@@ -78,7 +78,7 @@ func TestHostsFromKeys(t *testing.T) {
 			[]string{"example.com:2015"},
 		},
 	} {
-		sb := serverBlock{parsedKeys: tc.keys}
+		sb := ServerBlock{ParsedKeys: tc.keys}
 
 		// test in normal mode
 		actual := sb.hostsFromKeys(false)

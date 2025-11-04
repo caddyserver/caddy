@@ -15,7 +15,9 @@
 package httpserverblock
 
 import (
+	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -32,54 +34,65 @@ func init() {
 	blocktypes.RegisterChildBlockType("http.server", "global", Setup)
 }
 
+// extractServerBlocks converts raw caddyfile blocks to httpcaddyfile serverBlock format
+func extractServerBlocks(inputBlocks []caddyfile.ServerBlock, warnings []caddyconfig.Warning) ([]httpcaddyfile.ServerBlock, []caddyconfig.Warning, error) {
+	serverBlocks := make([]httpcaddyfile.ServerBlock, 0, len(inputBlocks))
+	for _, sblock := range inputBlocks {
+		for j, k := range sblock.Keys {
+			if j == 0 && strings.HasPrefix(k.Text, "@") {
+				return nil, warnings, fmt.Errorf("%s:%d: cannot define a matcher outside of a site block: '%s'", k.File, k.Line, k.Text)
+			}
+			if httpcaddyfile.DirectiveIsRegistered(k.Text) {
+				return nil, warnings, fmt.Errorf("%s:%d: parsed '%s' as a site address, but it is a known directive; directives must appear in a site block", k.File, k.Line, k.Text)
+			}
+		}
+		serverBlocks = append(serverBlocks, httpcaddyfile.ServerBlock{
+			Block: sblock,
+			Pile:  make(map[string][]httpcaddyfile.ConfigValue),
+		})
+	}
+	return serverBlocks, warnings, nil
+}
+
 // Setup processes [http.server] blocks using the httpcaddyfile adapter.
 // This allows xcaddyfile to leverage all existing HTTP configuration logic.
 // The [global] block should have created the HTTP app with options in context.
 func Setup(builder *configbuilder.Builder, blocks []caddyfile.ServerBlock, options map[string]any) ([]caddyconfig.Warning, error) {
-	// Use httpcaddyfile.BuildServersOnly which builds servers and returns pairings
-	// needed for TLS/PKI apps
-	serversApp, pairings, warnings, err := httpcaddyfile.BuildServersOnly(blocks, options)
+	var warnings []caddyconfig.Warning
+
+	// Extract server blocks with validation
+	serverBlocks, warnings, err := extractServerBlocks(blocks, warnings)
 	if err != nil {
 		return warnings, err
 	}
 
-	// Get or create the HTTP app (may have been created by [global] block)
-	var finalApp *caddyhttp.App
-	if existingApp, ok := configbuilder.GetTypedApp[caddyhttp.App](builder, "http"); ok {
-		// Merge servers into existing app from global block
-		// The global block already set app-level options like grace_period, https_port
-		finalApp = existingApp
-		if finalApp.Servers == nil {
-			finalApp.Servers = make(map[string]*caddyhttp.Server)
-		}
-		for name, server := range serversApp.Servers {
-			finalApp.Servers[name] = server
-		}
-		// Also copy app-level settings from httpcaddyfile if not set by global
-		if finalApp.HTTPPort == 0 && serversApp.HTTPPort != 0 {
-			finalApp.HTTPPort = serversApp.HTTPPort
-		}
-		if finalApp.HTTPSPort == 0 && serversApp.HTTPSPort != 0 {
-			finalApp.HTTPSPort = serversApp.HTTPSPort
-		}
-		if finalApp.GracePeriod == 0 && serversApp.GracePeriod != 0 {
-			finalApp.GracePeriod = serversApp.GracePeriod
-		}
-		if finalApp.ShutdownDelay == 0 && serversApp.ShutdownDelay != 0 {
-			finalApp.ShutdownDelay = serversApp.ShutdownDelay
-		}
-		if finalApp.Metrics == nil && serversApp.Metrics != nil {
-			finalApp.Metrics = serversApp.Metrics
-		}
-		// Update the app with merged servers
-		builder.UpdateApp("http", finalApp)
-	} else {
-		// No global block, use the complete app from httpcaddyfile
-		finalApp = serversApp
-		// Create the app since it doesn't exist yet
-		if err := builder.CreateApp("http", finalApp); err != nil {
-			return warnings, err
-		}
+	// Use httpcaddyfile.BuildServersAndPairings to build servers and pairings
+	servers, pairings, metrics, warnings, err := httpcaddyfile.BuildServersAndPairings(serverBlocks, options, warnings)
+	if err != nil {
+		return warnings, err
+	}
+
+	// Collect server-specific custom logs for xcaddyfiletype to process later
+	// Use a unique key name to avoid conflicts with other options
+	serverLogs := httpcaddyfile.CollectServerLogs(pairings)
+	if len(serverLogs) > 0 {
+		options["__xcaddyfile_server_logs__"] = serverLogs
+	}
+
+	// Construct the HTTP app from the servers
+	// Use options from [global] block if they were set
+	httpApp := &caddyhttp.App{
+		HTTPPort:      httpcaddyfile.TryInt(options["http_port"], &warnings),
+		HTTPSPort:     httpcaddyfile.TryInt(options["https_port"], &warnings),
+		GracePeriod:   httpcaddyfile.TryDuration(options["grace_period"], &warnings),
+		ShutdownDelay: httpcaddyfile.TryDuration(options["shutdown_delay"], &warnings),
+		Metrics:       metrics,
+		Servers:       servers,
+	}
+
+	// Create the HTTP app (should be the first time, since [global] doesn't create it)
+	if err := builder.CreateApp("http", httpApp); err != nil {
+		return warnings, err
 	}
 
 	// Build TLS app using the pairings

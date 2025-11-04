@@ -1,27 +1,31 @@
 package integration
 
 import (
-	"bytes"
-	"encoding/json"
+	jsonMod "encoding/json"
+	"fmt"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	_ "github.com/caddyserver/caddy/v2/caddyconfig/xcaddyfile/blocktypes/globalblock"
 	_ "github.com/caddyserver/caddy/v2/caddyconfig/xcaddyfile/blocktypes/httpserverblock"
+	"github.com/caddyserver/caddy/v2/caddytest"
 )
 
-// TestXCaddyfileAdaptBackwardsCompatibility ensures that xcaddyfile produces
-// the same output as the standard caddyfile adapter for all test cases when
-// using standard Caddyfile syntax (without explicit [type] declarations).
-// This verifies perfect backwards compatibility.
-func TestXCaddyfileAdaptBackwardsCompatibility(t *testing.T) {
-	// load the list of test files from the caddyfile_adapt dir
+// TestXCaddyfileAdaptToJSON tests the xcaddyfile adapter against the same
+// test cases as the standard caddyfile adapter, ensuring backwards compatibility.
+func TestXCaddyfileAdaptToJSON(t *testing.T) {
+	// load the list of test files from the dir
 	files, err := os.ReadDir("./caddyfile_adapt")
 	if err != nil {
 		t.Errorf("failed to read caddyfile_adapt dir: %s", err)
 	}
+
+	// prep a regexp to fix strings on windows
+	winNewlines := regexp.MustCompile(`\r?\n`)
 
 	for _, f := range files {
 		if f.IsDir() {
@@ -29,69 +33,45 @@ func TestXCaddyfileAdaptBackwardsCompatibility(t *testing.T) {
 		}
 		filename := f.Name()
 
-		// run each file as a subtest
+		// run each file as a subtest, so that we can see which one fails more easily
 		t.Run(filename, func(t *testing.T) {
 			// read the test file
 			data, err := os.ReadFile("./caddyfile_adapt/" + filename)
 			if err != nil {
-				t.Errorf("failed to read %s: %s", filename, err)
-				return
+				t.Errorf("failed to read %s dir: %s", filename, err)
 			}
 
 			// split the Caddyfile (first) and JSON (second) parts
+			// (append newline to Caddyfile to match formatter expectations)
 			parts := strings.Split(string(data), "----------")
-			if len(parts) < 2 {
-				t.Logf("skipping %s: no expected output section", filename)
+			caddyfile, expected := strings.TrimSpace(parts[0])+"\n", strings.TrimSpace(parts[1])
+
+			// replace windows newlines in the json with unix newlines
+			expected = winNewlines.ReplaceAllString(expected, "\n")
+
+			// replace os-specific default path for file_server's hide field
+			replacePath, _ := jsonMod.Marshal(fmt.Sprint(".", string(filepath.Separator), "Caddyfile"))
+			expected = strings.ReplaceAll(expected, `"./Caddyfile"`, string(replacePath))
+
+			// if the expected output is JSON, compare it
+			if len(expected) > 0 && expected[0] == '{' {
+				ok := caddytest.CompareAdapt(t, filename, caddyfile, "xcaddyfile", expected)
+				if !ok {
+					t.Errorf("failed to adapt %s", filename)
+				}
 				return
 			}
 
-			caddyfile := strings.TrimSpace(parts[0]) + "\n"
-			expected := strings.TrimSpace(parts[1])
-
-			// only test JSON outputs (skip error tests)
-			if len(expected) == 0 || expected[0] != '{' {
-				t.Logf("skipping %s: not a JSON output test", filename)
-				return
-			}
-
-			// adapt with standard caddyfile adapter
-			caddyfileAdapter := caddyconfig.GetAdapter("caddyfile")
-			caddyfileCfg, caddyfileWarnings, caddyfileErr := caddyfileAdapter.Adapt([]byte(caddyfile), nil)
-			if caddyfileErr != nil {
-				t.Logf("skipping %s: caddyfile adapter error: %v", filename, caddyfileErr)
-				return
-			}
-
-			// adapt with xcaddyfile adapter
-			xcaddyfileAdapter := caddyconfig.GetAdapter("xcaddyfile")
-			xcaddyfileCfg, xcaddyfileWarnings, xcaddyfileErr := xcaddyfileAdapter.Adapt([]byte(caddyfile), nil)
-
-			// both should succeed
-			if xcaddyfileErr != nil {
-				t.Errorf("xcaddyfile adapter failed for %s: %v", filename, xcaddyfileErr)
-				return
-			}
-
-			// compare warning counts (log if different)
-			if len(caddyfileWarnings) != len(xcaddyfileWarnings) {
-				t.Logf("warning count differs for %s: caddyfile=%d, xcaddyfile=%d",
-					filename, len(caddyfileWarnings), len(xcaddyfileWarnings))
-			}
-
-			// Normalize both JSON configs for comparison (prettify)
-			var caddyfileBuf, xcaddyfileBuf bytes.Buffer
-			if err := json.Indent(&caddyfileBuf, caddyfileCfg, "", "  "); err != nil {
-				t.Errorf("failed to indent caddyfile config for %s: %v", filename, err)
-				return
-			}
-			if err := json.Indent(&xcaddyfileBuf, xcaddyfileCfg, "", "  "); err != nil {
-				t.Errorf("failed to indent xcaddyfile config for %s: %v", filename, err)
-				return
-			}
-
-			if caddyfileBuf.String() != xcaddyfileBuf.String() {
-				t.Errorf("config mismatch for %s:\n\nCaddyfile output:\n%s\n\nXCaddyfile output:\n%s",
-					filename, caddyfileBuf.String(), xcaddyfileBuf.String())
+			// otherwise, adapt the Caddyfile and check for errors
+			cfgAdapter := caddyconfig.GetAdapter("xcaddyfile")
+			_, _, err = cfgAdapter.Adapt([]byte(caddyfile), nil)
+			if err == nil {
+				t.Errorf("expected error for %s but got none", filename)
+			} else {
+				normalizedErr := winNewlines.ReplaceAllString(err.Error(), "\n")
+				if !strings.Contains(normalizedErr, expected) {
+					t.Errorf("expected error for %s to contain:\n%s\nbut got:\n%s", filename, expected, normalizedErr)
+				}
 			}
 		})
 	}

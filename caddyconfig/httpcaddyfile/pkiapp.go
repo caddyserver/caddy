@@ -222,7 +222,7 @@ func (st ServerType) buildPKIApp(
 		for _, sblock := range p.serverBlocks {
 			// find all the CAs that were defined and add them to the app config
 			// i.e. from any "acme_server" directives
-			for _, caCfgValue := range sblock.pile["pki.ca"] {
+			for _, caCfgValue := range sblock.Pile["pki.ca"] {
 				ca := caCfgValue.Value.(*caddypki.CA)
 				if skipInstallTrust {
 					ca.InstallTrust = &falseBool

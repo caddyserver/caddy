@@ -169,3 +169,37 @@ func (b *Builder) SetLogger(name string, log *caddy.CustomLog) {
 	}
 	b.config.Logging.Logs[name] = log
 }
+
+// AddRawApp adds a raw JSON app to the configuration.
+// This is useful for adding apps that come from global options as pre-marshaled JSON.
+func (b *Builder) AddRawApp(name string, rawJSON []byte) {
+	if b.config.AppsRaw == nil {
+		b.config.AppsRaw = make(caddy.ModuleMap)
+	}
+	b.config.AppsRaw[name] = rawJSON
+}
+
+// SetPersistConfigOff sets the persist_config option to off.
+func (b *Builder) SetPersistConfigOff() {
+	if b.config.Admin == nil {
+		b.config.Admin = new(caddy.AdminConfig)
+	}
+	if b.config.Admin.Config == nil {
+		b.config.Admin.Config = new(caddy.ConfigSettings)
+	}
+	falseBool := false
+	b.config.Admin.Config.Persist = &falseBool
+}
+
+// GetLogging returns the logging configuration, creating it if it doesn't exist.
+func (b *Builder) GetLogging() *caddy.Logging {
+	if b.config.Logging == nil {
+		b.config.Logging = &caddy.Logging{
+			Logs: make(map[string]*caddy.CustomLog),
+		}
+	}
+	if b.config.Logging.Logs == nil {
+		b.config.Logging.Logs = make(map[string]*caddy.CustomLog)
+	}
+	return b.config.Logging
+}

@@ -15,16 +15,21 @@
 package xcaddyfile
 
 import (
+	"encoding/json"
 	"fmt"
+	"slices"
+	"sort"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/xcaddyfile/blocktypes"
 	_ "github.com/caddyserver/caddy/v2/caddyconfig/xcaddyfile/blocktypes/globalblock"
 	_ "github.com/caddyserver/caddy/v2/caddyconfig/xcaddyfile/blocktypes/httpserverblock"
 	"github.com/caddyserver/caddy/v2/caddyconfig/xcaddyfile/configbuilder"
+	"go.uber.org/zap"
 )
 
 func init() {
@@ -88,7 +93,7 @@ func (XCaddyfileType) Setup(
 			return nil, warnings, err
 		}
 
-		// Apply backwards compatibility defaults
+		// Apply caddyfile compatibility defaults
 		if blockType == "" {
 			// First block with no keys is treated as global config
 			if i == 0 && len(sblock.Keys) == 0 {
@@ -163,6 +168,184 @@ func (XCaddyfileType) Setup(
 		}
 	}
 
-	// Config() automatically finalizes structured apps
-	return builder.Config(), warnings, nil
+	// Apply global options from the options map to the builder
+	// This mirrors what httpcaddyfile does at the end of Setup()
+	if err := applyGlobalOptions(builder, options, &warnings); err != nil {
+		return nil, warnings, err
+	}
+
+	// Get the config - this finalizes structured apps
+	cfg := builder.Config()
+
+	// Process logs after all apps are finalized so we can collect server-specific logs
+	if err := processLogs(cfg, options, &warnings); err != nil {
+		return nil, warnings, err
+	}
+
+	return cfg, warnings, nil
+}
+
+// applyGlobalOptions applies values from the options map to the builder.
+// This includes admin config, storage, logging, and other global settings.
+func applyGlobalOptions(builder *configbuilder.Builder, options map[string]any, warnings *[]caddyconfig.Warning) error {
+	// Add any httpcaddyfile.App types from options
+	for _, opt := range options {
+		if app, ok := opt.(httpcaddyfile.App); ok {
+			builder.AddRawApp(app.Name, app.Value)
+		}
+	}
+
+	// Apply filesystem option
+	if filesystems, ok := options["filesystem"].(caddy.Module); ok {
+		builder.AddRawApp("caddy.filesystems", caddyconfig.JSON(filesystems, warnings))
+	}
+
+	// Apply storage option
+	if storageCvtr, ok := options["storage"].(caddy.StorageConverter); ok {
+		builder.SetStorage(storageCvtr)
+	}
+
+	// Apply admin option
+	if adminConfig, ok := options["admin"].(*caddy.AdminConfig); ok && adminConfig != nil {
+		builder.SetAdmin(adminConfig)
+	}
+
+	// Apply persist_config option
+	if pc, ok := options["persist_config"].(string); ok && pc == "off" {
+		builder.SetPersistConfigOff()
+	}
+
+	return nil
+}
+
+// processLogs collects all custom logs (global and server-specific) and applies them to the config.
+// This must run after the config is finalized so we can access the HTTP app.
+func processLogs(cfg *caddy.Config, options map[string]any, warnings *[]caddyconfig.Warning) error {
+	var customLogs []struct {
+		name string
+		log  *caddy.CustomLog
+	}
+	var hasDefaultLog bool
+
+	addCustomLog := func(name string, log *caddy.CustomLog) {
+		if name == "" {
+			return
+		}
+		if name == caddy.DefaultLoggerName {
+			hasDefaultLog = true
+		}
+		// Apply debug level if debug is on and no level is set
+		if _, ok := options["debug"]; ok && log != nil && log.Level == "" {
+			log.Level = zap.DebugLevel.CapitalString()
+		}
+		customLogs = append(customLogs, struct {
+			name string
+			log  *caddy.CustomLog
+		}{name: name, log: log})
+	}
+
+	// Collect global log options from options["log"]
+	if options["log"] != nil {
+		for _, logValue := range options["log"].([]httpcaddyfile.ConfigValue) {
+			nclValue := logValue.Value
+			name := httpcaddyfile.GetNamedCustomLogName(nclValue)
+			log := httpcaddyfile.GetNamedCustomLogLog(nclValue)
+			addCustomLog(name, log)
+		}
+	}
+
+	// Collect server-specific logs from the HTTP app
+	if httpAppJSON, ok := cfg.AppsRaw["http"]; ok {
+		var httpApp struct {
+			Servers map[string]struct {
+				Logs struct {
+					LoggerNames map[string][]string `json:"logger_names,omitempty"`
+				} `json:"logs,omitempty"`
+			} `json:"servers,omitempty"`
+		}
+		if err := json.Unmarshal(httpAppJSON, &httpApp); err == nil {
+			for _, srv := range httpApp.Servers {
+				for loggerName := range srv.Logs.LoggerNames {
+					// Create a basic custom log for each server-specific logger
+					// The actual configuration should come from options or defaults
+					if loggerName != "" && loggerName != caddy.DefaultLoggerName {
+						// Check if this logger was already configured via options
+						found := false
+						for _, cl := range customLogs {
+							if cl.name == loggerName {
+								found = true
+								break
+							}
+						}
+						if !found {
+							// This is a server-specific logger that needs to be created
+							// Look for it in the HTTP directive options
+							addCustomLog(loggerName, &caddy.CustomLog{})
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// If no default log was configured but debug is on, add one
+	if !hasDefaultLog {
+		if _, ok := options["debug"]; ok {
+			customLogs = append(customLogs, struct {
+				name string
+				log  *caddy.CustomLog
+			}{
+				name: caddy.DefaultLoggerName,
+				log: &caddy.CustomLog{
+					BaseLog: caddy.BaseLog{Level: zap.DebugLevel.CapitalString()},
+				},
+			})
+		}
+	}
+
+	// Apply custom logs to the config
+	if len(customLogs) > 0 {
+		if cfg.Logging == nil {
+			cfg.Logging = &caddy.Logging{
+				Logs: make(map[string]*caddy.CustomLog),
+			}
+		}
+		if cfg.Logging.Logs == nil {
+			cfg.Logging.Logs = make(map[string]*caddy.CustomLog)
+		}
+
+		// Add the default log first if defined
+		for _, ncl := range customLogs {
+			if ncl.name == caddy.DefaultLoggerName && ncl.log != nil {
+				cfg.Logging.Logs[caddy.DefaultLoggerName] = ncl.log
+				break
+			}
+		}
+
+		// Add the rest of the custom logs
+		for _, ncl := range customLogs {
+			if ncl.log == nil || ncl.name == caddy.DefaultLoggerName {
+				continue
+			}
+			if ncl.name != "" {
+				cfg.Logging.Logs[ncl.name] = ncl.log
+			}
+			// Most users prefer not writing access logs to the default log
+			// when they are directed to a file or have special customization
+			if ncl.name != caddy.DefaultLoggerName && len(ncl.log.Include) > 0 {
+				defaultLog, ok := cfg.Logging.Logs[caddy.DefaultLoggerName]
+				if !ok {
+					defaultLog = new(caddy.CustomLog)
+					cfg.Logging.Logs[caddy.DefaultLoggerName] = defaultLog
+				}
+				defaultLog.Exclude = append(defaultLog.Exclude, ncl.log.Include...)
+
+				// Avoid duplicates by sorting + compacting
+				sort.Strings(defaultLog.Exclude)
+				defaultLog.Exclude = slices.Compact(defaultLog.Exclude)
+			}
+		}
+	}
+
+	return nil
 }

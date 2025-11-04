@@ -59,11 +59,9 @@ func (st ServerType) Setup(
 	options map[string]any,
 ) (*caddy.Config, []caddyconfig.Warning, error) {
 	var warnings []caddyconfig.Warning
-	gc := counter{new(int)}
-	state := make(map[string]any)
 
 	// load all the server blocks and associate them with a "pile" of config values
-	originalServerBlocks := make([]serverBlock, 0, len(inputServerBlocks))
+	originalServerBlocks := make([]ServerBlock, 0, len(inputServerBlocks))
 	for _, sblock := range inputServerBlocks {
 		for j, k := range sblock.Keys {
 			if j == 0 && strings.HasPrefix(k.Text, "@") {
@@ -73,9 +71,9 @@ func (st ServerType) Setup(
 				return nil, warnings, fmt.Errorf("%s:%d: parsed '%s' as a site address, but it is a known directive; directives must appear in a site block", k.File, k.Line, k.Text)
 			}
 		}
-		originalServerBlocks = append(originalServerBlocks, serverBlock{
-			block: sblock,
-			pile:  make(map[string][]ConfigValue),
+		originalServerBlocks = append(originalServerBlocks, ServerBlock{
+			Block: sblock,
+			Pile:  make(map[string][]ConfigValue),
 		})
 	}
 
@@ -86,121 +84,14 @@ func (st ServerType) Setup(
 		return nil, warnings, err
 	}
 
-	// this will replace both static and user-defined placeholder shorthands
-	// with actual identifiers used by Caddy
-	replacer := NewShorthandReplacer()
-
-	originalServerBlocks, err = st.extractNamedRoutes(originalServerBlocks, options, &warnings, replacer)
+	// Build servers and pairings from the processed server blocks
+	servers, pairings, metrics, warnings, err := BuildServersAndPairings(originalServerBlocks, options, warnings)
 	if err != nil {
 		return nil, warnings, err
 	}
 
-	for _, sb := range originalServerBlocks {
-		for i := range sb.block.Segments {
-			replacer.ApplyToSegment(&sb.block.Segments[i])
-		}
-
-		if len(sb.block.Keys) == 0 {
-			return nil, warnings, fmt.Errorf("server block without any key is global configuration, and if used, it must be first")
-		}
-
-		// extract matcher definitions
-		matcherDefs := make(map[string]caddy.ModuleMap)
-		for _, segment := range sb.block.Segments {
-			if dir := segment.Directive(); strings.HasPrefix(dir, matcherPrefix) {
-				d := sb.block.DispenseDirective(dir)
-				err := parseMatcherDefinitions(d, matcherDefs)
-				if err != nil {
-					return nil, warnings, err
-				}
-			}
-		}
-
-		// evaluate each directive ("segment") in this block
-		for _, segment := range sb.block.Segments {
-			dir := segment.Directive()
-
-			if strings.HasPrefix(dir, matcherPrefix) {
-				// matcher definitions were pre-processed
-				continue
-			}
-
-			dirFunc, ok := registeredDirectives[dir]
-			if !ok {
-				tkn := segment[0]
-				message := "%s:%d: unrecognized directive: %s"
-				if !sb.block.HasBraces {
-					message += "\nDid you mean to define a second site? If so, you must use curly braces around each site to separate their configurations."
-				}
-				return nil, warnings, fmt.Errorf(message, tkn.File, tkn.Line, dir)
-			}
-
-			h := Helper{
-				Dispenser:    caddyfile.NewDispenser(segment),
-				options:      options,
-				warnings:     &warnings,
-				matcherDefs:  matcherDefs,
-				parentBlock:  sb.block,
-				groupCounter: gc,
-				State:        state,
-			}
-
-			results, err := dirFunc(h)
-			if err != nil {
-				return nil, warnings, fmt.Errorf("parsing caddyfile tokens for '%s': %v", dir, err)
-			}
-
-			dir = normalizeDirectiveName(dir)
-
-			for _, result := range results {
-				result.directive = dir
-				sb.pile[result.Class] = append(sb.pile[result.Class], result)
-			}
-
-			// specially handle named routes that were pulled out from
-			// the invoke directive, which could be nested anywhere within
-			// some subroutes in this directive; we add them to the pile
-			// for this server block
-			if state[namedRouteKey] != nil {
-				for name := range state[namedRouteKey].(map[string]struct{}) {
-					result := ConfigValue{Class: namedRouteKey, Value: name}
-					sb.pile[result.Class] = append(sb.pile[result.Class], result)
-				}
-				state[namedRouteKey] = nil
-			}
-		}
-	}
-
-	// map
-	sbmap, err := st.mapAddressToProtocolToServerBlocks(originalServerBlocks, options)
-	if err != nil {
-		return nil, warnings, err
-	}
-
-	// reduce
-	pairings := st.consolidateAddrMappings(sbmap)
-
-	// each pairing of listener addresses to list of server
-	// blocks is basically a server definition
-	servers, err := st.serversFromPairings(pairings, options, &warnings, gc)
-	if err != nil {
-		return nil, warnings, err
-	}
-
-	// hoist the metrics config from per-server to global
-	metrics, _ := options["metrics"].(*caddyhttp.Metrics)
-	for _, s := range servers {
-		if s.Metrics != nil {
-			metrics = cmp.Or(metrics, &caddyhttp.Metrics{})
-			metrics = &caddyhttp.Metrics{
-				PerHost: metrics.PerHost || s.Metrics.PerHost,
-			}
-			s.Metrics = nil // we don't need it anymore
-		}
-	}
-
-	// now that each server is configured, make the HTTP app
-	httpApp := caddyhttp.App{
+	// Construct the HTTP app from the servers
+	httpApp := &caddyhttp.App{
 		HTTPPort:      tryInt(options["http_port"], &warnings),
 		HTTPSPort:     tryInt(options["https_port"], &warnings),
 		GracePeriod:   tryDuration(options["grace_period"], &warnings),
@@ -260,7 +151,7 @@ func (st ServerType) Setup(
 	// Apply server-specific log options
 	for _, p := range pairings {
 		for _, sb := range p.serverBlocks {
-			for _, clVal := range sb.pile["custom_log"] {
+			for _, clVal := range sb.Pile["custom_log"] {
 				addCustomLog(clVal.Value.(namedCustomLog))
 			}
 		}
@@ -366,36 +257,19 @@ func (st ServerType) Setup(
 // and server blocks. This is needed for building TLS and PKI apps.
 type ServerBlockPairings []sbAddrAssociation
 
-// BuildServersOnly processes server blocks and builds the HTTP app without
-// processing a global options block. This is useful for xcaddyfile which
-// handles global options separately. It returns the populated HTTP app and
-// the pairings data structure needed for building TLS/PKI apps.
+// BuildServersAndPairings processes server blocks and creates servers from pairings.
+// This is the core reusable primitive for building servers that is used by both
+// httpcaddyfile and xcaddyfile. It processes directives, creates pairings,
+// and builds servers without constructing the full HTTP app or processing
+// global options. It returns the servers map, pairings, hoisted metrics,
+// warnings, and any error.
 //
-// Note: This has some code duplication with Setup(), but refactoring to share
-// the code path caused issues because Setup needs additional data structures
-// (pairings) for TLS/PKI apps, and running directives twice breaks some tests.
-func BuildServersOnly(inputServerBlocks []caddyfile.ServerBlock, options map[string]any) (*caddyhttp.App, ServerBlockPairings, []caddyconfig.Warning, error) {
-	var warnings []caddyconfig.Warning
+// The caller is responsible for extracting/loading server blocks and for
+// constructing the HTTP app from the returned servers.
+func BuildServersAndPairings(originalServerBlocks []ServerBlock, options map[string]any, warnings []caddyconfig.Warning) (map[string]*caddyhttp.Server, ServerBlockPairings, *caddyhttp.Metrics, []caddyconfig.Warning, error) {
 	st := ServerType{}
 	gc := counter{new(int)}
 	state := make(map[string]any)
-
-	// load all the server blocks and associate them with a "pile" of config values
-	originalServerBlocks := make([]serverBlock, 0, len(inputServerBlocks))
-	for _, sblock := range inputServerBlocks {
-		for j, k := range sblock.Keys {
-			if j == 0 && strings.HasPrefix(k.Text, "@") {
-				return nil, nil, warnings, fmt.Errorf("%s:%d: cannot define a matcher outside of a site block: '%s'", k.File, k.Line, k.Text)
-			}
-			if _, ok := registeredDirectives[k.Text]; ok {
-				return nil, nil, warnings, fmt.Errorf("%s:%d: parsed '%s' as a site address, but it is a known directive; directives must appear in a site block", k.File, k.Line, k.Text)
-			}
-		}
-		originalServerBlocks = append(originalServerBlocks, serverBlock{
-			block: sblock,
-			pile:  make(map[string][]ConfigValue),
-		})
-	}
 
 	// this will replace both static and user-defined placeholder shorthands
 	// with actual identifiers used by Caddy
@@ -403,32 +277,32 @@ func BuildServersOnly(inputServerBlocks []caddyfile.ServerBlock, options map[str
 
 	originalServerBlocks, err := st.extractNamedRoutes(originalServerBlocks, options, &warnings, replacer)
 	if err != nil {
-		return nil, nil, warnings, err
+		return nil, nil, nil, warnings, err
 	}
 
 	for _, sb := range originalServerBlocks {
-		for i := range sb.block.Segments {
-			replacer.ApplyToSegment(&sb.block.Segments[i])
+		for i := range sb.Block.Segments {
+			replacer.ApplyToSegment(&sb.Block.Segments[i])
 		}
 
-		if len(sb.block.Keys) == 0 {
-			return nil, nil, warnings, fmt.Errorf("server block without any key is global configuration, and if used, it must be first")
+		if len(sb.Block.Keys) == 0 {
+			return nil, nil, nil, warnings, fmt.Errorf("server block without any key is global configuration, and if used, it must be first")
 		}
 
 		// extract matcher definitions
 		matcherDefs := make(map[string]caddy.ModuleMap)
-		for _, segment := range sb.block.Segments {
+		for _, segment := range sb.Block.Segments {
 			if dir := segment.Directive(); strings.HasPrefix(dir, matcherPrefix) {
-				d := sb.block.DispenseDirective(dir)
+				d := sb.Block.DispenseDirective(dir)
 				err := parseMatcherDefinitions(d, matcherDefs)
 				if err != nil {
-					return nil, nil, warnings, err
+					return nil, nil, nil, warnings, err
 				}
 			}
 		}
 
 		// evaluate each directive ("segment") in this block
-		for _, segment := range sb.block.Segments {
+		for _, segment := range sb.Block.Segments {
 			dir := segment.Directive()
 
 			if strings.HasPrefix(dir, matcherPrefix) {
@@ -440,10 +314,10 @@ func BuildServersOnly(inputServerBlocks []caddyfile.ServerBlock, options map[str
 			if !ok {
 				tkn := segment[0]
 				message := "%s:%d: unrecognized directive: %s"
-				if !sb.block.HasBraces {
+				if !sb.Block.HasBraces {
 					message += "\nDid you mean to define a second site? If so, you must use curly braces around each site to separate their configurations."
 				}
-				return nil, nil, warnings, fmt.Errorf(message, tkn.File, tkn.Line, dir)
+				return nil, nil, nil, warnings, fmt.Errorf(message, tkn.File, tkn.Line, dir)
 			}
 
 			h := Helper{
@@ -451,21 +325,21 @@ func BuildServersOnly(inputServerBlocks []caddyfile.ServerBlock, options map[str
 				options:      options,
 				warnings:     &warnings,
 				matcherDefs:  matcherDefs,
-				parentBlock:  sb.block,
+				parentBlock:  sb.Block,
 				groupCounter: gc,
 				State:        state,
 			}
 
 			results, err := dirFunc(h)
 			if err != nil {
-				return nil, nil, warnings, fmt.Errorf("parsing caddyfile tokens for '%s': %v", dir, err)
+				return nil, nil, nil, warnings, fmt.Errorf("parsing caddyfile tokens for '%s': %v", dir, err)
 			}
 
 			dir = normalizeDirectiveName(dir)
 
 			for _, result := range results {
 				result.directive = dir
-				sb.pile[result.Class] = append(sb.pile[result.Class], result)
+				sb.Pile[result.Class] = append(sb.Pile[result.Class], result)
 			}
 
 			// specially handle named routes that were pulled out from
@@ -475,7 +349,7 @@ func BuildServersOnly(inputServerBlocks []caddyfile.ServerBlock, options map[str
 			if state[namedRouteKey] != nil {
 				for name := range state[namedRouteKey].(map[string]struct{}) {
 					result := ConfigValue{Class: namedRouteKey, Value: name}
-					sb.pile[result.Class] = append(sb.pile[result.Class], result)
+					sb.Pile[result.Class] = append(sb.Pile[result.Class], result)
 				}
 				state[namedRouteKey] = nil
 			}
@@ -485,7 +359,7 @@ func BuildServersOnly(inputServerBlocks []caddyfile.ServerBlock, options map[str
 	// map
 	sbmap, err := st.mapAddressToProtocolToServerBlocks(originalServerBlocks, options)
 	if err != nil {
-		return nil, nil, warnings, err
+		return nil, nil, nil, warnings, err
 	}
 
 	// reduce
@@ -495,7 +369,7 @@ func BuildServersOnly(inputServerBlocks []caddyfile.ServerBlock, options map[str
 	// blocks is basically a server definition
 	servers, err := st.serversFromPairings(pairings, options, &warnings, gc)
 	if err != nil {
-		return nil, nil, warnings, err
+		return nil, nil, nil, warnings, err
 	}
 
 	// hoist the metrics config from per-server to global
@@ -510,29 +384,14 @@ func BuildServersOnly(inputServerBlocks []caddyfile.ServerBlock, options map[str
 		}
 	}
 
-	// now that each server is configured, make the HTTP app
-	httpApp := &caddyhttp.App{
-		HTTPPort:      tryInt(options["http_port"], &warnings),
-		HTTPSPort:     tryInt(options["https_port"], &warnings),
-		GracePeriod:   tryDuration(options["grace_period"], &warnings),
-		ShutdownDelay: tryDuration(options["shutdown_delay"], &warnings),
-		Metrics:       metrics,
-		Servers:       servers,
-	}
-
-	return httpApp, pairings, warnings, nil
+	return servers, pairings, metrics, warnings, nil
 }
 
-// evaluateGlobalOptionsBlock evaluates the global options block,
-// which is expected to be the first server block if it has zero
-// keys. It returns the updated list of server blocks with the
-// global options block removed, and updates options accordingly.
-func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options map[string]any) ([]serverBlock, error) {
-	if len(serverBlocks) == 0 || len(serverBlocks[0].block.Keys) > 0 {
-		return serverBlocks, nil
-	}
-
-	for _, segment := range serverBlocks[0].block.Segments {
+// EvaluateGlobalOptions processes global option directives from the given segments
+// and stores the parsed values in the options map. This is the core reusable logic
+// for parsing global options that can be used by both httpcaddyfile and xcaddyfile.
+func EvaluateGlobalOptions(segments []caddyfile.Segment, options map[string]any) error {
+	for _, segment := range segments {
 		opt := segment.Directive()
 		var val any
 		var err error
@@ -541,12 +400,12 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 		optFunc, ok := registeredGlobalOptions[opt]
 		if !ok {
 			tkn := segment[0]
-			return nil, fmt.Errorf("%s:%d: unrecognized global option: %s", tkn.File, tkn.Line, opt)
+			return fmt.Errorf("%s:%d: unrecognized global option: %s", tkn.File, tkn.Line, opt)
 		}
 
 		val, err = optFunc(disp, options[opt])
 		if err != nil {
-			return nil, fmt.Errorf("parsing caddyfile tokens for '%s': %v", opt, err)
+			return fmt.Errorf("parsing caddyfile tokens for '%s': %v", opt, err)
 		}
 
 		// As a special case, fold multiple "servers" options together
@@ -558,7 +417,7 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 			}
 			serverOpts, ok := val.(ServerOptions)
 			if !ok {
-				return nil, fmt.Errorf("unexpected type from 'servers' global options: %T", val)
+				return fmt.Errorf("unexpected type from 'servers' global options: %T", val)
 			}
 			options[opt] = append(existingOpts, serverOpts)
 			continue
@@ -572,7 +431,7 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 			}
 			logOpts, ok := val.([]ConfigValue)
 			if !ok {
-				return nil, fmt.Errorf("unexpected type from 'log' global options: %T", val)
+				return fmt.Errorf("unexpected type from 'log' global options: %T", val)
 			}
 			options[opt] = append(existingOpts, logOpts...)
 			continue
@@ -586,7 +445,7 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 			}
 			defaultBindOpts, ok := val.([]ConfigValue)
 			if !ok {
-				return nil, fmt.Errorf("unexpected type from 'default_bind' global options: %T", val)
+				return fmt.Errorf("unexpected type from 'default_bind' global options: %T", val)
 			}
 			options[opt] = append(existingOpts, defaultBindOpts...)
 			continue
@@ -605,10 +464,26 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 		seen := make(map[string]bool)
 		for _, entry := range serverOpts {
 			if _, alreadySeen := seen[entry.ListenerAddress]; alreadySeen {
-				return nil, fmt.Errorf("cannot have 'servers' global options with duplicate listener addresses: %s", entry.ListenerAddress)
+				return fmt.Errorf("cannot have 'servers' global options with duplicate listener addresses: %s", entry.ListenerAddress)
 			}
 			seen[entry.ListenerAddress] = true
 		}
+	}
+
+	return nil
+}
+
+// evaluateGlobalOptionsBlock checks if the first server block is a global options block
+// (has zero keys), evaluates it using EvaluateGlobalOptions, and returns the remaining
+// server blocks with the global block removed.
+func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []ServerBlock, options map[string]any) ([]ServerBlock, error) {
+	if len(serverBlocks) == 0 || len(serverBlocks[0].Block.Keys) > 0 {
+		return serverBlocks, nil
+	}
+
+	// Process the global block using the exported function
+	if err := EvaluateGlobalOptions(serverBlocks[0].Block.Segments, options); err != nil {
+		return nil, err
 	}
 
 	return serverBlocks[1:], nil
@@ -618,11 +493,11 @@ func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []serverBlock, options
 // so they don't get parsed as sites, and stores them in options
 // for later.
 func (ServerType) extractNamedRoutes(
-	serverBlocks []serverBlock,
+	serverBlocks []ServerBlock,
 	options map[string]any,
 	warnings *[]caddyconfig.Warning,
 	replacer ShorthandReplacer,
-) ([]serverBlock, error) {
+) ([]ServerBlock, error) {
 	namedRoutes := map[string]*caddyhttp.Route{}
 
 	gc := counter{new(int)}
@@ -630,12 +505,12 @@ func (ServerType) extractNamedRoutes(
 
 	// copy the server blocks so we can
 	// splice out the named route ones
-	filtered := append([]serverBlock{}, serverBlocks...)
+	filtered := append([]ServerBlock{}, serverBlocks...)
 	index := -1
 
 	for _, sb := range serverBlocks {
 		index++
-		if !sb.block.IsNamedRoute {
+		if !sb.Block.IsNamedRoute {
 			continue
 		}
 
@@ -643,18 +518,18 @@ func (ServerType) extractNamedRoutes(
 		filtered = append(filtered[:index], filtered[index+1:]...)
 		index--
 
-		if len(sb.block.Segments) == 0 {
+		if len(sb.Block.Segments) == 0 {
 			continue
 		}
 
 		wholeSegment := caddyfile.Segment{}
-		for i := range sb.block.Segments {
+		for i := range sb.Block.Segments {
 			// replace user-defined placeholder shorthands in extracted named routes
-			replacer.ApplyToSegment(&sb.block.Segments[i])
+			replacer.ApplyToSegment(&sb.Block.Segments[i])
 
 			// zip up all the segments since ParseSegmentAsSubroute
 			// was designed to take a directive+
-			wholeSegment = append(wholeSegment, sb.block.Segments[i]...)
+			wholeSegment = append(wholeSegment, sb.Block.Segments[i]...)
 		}
 
 		h := Helper{
@@ -662,7 +537,7 @@ func (ServerType) extractNamedRoutes(
 			options:      options,
 			warnings:     warnings,
 			matcherDefs:  nil,
-			parentBlock:  sb.block,
+			parentBlock:  sb.Block,
 			groupCounter: gc,
 			State:        state,
 		}
@@ -682,7 +557,7 @@ func (ServerType) extractNamedRoutes(
 			route.HandlersRaw = []json.RawMessage{caddyconfig.JSONModuleObject(handler, "handler", subroute.CaddyModule().ID.Name(), h.warnings)}
 		}
 
-		namedRoutes[sb.block.GetKeysText()[0]] = &route
+		namedRoutes[sb.Block.GetKeysText()[0]] = &route
 	}
 	options["named_routes"] = namedRoutes
 
@@ -720,12 +595,12 @@ func (st *ServerType) serversFromPairings(
 		// address), otherwise their routes will improperly be added
 		// to the same server (see issue #4635)
 		for j, sblock1 := range p.serverBlocks {
-			for _, key := range sblock1.block.GetKeysText() {
+			for _, key := range sblock1.Block.GetKeysText() {
 				for k, sblock2 := range p.serverBlocks {
 					if k == j {
 						continue
 					}
-					if slices.Contains(sblock2.block.GetKeysText(), key) {
+					if slices.Contains(sblock2.Block.GetKeysText(), key) {
 						return nil, fmt.Errorf("ambiguous site definition: %s", key)
 					}
 				}
@@ -801,7 +676,7 @@ func (st *ServerType) serversFromPairings(
 		// See ParseAddress() where parsing should later reject paths
 		// See https://github.com/caddyserver/caddy/pull/4728 for a full explanation
 		for _, sblock := range p.serverBlocks {
-			for _, addr := range sblock.parsedKeys {
+			for _, addr := range sblock.ParsedKeys {
 				if addr.Path != "" {
 					caddy.Log().Named("caddyfile").Warn("Using a path in a site address is deprecated; please use the 'handle' directive instead", zap.String("address", addr.String()))
 				}
@@ -819,7 +694,7 @@ func (st *ServerType) serversFromPairings(
 			var iLongestPath, jLongestPath string
 			var iLongestHost, jLongestHost string
 			var iWildcardHost, jWildcardHost bool
-			for _, addr := range p.serverBlocks[i].parsedKeys {
+			for _, addr := range p.serverBlocks[i].ParsedKeys {
 				if strings.Contains(addr.Host, "*") || addr.Host == "" {
 					iWildcardHost = true
 				}
@@ -830,7 +705,7 @@ func (st *ServerType) serversFromPairings(
 					iLongestPath = addr.Path
 				}
 			}
-			for _, addr := range p.serverBlocks[j].parsedKeys {
+			for _, addr := range p.serverBlocks[j].ParsedKeys {
 				if strings.Contains(addr.Host, "*") || addr.Host == "" {
 					jWildcardHost = true
 				}
@@ -868,7 +743,7 @@ func (st *ServerType) serversFromPairings(
 		// that all server blocks can populate it with data, even when not
 		// coming with a log directive
 		for _, sblock := range p.serverBlocks {
-			if len(sblock.pile["custom_log"]) != 0 {
+			if len(sblock.Pile["custom_log"]) != 0 {
 				srv.Logs = new(caddyhttp.ServerLogConfig)
 				break
 			}
@@ -877,10 +752,10 @@ func (st *ServerType) serversFromPairings(
 		// add named routes to the server if 'invoke' was used inside of it
 		configuredNamedRoutes := options["named_routes"].(map[string]*caddyhttp.Route)
 		for _, sblock := range p.serverBlocks {
-			if len(sblock.pile[namedRouteKey]) == 0 {
+			if len(sblock.Pile[namedRouteKey]) == 0 {
 				continue
 			}
-			for _, value := range sblock.pile[namedRouteKey] {
+			for _, value := range sblock.Pile[namedRouteKey] {
 				if srv.NamedRoutes == nil {
 					srv.NamedRoutes = map[string]*caddyhttp.Route{}
 				}
@@ -896,7 +771,7 @@ func (st *ServerType) serversFromPairings(
 		for _, sblock := range p.serverBlocks {
 			matcherSetsEnc, err := st.compileEncodedMatcherSets(sblock)
 			if err != nil {
-				return nil, fmt.Errorf("server block %v: compiling matcher sets: %v", sblock.block.Keys, err)
+				return nil, fmt.Errorf("server block %v: compiling matcher sets: %v", sblock.Block.Keys, err)
 			}
 
 			hosts := sblock.hostsFromKeys(false)
@@ -910,14 +785,14 @@ func (st *ServerType) serversFromPairings(
 
 			// collect hosts that are forced to be automated
 			forceAutomatedNames := make(map[string]struct{})
-			if _, ok := sblock.pile["tls.force_automate"]; ok {
+			if _, ok := sblock.Pile["tls.force_automate"]; ok {
 				for _, host := range hosts {
 					forceAutomatedNames[host] = struct{}{}
 				}
 			}
 
 			// tls: connection policies
-			if cpVals, ok := sblock.pile["tls.connection_policy"]; ok {
+			if cpVals, ok := sblock.Pile["tls.connection_policy"]; ok {
 				// tls connection policies
 				for _, cpVal := range cpVals {
 					cp := cpVal.Value.(*caddytls.ConnectionPolicy)
@@ -960,7 +835,7 @@ func (st *ServerType) serversFromPairings(
 				}
 			}
 
-			for _, addr := range sblock.parsedKeys {
+			for _, addr := range sblock.ParsedKeys {
 				// if server only uses HTTP port, auto-HTTPS will not apply
 				if listenersUseAnyPortOtherThan(srv.Listen, httpPort) {
 					// exclude any hosts that were defined explicitly with "http://"
@@ -981,7 +856,7 @@ func (st *ServerType) serversFromPairings(
 				// Second part of the condition is to allow creating TLS conn policy even though `auto_https` has been disabled
 				// ensuring compatibility with behavior described in below link
 				// https://caddy.community/t/making-sense-of-auto-https-and-why-disabling-it-still-serves-https-instead-of-http/9761
-				createdTLSConnPolicies, ok := sblock.pile["tls.connection_policy"]
+				createdTLSConnPolicies, ok := sblock.Pile["tls.connection_policy"]
 				hasTLSEnabled := (ok && len(createdTLSConnPolicies) > 0) ||
 					(addr.Host != "" && srv.AutoHTTPS != nil && !slices.Contains(srv.AutoHTTPS.Skip, addr.Host))
 
@@ -999,7 +874,7 @@ func (st *ServerType) serversFromPairings(
 			}
 
 			// Look for any config values that provide listener wrappers on the server block
-			for _, listenerConfig := range sblock.pile["listener_wrapper"] {
+			for _, listenerConfig := range sblock.Pile["listener_wrapper"] {
 				listenerWrapper, ok := listenerConfig.Value.(caddy.ListenerWrapper)
 				if !ok {
 					return nil, fmt.Errorf("config for a listener wrapper did not provide a value that implements caddy.ListenerWrapper")
@@ -1013,7 +888,7 @@ func (st *ServerType) serversFromPairings(
 			}
 
 			// set up each handler directive, making sure to honor directive order
-			dirRoutes := sblock.pile["route"]
+			dirRoutes := sblock.Pile["route"]
 			siteSubroute, err := buildSubroute(dirRoutes, groupCounter, true)
 			if err != nil {
 				return nil, err
@@ -1023,7 +898,7 @@ func (st *ServerType) serversFromPairings(
 			srv.Routes = appendSubrouteToRouteList(srv.Routes, siteSubroute, matcherSetsEnc, p, warnings)
 
 			// if error routes are defined, add those too
-			if errorSubrouteVals, ok := sblock.pile["error_route"]; ok {
+			if errorSubrouteVals, ok := sblock.Pile["error_route"]; ok {
 				if srv.Errors == nil {
 					srv.Errors = new(caddyhttp.HTTPErrorConfig)
 				}
@@ -1045,7 +920,7 @@ func (st *ServerType) serversFromPairings(
 			// add log associations
 			// see https://github.com/caddyserver/caddy/issues/3310
 			sblockLogHosts := sblock.hostsFromKeys(true)
-			for _, cval := range sblock.pile["custom_log"] {
+			for _, cval := range sblock.Pile["custom_log"] {
 				ncl := cval.Value.(namedCustomLog)
 
 				// if `no_hostname` is set, then this logger will not
@@ -1083,7 +958,7 @@ func (st *ServerType) serversFromPairings(
 					}
 				}
 			}
-			if srv.Logs != nil && len(sblock.pile["custom_log"]) == 0 {
+			if srv.Logs != nil && len(sblock.Pile["custom_log"]) == 0 {
 				// server has access logs enabled, but this server block does not
 				// enable access logs; therefore, all hosts of this server block
 				// should not be access-logged
@@ -1146,7 +1021,7 @@ func (st *ServerType) serversFromPairings(
 	return servers, nil
 }
 
-func detectConflictingSchemes(srv *caddyhttp.Server, serverBlocks []serverBlock, options map[string]any) error {
+func detectConflictingSchemes(srv *caddyhttp.Server, serverBlocks []ServerBlock, options map[string]any) error {
 	httpPort := strconv.Itoa(caddyhttp.DefaultHTTPPort)
 	if hp, ok := options["http_port"].(int); ok {
 		httpPort = strconv.Itoa(hp)
@@ -1184,7 +1059,7 @@ func detectConflictingSchemes(srv *caddyhttp.Server, serverBlocks []serverBlock,
 	}
 
 	for _, sblock := range serverBlocks {
-		for _, addr := range sblock.parsedKeys {
+		for _, addr := range sblock.ParsedKeys {
 			if addr.Scheme == "http" || addr.Port == httpPort {
 				if err := checkAndSetHTTP(addr); err != nil {
 					return err
@@ -1603,7 +1478,7 @@ func matcherSetFromMatcherToken(
 	return nil, false, nil
 }
 
-func (st *ServerType) compileEncodedMatcherSets(sblock serverBlock) ([]caddy.ModuleMap, error) {
+func (st *ServerType) compileEncodedMatcherSets(sblock ServerBlock) ([]caddy.ModuleMap, error) {
 	type hostPathPair struct {
 		hostm caddyhttp.MatchHost
 		pathm caddyhttp.MatchPath
@@ -1613,7 +1488,7 @@ func (st *ServerType) compileEncodedMatcherSets(sblock serverBlock) ([]caddy.Mod
 	var matcherPairs []*hostPathPair
 
 	var catchAllHosts bool
-	for _, addr := range sblock.parsedKeys {
+	for _, addr := range sblock.ParsedKeys {
 		// choose a matcher pair that should be shared by this
 		// server block; if none exists yet, create one
 		var chosenMatcherPair *hostPathPair
@@ -1671,7 +1546,7 @@ func (st *ServerType) compileEncodedMatcherSets(sblock serverBlock) ([]caddy.Mod
 	for _, ms := range matcherSets {
 		msEncoded, err := encodeMatcherSet(ms)
 		if err != nil {
-			return nil, fmt.Errorf("server block %v: %v", sblock.block.Keys, err)
+			return nil, fmt.Errorf("server block %v: %v", sblock.Block.Keys, err)
 		}
 		matcherSetsEnc = append(matcherSetsEnc, msEncoded)
 	}
@@ -1803,6 +1678,25 @@ func WasReplacedPlaceholderShorthand(token string) string {
 
 // tryInt tries to convert val to an integer. If it fails,
 // it downgrades the error to a warning and returns 0.
+// TryInt converts val to an int, adding a warning if conversion fails.
+// This is exported for use by xcaddyfile.
+func TryInt(val any, warnings *[]caddyconfig.Warning) int {
+	return tryInt(val, warnings)
+}
+
+// TryDuration converts val to a caddy.Duration, adding a warning if conversion fails.
+// This is exported for use by xcaddyfile.
+func TryDuration(val any, warnings *[]caddyconfig.Warning) caddy.Duration {
+	return tryDuration(val, warnings)
+}
+
+// DirectiveIsRegistered returns true if the directive name is registered.
+// This is exported for use by xcaddyfile.
+func DirectiveIsRegistered(name string) bool {
+	_, ok := registeredDirectives[name]
+	return ok
+}
+
 func tryInt(val any, warnings *[]caddyconfig.Warning) int {
 	intVal, ok := val.(int)
 	if val != nil && !ok && warnings != nil {
@@ -1902,6 +1796,37 @@ type namedCustomLog struct {
 	noHostname bool
 }
 
+// GetNamedCustomLogName extracts the name field from a namedCustomLog value.
+// This is exported to allow xcaddyfile to work with namedCustomLog without exposing the type.
+func GetNamedCustomLogName(v any) string {
+	if ncl, ok := v.(namedCustomLog); ok {
+		return ncl.name
+	}
+	return ""
+}
+
+// GetNamedCustomLogLog extracts the log field from a namedCustomLog value.
+// This is exported to allow xcaddyfile to work with namedCustomLog without exposing the type.
+func GetNamedCustomLogLog(v any) *caddy.CustomLog {
+	if ncl, ok := v.(namedCustomLog); ok {
+		return ncl.log
+	}
+	return nil
+}
+
+// CollectServerLogs extracts all server-specific custom log configurations from pairings.
+// This is exported to allow xcaddyfile and other adapters to access server-specific logs
+// that are defined within server blocks (via the log directive).
+func CollectServerLogs(pairings ServerBlockPairings) []ConfigValue {
+	var logs []ConfigValue
+	for _, p := range pairings {
+		for _, sb := range p.serverBlocks {
+			logs = append(logs, sb.Pile["custom_log"]...)
+		}
+	}
+	return logs
+}
+
 // addressWithProtocols associates a listen address with
 // the protocols to serve it with
 type addressWithProtocols struct {
@@ -1914,7 +1839,7 @@ type addressWithProtocols struct {
 // blocks that are served on those addresses.
 type sbAddrAssociation struct {
 	addressesWithProtocols []addressWithProtocols
-	serverBlocks           []serverBlock
+	serverBlocks           []ServerBlock
 }
 
 const (
