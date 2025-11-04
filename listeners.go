@@ -203,9 +203,16 @@ func (na NetworkAddress) Listen(ctx context.Context, portOffset uint, config net
 }
 
 // IsUnixNetwork returns true if na.Network is
-// unix, unixgram, or unixpacket.
+// unix, unixgram, unixpacket, or unix+h2c.
 func (na NetworkAddress) IsUnixNetwork() bool {
 	return IsUnixNetwork(na.Network)
+}
+
+
+// IsIpNetwork returns true if na.Network starts with
+// ip: ip4: or ip6:
+func (na NetworkAddress) IsIpNetwork() bool {
+	return IsIpNetwork(na.Network)
 }
 
 // IsFdNetwork returns true if na.Network is
@@ -214,10 +221,10 @@ func (na NetworkAddress) IsFdNetwork() bool {
 	return IsFdNetwork(na.Network)
 }
 
-// IsIpNetwork returns true if na.Network starts with
-// ip: ip4: or ip6:
-func (na NetworkAddress) IsIpNetwork() bool {
-	return IsIpNetwork(na.Network)
+// IsIfaceNetwork returns true if na.Network is
+// iface, iface4, iface6, ifacegram, ifacegram4, or ifacegram6.
+func (na NetworkAddress) IsIfaceNetwork() bool {
+	return IsIfaceNetwork(na.Network)
 }
 
 // JoinHostPort is like net.JoinHostPort, but where the port

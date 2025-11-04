@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/netip"
 	"strings"
 	"sync"
 
@@ -37,6 +38,11 @@ func IsIpNetwork(netw string) bool {
 // IsFdNetwork returns true if the netw is a fd network.
 func IsFdNetwork(netw string) bool {
 	return netw == "fd" || netw == "fdgram"
+}
+
+// IsIfaceNetwork returns true if the netw is an iface network.
+func IsIfaceNetwork(netw string) bool {
+	return netw == "iface" || netw == "iface4" || netw == "iface6" || netw == "ifacegram" || netw == "ifacegram4" || netw == "ifacegram6"
 }
 
 // ListenerFunc is a function that can return a listener given a network and address.
@@ -69,6 +75,73 @@ func RegisterNetwork(network string, getListener ListenerFunc) {
 	defer networkPluginsMu.Unlock()
 
 	networkPlugins[network] = getListener
+}
+
+func getListenerFromIface(ctx context.Context, network, host, port string, portOffset uint, config net.ListenConfig) (any, error) {
+	iface, err := net.InterfaceByName(host)
+	if err != nil {
+		return nil, err
+	}
+
+	var (
+		addrs []net.Addr
+		err error
+	)
+	switch network {
+		case "iface": fallthrough
+		case "iface4": fallthrough
+		case "iface6":
+			unicast, err = iface.Addrs()
+			if err != nil {
+				//todo
+			} else {
+				addrs = append(addrs, unicast...)
+			}
+		case "ifacegram": fallthrough
+		case "ifacegram4": fallthrough
+		case "ifacegram6":
+			multicast, err = iface.MulticastAddrs()
+			if err != nil {
+				//todo
+			} else {
+				addrs = append(addrs, multicast...)
+			}
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	for _, addr := range addrs {
+		switch addrt := addr.(type) {
+			case *net.IPAddr:
+
+			case *net.IPNet:
+
+		}
+		prefix, err := netip.ParsePrefix(addr.String())
+		preaddr := prefix.Addr()
+		if(preaddr.Is4()) {
+			switch network {
+				case "iface": fallthrough
+				case "iface4": fallthrough
+				case "ifacegram": fallthrough
+				case "ifacegram4":
+					//todo
+			}
+		}
+		if(preaddr.Is6()) {
+			switch network {
+				case "iface": fallthrough
+				case "iface6": fallthrough
+				case "ifacegram": fallthrough
+				case "ifacegram6":
+					//todo
+			}
+		}
+		if err != nil {
+			continue
+		}
+	}
 }
 
 // getListenerFromPlugin returns a listener on the given network and address
