@@ -20,6 +20,8 @@ import (
 	"sort"
 	"strings"
 
+	"go.uber.org/zap"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -28,7 +30,6 @@ import (
 	_ "github.com/caddyserver/caddy/v2/caddyconfig/xcaddyfile/blocktypes/globalblock"
 	_ "github.com/caddyserver/caddy/v2/caddyconfig/xcaddyfile/blocktypes/httpserverblock"
 	"github.com/caddyserver/caddy/v2/caddyconfig/xcaddyfile/configbuilder"
-	"go.uber.org/zap"
 )
 
 func init() {
