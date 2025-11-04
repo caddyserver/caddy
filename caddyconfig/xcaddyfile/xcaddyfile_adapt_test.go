@@ -15,6 +15,7 @@
 package xcaddyfile
 
 import (
+	"bytes"
 	"encoding/json"
 	"testing"
 
@@ -126,21 +127,18 @@ example.com {
 				t.Logf("Warning count differs: caddyfile=%d, xcaddyfile=%d", len(caddyfileWarnings), len(xcaddyfileWarnings))
 			}
 
-			// Unmarshal both configs for comparison
-			var caddyfileJSON, xcaddyfileJSON map[string]interface{}
-			if err := json.Unmarshal(caddyfileCfg, &caddyfileJSON); err != nil {
-				t.Fatalf("Failed to unmarshal caddyfile config: %v", err)
+			// Normalize both JSON configs for comparison (prettify)
+			var caddyfileBuf, xcaddyfileBuf bytes.Buffer
+			if err := json.Indent(&caddyfileBuf, caddyfileCfg, "", "  "); err != nil {
+				t.Fatalf("Failed to indent caddyfile config: %v", err)
 			}
-			if err := json.Unmarshal(xcaddyfileCfg, &xcaddyfileJSON); err != nil {
-				t.Fatalf("Failed to unmarshal xcaddyfile config: %v", err)
+			if err := json.Indent(&xcaddyfileBuf, xcaddyfileCfg, "", "  "); err != nil {
+				t.Fatalf("Failed to indent xcaddyfile config: %v", err)
 			}
 
-			// Marshal back to compare as strings (for easier debugging)
-			caddyfileStr, _ := json.MarshalIndent(caddyfileJSON, "", "  ")
-			xcaddyfileStr, _ := json.MarshalIndent(xcaddyfileJSON, "", "  ")
-
-			if string(caddyfileStr) != string(xcaddyfileStr) {
-				t.Errorf("Config mismatch:\n\nCaddyfile output:\n%s\n\nXCaddyfile output:\n%s", caddyfileStr, xcaddyfileStr)
+			if caddyfileBuf.String() != xcaddyfileBuf.String() {
+				t.Errorf("Config mismatch:\n\nCaddyfile output:\n%s\n\nXCaddyfile output:\n%s",
+					caddyfileBuf.String(), xcaddyfileBuf.String())
 			}
 		})
 	}
