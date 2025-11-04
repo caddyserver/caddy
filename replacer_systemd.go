@@ -13,7 +13,7 @@ import (
 func sdListenFds() (int, error) {
 	lnPid, ok := os.LookupEnv("LISTEN_PID")
 	if !ok {
-		return 0, errors.New("LISTEN_PID is unset.")
+		return 0, errors.New("LISTEN_PID is unset")
 	}
 
 	pid, err := strconv.Atoi(lnPid)
@@ -27,7 +27,7 @@ func sdListenFds() (int, error) {
 
 	lnFds, ok := os.LookupEnv("LISTEN_FDS")
 	if !ok {
-		return 0, errors.New("LISTEN_FDS is unset.")
+		return 0, errors.New("LISTEN_FDS is unset")
 	}
 
 	fds, err := strconv.Atoi(lnFds)
@@ -48,7 +48,7 @@ func sdListenFdsWithNames() (map[string][]uint, error) {
 
 	lnFdnames, ok := os.LookupEnv("LISTEN_FDNAMES")
 	if !ok {
-		return nil, errors.New("LISTEN_FDNAMES is unset.")
+		return nil, errors.New("LISTEN_FDNAMES is unset")
 	}
 
 	fdNames := strings.Split(lnFdnames, ":")
