@@ -28,6 +28,14 @@ func IsUnixNetwork(netw string) bool {
 	return netw == "unix" || netw == "unixgram" || netw == "unixpacket" || netw == "unix+h2c"
 }
 
+func IsTCPNetwork(netw string) bool {
+	return netw == "tcp" || netw == "tcp4" || netw == "tcp6"
+}
+
+func IsUDPNetwork(netw string) bool {
+	return netw == "udp" || netw == "udp4" || netw == "udp6"
+}
+
 // IsIpNetwork returns true if the netw is an ip network.
 func IsIpNetwork(netw string) bool {
 	return strings.HasPrefix(netw, "ip:") || strings.HasPrefix(netw, "ip4:") || strings.HasPrefix(netw, "ip6:")
@@ -39,11 +47,19 @@ func IsFdNetwork(netw string) bool {
 }
 
 func IsReservedNetwork(network string) bool {
-	return network == "tcp" || network == "tcp4" || network == "tcp6" ||
-		network == "udp" || network == "udp4" || network == "udp6" ||
+	return IsTCPNetwork(network) ||
+		IsUDPNetwork(network) ||
 		IsUnixNetwork(network) ||
 		IsIpNetwork(network) ||
 		IsFdNetwork(network)
+}
+
+func IsIPv4Network(netw string) bool {
+	return netw == "tcp" || netw == "udp" || netw == "tcp4" || netw == "udp4" || strings.HasPrefix(netw, "ip:") || strings.HasPrefix(netw, "ip4:")
+}
+
+func IsIPv6Network(netw string) bool {
+	return netw == "tcp" || netw == "udp" || netw == "tcp6" || netw == "udp6" || strings.HasPrefix(netw, "ip:") || strings.HasPrefix(netw, "ip6:")
 }
 
 // ListenerFunc is a function that can return a listener given a network and address.
