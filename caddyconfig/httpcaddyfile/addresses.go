@@ -364,10 +364,10 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 					}
 
 					if len(ip) == 4 && caddy.IsIPv4Network(lnNetw) || len(ip) == 16 && caddy.IsIPv6Network(lnNetw) {
-						ifaceAddresses = append(ifaceAddresses,caddy.JoinNetworkAddress(lnNetw, ip.String(), ""))
+						ifaceAddresses = append(ifaceAddresses, caddy.JoinNetworkAddress(lnNetw, ip.String(), ""))
 					}
 				}
-			    if len(ifaceAddresses) == 0 {
+				if len(ifaceAddresses) == 0 {
 					return nil, fmt.Errorf("querying listener interface addresses for network: %v: %v", lnDevice, lnNetw)
 				}
 				interfaceAddresses[lnDevice] = ifaceAddresses
