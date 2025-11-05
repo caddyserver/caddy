@@ -342,12 +342,15 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 			ifaceAddresses, ok := interfaceAddresses[lnDevice]
 			if !ok {
 				iface, err := net.InterfaceByName(lnDevice)
-				if err != nil || iface == nil {
-					return nil, fmt.Errorf("querying listener interface: %v", err)
+				if err != nil {
+					return nil, fmt.Errorf("querying listener interface: %v: %v", lnDevice, err)
+				}
+				if iface == nil {
+					return nil, fmt.Errorf("querying listener interface: %v", lnDevice)
 				}
 				ifaceAddrs, err := iface.Addrs()
 				if err != nil {
-					return nil, fmt.Errorf("querying listener interface addresses: %v", err)
+					return nil, fmt.Errorf("querying listener interface addresses: %v: %v", lnDevice, err)
 				}
 				for _, ifaceAddr := range ifaceAddrs {
 					var ip net.IP
@@ -357,7 +360,7 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 					case *net.IPNet:
 						ip = ifaceAddrValue.IP
 					default:
-						return nil, fmt.Errorf("reading listener interface address: %v", ifaceAddr.String())
+						return nil, fmt.Errorf("reading listener interface address: %v: %v", lnDevice, ifaceAddr.String())
 					}
 
 					if len(ip) == 4 && caddy.IsIPv4Network(lnNetw) || len(ip) == 16 && caddy.IsIPv6Network(lnNetw) {
@@ -365,7 +368,7 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 					}
 				}
 			    if len(ifaceAddresses) == 0 {
-					return nil, fmt.Errorf("querying listener interface addresses for network: %v for %v", lnDevice, lnNetw)
+					return nil, fmt.Errorf("querying listener interface addresses for network: %v: %v", lnDevice, lnNetw)
 				}
 				interfaceAddresses[lnDevice] = ifaceAddresses
 			}
