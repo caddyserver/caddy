@@ -1,0 +1,157 @@
+name: Release Proposal
+
+# This workflow creates a release proposal that requires approval from maintainers
+# Triggered manually by maintainers when ready to prepare a release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., v2.8.0)'
+        required: true
+        type: string
+      prerelease:
+        description: 'Is this a pre-release?'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  create-proposal:
+    name: Create Release Proposal
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        with:
+          egress-policy: audit
+      - name: Checkout code
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Validate version format
+        run: |
+          if [[ ! "${{ inputs.version }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+            echo "Error: Version must follow semver format (e.g., v2.8.0 or v2.8.0-beta.1)"
+            exit 1
+          fi
+
+      - name: Check if tag already exists
+        run: |
+          if git rev-parse "${{ inputs.version }}" >/dev/null 2>&1; then
+            echo "Error: Tag ${{ inputs.version }} already exists"
+            exit 1
+          fi
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get the HEAD commit hash
+          HEAD_COMMIT=$(git rev-parse HEAD)
+          echo "head_commit=$HEAD_COMMIT" >> $GITHUB_OUTPUT
+          
+          # Get the last tag
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          
+          if [ -z "$LAST_TAG" ]; then
+            echo "No previous tag found, generating full changelog"
+            COMMITS=$(git log --pretty=format:"- %s (%h)" --reverse)
+          else
+            echo "Generating changelog since $LAST_TAG"
+            COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"- %s (%h)" --reverse)
+          fi
+          
+          # Save commits to file
+          echo "$COMMITS" > /tmp/commits.txt
+          
+          echo "commits_file=/tmp/commits.txt" >> $GITHUB_OUTPUT
+
+      - name: Create release proposal issue
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const commits = fs.readFileSync('/tmp/commits.txt', 'utf8');
+            const isPrerelease = '${{ inputs.prerelease }}' === 'true';
+            const releaseType = isPrerelease ? 'Pre-release' : 'Stable Release';
+            
+            const body = [
+              '## Release Proposal: ${{ inputs.version }}',
+              '',
+              '**Proposed by:** @${{ github.actor }}',
+              `**Type:** ${releaseType}`,
+              '**Commit:** `${{ steps.changelog.outputs.head_commit }}`',
+              '',
+              '### Approval Requirements',
+              '',
+              '- [ ] Minimum 2 maintainer approvals required (use 👍 reaction)',
+              '- [ ] CI/CD checks must pass',
+              '- [ ] Security review completed',
+              '- [ ] Documentation updated',
+              '',
+              '### Changes Since Last Release',
+              '',
+              commits.trim(),
+              '',
+              '### Next Steps',
+              '',
+              '1. Review the changes above',
+              '2. Verify all tests pass',
+              '3. Maintainers: React with 👍 to approve',
+              '4. Once approved, a maintainer will run the tag creation workflow',
+              '',
+              '### Maintainer Actions',
+              '',
+              'After approval, run:',
+              '```bash',
+              '# Pull latest changes',
+              'git checkout master',
+              'git pull origin master',
+              '',
+              '# Create signed tag (requires SSH key)',
+              'git tag -s -m "Release ${{ inputs.version }}" ${{ inputs.version }} ${{ steps.changelog.outputs.head_commit }}',
+              '',
+              '# Verify the tag signature',
+              'git tag -v ${{ inputs.version }}',
+              '',
+              '# Push the tag',
+              'git push origin ${{ inputs.version }}',
+              '```',
+              '',
+              '---',
+              '',
+              '**Automation Note:** This proposal requires manual tag creation to ensure maintainer signatures are used.'
+            ].join('\n');
+            
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Release Proposal: ${{ inputs.version }}`,
+              body: body,
+              labels: ['release-proposal', 'needs-approval']
+            });
+            
+            console.log(`Created issue: ${issue.data.html_url}`);
+            
+            // Pin the issue
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.data.number,
+              state: 'open'
+            });
+
+      - name: Post summary
+        run: |
+          echo "## Release Proposal Created! 🚀" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Version: **${{ inputs.version }}**" >> $GITHUB_STEP_SUMMARY
+          echo "Type: **${{ inputs.prerelease == 'true' && 'Pre-release' || 'Stable Release' }}**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Check the issues tab for the release proposal." >> $GITHUB_STEP_SUMMARY
