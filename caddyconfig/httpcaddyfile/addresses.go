@@ -328,6 +328,7 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 	}
 
 	// use a map to prevent duplication
+	interfaceAddress := map[string]string{}
 	listeners := map[string]map[string]struct{}{}
 	for _, lnCfgVal := range lnCfgVals {
 		addresses := []string{}
@@ -337,24 +338,29 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 			if err != nil {
 				return nil, fmt.Errorf("splitting listener interface: %v", err)
 			}
-			iface, err := net.InterfaceByName(lnDevice)
-			if err != nil || iface == nil {
-				return nil, fmt.Errorf("querying listener interface: %v", err)
-			}
-			ifaceAddrs, err := iface.Addrs()
-			if err != nil {
-				return nil, fmt.Errorf("querying listener interface addresses: %v", err)
-			}
-			for _, ifaceAddr := range ifaceAddrs {
-				switch ifaceAddrValue := ifaceAddr.(type) {
-				case *net.IPAddr:
-					addresses = append(addresses, caddy.JoinNetworkAddress(lnNetw, ifaceAddrValue.IP.String(), ""))
-				case *net.IPNet:
-					addresses = append(addresses, caddy.JoinNetworkAddress(lnNetw, ifaceAddrValue.IP.String(), ""))
-				default:
-					return nil, fmt.Errorf("reading listener interface address: %v", ifaceAddr.String())
+
+			address, ok := interfaceAddress[lnDevice]
+			if !ok {
+				iface, err := net.InterfaceByName(lnDevice)
+				if err != nil || iface == nil {
+					return nil, fmt.Errorf("querying listener interface: %v", err)
+				}
+				ifaceAddrs, err := iface.Addrs()
+				if err != nil {
+					return nil, fmt.Errorf("querying listener interface addresses: %v", err)
+				}
+				for _, ifaceAddr := range ifaceAddrs {
+					switch ifaceAddrValue := ifaceAddr.(type) {
+					case *net.IPAddr:
+						address = caddy.JoinNetworkAddress(lnNetw, ifaceAddrValue.IP.String(), "")
+					case *net.IPNet:
+						address = caddy.JoinNetworkAddress(lnNetw, ifaceAddrValue.IP.String(), "")
+					default:
+						return nil, fmt.Errorf("reading listener interface address: %v", ifaceAddr.String())
+					}
 				}
 			}
+			addresses = append(addresses, address)
 		}
 		for _, lnAddr := range addresses {
 			lnNetw, lnHost, _, err := caddy.SplitNetworkAddress(lnAddr)
