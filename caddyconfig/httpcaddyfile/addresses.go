@@ -356,7 +356,7 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 				}
 			}
 		}
-		for _, lnAddr := range lnCfgVal.addresses {
+		for _, lnAddr := range addresses {
 			lnNetw, lnHost, _, err := caddy.SplitNetworkAddress(lnAddr)
 			if err != nil {
 				return nil, fmt.Errorf("splitting listener address: %v", err)
