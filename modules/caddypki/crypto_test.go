@@ -144,7 +144,7 @@ func TestKeyPair_Load(t *testing.T) {
 			t.Fatalf("Failed loading KeyPair: %v", err)
 		}
 		if len(chain) != 2 {
-			t.Errorf("Expected 1 certificate in chain; got %d", len(chain))
+			t.Errorf("Expected 2 certificates in chain; got %d", len(chain))
 		}
 		if signer == nil {
 			t.Error("Expected signer to be returned")
@@ -165,6 +165,150 @@ func TestKeyPair_Load(t *testing.T) {
 		}
 		if signer != nil {
 			t.Error("Expected no signer to be returned")
+		}
+	})
+}
+
+func Test_pemDecodeCertificate(t *testing.T) {
+	signer, err := keyutil.GenerateDefaultSigner()
+	if err != nil {
+		t.Fatalf("Failed creating signer: %v", err)
+	}
+
+	tmpl := &x509.Certificate{
+		Subject:    pkix.Name{CommonName: "test-cert"},
+		IsCA:       true,
+		MaxPathLen: 3,
+	}
+	derBytes, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, signer.Public(), signer)
+	if err != nil {
+		t.Fatalf("Creating root certificate failed: %v", err)
+	}
+	cert, err := x509.ParseCertificate(derBytes)
+	if err != nil {
+		t.Fatalf("Parsing root certificate failed: %v", err)
+	}
+
+	pemBlock, err := pemutil.Serialize(cert)
+	if err != nil {
+		t.Fatalf("Failed serializing certificate: %v", err)
+	}
+	pemData := pem.EncodeToMemory(pemBlock)
+
+	t.Run("ok", func(t *testing.T) {
+		cert, err := pemDecodeCertificate(pemData)
+		if err != nil {
+			t.Fatalf("Failed decoding PEM data: %v", err)
+		}
+		if cert == nil {
+			t.Errorf("Expected a certificate in PEM data")
+		}
+	})
+
+	t.Run("fail/no-pem-data", func(t *testing.T) {
+		cert, err := pemDecodeCertificate(nil)
+		if err == nil {
+			t.Fatalf("Expected pemDecodeCertificate to return an error")
+		}
+		if cert != nil {
+			t.Errorf("Expected pemDecodeCertificate to return nil")
+		}
+	})
+
+	t.Run("fail/multiple", func(t *testing.T) {
+		multiplePEMData := append(pemData, pemData...)
+		cert, err := pemDecodeCertificate(multiplePEMData)
+		if err == nil {
+			t.Fatalf("Expected pemDecodeCertificate to return an error")
+		}
+		if cert != nil {
+			t.Errorf("Expected pemDecodeCertificate to return nil")
+		}
+	})
+
+	t.Run("fail/no-pem-certificate", func(t *testing.T) {
+		pkData := pem.EncodeToMemory(&pem.Block{
+			Type:  "PRIVATE KEY",
+			Bytes: []byte("some-bogus-private-key"),
+		})
+		cert, err := pemDecodeCertificate(pkData)
+		if err == nil {
+			t.Fatalf("Expected pemDecodeCertificate to return an error")
+		}
+		if cert != nil {
+			t.Errorf("Expected pemDecodeCertificate to return nil")
+		}
+	})
+}
+
+func Test_pemDecodeCertificateChain(t *testing.T) {
+	signer, err := keyutil.GenerateDefaultSigner()
+	if err != nil {
+		t.Fatalf("Failed creating signer: %v", err)
+	}
+
+	tmpl := &x509.Certificate{
+		Subject:    pkix.Name{CommonName: "test-cert"},
+		IsCA:       true,
+		MaxPathLen: 3,
+	}
+	derBytes, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, signer.Public(), signer)
+	if err != nil {
+		t.Fatalf("Creating root certificate failed: %v", err)
+	}
+	cert, err := x509.ParseCertificate(derBytes)
+	if err != nil {
+		t.Fatalf("Parsing root certificate failed: %v", err)
+	}
+
+	pemBlock, err := pemutil.Serialize(cert)
+	if err != nil {
+		t.Fatalf("Failed serializing certificate: %v", err)
+	}
+	pemData := pem.EncodeToMemory(pemBlock)
+
+	t.Run("ok/single", func(t *testing.T) {
+		certs, err := pemDecodeCertificateChain(pemData)
+		if err != nil {
+			t.Fatalf("Failed decoding PEM data: %v", err)
+		}
+		if len(certs) != 1 {
+			t.Errorf("Expected 1 certificate in PEM data; got %d", len(certs))
+		}
+	})
+
+	t.Run("ok/multiple", func(t *testing.T) {
+		multiplePEMData := append(pemData, pemData...)
+		certs, err := pemDecodeCertificateChain(multiplePEMData)
+		if err != nil {
+			t.Fatalf("Failed decoding PEM data: %v", err)
+		}
+		if len(certs) != 2 {
+			t.Errorf("Expected 2 certificates in PEM data; got %d", len(certs))
+		}
+	})
+
+	t.Run("fail/no-pem-certificate", func(t *testing.T) {
+		pkData := pem.EncodeToMemory(&pem.Block{
+			Type:  "PRIVATE KEY",
+			Bytes: []byte("some-bogus-private-key"),
+		})
+		certs, err := pemDecodeCertificateChain(pkData)
+		if err == nil {
+			t.Fatalf("Expected pemDecodeCertificateChain to return an error")
+		}
+		if len(certs) != 0 {
+			t.Errorf("Expected 0 certificates in PEM data; got %d", len(certs))
+		}
+	})
+
+	t.Run("fail/no-der-certificate", func(t *testing.T) {
+		certs, err := pemDecodeCertificateChain([]byte("invalid-der-data"))
+		if err == nil {
+			t.Fatalf("Expected pemDecodeCertificateChain to return an error")
+		}
+		if len(certs) != 0 {
+			t.Errorf("Expected 0 certificates in PEM data; got %d", len(certs))
 		}
 	})
 }

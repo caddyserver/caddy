@@ -286,7 +286,7 @@ func (ca CA) loadOrGenRoot() (rootCert *x509.Certificate, rootKey crypto.Signer,
 	}
 
 	if rootCert == nil {
-		rootCert, err = pemDecodeSingleCert(rootCertPEM)
+		rootCert, err = pemDecodeCertificate(rootCertPEM)
 		if err != nil {
 			return nil, nil, fmt.Errorf("parsing root certificate PEM: %v", err)
 		}

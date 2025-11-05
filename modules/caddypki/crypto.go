@@ -30,7 +30,7 @@ import (
 	"go.step.sm/crypto/pemutil"
 )
 
-func pemDecodeSingleCert(pemDER []byte) (*x509.Certificate, error) {
+func pemDecodeCertificate(pemDER []byte) (*x509.Certificate, error) {
 	pemBlock, remaining := pem.Decode(pemDER)
 	if pemBlock == nil {
 		return nil, fmt.Errorf("no PEM block found")
