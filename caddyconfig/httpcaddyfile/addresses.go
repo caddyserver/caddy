@@ -352,7 +352,7 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 				case *net.IPNet:
 					addresses = append(addresses, caddy.JoinNetworkAddress(lnNetw, ifaceAddrValue.IP.String(), ""))
 				default:
-					return nil, fmt.Errorf("reading listener interface address: %v", err)
+					return nil, fmt.Errorf("reading listener interface address: %v", ifaceAddr.String())
 				}
 			}
 		}
