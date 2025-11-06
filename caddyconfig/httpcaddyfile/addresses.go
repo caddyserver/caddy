@@ -361,8 +361,7 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 					case *net.IPNet:
 						ip = ifaceAddrValue.IP
 					default:
-						caddy.Log().Error("reading listener interface address", zap.String("device", lnDevice), zap.String("address", ifaceAddr.String()))
-						continue
+						return nil, fmt.Errorf("reading listener interface address: %v: %v", lnDevice, ifaceAddr.String())
 					}
 
 					if len(ip) == net.IPv4len && caddy.IsIPv4Network(lnNetw) || len(ip) == net.IPv6len && caddy.IsIPv6Network(lnNetw) {
