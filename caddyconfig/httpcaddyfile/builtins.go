@@ -57,10 +57,10 @@ func init() {
 
 // parseBind parses the bind directive. Syntax:
 //
-//	bind <addresses...> [{
-//	  interfaces <devices...>
-//		 protocols [h1|h2|h2c|h3] [...]
-//	}]
+//	 bind <addresses...> [{
+//		   interfaces <devices...>
+//		   protocols [h1|h2|h2c|h3] [...]
+//	 }]
 func parseBind(h Helper) ([]ConfigValue, error) {
 	h.Next() // consume directive name
 	var addresses, interfaces, protocols []string
