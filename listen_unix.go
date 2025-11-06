@@ -27,7 +27,6 @@ import (
 	"io/fs"
 	"net"
 	"os"
-	"slices"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -102,7 +101,7 @@ func listenReusable(ctx context.Context, lnKey string, network, address string, 
 		socketFile *os.File
 	)
 
-	fd := slices.Contains([]string{"fd", "fdgram"}, network)
+	fd := IsFdNetwork(network)
 	if fd {
 		socketFd, err := strconv.ParseUint(address, 0, strconv.IntSize)
 		if err != nil {
@@ -142,8 +141,8 @@ func listenReusable(ctx context.Context, lnKey string, network, address string, 
 		}
 	}
 
-	datagram := slices.Contains([]string{"udp", "udp4", "udp6", "unixgram", "fdgram"}, network)
-	if datagram {
+	packet := IsPacketNetwork(network)
+	if packet {
 		if fd {
 			ln, err = net.FilePacketConn(socketFile)
 		} else {
@@ -161,7 +160,7 @@ func listenReusable(ctx context.Context, lnKey string, network, address string, 
 		listenerPool.LoadOrStore(lnKey, nil)
 	}
 
-	if datagram {
+	if packet {
 		if !fd {
 			// TODO: Not 100% sure this is necessary, but we do this for net.UnixListener, so...
 			if unix, ok := ln.(*net.UnixConn); ok {

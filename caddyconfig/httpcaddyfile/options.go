@@ -307,8 +307,7 @@ func parseOptSingleString(d *caddyfile.Dispenser, _ any) (any, error) {
 
 func parseOptDefaultBind(d *caddyfile.Dispenser, _ any) (any, error) {
 	d.Next() // consume option name
-
-	var addresses, protocols []string
+	var addresses, interfaces, protocols []string
 	addresses = d.RemainingArgs()
 
 	if len(addresses) == 0 {
@@ -317,6 +316,11 @@ func parseOptDefaultBind(d *caddyfile.Dispenser, _ any) (any, error) {
 
 	for d.NextBlock(0) {
 		switch d.Val() {
+		case "interfaces":
+			interfaces = d.RemainingArgs()
+			if len(interfaces) == 0 {
+				return nil, d.Errf("interfaces requires one or more arguments")
+			}
 		case "protocols":
 			protocols = d.RemainingArgs()
 			if len(protocols) == 0 {
@@ -327,9 +331,10 @@ func parseOptDefaultBind(d *caddyfile.Dispenser, _ any) (any, error) {
 		}
 	}
 
-	return []ConfigValue{{Class: "bind", Value: addressesWithProtocols{
-		addresses: addresses,
-		protocols: protocols,
+	return []ConfigValue{{Class: "bind", Value: bindOptions{
+		addresses:  addresses,
+		interfaces: interfaces,
+		protocols:  protocols,
 	}}}, nil
 }
 
