@@ -403,13 +403,6 @@ type bindOptions struct {
 	protocols  []string
 }
 
-// addressesWithProtocols associates a list of listen addresses
-// with a list of protocols to serve them with
-type addressesWithProtocols struct {
-	addresses []string
-	protocols []string
-}
-
 // Address represents a site address. It contains
 // the original input value, and the component
 // parts of an address. The component parts may be
