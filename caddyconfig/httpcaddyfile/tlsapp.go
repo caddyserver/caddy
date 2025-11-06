@@ -221,7 +221,7 @@ func (st ServerType) buildTLSApp(
 					if acmeIssuer.Challenges.BindHost == "" {
 						// only binding to one host is supported
 						var bindHost string
-						if asserted, ok := cfgVal.Value.(addressesWithProtocols); ok && len(asserted.addresses) > 0 {
+						if asserted, ok := cfgVal.Value.(bindOptions); ok && len(asserted.addresses) > 0 {
 							bindHost = asserted.addresses[0]
 						}
 						acmeIssuer.Challenges.BindHost = bindHost
@@ -613,7 +613,7 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]any) e
 	// In Linux the same call will error with EADDRINUSE whenever the listener for the automation policy is opened
 	if acmeIssuer.Challenges == nil || (acmeIssuer.Challenges.DNS == nil && acmeIssuer.Challenges.BindHost == "") {
 		if defBinds, ok := globalDefaultBind.([]ConfigValue); ok && len(defBinds) > 0 {
-			if abp, ok := defBinds[0].Value.(addressesWithProtocols); ok && len(abp.addresses) > 0 {
+			if abp, ok := defBinds[0].Value.(bindOptions); ok && len(abp.addresses) > 0 {
 				if acmeIssuer.Challenges == nil {
 					acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
 				}
