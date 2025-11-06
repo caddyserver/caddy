@@ -363,7 +363,7 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 						return nil, fmt.Errorf("reading listener interface address: %v: %v", lnDevice, ifaceAddr.String())
 					}
 
-					if len(ip) == 4 && caddy.IsIPv4Network(lnNetw) || len(ip) == 16 && caddy.IsIPv6Network(lnNetw) {
+					if len(ip) == net.IPv4len && caddy.IsIPv4Network(lnNetw) || len(ip) == net.IPv6len && caddy.IsIPv6Network(lnNetw) {
 						ifaceAddresses = append(ifaceAddresses, caddy.JoinNetworkAddress(lnNetw, ip.String(), ""))
 					}
 				}

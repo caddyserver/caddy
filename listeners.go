@@ -310,7 +310,7 @@ func (na NetworkAddress) port() string {
 // The output can be parsed by ParseNetworkAddress(). If the
 // address is a unix socket, any non-zero port will be dropped.
 func (na NetworkAddress) String() string {
-	if na.Network == "tcp" && (na.Host != "" || na.port() != "") {
+	if na.Network == TCP && (na.Host != "" || na.port() != "") {
 		na.Network = "" // omit default network value for brevity
 	}
 	return JoinNetworkAddress(na.Network, na.Host, na.port())
