@@ -28,10 +28,12 @@ func IsUnixNetwork(netw string) bool {
 	return netw == "unix" || netw == "unixgram" || netw == "unixpacket" || netw == "unix+h2c"
 }
 
+// IsUnixNetwork returns true if the netw is a TCP network.
 func IsTCPNetwork(netw string) bool {
 	return netw == "tcp" || netw == "tcp4" || netw == "tcp6"
 }
 
+// IsUnixNetwork returns true if the netw is a UDP network.
 func IsUDPNetwork(netw string) bool {
 	return netw == "udp" || netw == "udp4" || netw == "udp6"
 }
