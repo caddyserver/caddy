@@ -23,7 +23,6 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
-
 	"github.com/caddyserver/certmagic"
 
 	"github.com/caddyserver/caddy/v2"
