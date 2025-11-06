@@ -64,15 +64,16 @@ func sdListenFdsWithNames() (map[string][]uint, error) {
 	return nameToFiles, nil
 }
 
-func getSdListenFd(nameToFiles map[string][]uint, host string) (uint, error) {
-	name, index, li := host, uint(0), strings.Index(host, ":")
-	if li >= 0 {
-		name = host[:li]
-		i, err := strconv.ParseUint(host[li+1:], 0, strconv.IntSize)
+func getSdListenFd(nameToFiles map[string][]uint, nameOffset string) (uint, error) {
+	index := uint(0)
+
+	name, offset, found := strings.Cut(nameOffset, ":")
+	if found {
+		off, err := strconv.ParseUint(offset, 0, strconv.IntSize)
 		if err != nil {
 			return 0, err
 		}
-		index += uint(i)
+		index += uint(off)
 	}
 
 	files, ok := nameToFiles[name]
