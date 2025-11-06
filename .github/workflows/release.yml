@@ -382,37 +382,6 @@ jobs:
     - name: Install Cloudsmith CLI
       run: pip install --upgrade cloudsmith-cli
 
-    - name: Validate commits and tag signatures
-      env:
-        signing_keys: ${{ secrets.SIGNING_KEYS }}
-      run: |
-        # Read the string into an array, splitting by IFS
-        IFS=";" read -ra keys_collection <<< "$signing_keys"
-        
-        # ref: https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#example-usage-of-the-runner-context
-        touch "${{ runner.temp }}/allowed_signers"
-
-        # Iterate and print the split elements
-        for item in "${keys_collection[@]}"; do
-        
-          # trim leading whitespaces
-          item="${item##*( )}"
-
-          # trim trailing whitespaces
-          item="${item%%*( )}"
-          
-          IFS=" " read -ra key_components <<< "$item"
-          # [email address] [type] [public key]
-          echo "${key_components[0]} namespaces=\"git\" ${key_components[1]} ${key_components[2]}" >> "${{ runner.temp }}/allowed_signers"
-        done
-
-        git config --global gpg.ssh.allowedSignersFile "${{ runner.temp }}/allowed_signers"
-
-        echo "Verifying the tag: ${{ steps.vars.outputs.version_tag }}"
-        
-        # tags are only accepted if signed by a trusted key
-        git verify-tag "${{ steps.vars.outputs.version_tag }}" || exit 1
-
     - name: Install Cosign
       uses: sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62 # main
     - name: Cosign version
@@ -493,7 +462,7 @@ jobs:
           echo "Pushing $filename to 'testing'"
           cloudsmith push deb caddy/testing/any-distro/any-version $filename
         done
-        
+
     - name: Close release proposal issue
       if: needs.verify-tag.outputs.proposal_issue_number != ''
       uses: actions/github-script@v7
