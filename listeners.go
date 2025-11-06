@@ -213,6 +213,18 @@ func (na NetworkAddress) IsUnixNetwork() bool {
 	return IsUnixNetwork(na.Network)
 }
 
+// IsTCPNetwork returns true if na.Network is
+// tcp, tcp4, or tcp6.
+func (na NetworkAddress) IsTCPNetwork() bool {
+	return IsTCPNetwork(na.Network)
+}
+
+// IsUDPNetwork returns true if na.Network is
+// udp, udp4, or udp6.
+func (na NetworkAddress) IsUDPNetwork() bool {
+	return IsUDPNetwork(na.Network)
+}
+
 // IsIpNetwork returns true if na.Network starts with
 // ip: ip4: or ip6:
 func (na NetworkAddress) IsIpNetwork() bool {
@@ -298,7 +310,7 @@ func (na NetworkAddress) port() string {
 // The output can be parsed by ParseNetworkAddress(). If the
 // address is a unix socket, any non-zero port will be dropped.
 func (na NetworkAddress) String() string {
-	if na.Network == "tcp" && (na.Host != "" || na.port() != "") {
+	if na.Network == TCP && (na.Host != "" || na.port() != "") {
 		na.Network = "" // omit default network value for brevity
 	}
 	return JoinNetworkAddress(na.Network, na.Host, na.port())

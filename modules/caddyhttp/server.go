@@ -620,7 +620,7 @@ func (s *Server) findLastRouteWithHostMatcher() int {
 // not already done, and then uses that server to serve HTTP/3 over
 // the listener, with Server s as the handler.
 func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error {
-	h3net, err := caddy.GetHTTP3Network(addr.Network)
+	h3net, err := getNetworkHTTP3(addr.Network)
 	if err != nil {
 		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
 	}
@@ -1125,7 +1125,49 @@ const (
 	ClientIPVarKey string = "client_ip"
 )
 
-// DEPRECATED: moved to caddy.RegisterNetworkHTTP3
+var networkHTTP3Plugins = map[string]string{}
+
+// RegisterNetworkHTTP3 registers a mapping from non-HTTP/3 network to HTTP/3
+// network. This should be called during init() and will panic if the network
+// type is standard, reserved, or already registered.
+//
+// EXPERIMENTAL: Subject to change.
 func RegisterNetworkHTTP3(originalNetwork, h3Network string) {
-	caddy.RegisterNetworkHTTP3(originalNetwork, h3Network)
+	if caddy.IsReservedNetwork(originalNetwork) {
+		panic("network type " + originalNetwork + " is reserved")
+	}
+
+	if _, ok := networkHTTP3Plugins[strings.ToLower(originalNetwork)]; ok {
+		panic("network type " + originalNetwork + " is already registered")
+	}
+
+	networkHTTP3Plugins[originalNetwork] = h3Network
+}
+
+func getNetworkHTTP3(originalNetwork string) (string, error) {
+	switch originalNetwork {
+	case caddy.UNIXGRAM:
+		return caddy.UNIXGRAM, nil
+	case caddy.UDP:
+		return caddy.UDP, nil
+	case caddy.UDP4:
+		return caddy.UDP4, nil
+	case caddy.UDP6:
+		return caddy.UDP6, nil
+	case caddy.TCP:
+		return caddy.UDP, nil
+	case caddy.TCP4:
+		return caddy.UDP4, nil
+	case caddy.TCP6:
+		return caddy.UDP6, nil
+	case caddy.FDGRAM:
+		return caddy.FDGRAM, nil
+	}
+
+	h3Network, ok := networkHTTP3Plugins[strings.ToLower(originalNetwork)]
+	if !ok {
+		return "", fmt.Errorf("network '%s' cannot handle HTTP/3 connections", originalNetwork)
+	}
+
+	return h3Network, nil
 }

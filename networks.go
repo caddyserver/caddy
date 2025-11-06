@@ -16,34 +16,77 @@ package caddy
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"strings"
 
 	"go.uber.org/zap"
 )
 
+const (
+	UNIX       = "unix"
+	UNIX_H2C   = "unix+h2c"
+	UNIXGRAM   = "unixgram"
+	UNIXPACKET = "unixpacket"
+	TCP        = "tcp"
+	TCP4       = "tcp4"
+	TCP6       = "tcp6"
+	UDP        = "udp"
+	UDP4       = "udp4"
+	UDP6       = "udp6"
+	IP_        = "ip:"
+	IP4_       = "ip4:"
+	IP6_       = "ip6:"
+	FD         = "fd"
+	FDGRAM     = "fdgram"
+)
+
 // IsUnixNetwork returns true if the netw is a unix network.
 func IsUnixNetwork(netw string) bool {
-	return netw == "unix" || netw == "unixgram" || netw == "unixpacket" || netw == "unix+h2c"
+	return netw == UNIX || netw == UNIX_H2C || netw == UNIXGRAM || netw == UNIXPACKET
+}
+
+// IsUnixNetwork returns true if the netw is a TCP network.
+func IsTCPNetwork(netw string) bool {
+	return netw == TCP || netw == TCP4 || netw == TCP6
+}
+
+// IsUnixNetwork returns true if the netw is a UDP network.
+func IsUDPNetwork(netw string) bool {
+	return netw == UDP || netw == UDP4 || netw == UDP6
 }
 
 // IsIpNetwork returns true if the netw is an ip network.
 func IsIpNetwork(netw string) bool {
-	return strings.HasPrefix(netw, "ip:") || strings.HasPrefix(netw, "ip4:") || strings.HasPrefix(netw, "ip6:")
+	return strings.HasPrefix(netw, IP_) || strings.HasPrefix(netw, IP4_) || strings.HasPrefix(netw, IP6_)
 }
 
 // IsFdNetwork returns true if the netw is a fd network.
 func IsFdNetwork(netw string) bool {
-	return netw == "fd" || netw == "fdgram"
+	return netw == FD || netw == FDGRAM
 }
 
 func IsReservedNetwork(network string) bool {
-	return network == "tcp" || network == "tcp4" || network == "tcp6" ||
-		network == "udp" || network == "udp4" || network == "udp6" ||
-		IsUnixNetwork(network) ||
+	return IsUnixNetwork(network) ||
+		IsTCPNetwork(network) ||
+		IsUDPNetwork(network) ||
 		IsIpNetwork(network) ||
 		IsFdNetwork(network)
+}
+
+func IsIPv4Network(netw string) bool {
+	return netw == TCP || netw == TCP4 || netw == UDP || netw == UDP4 || strings.HasPrefix(netw, IP_) || strings.HasPrefix(netw, IP4_)
+}
+
+func IsIPv6Network(netw string) bool {
+	return netw == TCP || netw == TCP6 || netw == UDP || netw == UDP6 || strings.HasPrefix(netw, IP_) || strings.HasPrefix(netw, IP6_)
+}
+
+func IsStreamNetwork(netw string) bool {
+	return netw == UNIX || netw == UNIX_H2C || netw == UNIXPACKET || IsTCPNetwork(netw) || netw == FD
+}
+
+func IsPacketNetwork(netw string) bool {
+	return netw == UNIXGRAM || IsUDPNetwork(netw) || IsIpNetwork(netw) || netw == FDGRAM
 }
 
 // ListenerFunc is a function that can return a listener given a network and address.
@@ -83,53 +126,4 @@ func getListenerFromPlugin(ctx context.Context, network, host, port string, port
 	}
 
 	return nil, nil
-}
-
-var networkHTTP3Plugins = map[string]string{}
-
-// RegisterNetworkHTTP3 registers a mapping from non-HTTP/3 network to HTTP/3
-// network. This should be called during init() and will panic if the network
-// type is standard, reserved, or already registered.
-//
-// EXPERIMENTAL: Subject to change.
-func RegisterNetworkHTTP3(originalNetwork, h3Network string) {
-	if IsReservedNetwork(originalNetwork) {
-		panic("network type " + originalNetwork + " is reserved")
-	}
-	if _, ok := networkHTTP3Plugins[strings.ToLower(originalNetwork)]; ok {
-		panic("network type " + originalNetwork + " is already registered")
-	}
-
-	networkHTTP3Plugins[originalNetwork] = h3Network
-}
-
-func getHTTP3Plugin(originalNetwork string) (string, error) {
-	h3Network, ok := networkHTTP3Plugins[strings.ToLower(originalNetwork)]
-	if !ok {
-		return "", fmt.Errorf("network '%s' cannot handle HTTP/3 connections", originalNetwork)
-	}
-
-	return h3Network, nil
-}
-
-func GetHTTP3Network(originalNetwork string) (string, error) {
-	switch originalNetwork {
-	case "unixgram":
-		return "unixgram", nil
-	case "udp":
-		return "udp", nil
-	case "udp4":
-		return "udp4", nil
-	case "udp6":
-		return "udp6", nil
-	case "tcp":
-		return "udp", nil
-	case "tcp4":
-		return "udp4", nil
-	case "tcp6":
-		return "udp6", nil
-	case "fdgram":
-		return "fdgram", nil
-	}
-	return getHTTP3Plugin(originalNetwork)
 }
