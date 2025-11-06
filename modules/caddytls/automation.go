@@ -24,13 +24,12 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/certmagic"
 	"github.com/mholt/acmez/v3"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/net/idna"
-
-	"github.com/caddyserver/caddy/v2"
 )
 
 // AutomationConfig governs the automated management of TLS certificates.

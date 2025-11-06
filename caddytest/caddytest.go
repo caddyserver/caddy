@@ -23,10 +23,8 @@ import (
 	"time"
 
 	"github.com/aryann/difflib"
-
-	caddycmd "github.com/caddyserver/caddy/v2/cmd"
-
 	"github.com/caddyserver/caddy/v2/caddyconfig"
+	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 	// plug in Caddy modules here
 	_ "github.com/caddyserver/caddy/v2/modules/standard"
 )

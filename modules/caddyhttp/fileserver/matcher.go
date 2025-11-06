@@ -25,6 +25,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common"
 	"github.com/google/cel-go/common/ast"
@@ -34,10 +37,6 @@ import (
 	"github.com/google/cel-go/parser"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-
-	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
 func init() {

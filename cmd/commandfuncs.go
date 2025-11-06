@@ -34,12 +34,11 @@ import (
 	"strings"
 
 	"github.com/aryann/difflib"
-	"go.uber.org/zap"
-
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/internal"
+	"go.uber.org/zap"
 )
 
 func cmdStart(fl Flags) (int, error) {

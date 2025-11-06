@@ -27,14 +27,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/internal"
+	"github.com/caddyserver/caddy/v2/modules/caddyevents"
 	"github.com/caddyserver/certmagic"
 	"github.com/libdns/libdns"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-
-	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/internal"
-	"github.com/caddyserver/caddy/v2/modules/caddyevents"
 )
 
 func init() {

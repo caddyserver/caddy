@@ -28,9 +28,8 @@ import (
 	"runtime/debug"
 	"strings"
 
-	"go.uber.org/zap"
-
 	"github.com/caddyserver/caddy/v2"
+	"go.uber.org/zap"
 )
 
 func cmdUpgrade(fl Flags) (int, error) {

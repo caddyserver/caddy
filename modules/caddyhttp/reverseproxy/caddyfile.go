@@ -22,8 +22,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dustin/go-humanize"
-
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -34,6 +32,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/rewrite"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 	"github.com/caddyserver/caddy/v2/modules/internal/network"
+	"github.com/dustin/go-humanize"
 )
 
 func init() {

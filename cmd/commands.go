@@ -22,10 +22,9 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/caddyserver/caddy/v2"
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
-
-	"github.com/caddyserver/caddy/v2"
 )
 
 // Command represents a subcommand. Name, Func,

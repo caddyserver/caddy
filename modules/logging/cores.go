@@ -1,10 +1,9 @@
 package logging
 
 import (
-	"go.uber.org/zap/zapcore"
-
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"go.uber.org/zap/zapcore"
 )
 
 func init() {

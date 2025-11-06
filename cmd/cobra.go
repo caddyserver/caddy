@@ -3,9 +3,8 @@ package caddycmd
 import (
 	"fmt"
 
-	"github.com/spf13/cobra"
-
 	"github.com/caddyserver/caddy/v2"
+	"github.com/spf13/cobra"
 )
 
 var defaultFactory = newRootCommandFactory(func() *cobra.Command {

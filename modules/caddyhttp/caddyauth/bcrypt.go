@@ -17,9 +17,8 @@ package caddyauth
 import (
 	"errors"
 
-	"golang.org/x/crypto/bcrypt"
-
 	"github.com/caddyserver/caddy/v2"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func init() {

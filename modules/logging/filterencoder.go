@@ -20,14 +20,13 @@ import (
 	"os"
 	"time"
 
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"go.uber.org/zap"
 	"go.uber.org/zap/buffer"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/term"
-
-	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/caddyconfig"
-	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
 func init() {

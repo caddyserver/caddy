@@ -29,13 +29,12 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/caddyserver/caddy/v2/internal"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 	"github.com/quic-go/quic-go/qlog"
 	"go.uber.org/zap"
 	"golang.org/x/time/rate"
-
-	"github.com/caddyserver/caddy/v2/internal"
 )
 
 // NetworkAddress represents one or more network addresses.

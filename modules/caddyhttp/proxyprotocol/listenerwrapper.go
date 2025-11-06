@@ -19,9 +19,8 @@ import (
 	"net/netip"
 	"time"
 
-	goproxy "github.com/pires/go-proxyproto"
-
 	"github.com/caddyserver/caddy/v2"
+	goproxy "github.com/pires/go-proxyproto"
 )
 
 // ListenerWrapper provides PROXY protocol support to Caddy by implementing

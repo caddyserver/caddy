@@ -26,10 +26,9 @@ import (
 	"time"
 
 	"github.com/DeRuina/timberjack"
-	"github.com/dustin/go-humanize"
-
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/dustin/go-humanize"
 )
 
 func init() {

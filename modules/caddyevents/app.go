@@ -21,9 +21,8 @@ import (
 	"fmt"
 	"strings"
 
-	"go.uber.org/zap"
-
 	"github.com/caddyserver/caddy/v2"
+	"go.uber.org/zap"
 )
 
 func init() {

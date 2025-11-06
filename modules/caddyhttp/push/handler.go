@@ -19,12 +19,11 @@ import (
 	"net/http"
 	"strings"
 
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
-
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 func init() {

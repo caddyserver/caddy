@@ -18,9 +18,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"golang.org/x/sys/windows/svc"
-
 	"github.com/caddyserver/caddy/v2/notify"
+	"golang.org/x/sys/windows/svc"
 )
 
 func init() {

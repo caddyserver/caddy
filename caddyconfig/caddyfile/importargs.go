@@ -19,9 +19,8 @@ import (
 	"strconv"
 	"strings"
 
-	"go.uber.org/zap"
-
 	"github.com/caddyserver/caddy/v2"
+	"go.uber.org/zap"
 )
 
 // parseVariadic determines if the token is a variadic placeholder,

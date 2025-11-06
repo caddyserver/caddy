@@ -22,14 +22,13 @@ import (
 	"net/netip"
 	"strings"
 
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/internal"
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types/ref"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-
-	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
-	"github.com/caddyserver/caddy/v2/internal"
 )
 
 // MatchRemoteIP matches requests by the remote IP address,

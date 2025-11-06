@@ -10,9 +10,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/prometheus/client_golang/prometheus/testutil"
-
 	"github.com/caddyserver/caddy/v2"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 func TestServerNameFromContext(t *testing.T) {

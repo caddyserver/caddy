@@ -24,9 +24,8 @@ import (
 	"strings"
 	"sync"
 
-	"golang.org/x/sync/singleflight"
-
 	"github.com/caddyserver/caddy/v2"
+	"golang.org/x/sync/singleflight"
 )
 
 func init() {
