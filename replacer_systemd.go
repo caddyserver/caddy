@@ -8,6 +8,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"go.uber.org/zap"
 )
 
 func sdListenFds() (int, error) {
@@ -98,10 +100,12 @@ func (f systemdReplacementProvider) replace(key string) (any, bool) {
 	const systemdListenPrefix = "systemd.listen."
 	if strings.HasPrefix(key, systemdListenPrefix) {
 		if initNameToFilesErr != nil {
+			Log().Error("unable to read LISTEN_FDNAMES", zap.Error(initNameToFilesErr))
 			return nil, false
 		}
 		fd, err := getSdListenFd(initNameToFiles, key[len(systemdListenPrefix):])
 		if err != nil {
+			Log().Error("unable to process {" + key + "}", zap.Error(err))
 			return nil, false
 		}
 		return fd, true
