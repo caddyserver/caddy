@@ -105,7 +105,7 @@ func (f systemdReplacementProvider) replace(key string) (any, bool) {
 		}
 		fd, err := getSdListenFd(initNameToFiles, key[len(systemdListenPrefix):])
 		if err != nil {
-			Log().Error("unable to process {" + key + "}", zap.Error(err))
+			Log().Error("unable to process {"+key+"}", zap.Error(err))
 			return nil, false
 		}
 		return fd, true
