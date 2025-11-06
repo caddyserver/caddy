@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+
 	"github.com/caddyserver/certmagic"
 
 	"github.com/caddyserver/caddy/v2"
@@ -361,7 +362,8 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 					case *net.IPNet:
 						ip = ifaceAddrValue.IP
 					default:
-						return nil, fmt.Errorf("reading listener interface address: %v: %v", lnDevice, ifaceAddr.String())
+						caddy.Log().Error("reading listener interface address", zap.String("device", lnDevice), zap.String("address", ifaceAddr.String()))
+						continue
 					}
 
 					if len(ip) == net.IPv4len && caddy.IsIPv4Network(lnNetw) || len(ip) == net.IPv6len && caddy.IsIPv6Network(lnNetw) {
