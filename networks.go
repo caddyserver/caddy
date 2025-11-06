@@ -55,11 +55,11 @@ func IsReservedNetwork(network string) bool {
 }
 
 func IsIPv4Network(netw string) bool {
-	return netw == "tcp" || netw == "udp" || netw == "tcp4" || netw == "udp4" || strings.HasPrefix(netw, "ip:") || strings.HasPrefix(netw, "ip4:")
+	return netw == "tcp" || netw == "tcp4" || netw == "udp" || netw == "udp4" || strings.HasPrefix(netw, "ip:") || strings.HasPrefix(netw, "ip4:")
 }
 
 func IsIPv6Network(netw string) bool {
-	return netw == "tcp" || netw == "udp" || netw == "tcp6" || netw == "udp6" || strings.HasPrefix(netw, "ip:") || strings.HasPrefix(netw, "ip6:")
+	return netw == "tcp" || netw == "tcp6" || netw == "udp" || netw == "udp6" || strings.HasPrefix(netw, "ip:") || strings.HasPrefix(netw, "ip6:")
 }
 
 // ListenerFunc is a function that can return a listener given a network and address.
