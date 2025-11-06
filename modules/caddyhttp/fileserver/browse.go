@@ -32,11 +32,12 @@ import (
 	"text/template"
 	"time"
 
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/templates"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 )
 
 // BrowseTemplate is the default template document to use for

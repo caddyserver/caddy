@@ -24,14 +24,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/caddyserver/certmagic"
+	"github.com/mholt/acmez/v3/acme"
+	"go.uber.org/zap/zapcore"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
-	"github.com/caddyserver/certmagic"
-	"github.com/mholt/acmez/v3/acme"
-	"go.uber.org/zap/zapcore"
 )
 
 func init() {

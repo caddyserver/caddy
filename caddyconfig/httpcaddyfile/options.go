@@ -18,14 +18,15 @@ import (
 	"slices"
 	"strconv"
 
+	"github.com/caddyserver/certmagic"
+	"github.com/libdns/libdns"
+	"github.com/mholt/acmez/v3/acme"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
-	"github.com/caddyserver/certmagic"
-	"github.com/libdns/libdns"
-	"github.com/mholt/acmez/v3/acme"
 )
 
 func init() {
@@ -331,9 +332,9 @@ func parseOptDefaultBind(d *caddyfile.Dispenser, _ any) (any, error) {
 	}
 
 	return []ConfigValue{{Class: "bind", Value: bindOptions{
-		addresses: addresses,
+		addresses:  addresses,
 		interfaces: interfaces,
-		protocols: protocols,
+		protocols:  protocols,
 	}}}, nil
 }
 

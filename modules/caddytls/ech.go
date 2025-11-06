@@ -13,13 +13,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/certmagic"
 	"github.com/cloudflare/circl/hpke"
 	"github.com/cloudflare/circl/kem"
 	"github.com/libdns/libdns"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/cryptobyte"
+
+	"github.com/caddyserver/caddy/v2"
 )
 
 func init() {

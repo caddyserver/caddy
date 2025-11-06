@@ -26,9 +26,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	"github.com/caddyserver/caddy/v2/modules/caddypki"
 	"github.com/go-chi/chi/v5"
 	"github.com/smallstep/certificates/acme"
 	"github.com/smallstep/certificates/acme/api"
@@ -39,6 +36,10 @@ import (
 	"github.com/smallstep/nosql"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/caddyserver/caddy/v2/modules/caddypki"
 )
 
 func init() {

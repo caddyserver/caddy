@@ -25,10 +25,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/caddyserver/caddy/v2/internal"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/term"
+
+	"github.com/caddyserver/caddy/v2/internal"
 )
 
 func init() {

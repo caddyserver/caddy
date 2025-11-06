@@ -22,12 +22,13 @@ import (
 	"log/slog"
 	"reflect"
 
-	"github.com/caddyserver/caddy/v2/internal/filesystems"
 	"github.com/caddyserver/certmagic"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"go.uber.org/zap"
 	"go.uber.org/zap/exp/zapslog"
+
+	"github.com/caddyserver/caddy/v2/internal/filesystems"
 )
 
 // Context is a type which defines the lifetime of modules that

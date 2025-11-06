@@ -25,12 +25,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/certmagic"
 	"github.com/smallstep/certificates/authority"
 	"github.com/smallstep/certificates/db"
 	"github.com/smallstep/truststore"
 	"go.uber.org/zap"
+
+	"github.com/caddyserver/caddy/v2"
 )
 
 // CA describes a certificate authority, which consists of

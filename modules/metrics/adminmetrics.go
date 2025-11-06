@@ -18,8 +18,9 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/caddyserver/caddy/v2"
 	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/caddyserver/caddy/v2"
 )
 
 func init() {

@@ -20,8 +20,9 @@ import (
 	"encoding/pem"
 	"fmt"
 
-	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/certmagic"
+
+	"github.com/caddyserver/caddy/v2"
 )
 
 func init() {
