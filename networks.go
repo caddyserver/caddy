@@ -49,9 +49,9 @@ func IsFdNetwork(netw string) bool {
 }
 
 func IsReservedNetwork(network string) bool {
-	return IsTCPNetwork(network) ||
+	return IsUnixNetwork(network) ||
+		IsTCPNetwork(network) ||
 		IsUDPNetwork(network) ||
-		IsUnixNetwork(network) ||
 		IsIpNetwork(network) ||
 		IsFdNetwork(network)
 }
