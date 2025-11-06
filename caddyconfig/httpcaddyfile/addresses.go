@@ -29,6 +29,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"go.uber.org/zap"
 )
 
 // mapAddressToProtocolToServerBlocks returns a map of listener address to list of server
@@ -360,7 +361,8 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 					case *net.IPNet:
 						ip = ifaceAddrValue.IP
 					default:
-						return nil, fmt.Errorf("reading listener interface address: %v: %v", lnDevice, ifaceAddr.String())
+						caddy.Log().Error("reading listener interface address", zap.String("device", lnDevice), zap.String("address", ifaceAddr.String()))
+						continue
 					}
 
 					if len(ip) == net.IPv4len && caddy.IsIPv4Network(lnNetw) || len(ip) == net.IPv6len && caddy.IsIPv6Network(lnNetw) {
