@@ -127,6 +127,14 @@ func (b *Builder) SetAdmin(admin *caddy.AdminConfig) {
 	b.config.Admin = admin
 }
 
+// GetAdmin returns the admin configuration, creating it if it doesn't exist.
+func (b *Builder) GetAdmin() *caddy.AdminConfig {
+	if b.config.Admin == nil {
+		b.config.Admin = new(caddy.AdminConfig)
+	}
+	return b.config.Admin
+}
+
 // SetStorage sets the storage configuration from a StorageConverter.
 // If storage config already exists, it will be replaced.
 func (b *Builder) SetStorage(storage caddy.StorageConverter) {
@@ -173,14 +181,3 @@ func (b *Builder) AddRawApp(name string, rawJSON []byte) {
 	b.config.AppsRaw[name] = rawJSON
 }
 
-// SetPersistConfigOff sets the persist_config option to off.
-func (b *Builder) SetPersistConfigOff() {
-	if b.config.Admin == nil {
-		b.config.Admin = new(caddy.AdminConfig)
-	}
-	if b.config.Admin.Config == nil {
-		b.config.Admin.Config = new(caddy.ConfigSettings)
-	}
-	falseBool := false
-	b.config.Admin.Config.Persist = &falseBool
-}

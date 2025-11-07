@@ -212,7 +212,12 @@ func applyGlobalOptions(builder *configbuilder.Builder, options map[string]any, 
 
 	// Apply persist_config option
 	if pc, ok := options["persist_config"].(string); ok && pc == "off" {
-		builder.SetPersistConfigOff()
+		admin := builder.GetAdmin()
+		if admin.Config == nil {
+			admin.Config = new(caddy.ConfigSettings)
+		}
+		falseBool := false
+		admin.Config.Persist = &falseBool
 	}
 
 	return nil
