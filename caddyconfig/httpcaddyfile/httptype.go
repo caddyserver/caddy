@@ -1906,6 +1906,10 @@ func processLogs(cfg *caddy.Config, options map[string]any, warnings *[]caddycon
 				defaultLog.Exclude = slices.Compact(defaultLog.Exclude)
 			}
 		}
+		// we may have not actually added anything, so remove if empty
+		if len(cfg.Logging.Logs) == 0 {
+			cfg.Logging = nil
+		}
 	}
 
 	return nil
