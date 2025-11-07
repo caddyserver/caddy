@@ -332,7 +332,7 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 	interfaceAddresses := map[string][]string{}
 	listeners := map[string]map[string]struct{}{}
 	for _, lnCfgVal := range lnCfgVals {
-		addresses := []string{}
+		addresses := make([]string, len(lnCfgVal.addresses))
 		addresses = append(addresses, lnCfgVal.addresses...)
 		for _, lnIface := range lnCfgVal.interfaces {
 			lnNetw, lnDevice, _, err := caddy.SplitNetworkAddress(lnIface)
