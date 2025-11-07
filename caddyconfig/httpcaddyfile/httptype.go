@@ -1593,20 +1593,6 @@ func WasReplacedPlaceholderShorthand(token string) string {
 	return ""
 }
 
-// tryInt tries to convert val to an integer. If it fails,
-// it downgrades the error to a warning and returns 0.
-// TryInt converts val to an int, adding a warning if conversion fails.
-// This is exported for use by xcaddyfile.
-func TryInt(val any, warnings *[]caddyconfig.Warning) int {
-	return tryInt(val, warnings)
-}
-
-// TryDuration converts val to a caddy.Duration, adding a warning if conversion fails.
-// This is exported for use by xcaddyfile.
-func TryDuration(val any, warnings *[]caddyconfig.Warning) caddy.Duration {
-	return tryDuration(val, warnings)
-}
-
 // DirectiveIsRegistered returns true if the directive name is registered.
 // This is exported for use by xcaddyfile.
 func DirectiveIsRegistered(name string) bool {
@@ -1614,7 +1600,9 @@ func DirectiveIsRegistered(name string) bool {
 	return ok
 }
 
-func tryInt(val any, warnings *[]caddyconfig.Warning) int {
+// TryInt tries to convert val to an integer. If it fails,
+// it downgrades the error to a warning and returns 0.
+func TryInt(val any, warnings *[]caddyconfig.Warning) int {
 	intVal, ok := val.(int)
 	if val != nil && !ok && warnings != nil {
 		*warnings = append(*warnings, caddyconfig.Warning{Message: "not an integer type"})
@@ -1630,7 +1618,9 @@ func tryString(val any, warnings *[]caddyconfig.Warning) string {
 	return stringVal
 }
 
-func tryDuration(val any, warnings *[]caddyconfig.Warning) caddy.Duration {
+// TryDuration converts val to a caddy.Duration, adding a warning if conversion fails.
+// This is exported for use by xcaddyfile.
+func TryDuration(val any, warnings *[]caddyconfig.Warning) caddy.Duration {
 	durationVal, ok := val.(caddy.Duration)
 	if val != nil && !ok && warnings != nil {
 		*warnings = append(*warnings, caddyconfig.Warning{Message: "not a duration type"})

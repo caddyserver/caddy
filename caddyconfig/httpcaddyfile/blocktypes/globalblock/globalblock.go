@@ -25,12 +25,12 @@ import (
 )
 
 func init() {
-	blocktypes.RegisterBlockType("global", Setup)
+	blocktypes.RegisterBlockType("global", setup)
 }
 
-// global configuration blocks which store global options
+// setup processes global configuration blocks which store global options
 // (http_port, https_port, grace_period, etc.) in options for other block parsers to use.
-func Setup(builder *configbuilder.Builder, blocks []caddyfile.ServerBlock, options map[string]any) ([]caddyconfig.Warning, error) {
+func setup(builder *configbuilder.Builder, blocks []caddyfile.ServerBlock, options map[string]any) ([]caddyconfig.Warning, error) {
 	var warnings []caddyconfig.Warning
 
 	// Process each global block

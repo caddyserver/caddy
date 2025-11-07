@@ -31,7 +31,7 @@ import (
 )
 
 func init() {
-	blocktypes.RegisterChildBlockType("http.server", "global", Setup)
+	blocktypes.RegisterChildBlockType("http.server", "global", setup)
 }
 
 // extractServerBlocks converts raw caddyfile blocks to httpcaddyfile serverBlock format
@@ -54,10 +54,10 @@ func extractServerBlocks(inputBlocks []caddyfile.ServerBlock, warnings []caddyco
 	return serverBlocks, warnings, nil
 }
 
-// Setup processes [http.server] blocks using the httpcaddyfile adapter.
-// This allows xcaddyfile to leverage all existing HTTP configuration logic.
-// The [global] block should have created the HTTP app with options in context.
-func Setup(builder *configbuilder.Builder, blocks []caddyfile.ServerBlock, options map[string]any) ([]caddyconfig.Warning, error) {
+// setup processes [http.server] blocks using the httpcaddyfile adapter.
+// This leverages all existing HTTP configuration logic.
+// The [global] block should have been processed first to set up global options.
+func setup(builder *configbuilder.Builder, blocks []caddyfile.ServerBlock, options map[string]any) ([]caddyconfig.Warning, error) {
 	var warnings []caddyconfig.Warning
 
 	// Extract server blocks with validation
