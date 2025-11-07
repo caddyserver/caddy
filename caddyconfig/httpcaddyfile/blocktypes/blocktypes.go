@@ -20,7 +20,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
-	"github.com/caddyserver/caddy/v2/caddyconfig/xcaddyfile/configbuilder"
+	"github.com/caddyserver/caddy/v2/caddyconfig/configbuilder"
 )
 
 // BlockTypeSetupFunc is a function that processes server blocks of a specific type
