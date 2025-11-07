@@ -96,12 +96,6 @@ func (b *Builder) CreateApp(name string, app any) error {
 	return nil
 }
 
-// UpdateApp replaces an existing app config or creates it if it doesn't exist.
-// This is useful for blocks that need to replace the entire app structure.
-func (b *Builder) UpdateApp(name string, app any) {
-	b.apps[name] = app
-}
-
 // finalize marshals all structured apps to JSON and adds them to the config.
 // This is called automatically by Config().
 func (b *Builder) finalize() {
@@ -189,17 +183,4 @@ func (b *Builder) SetPersistConfigOff() {
 	}
 	falseBool := false
 	b.config.Admin.Config.Persist = &falseBool
-}
-
-// GetLogging returns the logging configuration, creating it if it doesn't exist.
-func (b *Builder) GetLogging() *caddy.Logging {
-	if b.config.Logging == nil {
-		b.config.Logging = &caddy.Logging{
-			Logs: make(map[string]*caddy.CustomLog),
-		}
-	}
-	if b.config.Logging.Logs == nil {
-		b.config.Logging.Logs = make(map[string]*caddy.CustomLog)
-	}
-	return b.config.Logging
 }

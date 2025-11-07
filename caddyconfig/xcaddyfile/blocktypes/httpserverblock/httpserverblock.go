@@ -104,8 +104,7 @@ func Setup(builder *configbuilder.Builder, blocks []caddyfile.ServerBlock, optio
 	// Only add TLS app if it's not empty (has certificates or automation policies)
 	if tlsApp != nil && (!reflect.DeepEqual(tlsApp, &caddytls.TLS{CertificatesRaw: make(caddy.ModuleMap)})) {
 		if err := builder.CreateApp("tls", tlsApp); err != nil {
-			// TLS app might already exist, update it instead
-			builder.UpdateApp("tls", tlsApp)
+			return warnings, err
 		}
 	}
 
@@ -118,8 +117,7 @@ func Setup(builder *configbuilder.Builder, blocks []caddyfile.ServerBlock, optio
 	// Only add PKI app if it's not empty (has CAs)
 	if pkiApp != nil && (!reflect.DeepEqual(pkiApp, &caddypki.PKI{CAs: make(map[string]*caddypki.CA)})) {
 		if err := builder.CreateApp("pki", pkiApp); err != nil {
-			// PKI app might already exist, update it instead
-			builder.UpdateApp("pki", pkiApp)
+			return warnings, err
 		}
 	}
 
