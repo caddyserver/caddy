@@ -25,7 +25,6 @@ import (
 	"unicode"
 
 	"github.com/caddyserver/certmagic"
-	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -354,19 +353,17 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 					return nil, fmt.Errorf("querying listener interface addresses: %v: %v", lnDevice, err)
 				}
 				for _, ifaceAddr := range ifaceAddrs {
-					var ip net.IP
+					var ip string
 					switch ifaceAddrValue := ifaceAddr.(type) {
 					case *net.IPAddr:
-						ip = ifaceAddrValue.IP
+						ip = ifaceAddrValue.IP.String()
 					case *net.IPNet:
-						ip = ifaceAddrValue.IP
+						ip = ifaceAddrValue.IP.String()
 					default:
-						caddy.Log().Error("reading listener interface address", zap.String("device", lnDevice), zap.String("address", ifaceAddr.String()))
-						continue
+						ip = ifaceAddrValue.String()
 					}
-
 					if len(ip) == net.IPv4len && caddy.IsIPv4Network(lnNetw) || len(ip) == net.IPv6len && caddy.IsIPv6Network(lnNetw) {
-						ifaceAddresses = append(ifaceAddresses, ip.String())
+						ifaceAddresses = append(ifaceAddresses, ip)
 					}
 				}
 				if len(ifaceAddresses) == 0 {
