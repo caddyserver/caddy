@@ -332,7 +332,7 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 	interfaceAddresses := map[string][]string{}
 	listeners := map[string]map[string]struct{}{}
 	for _, lnCfgVal := range lnCfgVals {
-		addresses := make([]string, len(lnCfgVal.addresses))
+		addresses := make([]string, 0, len(lnCfgVal.addresses))
 		addresses = append(addresses, lnCfgVal.addresses...)
 		for _, lnIface := range lnCfgVal.interfaces {
 			lnNetw, lnDevice, _, err := caddy.SplitNetworkAddress(lnIface)
@@ -366,7 +366,7 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 					}
 
 					if len(ip) == net.IPv4len && caddy.IsIPv4Network(lnNetw) || len(ip) == net.IPv6len && caddy.IsIPv6Network(lnNetw) {
-						ifaceAddresses = append(ifaceAddresses, caddy.JoinNetworkAddress(lnNetw, ip.String(), ""))
+						ifaceAddresses = append(ifaceAddresses, ip.String())
 					}
 				}
 				if len(ifaceAddresses) == 0 {
@@ -374,7 +374,9 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 				}
 				interfaceAddresses[lnDevice] = ifaceAddresses
 			}
-			addresses = append(addresses, ifaceAddresses...)
+			for _, ifaceAddress := range ifaceAddresses {
+				addresses = append(addresses, caddy.JoinNetworkAddress(lnNetw, ifaceAddress, ""))
+			}
 		}
 		for _, lnAddr := range addresses {
 			lnNetw, lnHost, _, err := caddy.SplitNetworkAddress(lnAddr)
