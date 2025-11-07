@@ -390,22 +390,6 @@ func EvaluateGlobalOptions(segments []caddyfile.Segment, options map[string]any)
 	return nil
 }
 
-// evaluateGlobalOptionsBlock checks if the first server block is a global options block
-// (has zero keys), evaluates it using EvaluateGlobalOptions, and returns the remaining
-// server blocks with the global block removed.
-func (ServerType) evaluateGlobalOptionsBlock(serverBlocks []ServerBlock, options map[string]any) ([]ServerBlock, error) {
-	if len(serverBlocks) == 0 || len(serverBlocks[0].Block.Keys) > 0 {
-		return serverBlocks, nil
-	}
-
-	// Process the global block using the exported function
-	if err := EvaluateGlobalOptions(serverBlocks[0].Block.Segments, options); err != nil {
-		return nil, err
-	}
-
-	return serverBlocks[1:], nil
-}
-
 // extractNamedRoutes pulls out any named route server blocks
 // so they don't get parsed as sites, and stores them in options
 // for later.

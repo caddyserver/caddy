@@ -180,4 +180,3 @@ func (b *Builder) AddRawApp(name string, rawJSON []byte) {
 	}
 	b.config.AppsRaw[name] = rawJSON
 }
-
