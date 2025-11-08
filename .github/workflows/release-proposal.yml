@@ -14,15 +14,14 @@ on:
         required: true
         type: string
 
-permissions:
-  contents: write
-  pull-requests: write
-  issues: write
-
 jobs:
   create-proposal:
     name: Create Release Proposal
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
     
     steps:
       - name: Harden the runner (Audit all outbound calls)
