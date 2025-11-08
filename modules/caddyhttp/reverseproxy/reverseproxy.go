@@ -409,12 +409,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		return caddyhttp.Error(http.StatusInternalServerError,
 			fmt.Errorf("preparing request for upstream round-trip: %v", err))
 	}
-	// websocket over http2, assuming backend doesn't support this, the request will be modified to http1.1 upgrade
+
+	// websocket over http2 or http3 if extended connect is enabled, assuming backend doesn't support this, the request will be modified to http1.1 upgrade
+	// Both use the same upgrade mechanism: server advertizes extended connect support, and client sends the pseudo header :protocol in a CONNECT request
+	// The quic-go http3 implementation also puts :protocol in r.Proto for CONNECT requests (quic-go/http3/headers.go@70-72,185,203)
 	// TODO: once we can reliably detect backend support this, it can be removed for those backends
-	if r.ProtoMajor == 2 && r.Method == http.MethodConnect && r.Header.Get(":protocol") == "websocket" {
+	if (r.ProtoMajor == 2 && r.Method == http.MethodConnect && r.Header.Get(":protocol") == "websocket") ||
+		(r.ProtoMajor == 3 && r.Method == http.MethodConnect && r.Proto == "websocket") {
 		clonedReq.Header.Del(":protocol")
 		// keep the body for later use. http1.1 upgrade uses http.NoBody
-		caddyhttp.SetVar(clonedReq.Context(), "h2_websocket_body", clonedReq.Body)
+		caddyhttp.SetVar(clonedReq.Context(), "extended_connect_websocket_body", clonedReq.Body)
 		clonedReq.Body = http.NoBody
 		clonedReq.Method = http.MethodGet
 		clonedReq.Header.Set("Upgrade", "websocket")
@@ -725,6 +729,12 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	}
 	proxyProtocolInfo := ProxyProtocolInfo{AddrPort: addrPort}
 	caddyhttp.SetVar(req.Context(), proxyProtocolInfoVarKey, proxyProtocolInfo)
+
+	// some of the outbound requests require h1 (e.g. websocket)
+	// https://github.com/golang/go/blob/4837fbe4145cd47b43eed66fee9eed9c2b988316/src/net/http/request.go#L1579
+	if isWebsocket(req) {
+		caddyhttp.SetVar(req.Context(), tlsH1OnlyVarKey, true)
+	}
 
 	// Add the supported X-Forwarded-* headers
 	err = h.addForwardedHeaders(req)
@@ -1188,7 +1198,7 @@ func (lb LoadBalancing) tryAgain(ctx caddy.Context, start time.Time, retries int
 
 // directRequest modifies only req.URL so that it points to the upstream
 // in the given DialInfo. It must modify ONLY the request URL.
-func (Handler) directRequest(req *http.Request, di DialInfo) {
+func (h *Handler) directRequest(req *http.Request, di DialInfo) {
 	// we need a host, so set the upstream's host address
 	reqHost := di.Address
 
@@ -1197,6 +1207,13 @@ func (Handler) directRequest(req *http.Request, di DialInfo) {
 	if (req.URL.Scheme == "http" && di.Port == "80") ||
 		(req.URL.Scheme == "https" && di.Port == "443") {
 		reqHost = di.Host
+	}
+
+	// add client address to the host to let transport differentiate requests from different clients
+	if ht, ok := h.Transport.(*HTTPTransport); ok && ht.ProxyProtocol != "" {
+		if proxyProtocolInfo, ok := caddyhttp.GetVar(req.Context(), proxyProtocolInfoVarKey).(ProxyProtocolInfo); ok {
+			reqHost = proxyProtocolInfo.AddrPort.String() + "->" + reqHost
+		}
 	}
 
 	req.URL.Host = reqHost

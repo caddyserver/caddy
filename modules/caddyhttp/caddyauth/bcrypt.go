@@ -27,7 +27,10 @@ func init() {
 }
 
 // defaultBcryptCost cost 14 strikes a solid balance between security, usability, and hardware performance
-const defaultBcryptCost = 14
+const (
+	bcryptName        = "bcrypt"
+	defaultBcryptCost = 14
+)
 
 // BcryptHash implements the bcrypt hash.
 type BcryptHash struct {

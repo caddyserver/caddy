@@ -18,6 +18,9 @@
 		trusted_proxies static private_ranges
 		client_ip_headers Custom-Real-Client-IP X-Forwarded-For
 		client_ip_headers A-Third-One
+		keepalive_interval 20s
+		keepalive_idle 20s
+		keepalive_count 10
 	}
 }
 
@@ -45,6 +48,9 @@ foo.com {
 					"read_header_timeout": 30000000000,
 					"write_timeout": 30000000000,
 					"idle_timeout": 30000000000,
+					"keepalive_interval": 20000000000,
+					"keepalive_idle": 20000000000,
+					"keepalive_count": 10,
 					"max_header_bytes": 100000000,
 					"enable_full_duplex": true,
 					"routes": [

@@ -50,7 +50,7 @@ type Encode struct {
 	// Only encode responses that are at least this many bytes long.
 	MinLength int `json:"minimum_length,omitempty"`
 
-	// Only encode responses that match against this ResponseMmatcher.
+	// Only encode responses that match against this ResponseMatcher.
 	// The default is a collection of text-based Content-Type headers.
 	Matcher *caddyhttp.ResponseMatcher `json:"match,omitempty"`
 
