@@ -33,7 +33,7 @@ import (
 	"github.com/caddyserver/certmagic"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
-	"github.com/quic-go/quic-go/qlog"
+	h3qlog "github.com/quic-go/quic-go/http3/qlog"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
@@ -638,7 +638,7 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 			MaxHeaderBytes: s.MaxHeaderBytes,
 			QUICConfig: &quic.Config{
 				Versions: []quic.Version{quic.Version1, quic.Version2},
-				Tracer:   qlog.DefaultConnectionTracer,
+				Tracer:   h3qlog.DefaultConnectionTracer,
 			},
 			IdleTimeout: time.Duration(s.IdleTimeout),
 		}
