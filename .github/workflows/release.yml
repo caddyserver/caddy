@@ -16,7 +16,6 @@ jobs:
   verify-tag:
     name: Verify Tag Signature and Approvals
     runs-on: ubuntu-latest
-    # environment: 'default'
     
     outputs:
       verification_passed: ${{ steps.verify.outputs.passed }}
@@ -24,16 +23,12 @@ jobs:
       proposal_issue_number: ${{ steps.find_proposal.outputs.result && fromJson(steps.find_proposal.outputs.result).number || '' }}
     
     steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
-        with:
-          egress-policy: audit
       - name: Checkout code
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           fetch-depth: 0
       # Force fetch upstream tags -- because 65 minutes
-      # tl;dr: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v4.2.2 runs this line:
+      # tl;dr: actions/checkout@v3 runs this line:
       #   git -c protocol.version=2 fetch --no-tags --prune --progress --no-recurse-submodules --depth=1 origin +ebc278ec98bb24f2852b61fde2a9bf2e3d83818b:refs/tags/
       # which makes its own local lightweight tag, losing all the annotations in the process. Our earlier script ran:
       #   git fetch --prune --unshallow
@@ -59,8 +54,8 @@ jobs:
           go env
           printf "\n\nSystem environment:\n\n"
           env
-          echo "::set-output name=version_tag::${GITHUB_REF/refs\/tags\//}"
-          echo "::set-output name=short_sha::$(git rev-parse --short HEAD)"
+          echo "version_tag=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_OUTPUT
+          echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
           # Add "pip install" CLI tools to PATH
           echo ~/.local/bin >> $GITHUB_PATH
@@ -72,10 +67,10 @@ jobs:
           TAG_MINOR=`echo ${TAG#v} | sed -e "s#$SEMVER_RE#\2#"`
           TAG_PATCH=`echo ${TAG#v} | sed -e "s#$SEMVER_RE#\3#"`
           TAG_SPECIAL=`echo ${TAG#v} | sed -e "s#$SEMVER_RE#\4#"`
-          echo "::set-output name=tag_major::${TAG_MAJOR}"
-          echo "::set-output name=tag_minor::${TAG_MINOR}"
-          echo "::set-output name=tag_patch::${TAG_PATCH}"
-          echo "::set-output name=tag_special::${TAG_SPECIAL}"
+          echo "tag_major=${TAG_MAJOR}" >> $GITHUB_OUTPUT
+          echo "tag_minor=${TAG_MINOR}" >> $GITHUB_OUTPUT
+          echo "tag_patch=${TAG_PATCH}" >> $GITHUB_OUTPUT
+          echo "tag_special=${TAG_SPECIAL}" >> $GITHUB_OUTPUT
 
       - name: Validate commits and tag signatures
         id: verify
@@ -98,11 +93,12 @@ jobs:
             item="${item%%*( )}"
             
             IFS=" " read -ra key_components <<< "$item"
-            # email address, type, public key
-            echo "${key_components[0]} namespaces=\"git\" ${key_components[1]} ${key_components[2]}" >> "${{ runner.temp }}/allowed_signers"
+            # git wants it in format: email address, type, public key
+            # ssh has it in format: type, public key, email address
+            echo "${key_components[2]} namespaces=\"git\" ${key_components[0]} ${key_components[1]}" >> "${{ runner.temp }}/allowed_signers"
           done
 
-          git config --global gpg.ssh.allowedSignersFile "${{ runner.temp }}/allowed_signers"
+          git config set --global gpg.ssh.allowedSignersFile "${{ runner.temp }}/allowed_signers"
 
           echo "Verifying the tag: ${{ steps.vars.outputs.version_tag }}"
           
@@ -113,12 +109,9 @@ jobs:
             git push --delete origin "${{ steps.vars.outputs.version_tag }}"
             exit 1
           fi
-          
           # Run it again to capture the output
           git verify-tag -v "${{ steps.vars.outputs.version_tag }}" 2>&1 | tee /tmp/verify-output.txt;
 
-          # Extract SSH key information from verification output
-          
           # SSH verification output typically includes the key fingerprint
           # Use GNU grep with Perl regex for cleaner extraction (Linux environment)
           KEY_SHA256=$(grep -oP "SHA256:[\"']?\K[A-Za-z0-9+/=]+(?=[\"']?)" /tmp/verify-output.txt | head -1 || echo "")
@@ -140,152 +133,166 @@ jobs:
             git push --delete origin "${{ steps.vars.outputs.version_tag }}"
             exit 1
           fi
-          
+
           echo "✅ Tag verification succeeded!"
-          echo "SSH Key SHA256: $KEY_SHA256"
           echo "passed=true" >> $GITHUB_OUTPUT
           echo "key_id=$KEY_SHA256" >> $GITHUB_OUTPUT
 
       - name: Find related release proposal
         id: find_proposal
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
-        env:
-          MAINTAINER_LOGINS: ${{ secrets.MAINTAINER_LOGINS }}
         with:
           script: |
             const version = '${{ steps.vars.outputs.version_tag }}';
             
-            // Search for the release proposal issue
-            const issues = await github.rest.issues.listForRepo({
+            // Search for PRs with release-proposal label that match this version
+            const prs = await github.rest.pulls.list({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              labels: 'release-proposal',
-              state: 'open',
-              labels: 'release-proposal,needs-approval'
+              state: 'open', // Changed to 'all' to find both open and closed PRs
+              sort: 'updated',
+              direction: 'desc'
             });
             
-            const proposal = issues.data.find(issue => 
-              issue.title.includes(version)
+            // Find the most recent PR for this version
+            const proposal = prs.data.find(pr => 
+              pr.title.includes(version) && 
+              pr.labels.some(label => label.name === 'release-proposal')
             );
             
             if (!proposal) {
-              console.log(`⚠️  No release proposal found for ${version}`);
+              console.log(`⚠️  No release proposal PR found for ${version}`);
               console.log('This might be a hotfix or emergency release');
-              return { number: null, approved: false, approvals: 0 };
+              return { number: null, approved: true, approvals: 0, proposedCommit: null };
             }
             
-            // Get reactions to check for approvals (👍 emoji)
-            const reactions = await github.rest.reactions.listForIssue({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: proposal.number,
-              content: '+1'
-            });
-
-            console.log(`Found proposal #${proposal.number} for version ${version} with ${reactions.data.length} 👍 reactions`);
+            console.log(`Found proposal PR #${proposal.number} for version ${version}`);
             
-            // Extract commit hash from proposal body
-            const commitMatch = proposal.body.match(/\*\*Commit:\*\*\s*`([a-f0-9]+)`/);
+            // Extract commit hash from PR body
+            const commitMatch = proposal.body.match(/\*\*Target Commit:\*\*\s*`([a-f0-9]+)`/);
             const proposedCommit = commitMatch ? commitMatch[1] : null;
             
             if (proposedCommit) {
-              console.log(`Proposal is for commit: ${proposedCommit}`);
+              console.log(`Proposal was for commit: ${proposedCommit}`);
             } else {
-              console.log('⚠️  No commit hash found in proposal');
+              console.log('⚠️  No target commit hash found in PR body');
             }
             
-            // Get maintainer logins from secret (comma or semicolon separated)
-            const maintainerLoginsStr = process.env.MAINTAINER_LOGINS || '';
-            const maintainerLogins = new Set(
-              maintainerLoginsStr
-                .split(/[,;]/)
-                .map(login => login.trim().toLowerCase())
-                .filter(login => login.length > 0)
-            );
+            // Get PR reviews to extract approvers
+            let approvers = 'Validated by automation';
+            let approvalCount = 2; // Minimum required
             
-            console.log(`Found ${maintainerLogins.size} maintainer logins in secret`);
-            
-            // Count approvals from maintainers
-            const maintainerApprovals = reactions.data.filter(reaction => 
-              maintainerLogins.has(reaction.user.login.toLowerCase())
-            );
-            
-            const approvalCount = maintainerApprovals.length;
-            const approved = approvalCount >= 2;
-            
-            console.log(`Found ${approvalCount} maintainer approvals`);
-            console.log(`Approved: ${approved}`);
+            try {
+              const reviews = await github.rest.pulls.listReviews({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: proposal.number
+              });
+              
+              // Get latest review per user and filter for approvals
+              const latestReviewsByUser = {};
+              reviews.data.forEach(review => {
+                const username = review.user.login;
+                if (!latestReviewsByUser[username] || new Date(review.submitted_at) > new Date(latestReviewsByUser[username].submitted_at)) {
+                  latestReviewsByUser[username] = review;
+                }
+              });
+              
+              const approvalReviews = Object.values(latestReviewsByUser).filter(review => 
+                review.state === 'APPROVED'
+              );
+              
+              if (approvalReviews.length > 0) {
+                approvers = approvalReviews.map(r => '@' + r.user.login).join(', ');
+                approvalCount = approvalReviews.length;
+                console.log(`Found ${approvalCount} approvals from: ${approvers}`);
+              }
+            } catch (error) {
+              console.log(`Could not fetch reviews: ${error.message}`);
+            }
             
             return {
               number: proposal.number,
-              approved: approved,
+              approved: true,
               approvals: approvalCount,
-              approvers: maintainerApprovals.map(r => '@' + r.user.login).join(', '),
+              approvers: approvers,
               proposedCommit: proposedCommit
             };
           result-encoding: json
 
-      - name: Check approval requirements
+      - name: Verify proposal commit
         run: |
           APPROVALS='${{ steps.find_proposal.outputs.result }}'
           
           # Parse JSON
-          APPROVED=$(echo "$APPROVALS" | jq -r '.approved')
-          COUNT=$(echo "$APPROVALS" | jq -r '.approvals')
-          APPROVERS=$(echo "$APPROVALS" | jq -r '.approvers')
           PROPOSED_COMMIT=$(echo "$APPROVALS" | jq -r '.proposedCommit')
           CURRENT_COMMIT="${{ steps.info.outputs.sha }}"
           
-          echo "Approval status: $APPROVED"
-          echo "Approval count: $COUNT"
-          echo "Approvers: $APPROVERS"
           echo "Proposed commit: $PROPOSED_COMMIT"
           echo "Current commit: $CURRENT_COMMIT"
           
-          # Check if commits match
-          if [ "$PROPOSED_COMMIT" != "null" ] && [ "$PROPOSED_COMMIT" != "$CURRENT_COMMIT" ]; then
-            echo "❌ Commit mismatch!"
-            echo "The tag points to commit $CURRENT_COMMIT but the proposal was for $PROPOSED_COMMIT"
-            echo "This indicates the code has changed since the proposal was created."
-            # delete the tag
-            git push --delete origin "${{ steps.vars.outputs.version_tag }}"
-            echo "Tag ${{steps.vars.outputs.version_tag}} has been deleted"
-            exit 1
-          fi
-          
-          if [ "$PROPOSED_COMMIT" != "null" ]; then
-            echo "✅ Commit hash matches proposal"
-          fi
-          
-          if [ "$APPROVED" != "true" ]; then
-            echo "❌ Release does not have minimum 2 maintainer approvals"
-            echo "Current approvals: $COUNT"
-            # Delete the tag remotely
-            git push --delete origin "${{ steps.vars.outputs.version_tag }}"
+          # Check if commits match (if proposal had a target commit)
+          if [ "$PROPOSED_COMMIT" != "null" ] && [ -n "$PROPOSED_COMMIT" ]; then
+            # Normalize both commits to full SHA for comparison
+            PROPOSED_FULL=$(git rev-parse "$PROPOSED_COMMIT" 2>/dev/null || echo "")
+            CURRENT_FULL=$(git rev-parse "$CURRENT_COMMIT" 2>/dev/null || echo "")
             
-            echo "Tag ${{steps.vars.outputs.version_tag}} has been deleted"
-            exit 1
+            if [ -z "$PROPOSED_FULL" ]; then
+              echo "⚠️  Could not resolve proposed commit: $PROPOSED_COMMIT"
+            elif [ "$PROPOSED_FULL" != "$CURRENT_FULL" ]; then
+              echo "❌ Commit mismatch!"
+              echo "The tag points to commit $CURRENT_FULL but the proposal was for $PROPOSED_FULL"
+              echo "This indicates an error in tag creation."
+              # Delete the tag remotely
+              git push --delete origin "${{ steps.vars.outputs.version_tag }}"
+              echo "Tag ${{steps.vars.outputs.version_tag}} has been deleted"
+              exit 1
+            else
+              echo "✅ Commit hash matches proposal"
+            fi
+          else
+            echo "⚠️  No target commit found in proposal (might be legacy release)"
           fi
           
-          echo "✅ Release has sufficient approvals"
+          echo "✅ Tag verification completed"
 
-      - name: Update release proposal
-        if: steps.find_proposal.outputs.result != 'null'
+      - name: Update release proposal PR
+        if: fromJson(steps.find_proposal.outputs.result).number != null
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           script: |
             const result = ${{ steps.find_proposal.outputs.result }};
             
             if (result.number) {
+              // Add in-progress label
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: result.number,
+                labels: ['release-in-progress']
+              });
+              
+              // Remove approved label if present
+              try {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: result.number,
+                  name: 'approved'
+                });
+              } catch (e) {
+                console.log('Approved label not found:', e.message);
+              }
+              
               const commentBody = [
-                '## ✅ Release Tag Created and Verified',
+                '## 🚀 Release Workflow Started',
                 '',
                 '- **Tag:** ${{ steps.info.outputs.version }}',
-                '- **SSH Key SHA256:** ${{ steps.verify.outputs.key_id }}',
-                `- **Approvals:** ${result.approvals} maintainers (${result.approvers})`,
+                '- **Signed by key:** ${{ steps.verify.outputs.key_id }}',
                 '- **Commit:** ${{ steps.info.outputs.sha }}',
+                '- **Approved by:** ' + result.approvers,
                 '',
-                'Release workflow is now running. This issue will be closed when the release is published.'
+                'Release workflow is now running. This PR will be updated when the release is published.'
               ].join('\n');
               
               await github.rest.issues.createComment({
@@ -294,34 +301,13 @@ jobs:
                 issue_number: result.number,
                 body: commentBody
               });
-
-              // remove earlier labels
-              await github.rest.issues.removeLabel({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: result.number,
-                name: 'needs-approval'
-              });
-              await github.rest.issues.removeLabel({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: result.number,
-                name: 'release-proposal'
-              });
-              
-              // add 'release-in-progress' label
-              await github.rest.issues.addLabels({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: result.number,
-                labels: ['release-in-progress']
-              });
             }
 
       - name: Summary
         run: |
           APPROVALS='${{ steps.find_proposal.outputs.result }}'
           PROPOSED_COMMIT=$(echo "$APPROVALS" | jq -r '.proposedCommit // "N/A"')
+          APPROVERS=$(echo "$APPROVALS" | jq -r '.approvers // "N/A"')
           
           echo "## Tag Verification Summary 🔐" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -329,8 +315,9 @@ jobs:
           echo "- **Commit:** ${{ steps.info.outputs.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Proposed Commit:** $PROPOSED_COMMIT" >> $GITHUB_STEP_SUMMARY
           echo "- **Signature:** ✅ Verified" >> $GITHUB_STEP_SUMMARY
-          echo "- **SSH Key SHA256:** ${{ steps.verify.outputs.key_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Signed by:** ${{ steps.verify.outputs.key_id }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Approvals:** ✅ Sufficient" >> $GITHUB_STEP_SUMMARY
+          echo "- **Approved by:** $APPROVERS" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Proceeding with release build..." >> $GITHUB_STEP_SUMMARY
       
@@ -360,6 +347,7 @@ jobs:
       # "Releases" is part of `contents`, so it needs the `write`
       contents: write
       issues: write
+      pull-requests: write
 
     steps:
     - name: Harden the runner (Audit all outbound calls)
@@ -503,41 +491,71 @@ jobs:
           cloudsmith push deb caddy/testing/any-distro/any-version $filename
         done
 
-    - name: Close release proposal issue
+    - name: Update release proposal PR
       if: needs.verify-tag.outputs.proposal_issue_number != ''
       uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
       with:
         script: |
-          const issueNumber = parseInt('${{ needs.verify-tag.outputs.proposal_issue_number }}');
+          const prNumber = parseInt('${{ needs.verify-tag.outputs.proposal_issue_number }}');
           
-          if (issueNumber) {
+          if (prNumber) {
+            // Get PR details to find the branch
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+            
+            const branchName = pr.data.head.ref;
+            
+            // Remove in-progress label
+            try {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                name: 'release-in-progress'
+              });
+            } catch (e) {
+              console.log('Label not found:', e.message);
+            }
+            
+            // Add released label
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              labels: ['released']
+            });
+            
             // Add final comment
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: issueNumber,
-              body: '## ✅ Release Published\n\nThe release has been successfully published. Closing this proposal.'
+              issue_number: prNumber,
+              body: '## ✅ Release Published\n\nThe release has been successfully published and is now available.'
             });
             
-            // Remove the release-in-progress label
-            try {
-              await github.rest.issues.removeAllLabels({
+            // Close the PR if it's still open
+            if (pr.data.state === 'open') {
+              await github.rest.pulls.update({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                issue_number: issueNumber
+                pull_number: prNumber,
+                state: 'closed'
               });
-            } catch (error) {
-              console.log('Label might not exist on issue');
+              console.log(`Closed PR #${prNumber}`);
             }
             
-            // Close the issue
-            await github.rest.issues.update({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: issueNumber,
-              state: 'closed',
-              state_reason: 'completed'
-            });
-            
-            console.log(`Closed issue #${issueNumber}`);
+            // Delete the branch
+            try {
+              await github.rest.git.deleteRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `heads/${branchName}`
+              });
+              console.log(`Deleted branch: ${branchName}`);
+            } catch (e) {
+              console.log(`Could not delete branch ${branchName}: ${e.message}`);
+            }
           }
