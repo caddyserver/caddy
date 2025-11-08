@@ -16,6 +16,10 @@ jobs:
   verify-tag:
     name: Verify Tag Signature and Approvals
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
     
     outputs:
       verification_passed: ${{ steps.verify.outputs.passed }}
