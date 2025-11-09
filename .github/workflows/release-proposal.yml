@@ -221,7 +221,7 @@ jobs:
             ---
             
             **Note:** Tag creation is manual and requires a signed tag from a maintainer.`,
-              draft: false
+              draft: true
             });
             
             // Add labels
