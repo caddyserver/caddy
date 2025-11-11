@@ -23,9 +23,6 @@ permissions:
 
 jobs:
   test:
-    permissions:
-      checks: write
-      pull-requests: write
     strategy:
       # Default is true, cancels jobs for other platforms in the matrix if one fails
       fail-fast: false
@@ -67,6 +64,7 @@ jobs:
       contents: read
       pull-requests: read
       actions: write # to allow uploading artifacts and cache
+      checks: write
     steps:
     - name: Harden the runner (Audit all outbound calls)
       uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
