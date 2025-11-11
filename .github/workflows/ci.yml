@@ -231,6 +231,7 @@ jobs:
         mkdir coverdir
         export GOCOVERDIR=./coverdir
         ./cmd/caddy/caddy start
+        sleep 5
 
     - name: Run tests with Hurl
       run: |
