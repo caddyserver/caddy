@@ -162,13 +162,13 @@ jobs:
         os: 
           - linux
         go: 
-          - '1.23'
+          - '1.25'
 
         include:
         # Set the minimum Go patch version for the given Go minor
         # Usable via ${{ matrix.GO_SEMVER }}
-        - go: '1.23'
-          GO_SEMVER: '~1.23.0'
+        - go: '1.25'
+          GO_SEMVER: '~1.25.0'
 
         # Set some variables per OS, usable via ${{ matrix.VAR }}
         # OS_LABEL: the VM label from GitHub Actions (see https://docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners/about-github-hosted-runners#standard-github-hosted-runners-for-public-repositories)
@@ -208,7 +208,7 @@ jobs:
 
     - name: Get dependencies
       run: |
-        go get -v -t -d ./...
+        go get -v -t ./...
         # mkdir test-results
     - name: Build Caddy
       working-directory: ./cmd/caddy
@@ -219,7 +219,7 @@ jobs:
       
     - name: Install Hurl
       env:
-        HURL_VERSION: "5.0.1"
+        HURL_VERSION: "7.0.0"
       run: |
         curl --location --remote-name https://github.com/Orange-OpenSource/hurl/releases/download/${HURL_VERSION}/hurl_${HURL_VERSION}_amd64.deb
         sudo dpkg -i hurl_${HURL_VERSION}_amd64.deb
