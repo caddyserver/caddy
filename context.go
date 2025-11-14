@@ -21,12 +21,14 @@ import (
 	"log"
 	"log/slog"
 	"reflect"
+	"sync"
 
 	"github.com/caddyserver/certmagic"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"go.uber.org/zap"
 	"go.uber.org/zap/exp/zapslog"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2/internal/filesystems"
 )
@@ -583,24 +585,57 @@ func (ctx Context) Logger(module ...Module) *zap.Logger {
 	return ctx.cfg.Logging.Logger(mod)
 }
 
+type slogHandlerFactory func(handler slog.Handler, core zapcore.Core, moduleID string) slog.Handler
+
+var (
+	slogHandlerFactories   []slogHandlerFactory
+	slogHandlerFactoriesMu sync.RWMutex
+)
+
+// RegisterSlogHandlerFactory allows modules to register custom log/slog.Handler,
+// for instance, to add contextual data to the logs.
+func RegisterSlogHandlerFactory(factory slogHandlerFactory) {
+	slogHandlerFactoriesMu.Lock()
+	slogHandlerFactories = append(slogHandlerFactories, factory)
+	slogHandlerFactoriesMu.Unlock()
+}
+
 // Slogger returns a slog logger that is intended for use by
 // the most recent module associated with the context.
 func (ctx Context) Slogger() *slog.Logger {
+	var (
+		handler  slog.Handler
+		core     zapcore.Core
+		moduleID string
+	)
 	if ctx.cfg == nil {
 		// often the case in tests; just use a dev logger
 		l, err := zap.NewDevelopment()
 		if err != nil {
 			panic("config missing, unable to create dev logger: " + err.Error())
 		}
-		return slog.New(zapslog.NewHandler(l.Core()))
+
+		core = l.Core()
+		handler = zapslog.NewHandler(core)
+	} else {
+		mod := ctx.Module()
+		if mod == nil {
+			core = Log().Core()
+			handler = zapslog.NewHandler(core)
+		} else {
+			moduleID = string(mod.CaddyModule().ID)
+			core = ctx.cfg.Logging.Logger(mod).Core()
+			handler = zapslog.NewHandler(core, zapslog.WithName(moduleID))
+		}
 	}
-	mod := ctx.Module()
-	if mod == nil {
-		return slog.New(zapslog.NewHandler(Log().Core()))
+
+	slogHandlerFactoriesMu.RLock()
+	for _, f := range slogHandlerFactories {
+		handler = f(handler, core, moduleID)
 	}
-	return slog.New(zapslog.NewHandler(ctx.cfg.Logging.Logger(mod).Core(),
-		zapslog.WithName(string(mod.CaddyModule().ID)),
-	))
+	slogHandlerFactoriesMu.RUnlock()
+
+	return slog.New(handler)
 }
 
 // Modules returns the lineage of modules that this context provisioned,

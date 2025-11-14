@@ -33,7 +33,7 @@ import (
 	"github.com/caddyserver/certmagic"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
-	"github.com/quic-go/quic-go/qlog"
+	h3qlog "github.com/quic-go/quic-go/http3/qlog"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
@@ -638,7 +638,7 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 			MaxHeaderBytes: s.MaxHeaderBytes,
 			QUICConfig: &quic.Config{
 				Versions: []quic.Version{quic.Version1, quic.Version2},
-				Tracer:   qlog.DefaultConnectionTracer,
+				Tracer:   h3qlog.DefaultConnectionTracer,
 			},
 			IdleTimeout: time.Duration(s.IdleTimeout),
 		}
@@ -793,8 +793,10 @@ func (s *Server) logRequest(
 	accLog *zap.Logger, r *http.Request, wrec ResponseRecorder, duration *time.Duration,
 	repl *caddy.Replacer, bodyReader *lengthReader, shouldLogCredentials bool,
 ) {
+	ctx := r.Context()
+
 	// this request may be flagged as omitted from the logs
-	if skip, ok := GetVar(r.Context(), LogSkipVar).(bool); ok && skip {
+	if skip, ok := GetVar(ctx, LogSkipVar).(bool); ok && skip {
 		return
 	}
 
@@ -812,7 +814,7 @@ func (s *Server) logRequest(
 	}
 
 	message := "handled request"
-	if nop, ok := GetVar(r.Context(), "unhandled").(bool); ok && nop {
+	if nop, ok := GetVar(ctx, "unhandled").(bool); ok && nop {
 		message = "NOP"
 	}
 
@@ -836,7 +838,7 @@ func (s *Server) logRequest(
 				reqBodyLength = bodyReader.Length
 			}
 
-			extra := r.Context().Value(ExtraLogFieldsCtxKey).(*ExtraLogFields)
+			extra := ctx.Value(ExtraLogFieldsCtxKey).(*ExtraLogFields)
 
 			fieldCount := 6
 			fields = make([]zapcore.Field, 0, fieldCount+len(extra.fields))
