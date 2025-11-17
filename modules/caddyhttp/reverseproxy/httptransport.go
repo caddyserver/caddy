@@ -564,6 +564,26 @@ func (h *HTTPTransport) EnableTLS(base *TLSConfig) error {
 	return nil
 }
 
+// EnableH2C enables H2C (HTTP/2 over Cleartext) on the transport.
+func (h *HTTPTransport) EnableH2C() error {
+	h.Versions = []string{"h2c", "2"}
+	return nil
+}
+
+// OverrideHealthCheckScheme overrides the scheme of the given URL
+// used for health checks.
+func (h HTTPTransport) OverrideHealthCheckScheme(base *url.URL, port string) {
+	// if tls is enabled and the port isn't in the except list, use HTTPs
+	if h.TLSEnabled() && !slices.Contains(h.TLS.ExceptPorts, port) {
+		base.Scheme = "https"
+	}
+}
+
+// ProxyProtocolEnabled returns true if proxy protocol is enabled.
+func (h HTTPTransport) ProxyProtocolEnabled() bool {
+	return h.ProxyProtocol != ""
+}
+
 // Cleanup implements caddy.CleanerUpper and closes any idle connections.
 func (h HTTPTransport) Cleanup() error {
 	if h.Transport == nil {
@@ -820,8 +840,11 @@ func decodeBase64DERCert(certStr string) (*x509.Certificate, error) {
 
 // Interface guards
 var (
-	_ caddy.Provisioner  = (*HTTPTransport)(nil)
-	_ http.RoundTripper  = (*HTTPTransport)(nil)
-	_ caddy.CleanerUpper = (*HTTPTransport)(nil)
-	_ TLSTransport       = (*HTTPTransport)(nil)
+	_ caddy.Provisioner                   = (*HTTPTransport)(nil)
+	_ http.RoundTripper                   = (*HTTPTransport)(nil)
+	_ caddy.CleanerUpper                  = (*HTTPTransport)(nil)
+	_ TLSTransport                        = (*HTTPTransport)(nil)
+	_ H2CTransport                        = (*HTTPTransport)(nil)
+	_ HealthCheckSchemeOverriderTransport = (*HTTPTransport)(nil)
+	_ ProxyProtocolTransport              = (*HTTPTransport)(nil)
 )
