@@ -101,7 +101,7 @@ func listenReusable(ctx context.Context, lnKey string, network, address string, 
 		socketFile *os.File
 	)
 
-	fd := IsFdNetwork(network)
+	fd := IsFDNetwork(network)
 	if fd {
 		socketFd, err := strconv.ParseUint(address, 0, strconv.IntSize)
 		if err != nil {

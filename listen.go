@@ -36,7 +36,7 @@ func reuseUnixSocket(_, _ string) (any, error) {
 func listenReusable(ctx context.Context, lnKey string, network, address string, config net.ListenConfig) (any, error) {
 	var socketFile *os.File
 
-	fd := IsFdNetwork(network)
+	fd := IsFDNetwork(network)
 	if fd {
 		socketFd, err := strconv.ParseUint(address, 0, strconv.IntSize)
 		if err != nil {

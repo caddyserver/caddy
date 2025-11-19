@@ -382,7 +382,7 @@ func cmdRespond(fl caddycmd.Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, err
 	}
 
-	if !listenAddr.IsUnixNetwork() && !listenAddr.IsFdNetwork() {
+	if !listenAddr.IsUnixNetwork() && !listenAddr.IsFDNetwork() {
 		listenAddrs := make([]string, 0, listenAddr.PortRangeSize())
 		for offset := uint(0); offset < listenAddr.PortRangeSize(); offset++ {
 			listenAddrs = append(listenAddrs, listenAddr.JoinHostPort(offset))

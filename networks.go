@@ -55,13 +55,13 @@ func IsUDPNetwork(netw string) bool {
 	return netw == UDP || netw == UDP4 || netw == UDP6
 }
 
-// IsIpNetwork returns true if the netw is an ip network.
-func IsIpNetwork(netw string) bool {
+// IsIPNetwork returns true if the netw is an ip network.
+func IsIPNetwork(netw string) bool {
 	return strings.HasPrefix(netw, IP_) || strings.HasPrefix(netw, IP4_) || strings.HasPrefix(netw, IP6_)
 }
 
 // IsFdNetwork returns true if the netw is a fd network.
-func IsFdNetwork(netw string) bool {
+func IsFDNetwork(netw string) bool {
 	return netw == FD || netw == FDGRAM
 }
 
@@ -69,8 +69,8 @@ func IsReservedNetwork(network string) bool {
 	return IsUnixNetwork(network) ||
 		IsTCPNetwork(network) ||
 		IsUDPNetwork(network) ||
-		IsIpNetwork(network) ||
-		IsFdNetwork(network)
+		IsIPNetwork(network) ||
+		IsFDNetwork(network)
 }
 
 func IsIPv4Network(netw string) bool {
@@ -86,7 +86,7 @@ func IsStreamNetwork(netw string) bool {
 }
 
 func IsPacketNetwork(netw string) bool {
-	return netw == UNIXGRAM || IsUDPNetwork(netw) || IsIpNetwork(netw) || netw == FDGRAM
+	return netw == UNIXGRAM || IsUDPNetwork(netw) || IsIPNetwork(netw) || netw == FDGRAM
 }
 
 // ListenerFunc is a function that can return a listener given a network and address.
