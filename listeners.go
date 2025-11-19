@@ -160,7 +160,7 @@ func (na NetworkAddress) Listen(ctx context.Context, portOffset uint, config net
 		if err != nil {
 			return nil, err
 		}
-	} else if na.IsFdNetwork() {
+	} else if na.IsFDNetwork() {
 		socketFd, err := strconv.ParseUint(na.Host, 0, strconv.IntSize)
 		if err != nil {
 			return nil, fmt.Errorf("invalid file descriptor: %v", err)
@@ -171,7 +171,7 @@ func (na NetworkAddress) Listen(ctx context.Context, portOffset uint, config net
 		address = na.JoinHostPort(portOffset)
 	}
 
-	if na.IsIpNetwork() {
+	if na.IsIPNetwork() {
 		ln, err = config.ListenPacket(ctx, na.Network, address)
 	} else {
 		if na.IsUnixNetwork() {
@@ -225,22 +225,22 @@ func (na NetworkAddress) IsUDPNetwork() bool {
 	return IsUDPNetwork(na.Network)
 }
 
-// IsIpNetwork returns true if na.Network starts with
+// IsIPNetwork returns true if na.Network starts with
 // ip: ip4: or ip6:
-func (na NetworkAddress) IsIpNetwork() bool {
-	return IsIpNetwork(na.Network)
+func (na NetworkAddress) IsIPNetwork() bool {
+	return IsIPNetwork(na.Network)
 }
 
-// IsFdNetwork returns true if na.Network is
+// IsFDNetwork returns true if na.Network is
 // fd or fdgram.
-func (na NetworkAddress) IsFdNetwork() bool {
-	return IsFdNetwork(na.Network)
+func (na NetworkAddress) IsFDNetwork() bool {
+	return IsFDNetwork(na.Network)
 }
 
 // JoinHostPort is like net.JoinHostPort, but where the port
 // is StartPort + offset.
 func (na NetworkAddress) JoinHostPort(offset uint) string {
-	if na.IsUnixNetwork() || na.IsFdNetwork() {
+	if na.IsUnixNetwork() || na.IsFDNetwork() {
 		return na.Host
 	}
 	return net.JoinHostPort(na.Host, strconv.FormatUint(uint64(na.StartPort+offset), 10))
@@ -277,7 +277,7 @@ func (na NetworkAddress) PortRangeSize() uint {
 }
 
 func (na NetworkAddress) isLoopback() bool {
-	if na.IsUnixNetwork() || na.IsFdNetwork() {
+	if na.IsUnixNetwork() || na.IsFDNetwork() {
 		return true
 	}
 	if na.Host == "localhost" {
@@ -346,7 +346,7 @@ func ParseNetworkAddressWithDefaults(addr, defaultNetwork string, defaultPort ui
 			Host:    host,
 		}, err
 	}
-	if IsFdNetwork(network) {
+	if IsFDNetwork(network) {
 		return NetworkAddress{
 			Network: network,
 			Host:    host,
@@ -391,7 +391,7 @@ func SplitNetworkAddress(a string) (network, host, port string, err error) {
 	if slashFound {
 		network = strings.ToLower(strings.TrimSpace(beforeSlash))
 		a = afterSlash
-		if IsUnixNetwork(network) || IsFdNetwork(network) {
+		if IsUnixNetwork(network) || IsFDNetwork(network) {
 			host = a
 			return network, host, port, err
 		}
@@ -426,7 +426,7 @@ func JoinNetworkAddress(network, host, port string) string {
 	if network != "" {
 		a = network + "/"
 	}
-	if (host != "" && port == "") || IsUnixNetwork(network) || IsFdNetwork(network) {
+	if (host != "" && port == "") || IsUnixNetwork(network) || IsFDNetwork(network) {
 		a += host
 	} else if port != "" {
 		a += net.JoinHostPort(host, port)
