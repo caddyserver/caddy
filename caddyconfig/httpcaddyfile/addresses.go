@@ -357,39 +357,37 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 
 			lnIfaceAddresses := []string{}
 			for _, ifaceAddress := range ifaceAddresses {
-				var (
-					ip net.IP
-					ipok bool
-				)
+				var addrok, netwok bool
+
+				var ip net.IP
 				switch ifaceAddressValue := ifaceAddress.(type) {
 				case *net.IPAddr:
-					ip, ipok = ifaceAddressValue.IP, true
+					ip, addrok, netwok = ifaceAddressValue.IP, true, true
 				case *net.IPNet:
-					ip, ipok = ifaceAddressValue.IP, true
+					ip, addrok, netwok = ifaceAddressValue.IP, true, true
 				case *net.TCPAddr:
-					ip, ipok = ifaceAddressValue.IP, caddy.IsTCPNetwork(lnNetw)
+					ip, addrok, netwok = ifaceAddressValue.IP, true, caddy.IsTCPNetwork(lnNetw)
 				case *net.UDPAddr:
-					ip, ipok = ifaceAddressValue.IP, caddy.IsUDPNetwork(lnNetw)
+					ip, addrok, netwok = ifaceAddressValue.IP, true, caddy.IsUDPNetwork(lnNetw)
 				}
 
-				if ipok {
-					if caddy.IsIPv4Network(lnNetw) && len(ip) == net.IPv4len || caddy.IsIPv6Network(lnNetw) && len(ip) == net.IPv6len {
-						lnIfaceAddresses = append(lnIfaceAddresses, ip.String())
+				if addrok {
+					if netwok {
+						if caddy.IsIPv4Network(lnNetw) && len(ip) == net.IPv4len || caddy.IsIPv6Network(lnNetw) && len(ip) == net.IPv6len {
+							lnIfaceAddresses = append(lnIfaceAddresses, ip.String())
+						}
 					}
 					continue
 				}
 
-				var (
-					name string
-					nameok bool
-				)
+				var name string
 				switch ifaceAddressValue := ifaceAddress.(type) {
 				case *net.UnixAddr:
-					name, nameok = ifaceAddressValue.Name, true
+					name, addrok, netwok = ifaceAddressValue.Name, true, caddy.IsUnixNetwork(lnNetw)
 				}
 
-				if nameok {
-					if caddy.IsUnixNetwork(lnNetw) {
+				if addrok {
+					if netwok {
 						lnIfaceAddresses = append(lnIfaceAddresses, name)
 					}
 					continue
