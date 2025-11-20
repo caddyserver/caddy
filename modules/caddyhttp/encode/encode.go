@@ -168,8 +168,8 @@ func (enc *Encode) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 			// caches without knowing about our changes...
 			if etag := r.Header.Get("If-None-Match"); etag != "" && !strings.HasPrefix(etag, "W/") {
 				ourSuffix := "-" + encName + `"`
-				if strings.HasSuffix(etag, ourSuffix) {
-					etag = strings.TrimSuffix(etag, ourSuffix) + `"`
+				if before, ok := strings.CutSuffix(etag, ourSuffix); ok {
+					etag = before + `"`
 					r.Header.Set("If-None-Match", etag)
 				}
 			}
