@@ -362,15 +362,16 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 				var ip net.IP
 				switch ifaceAddressValue := ifaceAddress.(type) {
 				case *net.IPAddr:
-					ip, addrok = ifaceAddressValue.IP, true
-					netwok = len(ip) == net.IPv4len && caddy.IsIPv4Network(lnNetw) || len(ip) == net.IPv6len && caddy.IsIPv6Network(lnNetw)
+					ip, addrok, netwok = ifaceAddressValue.IP, true, true
 				case *net.IPNet:
-					ip, addrok = ifaceAddressValue.IP, true
-					netwok = len(ip) == net.IPv4len && caddy.IsIPv4Network(lnNetw) || len(ip) == net.IPv6len && caddy.IsIPv6Network(lnNetw)
+					ip, addrok, netwok = ifaceAddressValue.IP, true, true
 				case *net.TCPAddr:
 					ip, addrok, netwok = ifaceAddressValue.IP, true, caddy.IsTCPNetwork(lnNetw)
 				case *net.UDPAddr:
 					ip, addrok, netwok = ifaceAddressValue.IP, true, caddy.IsUDPNetwork(lnNetw)
+				}
+				if netwok {
+					netwok = len(ip) == net.IPv4len && caddy.IsIPv4Network(lnNetw) || len(ip) == net.IPv6len && caddy.IsIPv6Network(lnNetw)
 				}
 				if addrok {
 					if netwok {
