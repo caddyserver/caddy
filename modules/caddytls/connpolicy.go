@@ -168,21 +168,11 @@ func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) *tls.Config {
 				tlsApp.RegisterServerNames(echNames)
 			}
 
-			// TODO: Ideally, ECH keys should be rotated. However, as of Go 1.24, the std lib implementation
-			// does not support safely modifying the tls.Config's EncryptedClientHelloKeys field.
-			// So, we implement static ECH keys temporarily. See https://github.com/golang/go/issues/71920.
-			// Revisit this after Go 1.25 is released and implement key rotation.
-			var stdECHKeys []tls.EncryptedClientHelloKey
-			for _, echConfigs := range tlsApp.EncryptedClientHello.configs {
-				for _, c := range echConfigs {
-					stdECHKeys = append(stdECHKeys, tls.EncryptedClientHelloKey{
-						Config:      c.configBin,
-						PrivateKey:  c.privKeyBin,
-						SendAsRetry: c.sendAsRetry,
-					})
-				}
+			tlsCfg.GetEncryptedClientHelloKeys = func(chi *tls.ClientHelloInfo) ([]tls.EncryptedClientHelloKey, error) {
+				tlsApp.EncryptedClientHello.configsMu.RLock()
+				defer tlsApp.EncryptedClientHello.configsMu.RUnlock()
+				return tlsApp.EncryptedClientHello.stdlibReady, nil
 			}
-			tlsCfg.EncryptedClientHelloKeys = stdECHKeys
 		}
 	}
 
