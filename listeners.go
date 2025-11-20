@@ -171,7 +171,7 @@ func (na NetworkAddress) Listen(ctx context.Context, portOffset uint, config net
 		address = na.JoinHostPort(portOffset)
 	}
 
-	if na.IsIPNetwork() {
+	if na.IsIPTransportNetwork() {
 		ln, err = config.ListenPacket(ctx, na.Network, address)
 	} else {
 		if na.IsUnixNetwork() {
@@ -225,10 +225,10 @@ func (na NetworkAddress) IsUDPNetwork() bool {
 	return IsUDPNetwork(na.Network)
 }
 
-// IsIPNetwork returns true if na.Network starts with
+// IsIPTransportNetwork returns true if na.Network starts with
 // ip: ip4: or ip6:
-func (na NetworkAddress) IsIPNetwork() bool {
-	return IsIPNetwork(na.Network)
+func (na NetworkAddress) IsIPTransportNetwork() bool {
+	return IsIPTransportNetwork(na.Network)
 }
 
 // IsFDNetwork returns true if na.Network is

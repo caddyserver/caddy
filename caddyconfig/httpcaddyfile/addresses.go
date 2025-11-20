@@ -328,18 +328,18 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 	}
 
 	// use a map to prevent duplication
-	interfaceAddresses := map[string][]string{}
 	listeners := map[string]map[string]struct{}{}
+	interfaces := map[string][]net.Addr{}
 	for _, lnCfgVal := range lnCfgVals {
-		addresses := make([]string, 0, len(lnCfgVal.addresses))
-		addresses = append(addresses, lnCfgVal.addresses...)
+		lnAddresses := make([]string, 0, len(lnCfgVal.addresses))
+		lnAddresses = append(lnAddresses, lnCfgVal.addresses...)
 		for _, lnIface := range lnCfgVal.interfaces {
 			lnNetw, lnDevice, _, err := caddy.SplitNetworkAddress(lnIface)
 			if err != nil {
 				return nil, fmt.Errorf("splitting listener interface: %v", err)
 			}
 
-			ifaceAddresses, ok := interfaceAddresses[lnDevice]
+			ifaceAddresses, ok := interfaces[lnDevice]
 			if !ok {
 				iface, err := net.InterfaceByName(lnDevice)
 				if err != nil {
@@ -348,34 +348,61 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 				if iface == nil {
 					return nil, fmt.Errorf("querying listener interface: %v", lnDevice)
 				}
-				ifaceAddrs, err := iface.Addrs()
+				ifaceAddresses, err := iface.Addrs()
 				if err != nil {
 					return nil, fmt.Errorf("querying listener interface addresses: %v: %v", lnDevice, err)
 				}
-				for _, ifaceAddr := range ifaceAddrs {
-					var ip string
-					switch ifaceAddrValue := ifaceAddr.(type) {
-					case *net.IPAddr:
-						ip = ifaceAddrValue.IP.String()
-					case *net.IPNet:
-						ip = ifaceAddrValue.IP.String()
-					default:
-						ip = ifaceAddrValue.String()
-					}
-					if len(ip) == net.IPv4len && caddy.IsIPv4Network(lnNetw) || len(ip) == net.IPv6len && caddy.IsIPv6Network(lnNetw) {
-						ifaceAddresses = append(ifaceAddresses, ip)
-					}
-				}
-				if len(ifaceAddresses) == 0 {
-					return nil, fmt.Errorf("querying listener interface addresses for network: %v: %v", lnDevice, lnNetw)
-				}
-				interfaceAddresses[lnDevice] = ifaceAddresses
+				interfaces[lnDevice] = ifaceAddresses
 			}
+
+			lnIfaceAddresses := []string{}
 			for _, ifaceAddress := range ifaceAddresses {
-				addresses = append(addresses, caddy.JoinNetworkAddress(lnNetw, ifaceAddress, ""))
+				var (
+					ip net.IP
+					ipok bool
+				)
+				switch ifaceAddressValue := ifaceAddress.(type) {
+				case *net.IPAddr:
+					ip, ipok = ifaceAddressValue.IP, true
+				case *net.IPNet:
+					ip, ipok = ifaceAddressValue.IP, true
+				case *net.TCPAddr:
+					ip, ipok = ifaceAddressValue.IP, true
+				case *net.UDPAddr:
+					ip, ipok = ifaceAddressValue.IP, true
+				}
+				if ipok {
+					if len(ip) == net.IPv4len && caddy.IsIPv4Network(lnNetw) || len(ip) == net.IPv6len && caddy.IsIPv6Network(lnNetw) {
+						lnIfaceAddresses = append(lnIfaceAddresses, ip.String())
+					}
+					continue
+				}
+
+				var (
+					name string
+					nameok bool
+				)
+				switch ifaceAddressValue := ifaceAddress.(type) {
+					case *net.UnixAddr:
+						name, nameok = ifaceAddressValue.Name, true
+				}
+				if nameok {
+					if caddy.IsUnixNetwork(lnNetw) {
+						lnIfaceAddresses = append(lnIfaceAddresses, name)
+					}
+					continue
+				}
+
+				lnIfaceAddresses = append(lnIfaceAddresses, ifaceAddress.String())
+			}
+			if len(lnIfaceAddresses) == 0 {
+				return nil, fmt.Errorf("no available listener interface addresses for network: %v: %v", lnDevice, lnNetw)
+			}
+			for _, lnIfaceAddress := range lnIfaceAddresses {
+				lnAddresses = append(lnAddresses, caddy.JoinNetworkAddress(lnNetw, lnIfaceAddress, ""))
 			}
 		}
-		for _, lnAddr := range addresses {
+		for _, lnAddr := range lnAddresses {
 			lnNetw, lnHost, _, err := caddy.SplitNetworkAddress(lnAddr)
 			if err != nil {
 				return nil, fmt.Errorf("splitting listener address: %v", err)
