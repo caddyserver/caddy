@@ -75,7 +75,7 @@ func TestGlobalResolversOption(t *testing.T) {
 		{
 			name: "single resolver",
 			input: `{
-				resolvers 1.1.1.1
+				tls_resolvers 1.1.1.1
 			}
 			example.com {
 			}`,
@@ -85,7 +85,7 @@ func TestGlobalResolversOption(t *testing.T) {
 		{
 			name: "two resolvers",
 			input: `{
-				resolvers 1.1.1.1 8.8.8.8
+				tls_resolvers 1.1.1.1 8.8.8.8
 			}
 			example.com {
 			}`,
@@ -95,7 +95,7 @@ func TestGlobalResolversOption(t *testing.T) {
 		{
 			name: "multiple resolvers",
 			input: `{
-				resolvers 1.1.1.1 8.8.8.8 9.9.9.9
+				tls_resolvers 1.1.1.1 8.8.8.8 9.9.9.9
 			}
 			example.com {
 			}`,
