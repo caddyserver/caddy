@@ -20,7 +20,7 @@ require (
 	github.com/klauspost/cpuid/v2 v2.3.0
 	github.com/mholt/acmez/v3 v3.1.4
 	github.com/prometheus/client_golang v1.23.2
-	github.com/quic-go/quic-go v0.56.0
+	github.com/quic-go/quic-go v0.57.0
 	github.com/smallstep/certificates v0.28.4
 	github.com/smallstep/nosql v0.7.0
 	github.com/smallstep/truststore v0.13.0
@@ -77,7 +77,7 @@ require (
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/otlptranslator v0.0.2 // indirect
-	github.com/quic-go/qpack v0.5.1 // indirect
+	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/smallstep/cli-utils v0.12.1 // indirect
 	github.com/smallstep/go-attestation v0.4.4-0.20241119153605-2306d5b464ca // indirect
 	github.com/smallstep/linkedca v0.23.0 // indirect
