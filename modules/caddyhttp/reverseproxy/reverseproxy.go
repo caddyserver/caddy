@@ -437,6 +437,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	reqHost := clonedReq.Host
 	reqHeader := clonedReq.Header
 
+	var bufferedReqBody []byte
+	if reqBodyBuf, ok := clonedReq.Body.(bodyReadCloser); ok && reqBodyBuf.body == nil {
+		bufferedReqBody = append([]byte(nil), reqBodyBuf.buf.Bytes()...)
+	}
+
 	start := time.Now()
 	defer func() {
 		// total proxying duration, including time spent on LB and retries
@@ -455,8 +460,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		// and reusable, so if a backend partially or fully reads the body but then
 		// produces an error, the request can be repeated to the next backend with
 		// the full body (retries should only happen for idempotent requests) (see #6259)
-		if reqBodyBuf, ok := r.Body.(bodyReadCloser); ok && reqBodyBuf.body == nil {
-			r.Body = io.NopCloser(bytes.NewReader(reqBodyBuf.buf.Bytes()))
+		if bufferedReqBody != nil {
+			clonedReq.Body = io.NopCloser(bytes.NewReader(bufferedReqBody))
 		}
 
 		var done bool
