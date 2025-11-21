@@ -390,130 +390,126 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 
 	repl.Map(httpVars)
 }
+// handleMTLSEnabledWithExport populates placeholders or a map with server and client certificate details.
+// - req: The incoming HTTP request.
+// - connState: The TLS connection state containing certificate information.
+// - exportCertData: If true, the data will be set in Caddy's Replacer placeholders; otherwise, it will populate the certDetails map.
+func handleMTLSEnabledWithExport(
+    req *http.Request,
+    connState *tls.ConnectionState,
+    exportCertData bool,
+) map[string]string {
+    certDetails := make(map[string]string)
 
-func getReqTLSReplacement(req *http.Request, key string) (any, bool) {
-	if req == nil || req.TLS == nil {
-		return nil, false
-	}
+    // Attempt to retrieve the Replacer from the request context
+    repl, _ := req.Context().Value(ReplacerCtxKey).(*caddy.Replacer)
 
-	if len(key) < len(reqTLSReplPrefix) {
-		return nil, false
-	}
+    // Helper function to set data either in Replacer placeholders or in the certDetails map
+    setData := func(key, value string) {
+        if exportCertData && repl != nil {
+            repl.Set(key, value)
+        } else {
+            certDetails[key] = value
+        }
+    }
 
-	field := strings.ToLower(key[len(reqTLSReplPrefix):])
+    // Populate server certificate details
+    if connState != nil && len(connState.PeerCertificates) > 0 {
+        serverCert := connState.PeerCertificates[0]
+        setData("http.request.tls.server.certificate_pem", string(pem.EncodeToMemory(&pem.Block{
+            Type:  "CERTIFICATE",
+            Bytes: serverCert.Raw,
+        })))
+        setData("http.request.tls.server.subject", serverCert.Subject.String())
+        setData("http.request.tls.server.issuer", serverCert.Issuer.String())
+    } else {
+        // Fallback values if no server certificate is present
+        setData("http.request.tls.server.certificate_pem", "")
+        setData("http.request.tls.server.subject", "No Server Certificate Subject")
+        setData("http.request.tls.server.issuer", "No Server Certificate Issuer")
+    }
 
-	if strings.HasPrefix(field, "client.") {
-		cert := getTLSPeerCert(req.TLS)
-		if cert == nil {
-			return nil, false
-		}
+    // Populate client certificate details (if mTLS is enabled and a client certificate is provided)
+    if connState != nil && len(connState.VerifiedChains) > 0 {
+        clientCert := connState.VerifiedChains[0][0]
+        setData("http.request.tls.client.certificate_pem", string(pem.EncodeToMemory(&pem.Block{
+            Type:  "CERTIFICATE",
+            Bytes: clientCert.Raw,
+        })))
+        setData("http.request.tls.client.subject", clientCert.Subject.String())
+        setData("http.request.tls.client.issuer", clientCert.Issuer.String())
+    } else {
+        // Fallback values if no client certificate is provided
+        setData("http.request.tls.client.certificate_pem", "")
+        setData("http.request.tls.client.subject", "No Client Certificate Subject")
+        setData("http.request.tls.client.issuer", "No Client Certificate Issuer")
+    }
 
-		// subject alternate names (SANs)
-		if strings.HasPrefix(field, "client.san.") {
-			field = field[len("client.san."):]
-			var fieldName string
-			var fieldValue any
-			switch {
-			case strings.HasPrefix(field, "dns_names"):
-				fieldName = "dns_names"
-				fieldValue = cert.DNSNames
-			case strings.HasPrefix(field, "emails"):
-				fieldName = "emails"
-				fieldValue = cert.EmailAddresses
-			case strings.HasPrefix(field, "ips"):
-				fieldName = "ips"
-				fieldValue = cert.IPAddresses
-			case strings.HasPrefix(field, "uris"):
-				fieldName = "uris"
-				fieldValue = cert.URIs
-			default:
-				return nil, false
-			}
-			field = field[len(fieldName):]
-
-			// if no index was specified, return the whole list
-			if field == "" {
-				return fieldValue, true
-			}
-			if len(field) < 2 || field[0] != '.' {
-				return nil, false
-			}
-			field = field[1:] // trim '.' between field name and index
-
-			// get the numeric index
-			idx, err := strconv.Atoi(field)
-			if err != nil || idx < 0 {
-				return nil, false
-			}
-
-			// access the indexed element and return it
-			switch v := fieldValue.(type) {
-			case []string:
-				if idx >= len(v) {
-					return nil, true
-				}
-				return v[idx], true
-			case []net.IP:
-				if idx >= len(v) {
-					return nil, true
-				}
-				return v[idx], true
-			case []*url.URL:
-				if idx >= len(v) {
-					return nil, true
-				}
-				return v[idx], true
-			}
-		}
-
-		switch field {
-		case "client.fingerprint":
-			return fmt.Sprintf("%x", sha256.Sum256(cert.Raw)), true
-		case "client.public_key", "client.public_key_sha256":
-			if cert.PublicKey == nil {
-				return nil, true
-			}
-			pubKeyBytes, err := marshalPublicKey(cert.PublicKey)
-			if err != nil {
-				return nil, true
-			}
-			if strings.HasSuffix(field, "_sha256") {
-				return fmt.Sprintf("%x", sha256.Sum256(pubKeyBytes)), true
-			}
-			return fmt.Sprintf("%x", pubKeyBytes), true
-		case "client.issuer":
-			return cert.Issuer, true
-		case "client.serial":
-			return cert.SerialNumber, true
-		case "client.subject":
-			return cert.Subject, true
-		case "client.certificate_pem":
-			block := pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw}
-			return pem.EncodeToMemory(&block), true
-		case "client.certificate_der_base64":
-			return base64.StdEncoding.EncodeToString(cert.Raw), true
-		default:
-			return nil, false
-		}
-	}
-
-	switch field {
-	case "version":
-		return caddytls.ProtocolName(req.TLS.Version), true
-	case "cipher_suite":
-		return tls.CipherSuiteName(req.TLS.CipherSuite), true
-	case "resumed":
-		return req.TLS.DidResume, true
-	case "proto":
-		return req.TLS.NegotiatedProtocol, true
-	case "proto_mutual":
-		// req.TLS.NegotiatedProtocolIsMutual is deprecated - it's always true.
-		return true, true
-	case "server_name":
-		return req.TLS.ServerName, true
-	}
-	return nil, false
+    return certDetails
 }
+
+// getReqTLSReplacement retrieves specific TLS-related placeholder values for a given request and key.
+// - req: The incoming HTTP request.
+// - key: The placeholder key to retrieve.
+// Returns the placeholder value and whether it was found.
+func getReqTLSReplacement(req *http.Request, key string) (any, bool) {
+    if req == nil || req.TLS == nil {
+        return nil, false
+    }
+
+    if len(key) < len(reqTLSReplPrefix) {
+        return nil, false
+    }
+
+    field := strings.ToLower(key[len(reqTLSReplPrefix):])
+
+    // Check if the key refers to client or server placeholders
+    if strings.HasPrefix(field, "client.") || strings.HasPrefix(field, "server.") {
+        // Populate placeholders using handleMTLSEnabledWithExport
+        handleMTLSEnabledWithExport(req, req.TLS, true)
+
+        // Handle client-specific placeholders
+        if strings.HasPrefix(field, "client.") {
+            cert := getTLSPeerCert(req.TLS)
+            if cert == nil {
+                return nil, false
+            }
+
+            switch field {
+            case "client.fingerprint":
+                return fmt.Sprintf("%x", sha256.Sum256(cert.Raw)), true
+            case "client.subject":
+                return cert.Subject, true
+            case "client.issuer":
+                return cert.Issuer, true
+            case "client.certificate_pem":
+                block := pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw}
+                return pem.EncodeToMemory(&block), true
+            case "client.certificate_der_base64":
+                return base64.StdEncoding.EncodeToString(cert.Raw), true
+            }
+        }
+    }
+
+    // Handle general TLS-related placeholders
+    switch field {
+    case "version":
+        return caddytls.ProtocolName(req.TLS.Version), true
+    case "cipher_suite":
+        return tls.CipherSuiteName(req.TLS.CipherSuite), true
+    case "resumed":
+        return req.TLS.DidResume, true
+    case "proto":
+        return req.TLS.NegotiatedProtocol, true
+    case "proto_mutual":
+    // req.TLS.NegotiatedProtocolIsMutual is deprecated - it's always true.
+        return true, true
+    case "server_name":
+        return req.TLS.ServerName, true
+    }
+    return nil, false
+}
+
 
 // marshalPublicKey returns the byte encoding of pubKey.
 func marshalPublicKey(pubKey any) ([]byte, error) {
