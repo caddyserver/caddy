@@ -243,18 +243,16 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("loading transport: %v", err)
 		}
 		h.Transport = mod.(http.RoundTripper)
-		// enable request buffering for fastcgi if not configured
-		// This is because most fastcgi servers are php-fpm that require the content length to be set to read the body, golang
-		// std has fastcgi implementation that doesn't need this value to process the body, but we can safely assume that's
-		// not used.
-		// http3 requests have a negative content length for GET and HEAD requests, if that header is not sent.
-		// see: https://github.com/caddyserver/caddy/issues/6678#issuecomment-2472224182
-		// Though it appears even if CONTENT_LENGTH is invalid, php-fpm can handle just fine if the body is empty (no Stdin records sent).
-		// php-fpm will hang if there is any data in the body though, https://github.com/caddyserver/caddy/issues/5420#issuecomment-2415943516
 
-		// TODO: better default buffering for fastcgi requests without content length, in theory a value of 1 should be enough, make it bigger anyway
-		if module, ok := h.Transport.(caddy.Module); ok && module.CaddyModule().ID.Name() == "fastcgi" && h.RequestBuffers == 0 {
-			h.RequestBuffers = 4096
+		// set default buffer sizes if applicable
+		if bt, ok := h.Transport.(BufferedTransport); ok {
+			reqBuffers, respBuffers := bt.DefaultBufferSizes()
+			if h.RequestBuffers == 0 {
+				h.RequestBuffers = reqBuffers
+			}
+			if h.ResponseBuffers == 0 {
+				h.ResponseBuffers = respBuffers
+			}
 		}
 	}
 	if h.LoadBalancing != nil && h.LoadBalancing.SelectionPolicyRaw != nil {
@@ -1210,7 +1208,7 @@ func (h *Handler) directRequest(req *http.Request, di DialInfo) {
 	}
 
 	// add client address to the host to let transport differentiate requests from different clients
-	if ht, ok := h.Transport.(*HTTPTransport); ok && ht.ProxyProtocol != "" {
+	if ppt, ok := h.Transport.(ProxyProtocolTransport); ok && ppt.ProxyProtocolEnabled() {
 		if proxyProtocolInfo, ok := caddyhttp.GetVar(req.Context(), proxyProtocolInfoVarKey).(ProxyProtocolInfo); ok {
 			reqHost = proxyProtocolInfo.AddrPort.String() + "->" + reqHost
 		}
@@ -1499,6 +1497,32 @@ type TLSTransport interface {
 	// if it is not already, using the provided
 	// value as a basis for the TLS config.
 	EnableTLS(base *TLSConfig) error
+}
+
+// H2CTransport is implemented by transports
+// that are capable of using h2c.
+type H2CTransport interface {
+	EnableH2C() error
+}
+
+// ProxyProtocolTransport is implemented by transports
+// that are capable of using proxy protocol.
+type ProxyProtocolTransport interface {
+	ProxyProtocolEnabled() bool
+}
+
+// HealthCheckSchemeOverriderTransport is implemented by transports
+// that can override the scheme used for health checks.
+type HealthCheckSchemeOverriderTransport interface {
+	OverrideHealthCheckScheme(base *url.URL, port string)
+}
+
+// BufferedTransport is implemented by transports
+// that needs to buffer requests and/or responses.
+type BufferedTransport interface {
+	// DefaultBufferSizes returns the default buffer sizes
+	// for requests and responses, respectively if buffering isn't enabled.
+	DefaultBufferSizes() (int64, int64)
 }
 
 // roundtripSucceededError is an error type that is returned if the

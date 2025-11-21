@@ -888,8 +888,11 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if commonScheme == "http" && te.TLSEnabled() {
 				return d.Errf("upstream address scheme is HTTP but transport is configured for HTTP+TLS (HTTPS)")
 			}
-			if te, ok := transport.(*HTTPTransport); ok && commonScheme == "h2c" {
-				te.Versions = []string{"h2c", "2"}
+			if h2ct, ok := transport.(H2CTransport); ok && commonScheme == "h2c" {
+				err := h2ct.EnableH2C()
+				if err != nil {
+					return err
+				}
 			}
 		} else if commonScheme == "https" {
 			return d.Errf("upstreams are configured for HTTPS but transport module does not support TLS: %T", transport)
