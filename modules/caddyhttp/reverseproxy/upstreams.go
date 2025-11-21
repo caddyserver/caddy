@@ -15,7 +15,6 @@ import (
 	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/modules/caddytls"
 )
 
 func init() {
@@ -106,34 +105,6 @@ func (su *SRVUpstreams) Provision(ctx caddy.Context) error {
 				addr := su.Resolver.netAddrs[weakrand.Intn(len(su.Resolver.netAddrs))]
 				return d.DialContext(ctx, addr.Network, addr.JoinHostPort(0))
 			},
-		}
-	} else {
-		// If no local resolver is configured, check for global resolvers from TLS app
-		tlsAppIface, err := ctx.App("tls")
-		if err == nil {
-			tlsApp := tlsAppIface.(*caddytls.TLS)
-			if len(tlsApp.Resolvers) > 0 {
-				// Create UpstreamResolver from global resolvers
-				su.Resolver = &UpstreamResolver{
-					Addresses: tlsApp.Resolvers,
-				}
-				err := su.Resolver.ParseAddresses()
-				if err != nil {
-					return err
-				}
-				d := &net.Dialer{
-					Timeout:       time.Duration(su.DialTimeout),
-					FallbackDelay: time.Duration(su.FallbackDelay),
-				}
-				su.resolver = &net.Resolver{
-					PreferGo: true,
-					Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
-						//nolint:gosec
-						addr := su.Resolver.netAddrs[weakrand.Intn(len(su.Resolver.netAddrs))]
-						return d.DialContext(ctx, addr.Network, addr.JoinHostPort(0))
-					},
-				}
-			}
 		}
 	}
 	if su.resolver == nil {
@@ -354,34 +325,6 @@ func (au *AUpstreams) Provision(ctx caddy.Context) error {
 				addr := au.Resolver.netAddrs[weakrand.Intn(len(au.Resolver.netAddrs))]
 				return d.DialContext(ctx, addr.Network, addr.JoinHostPort(0))
 			},
-		}
-	} else {
-		// If no local resolver is configured, check for global resolvers from TLS app
-		tlsAppIface, err := ctx.App("tls")
-		if err == nil {
-			tlsApp := tlsAppIface.(*caddytls.TLS)
-			if len(tlsApp.Resolvers) > 0 {
-				// Create UpstreamResolver from global resolvers
-				au.Resolver = &UpstreamResolver{
-					Addresses: tlsApp.Resolvers,
-				}
-				err := au.Resolver.ParseAddresses()
-				if err != nil {
-					return err
-				}
-				d := &net.Dialer{
-					Timeout:       time.Duration(au.DialTimeout),
-					FallbackDelay: time.Duration(au.FallbackDelay),
-				}
-				au.resolver = &net.Resolver{
-					PreferGo: true,
-					Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
-						//nolint:gosec
-						addr := au.Resolver.netAddrs[weakrand.Intn(len(au.Resolver.netAddrs))]
-						return d.DialContext(ctx, addr.Network, addr.JoinHostPort(0))
-					},
-				}
-			}
 		}
 	}
 	if au.resolver == nil {

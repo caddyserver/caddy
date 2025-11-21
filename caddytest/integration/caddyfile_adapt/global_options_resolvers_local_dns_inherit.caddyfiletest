@@ -1,7 +1,7 @@
 {
 	email test@example.com
 	dns mock
-	resolvers 1.1.1.1 8.8.8.8
+	tls_resolvers 1.1.1.1 8.8.8.8
 }
 
 example.com {

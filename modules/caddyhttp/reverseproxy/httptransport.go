@@ -269,34 +269,6 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 				return d.DialContext(ctx, addr.Network, addr.JoinHostPort(0))
 			},
 		}
-	} else {
-		// If no local resolver is configured, check for global resolvers from TLS app
-		tlsAppIface, err := caddyCtx.App("tls")
-		if err == nil {
-			tlsApp := tlsAppIface.(*caddytls.TLS)
-			if len(tlsApp.Resolvers) > 0 {
-				// Create UpstreamResolver from global resolvers
-				h.Resolver = &UpstreamResolver{
-					Addresses: tlsApp.Resolvers,
-				}
-				err := h.Resolver.ParseAddresses()
-				if err != nil {
-					return nil, err
-				}
-				d := &net.Dialer{
-					Timeout:       time.Duration(h.DialTimeout),
-					FallbackDelay: time.Duration(h.FallbackDelay),
-				}
-				dialer.Resolver = &net.Resolver{
-					PreferGo: true,
-					Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
-						//nolint:gosec
-						addr := h.Resolver.netAddrs[weakrand.Intn(len(h.Resolver.netAddrs))]
-						return d.DialContext(ctx, addr.Network, addr.JoinHostPort(0))
-					},
-				}
-			}
-		}
 	}
 
 	dialContext := func(ctx context.Context, network, address string) (net.Conn, error) {

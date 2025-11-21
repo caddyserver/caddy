@@ -363,7 +363,7 @@ func (st ServerType) buildTLSApp(
 	}
 
 	// set up "global" (to the TLS app) DNS resolvers config
-	if globalResolvers, ok := options["resolvers"]; ok && globalResolvers != nil {
+	if globalResolvers, ok := options["tls_resolvers"]; ok && globalResolvers != nil {
 		tlsApp.Resolvers = globalResolvers.([]string)
 	}
 
@@ -630,7 +630,7 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]any) e
 		acmeIssuer.CertificateLifetime = globalCertLifetime.(caddy.Duration)
 	}
 	// apply global resolvers if DNS challenge is configured and resolvers are not already set
-	globalResolvers := options["resolvers"]
+	globalResolvers := options["tls_resolvers"]
 	if globalResolvers != nil && acmeIssuer.Challenges != nil && acmeIssuer.Challenges.DNS != nil {
 		// Check if DNS challenge is actually configured
 		hasDNSChallenge := globalACMEDNSok || acmeIssuer.Challenges.DNS.ProviderRaw != nil
