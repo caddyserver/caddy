@@ -443,6 +443,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	var bufferedReqBody *bytes.Buffer
 	if reqBodyBuf, ok := clonedReq.Body.(bodyReadCloser); ok && reqBodyBuf.body == nil && reqBodyBuf.buf != nil {
 		bufferedReqBody = reqBodyBuf.buf
+		reqBodyBuf.buf = nil
 
 		defer func() {
 			bufferedReqBody.Reset()
@@ -1542,9 +1543,8 @@ type BufferedTransport interface {
 // roundtrip succeeded, but an error occurred after-the-fact.
 type roundtripSucceededError struct{ error }
 
-// bodyReadCloser is a reader that wraps an optional buffer and
-// an underlying body reader. Close will only close the underlying
-// body (if any); the buffer's lifetime is managed by the caller.
+// bodyReadCloser is a reader that, upon closing, will return
+// its buffer to the pool and close the underlying body reader.
 type bodyReadCloser struct {
 	io.Reader
 	buf  *bytes.Buffer
@@ -1552,6 +1552,11 @@ type bodyReadCloser struct {
 }
 
 func (brc bodyReadCloser) Close() error {
+	// Inside this package this will be set to nil for fully-buffered
+	// requests due to the possibility of retrial.
+	if brc.buf != nil {
+		bufPool.Put(brc.buf)
+	}
 	// For fully-buffered bodies, body is nil, so Close is a no-op.
 	if brc.body != nil {
 		return brc.body.Close()
