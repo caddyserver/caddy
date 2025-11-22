@@ -24,6 +24,7 @@ import (
 	weakrand "math/rand"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"reflect"
 	"slices"
@@ -159,8 +160,7 @@ type HTTPTransport struct {
 	// `HTTPS_PROXY`, and `NO_PROXY` environment variables.
 	NetworkProxyRaw json.RawMessage `json:"network_proxy,omitempty" caddy:"namespace=caddy.network_proxy inline_key=from"`
 
-	h2cTransport *http2.Transport
-	h3Transport  *http3.Transport // TODO: EXPERIMENTAL (May 2024)
+	h3Transport *http3.Transport // TODO: EXPERIMENTAL (May 2024)
 }
 
 // CaddyModule returns the Caddy module information.
@@ -204,11 +204,16 @@ func (h *HTTPTransport) Provision(ctx caddy.Context) error {
 func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, error) {
 	// Set keep-alive defaults if it wasn't otherwise configured
 	if h.KeepAlive == nil {
-		h.KeepAlive = &KeepAlive{
-			ProbeInterval:       caddy.Duration(30 * time.Second),
-			IdleConnTimeout:     caddy.Duration(2 * time.Minute),
-			MaxIdleConnsPerHost: 32, // seems about optimal, see #2805
-		}
+		h.KeepAlive = new(KeepAlive)
+	}
+	if h.KeepAlive.ProbeInterval == 0 {
+		h.KeepAlive.ProbeInterval = caddy.Duration(30 * time.Second)
+	}
+	if h.KeepAlive.IdleConnTimeout == 0 {
+		h.KeepAlive.IdleConnTimeout = caddy.Duration(2 * time.Minute)
+	}
+	if h.KeepAlive.MaxIdleConnsPerHost == 0 {
+		h.KeepAlive.MaxIdleConnsPerHost = 32 // seems about optimal, see #2805
 	}
 
 	// Set a relatively short default dial timeout.
@@ -267,15 +272,15 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 	}
 
 	dialContext := func(ctx context.Context, network, address string) (net.Conn, error) {
-		// For unix socket upstreams, we need to recover the dial info from
-		// the request's context, because the Host on the request's URL
-		// will have been modified by directing the request, overwriting
-		// the unix socket filename.
-		// Also, we need to avoid overwriting the address at this point
-		// when not necessary, because http.ProxyFromEnvironment may have
-		// modified the address according to the user's env proxy config.
+		// The network is usually tcp, and the address is the host in http.Request.URL.Host
+		// and that's been overwritten in directRequest
+		// However, if proxy is used according to http.ProxyFromEnvironment or proxy providers,
+		// address will be the address of the proxy server.
+
+		// This means we can safely use the address in dialInfo if proxy is not used (the address and network will be same any way)
+		// or if the upstream is unix (because there is no way socks or http proxy can be used for unix address).
 		if dialInfo, ok := GetDialInfo(ctx); ok {
-			if strings.HasPrefix(dialInfo.Network, "unix") {
+			if caddyhttp.GetVar(ctx, proxyVarKey) == nil || strings.HasPrefix(dialInfo.Network, "unix") {
 				network = dialInfo.Network
 				address = dialInfo.Address
 			}
@@ -376,9 +381,19 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 			return nil, fmt.Errorf("network_proxy module is not `(func(*http.Request) (*url.URL, error))``")
 		}
 	}
+	// we need to keep track if a proxy is used for a request
+	proxyWrapper := func(req *http.Request) (*url.URL, error) {
+		u, err := proxy(req)
+		if u == nil || err != nil {
+			return u, err
+		}
+		// there must be a proxy for this request
+		caddyhttp.SetVar(req.Context(), proxyVarKey, u)
+		return u, nil
+	}
 
 	rt := &http.Transport{
-		Proxy:                  proxy,
+		Proxy:                  proxyWrapper,
 		DialContext:            dialContext,
 		MaxConnsPerHost:        h.MaxConnsPerHost,
 		ResponseHeaderTimeout:  time.Duration(h.ResponseHeaderTimeout),
@@ -409,6 +424,14 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 				repl := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 				tlsConfig := rt.TLSClientConfig.Clone()
 				tlsConfig.ServerName = repl.ReplaceAll(tlsConfig.ServerName, "")
+
+				// h1 only
+				if caddyhttp.GetVar(ctx, tlsH1OnlyVarKey) == true {
+					// stdlib does this
+					// https://github.com/golang/go/blob/4837fbe4145cd47b43eed66fee9eed9c2b988316/src/net/http/transport.go#L1701
+					tlsConfig.NextProtos = nil
+				}
+
 				tlsConn := tls.Client(conn, tlsConfig)
 
 				// complete the handshake before returning the connection
@@ -449,22 +472,8 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 		rt.IdleConnTimeout = time.Duration(h.KeepAlive.IdleConnTimeout)
 	}
 
-	// The proxy protocol header can only be sent once right after opening the connection.
-	// So single connection must not be used for multiple requests, which can potentially
-	// come from different clients.
-	if !rt.DisableKeepAlives && h.ProxyProtocol != "" {
-		caddyCtx.Logger().Warn("disabling keepalives, they are incompatible with using PROXY protocol")
-		rt.DisableKeepAlives = true
-	}
-
 	if h.Compression != nil {
 		rt.DisableCompression = !*h.Compression
-	}
-
-	if slices.Contains(h.Versions, "2") {
-		if err := http2.ConfigureTransport(rt); err != nil {
-			return nil, err
-		}
 	}
 
 	// configure HTTP/3 transport if enabled; however, this does not
@@ -484,25 +493,22 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 		return nil, fmt.Errorf("if HTTP/3 is enabled to the upstream, no other HTTP versions are supported")
 	}
 
-	// if h2c is enabled, configure its transport (std lib http.Transport
-	// does not "HTTP/2 over cleartext TCP")
-	if slices.Contains(h.Versions, "h2c") {
-		// crafting our own http2.Transport doesn't allow us to utilize
-		// most of the customizations/preferences on the http.Transport,
-		// because, for some reason, only http2.ConfigureTransport()
-		// is allowed to set the unexported field that refers to a base
-		// http.Transport config; oh well
-		h2t := &http2.Transport{
-			// kind of a hack, but for plaintext/H2C requests, pretend to dial TLS
-			DialTLSContext: func(ctx context.Context, network, address string, _ *tls.Config) (net.Conn, error) {
-				return dialContext(ctx, network, address)
-			},
-			AllowHTTP: true,
+	// if h2/c is enabled, configure it explicitly
+	if slices.Contains(h.Versions, "2") || slices.Contains(h.Versions, "h2c") {
+		if err := http2.ConfigureTransport(rt); err != nil {
+			return nil, err
 		}
-		if h.Compression != nil {
-			h2t.DisableCompression = !*h.Compression
+
+		// DisableCompression from h2 is configured by http2.ConfigureTransport
+		// Likewise, DisableKeepAlives from h1 is used too.
+
+		// Protocols field is only used when the request is not using TLS,
+		// http1/2 over tls is still allowed
+		if slices.Contains(h.Versions, "h2c") {
+			rt.Protocols = new(http.Protocols)
+			rt.Protocols.SetUnencryptedHTTP2(true)
+			rt.Protocols.SetHTTP1(false)
 		}
-		h.h2cTransport = h2t
 	}
 
 	return rt, nil
@@ -515,15 +521,6 @@ func (h *HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// use HTTP/3 if enabled (TODO: This is EXPERIMENTAL)
 	if h.h3Transport != nil {
 		return h.h3Transport.RoundTrip(req)
-	}
-
-	// if H2C ("HTTP/2 over cleartext") is enabled and the upstream request is
-	// HTTP without TLS, use the alternate H2C-capable transport instead
-	if req.URL.Scheme == "http" && h.h2cTransport != nil {
-		// There is no dedicated DisableKeepAlives field in *http2.Transport.
-		// This is an alternative way to disable keep-alive.
-		req.Close = h.Transport.DisableKeepAlives
-		return h.h2cTransport.RoundTrip(req)
 	}
 
 	return h.Transport.RoundTrip(req)
@@ -565,6 +562,26 @@ func (h HTTPTransport) TLSEnabled() bool {
 func (h *HTTPTransport) EnableTLS(base *TLSConfig) error {
 	h.TLS = base
 	return nil
+}
+
+// EnableH2C enables H2C (HTTP/2 over Cleartext) on the transport.
+func (h *HTTPTransport) EnableH2C() error {
+	h.Versions = []string{"h2c", "2"}
+	return nil
+}
+
+// OverrideHealthCheckScheme overrides the scheme of the given URL
+// used for health checks.
+func (h HTTPTransport) OverrideHealthCheckScheme(base *url.URL, port string) {
+	// if tls is enabled and the port isn't in the except list, use HTTPs
+	if h.TLSEnabled() && !slices.Contains(h.TLS.ExceptPorts, port) {
+		base.Scheme = "https"
+	}
+}
+
+// ProxyProtocolEnabled returns true if proxy protocol is enabled.
+func (h HTTPTransport) ProxyProtocolEnabled() bool {
+	return h.ProxyProtocol != ""
 }
 
 // Cleanup implements caddy.CleanerUpper and closes any idle connections.
@@ -823,8 +840,11 @@ func decodeBase64DERCert(certStr string) (*x509.Certificate, error) {
 
 // Interface guards
 var (
-	_ caddy.Provisioner  = (*HTTPTransport)(nil)
-	_ http.RoundTripper  = (*HTTPTransport)(nil)
-	_ caddy.CleanerUpper = (*HTTPTransport)(nil)
-	_ TLSTransport       = (*HTTPTransport)(nil)
+	_ caddy.Provisioner                   = (*HTTPTransport)(nil)
+	_ http.RoundTripper                   = (*HTTPTransport)(nil)
+	_ caddy.CleanerUpper                  = (*HTTPTransport)(nil)
+	_ TLSTransport                        = (*HTTPTransport)(nil)
+	_ H2CTransport                        = (*HTTPTransport)(nil)
+	_ HealthCheckSchemeOverriderTransport = (*HTTPTransport)(nil)
+	_ ProxyProtocolTransport              = (*HTTPTransport)(nil)
 )

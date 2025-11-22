@@ -112,6 +112,20 @@ func (t *Transport) Provision(ctx caddy.Context) error {
 	return nil
 }
 
+// DefaultBufferSizes enables request buffering for fastcgi if not configured.
+// This is because most fastcgi servers are php-fpm that require the content length to be set to read the body, golang
+// std has fastcgi implementation that doesn't need this value to process the body, but we can safely assume that's
+// not used.
+// http3 requests have a negative content length for GET and HEAD requests, if that header is not sent.
+// see: https://github.com/caddyserver/caddy/issues/6678#issuecomment-2472224182
+// Though it appears even if CONTENT_LENGTH is invalid, php-fpm can handle just fine if the body is empty (no Stdin records sent).
+// php-fpm will hang if there is any data in the body though, https://github.com/caddyserver/caddy/issues/5420#issuecomment-2415943516
+
+// TODO: better default buffering for fastcgi requests without content length, in theory a value of 1 should be enough, make it bigger anyway
+func (t Transport) DefaultBufferSizes() (int64, int64) {
+	return 4096, 0
+}
+
 // RoundTrip implements http.RoundTripper.
 func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 	server := r.Context().Value(caddyhttp.ServerCtxKey).(*caddyhttp.Server)
@@ -427,6 +441,7 @@ var headerNameReplacer = strings.NewReplacer(" ", "_", "-", "_")
 var (
 	_ zapcore.ObjectMarshaler = (*loggableEnv)(nil)
 
-	_ caddy.Provisioner = (*Transport)(nil)
-	_ http.RoundTripper = (*Transport)(nil)
+	_ caddy.Provisioner              = (*Transport)(nil)
+	_ http.RoundTripper              = (*Transport)(nil)
+	_ reverseproxy.BufferedTransport = (*Transport)(nil)
 )

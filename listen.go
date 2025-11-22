@@ -261,14 +261,14 @@ func (fcpc *fakeClosePacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err e
 		if atomic.LoadInt32(&fcpc.closed) == 1 {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				if err = fcpc.SetReadDeadline(time.Time{}); err != nil {
-					return
+					return n, addr, err
 				}
 			}
 		}
-		return
+		return n, addr, err
 	}
 
-	return
+	return n, addr, err
 }
 
 // Close won't close the underlying socket unless there is no more reference, then listenerPool will close it.

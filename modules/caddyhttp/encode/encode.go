@@ -50,7 +50,7 @@ type Encode struct {
 	// Only encode responses that are at least this many bytes long.
 	MinLength int `json:"minimum_length,omitempty"`
 
-	// Only encode responses that match against this ResponseMmatcher.
+	// Only encode responses that match against this ResponseMatcher.
 	// The default is a collection of text-based Content-Type headers.
 	Matcher *caddyhttp.ResponseMatcher `json:"match,omitempty"`
 
@@ -168,8 +168,8 @@ func (enc *Encode) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 			// caches without knowing about our changes...
 			if etag := r.Header.Get("If-None-Match"); etag != "" && !strings.HasPrefix(etag, "W/") {
 				ourSuffix := "-" + encName + `"`
-				if strings.HasSuffix(etag, ourSuffix) {
-					etag = strings.TrimSuffix(etag, ourSuffix) + `"`
+				if before, ok := strings.CutSuffix(etag, ourSuffix); ok {
+					etag = before + `"`
 					r.Header.Set("If-None-Match", etag)
 				}
 			}

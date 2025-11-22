@@ -1,6 +1,8 @@
 package logging
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"go.uber.org/zap/zapcore"
@@ -237,5 +239,200 @@ func TestHashFilterMultiValue(t *testing.T) {
 	}
 	if arr[1] != "fcde2b2e" {
 		t.Fatalf("field entry 1 has not been filtered: %s", arr[1])
+	}
+}
+
+func TestMultiRegexpFilterSingleOperation(t *testing.T) {
+	f := MultiRegexpFilter{
+		Operations: []regexpFilterOperation{
+			{RawRegexp: `secret`, Value: "REDACTED"},
+		},
+	}
+	err := f.Provision(caddy.Context{})
+	if err != nil {
+		t.Fatalf("unexpected error provisioning: %v", err)
+	}
+
+	out := f.Filter(zapcore.Field{String: "foo-secret-bar"})
+	if out.String != "foo-REDACTED-bar" {
+		t.Fatalf("field has not been filtered: %s", out.String)
+	}
+}
+
+func TestMultiRegexpFilterMultipleOperations(t *testing.T) {
+	f := MultiRegexpFilter{
+		Operations: []regexpFilterOperation{
+			{RawRegexp: `secret`, Value: "REDACTED"},
+			{RawRegexp: `password`, Value: "HIDDEN"},
+			{RawRegexp: `token`, Value: "XXX"},
+		},
+	}
+	err := f.Provision(caddy.Context{})
+	if err != nil {
+		t.Fatalf("unexpected error provisioning: %v", err)
+	}
+
+	// Test sequential application
+	out := f.Filter(zapcore.Field{String: "my-secret-password-token-data"})
+	expected := "my-REDACTED-HIDDEN-XXX-data"
+	if out.String != expected {
+		t.Fatalf("field has not been filtered correctly: got %s, expected %s", out.String, expected)
+	}
+}
+
+func TestMultiRegexpFilterMultiValue(t *testing.T) {
+	f := MultiRegexpFilter{
+		Operations: []regexpFilterOperation{
+			{RawRegexp: `secret`, Value: "REDACTED"},
+			{RawRegexp: `\d+`, Value: "NUM"},
+		},
+	}
+	err := f.Provision(caddy.Context{})
+	if err != nil {
+		t.Fatalf("unexpected error provisioning: %v", err)
+	}
+
+	out := f.Filter(zapcore.Field{Interface: caddyhttp.LoggableStringArray{
+		"foo-secret-123",
+		"bar-secret-456",
+	}})
+	arr, ok := out.Interface.(caddyhttp.LoggableStringArray)
+	if !ok {
+		t.Fatalf("field is wrong type: %T", out.Interface)
+	}
+	if arr[0] != "foo-REDACTED-NUM" {
+		t.Fatalf("field entry 0 has not been filtered: %s", arr[0])
+	}
+	if arr[1] != "bar-REDACTED-NUM" {
+		t.Fatalf("field entry 1 has not been filtered: %s", arr[1])
+	}
+}
+
+func TestMultiRegexpFilterAddOperation(t *testing.T) {
+	f := MultiRegexpFilter{}
+	err := f.AddOperation("secret", "REDACTED")
+	if err != nil {
+		t.Fatalf("unexpected error adding operation: %v", err)
+	}
+	err = f.AddOperation("password", "HIDDEN")
+	if err != nil {
+		t.Fatalf("unexpected error adding operation: %v", err)
+	}
+	err = f.Provision(caddy.Context{})
+	if err != nil {
+		t.Fatalf("unexpected error provisioning: %v", err)
+	}
+
+	if len(f.Operations) != 2 {
+		t.Fatalf("expected 2 operations, got %d", len(f.Operations))
+	}
+
+	out := f.Filter(zapcore.Field{String: "my-secret-password"})
+	expected := "my-REDACTED-HIDDEN"
+	if out.String != expected {
+		t.Fatalf("field has not been filtered correctly: got %s, expected %s", out.String, expected)
+	}
+}
+
+func TestMultiRegexpFilterSecurityLimits(t *testing.T) {
+	f := MultiRegexpFilter{}
+
+	// Test maximum operations limit
+	for i := 0; i < 51; i++ {
+		err := f.AddOperation(fmt.Sprintf("pattern%d", i), "replacement")
+		if i < 50 {
+			if err != nil {
+				t.Fatalf("unexpected error adding operation %d: %v", i, err)
+			}
+		} else {
+			if err == nil {
+				t.Fatalf("expected error when adding operation %d (exceeds limit)", i)
+			}
+		}
+	}
+
+	// Test empty pattern validation
+	f2 := MultiRegexpFilter{}
+	err := f2.AddOperation("", "replacement")
+	if err == nil {
+		t.Fatalf("expected error for empty pattern")
+	}
+
+	// Test pattern length limit
+	f3 := MultiRegexpFilter{}
+	longPattern := strings.Repeat("a", 1001)
+	err = f3.AddOperation(longPattern, "replacement")
+	if err == nil {
+		t.Fatalf("expected error for pattern exceeding length limit")
+	}
+}
+
+func TestMultiRegexpFilterValidation(t *testing.T) {
+	// Test validation with empty operations
+	f := MultiRegexpFilter{}
+	err := f.Validate()
+	if err == nil {
+		t.Fatalf("expected validation error for empty operations")
+	}
+
+	// Test validation with valid operations
+	err = f.AddOperation("valid", "replacement")
+	if err != nil {
+		t.Fatalf("unexpected error adding operation: %v", err)
+	}
+	err = f.Provision(caddy.Context{})
+	if err != nil {
+		t.Fatalf("unexpected error provisioning: %v", err)
+	}
+	err = f.Validate()
+	if err != nil {
+		t.Fatalf("unexpected validation error: %v", err)
+	}
+}
+
+func TestMultiRegexpFilterInputSizeLimit(t *testing.T) {
+	f := MultiRegexpFilter{
+		Operations: []regexpFilterOperation{
+			{RawRegexp: `test`, Value: "REPLACED"},
+		},
+	}
+	err := f.Provision(caddy.Context{})
+	if err != nil {
+		t.Fatalf("unexpected error provisioning: %v", err)
+	}
+
+	// Test with very large input (should be truncated)
+	largeInput := strings.Repeat("test", 300000) // Creates ~1.2MB string
+	out := f.Filter(zapcore.Field{String: largeInput})
+
+	// The input should be truncated to 1MB and still processed
+	if len(out.String) > 1000000 {
+		t.Fatalf("output string not truncated: length %d", len(out.String))
+	}
+
+	// Should still contain replacements within the truncated portion
+	if !strings.Contains(out.String, "REPLACED") {
+		t.Fatalf("replacements not applied to truncated input")
+	}
+}
+
+func TestMultiRegexpFilterOverlappingPatterns(t *testing.T) {
+	f := MultiRegexpFilter{
+		Operations: []regexpFilterOperation{
+			{RawRegexp: `secret.*password`, Value: "SENSITIVE"},
+			{RawRegexp: `password`, Value: "HIDDEN"},
+		},
+	}
+	err := f.Provision(caddy.Context{})
+	if err != nil {
+		t.Fatalf("unexpected error provisioning: %v", err)
+	}
+
+	// The first pattern should match and replace the entire "secret...password" portion
+	// Then the second pattern should not find "password" anymore since it was already replaced
+	out := f.Filter(zapcore.Field{String: "my-secret-data-password-end"})
+	expected := "my-SENSITIVE-end"
+	if out.String != expected {
+		t.Fatalf("field has not been filtered correctly: got %s, expected %s", out.String, expected)
 	}
 }

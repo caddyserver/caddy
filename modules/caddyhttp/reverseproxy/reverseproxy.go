@@ -243,18 +243,16 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("loading transport: %v", err)
 		}
 		h.Transport = mod.(http.RoundTripper)
-		// enable request buffering for fastcgi if not configured
-		// This is because most fastcgi servers are php-fpm that require the content length to be set to read the body, golang
-		// std has fastcgi implementation that doesn't need this value to process the body, but we can safely assume that's
-		// not used.
-		// http3 requests have a negative content length for GET and HEAD requests, if that header is not sent.
-		// see: https://github.com/caddyserver/caddy/issues/6678#issuecomment-2472224182
-		// Though it appears even if CONTENT_LENGTH is invalid, php-fpm can handle just fine if the body is empty (no Stdin records sent).
-		// php-fpm will hang if there is any data in the body though, https://github.com/caddyserver/caddy/issues/5420#issuecomment-2415943516
 
-		// TODO: better default buffering for fastcgi requests without content length, in theory a value of 1 should be enough, make it bigger anyway
-		if module, ok := h.Transport.(caddy.Module); ok && module.CaddyModule().ID.Name() == "fastcgi" && h.RequestBuffers == 0 {
-			h.RequestBuffers = 4096
+		// set default buffer sizes if applicable
+		if bt, ok := h.Transport.(BufferedTransport); ok {
+			reqBuffers, respBuffers := bt.DefaultBufferSizes()
+			if h.RequestBuffers == 0 {
+				h.RequestBuffers = reqBuffers
+			}
+			if h.ResponseBuffers == 0 {
+				h.ResponseBuffers = respBuffers
+			}
 		}
 	}
 	if h.LoadBalancing != nil && h.LoadBalancing.SelectionPolicyRaw != nil {
@@ -409,12 +407,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		return caddyhttp.Error(http.StatusInternalServerError,
 			fmt.Errorf("preparing request for upstream round-trip: %v", err))
 	}
-	// websocket over http2, assuming backend doesn't support this, the request will be modified to http1.1 upgrade
+
+	// websocket over http2 or http3 if extended connect is enabled, assuming backend doesn't support this, the request will be modified to http1.1 upgrade
+	// Both use the same upgrade mechanism: server advertizes extended connect support, and client sends the pseudo header :protocol in a CONNECT request
+	// The quic-go http3 implementation also puts :protocol in r.Proto for CONNECT requests (quic-go/http3/headers.go@70-72,185,203)
 	// TODO: once we can reliably detect backend support this, it can be removed for those backends
-	if r.ProtoMajor == 2 && r.Method == http.MethodConnect && r.Header.Get(":protocol") == "websocket" {
+	if (r.ProtoMajor == 2 && r.Method == http.MethodConnect && r.Header.Get(":protocol") == "websocket") ||
+		(r.ProtoMajor == 3 && r.Method == http.MethodConnect && r.Proto == "websocket") {
 		clonedReq.Header.Del(":protocol")
 		// keep the body for later use. http1.1 upgrade uses http.NoBody
-		caddyhttp.SetVar(clonedReq.Context(), "h2_websocket_body", clonedReq.Body)
+		caddyhttp.SetVar(clonedReq.Context(), "extended_connect_websocket_body", clonedReq.Body)
 		clonedReq.Body = http.NoBody
 		clonedReq.Method = http.MethodGet
 		clonedReq.Header.Set("Upgrade", "websocket")
@@ -725,6 +727,12 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	}
 	proxyProtocolInfo := ProxyProtocolInfo{AddrPort: addrPort}
 	caddyhttp.SetVar(req.Context(), proxyProtocolInfoVarKey, proxyProtocolInfo)
+
+	// some of the outbound requests require h1 (e.g. websocket)
+	// https://github.com/golang/go/blob/4837fbe4145cd47b43eed66fee9eed9c2b988316/src/net/http/request.go#L1579
+	if isWebsocket(req) {
+		caddyhttp.SetVar(req.Context(), tlsH1OnlyVarKey, true)
+	}
 
 	// Add the supported X-Forwarded-* headers
 	err = h.addForwardedHeaders(req)
@@ -1188,7 +1196,7 @@ func (lb LoadBalancing) tryAgain(ctx caddy.Context, start time.Time, retries int
 
 // directRequest modifies only req.URL so that it points to the upstream
 // in the given DialInfo. It must modify ONLY the request URL.
-func (Handler) directRequest(req *http.Request, di DialInfo) {
+func (h *Handler) directRequest(req *http.Request, di DialInfo) {
 	// we need a host, so set the upstream's host address
 	reqHost := di.Address
 
@@ -1197,6 +1205,13 @@ func (Handler) directRequest(req *http.Request, di DialInfo) {
 	if (req.URL.Scheme == "http" && di.Port == "80") ||
 		(req.URL.Scheme == "https" && di.Port == "443") {
 		reqHost = di.Host
+	}
+
+	// add client address to the host to let transport differentiate requests from different clients
+	if ppt, ok := h.Transport.(ProxyProtocolTransport); ok && ppt.ProxyProtocolEnabled() {
+		if proxyProtocolInfo, ok := caddyhttp.GetVar(req.Context(), proxyProtocolInfoVarKey).(ProxyProtocolInfo); ok {
+			reqHost = proxyProtocolInfo.AddrPort.String() + "->" + reqHost
+		}
 	}
 
 	req.URL.Host = reqHost
@@ -1482,6 +1497,32 @@ type TLSTransport interface {
 	// if it is not already, using the provided
 	// value as a basis for the TLS config.
 	EnableTLS(base *TLSConfig) error
+}
+
+// H2CTransport is implemented by transports
+// that are capable of using h2c.
+type H2CTransport interface {
+	EnableH2C() error
+}
+
+// ProxyProtocolTransport is implemented by transports
+// that are capable of using proxy protocol.
+type ProxyProtocolTransport interface {
+	ProxyProtocolEnabled() bool
+}
+
+// HealthCheckSchemeOverriderTransport is implemented by transports
+// that can override the scheme used for health checks.
+type HealthCheckSchemeOverriderTransport interface {
+	OverrideHealthCheckScheme(base *url.URL, port string)
+}
+
+// BufferedTransport is implemented by transports
+// that needs to buffer requests and/or responses.
+type BufferedTransport interface {
+	// DefaultBufferSizes returns the default buffer sizes
+	// for requests and responses, respectively if buffering isn't enabled.
+	DefaultBufferSizes() (int64, int64)
 }
 
 // roundtripSucceededError is an error type that is returned if the

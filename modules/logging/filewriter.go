@@ -22,9 +22,11 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"time"
 
+	"github.com/DeRuina/timberjack"
 	"github.com/dustin/go-humanize"
-	"gopkg.in/natefinch/lumberjack.v2"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -96,6 +98,21 @@ type FileWriter struct {
 	// it will be rotated.
 	RollSizeMB int `json:"roll_size_mb,omitempty"`
 
+	// Roll log file after some time
+	RollInterval time.Duration `json:"roll_interval,omitempty"`
+
+	// Roll log file at fix minutes
+	// For example []int{0, 30} will roll file at xx:00 and xx:30 each hour
+	// Invalid value are ignored with a warning on stderr
+	// See https://github.com/DeRuina/timberjack#%EF%B8%8F-rotation-notes--warnings for caveats
+	RollAtMinutes []int `json:"roll_minutes,omitempty"`
+
+	// Roll log file at fix time
+	// For example []string{"00:00", "12:00"} will roll file at 00:00 and 12:00 each day
+	// Invalid value are ignored with a warning on stderr
+	// See https://github.com/DeRuina/timberjack#%EF%B8%8F-rotation-notes--warnings for caveats
+	RollAt []string `json:"roll_at,omitempty"`
+
 	// Whether to compress rolled files. Default: true
 	RollCompress *bool `json:"roll_gzip,omitempty"`
 
@@ -109,6 +126,11 @@ type FileWriter struct {
 
 	// How many days to keep rolled log files. Default: 90
 	RollKeepDays int `json:"roll_keep_days,omitempty"`
+
+	// Rotated file will have format <logfilename>-<format>-<criterion>.log
+	// Optional. If unset or invalid, defaults to 2006-01-02T15-04-05.000 (with fallback warning)
+	// <format> must be a Go time compatible format, see https://pkg.go.dev/time#pkg-constants
+	BackupTimeFormat string `json:"backup_time_format,omitempty"`
 }
 
 // CaddyModule returns the Caddy module information.
@@ -156,7 +178,7 @@ func (fw FileWriter) OpenWriter() (io.WriteCloser, error) {
 	roll := fw.Roll == nil || *fw.Roll
 
 	// create the file if it does not exist; create with the configured mode, or default
-	// to restrictive if not set. (lumberjack will reuse the file mode across log rotation)
+	// to restrictive if not set. (timberjack will reuse the file mode across log rotation)
 	if err := os.MkdirAll(filepath.Dir(fw.Filename), 0o700); err != nil {
 		return nil, err
 	}
@@ -166,7 +188,7 @@ func (fw FileWriter) OpenWriter() (io.WriteCloser, error) {
 	}
 	info, err := file.Stat()
 	if roll {
-		file.Close() // lumberjack will reopen it on its own
+		file.Close() // timberjack will reopen it on its own
 	}
 
 	// Ensure already existing files have the right mode, since OpenFile will not set the mode in such case.
@@ -201,13 +223,17 @@ func (fw FileWriter) OpenWriter() (io.WriteCloser, error) {
 	if fw.RollKeepDays == 0 {
 		fw.RollKeepDays = 90
 	}
-	return &lumberjack.Logger{
-		Filename:   fw.Filename,
-		MaxSize:    fw.RollSizeMB,
-		MaxAge:     fw.RollKeepDays,
-		MaxBackups: fw.RollKeep,
-		LocalTime:  fw.RollLocalTime,
-		Compress:   *fw.RollCompress,
+	return &timberjack.Logger{
+		Filename:         fw.Filename,
+		MaxSize:          fw.RollSizeMB,
+		MaxAge:           fw.RollKeepDays,
+		MaxBackups:       fw.RollKeep,
+		LocalTime:        fw.RollLocalTime,
+		Compress:         *fw.RollCompress,
+		RotationInterval: fw.RollInterval,
+		RotateAtMinutes:  fw.RollAtMinutes,
+		RotateAt:         fw.RollAt,
+		BackupTimeFormat: fw.BackupTimeFormat,
 	}, nil
 }
 
@@ -313,6 +339,53 @@ func (fw *FileWriter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.Errf("negative roll_keep_for duration: %v", keepFor)
 			}
 			fw.RollKeepDays = int(math.Ceil(keepFor.Hours() / 24))
+
+		case "roll_interval":
+			var durationStr string
+			if !d.AllArgs(&durationStr) {
+				return d.ArgErr()
+			}
+			duration, err := time.ParseDuration(durationStr)
+			if err != nil {
+				return d.Errf("parsing roll_interval duration: %v", err)
+			}
+			fw.RollInterval = duration
+
+		case "roll_minutes":
+			var minutesArrayStr string
+			if !d.AllArgs(&minutesArrayStr) {
+				return d.ArgErr()
+			}
+			minutesStr := strings.Split(minutesArrayStr, ",")
+			minutes := make([]int, len(minutesStr))
+			for i := range minutesStr {
+				ms := strings.Trim(minutesStr[i], " ")
+				m, err := strconv.Atoi(ms)
+				if err != nil {
+					return d.Errf("parsing roll_minutes number: %v", err)
+				}
+				minutes[i] = m
+			}
+			fw.RollAtMinutes = minutes
+
+		case "roll_at":
+			var timeArrayStr string
+			if !d.AllArgs(&timeArrayStr) {
+				return d.ArgErr()
+			}
+			timeStr := strings.Split(timeArrayStr, ",")
+			times := make([]string, len(timeStr))
+			for i := range timeStr {
+				times[i] = strings.Trim(timeStr[i], " ")
+			}
+			fw.RollAt = times
+
+		case "backup_time_format":
+			var format string
+			if !d.AllArgs(&format) {
+				return d.ArgErr()
+			}
+			fw.BackupTimeFormat = format
 
 		default:
 			return d.Errf("unrecognized subdirective '%s'", d.Val())

@@ -198,6 +198,8 @@ func (app *App) Provision(ctx caddy.Context) error {
 	if app.Metrics != nil {
 		app.Metrics.init = sync.Once{}
 		app.Metrics.httpMetrics = &httpMetrics{}
+		// Scan config for allowed hosts to prevent cardinality explosion
+		app.Metrics.scanConfigForHosts(app)
 	}
 	// prepare each server
 	oldContext := ctx.Context
@@ -466,7 +468,14 @@ func (app *App) Start() error {
 			ErrorLog:          serverLogger,
 			Protocols:         new(http.Protocols),
 			ConnContext: func(ctx context.Context, c net.Conn) context.Context {
-				return context.WithValue(ctx, ConnCtxKey, c)
+				if nc, ok := c.(interface{ tlsNetConn() net.Conn }); ok {
+					getTlsConStateFunc := sync.OnceValue(func() *tls.ConnectionState {
+						tlsConnState := nc.tlsNetConn().(connectionStater).ConnectionState()
+						return &tlsConnState
+					})
+					ctx = context.WithValue(ctx, tlsConnectionStateFuncCtxKey, getTlsConStateFunc)
+				}
+				return ctx
 			},
 		}
 
@@ -538,6 +547,8 @@ func (app *App) Start() error {
 						KeepAliveConfig: net.KeepAliveConfig{
 							Enable:   srv.KeepAliveInterval >= 0,
 							Interval: time.Duration(srv.KeepAliveInterval),
+							Idle:     time.Duration(srv.KeepAliveIdle),
+							Count:    srv.KeepAliveCount,
 						},
 					})
 					if err != nil {
