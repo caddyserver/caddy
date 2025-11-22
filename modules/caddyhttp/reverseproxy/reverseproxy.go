@@ -437,9 +437,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	reqHost := clonedReq.Host
 	reqHeader := clonedReq.Header
 
-	var bufferedReqBody []byte
-	if reqBodyBuf, ok := clonedReq.Body.(bodyReadCloser); ok && reqBodyBuf.body == nil {
-		bufferedReqBody = append([]byte(nil), reqBodyBuf.buf.Bytes()...)
+	// If the cloned request body was fully buffered, keep a reference to its
+	// buffer so we can reuse it across retries and return it to the pool
+	// once we’re done.
+	var bufferedReqBody *bytes.Buffer
+	if reqBodyBuf, ok := clonedReq.Body.(bodyReadCloser); ok && reqBodyBuf.body == nil && reqBodyBuf.buf != nil {
+		bufferedReqBody = reqBodyBuf.buf
+
+		defer func() {
+			bufferedReqBody.Reset()
+			bufPool.Put(bufferedReqBody)
+		}()
 	}
 
 	start := time.Now()
@@ -461,7 +469,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		// produces an error, the request can be repeated to the next backend with
 		// the full body (retries should only happen for idempotent requests) (see #6259)
 		if bufferedReqBody != nil {
-			clonedReq.Body = io.NopCloser(bytes.NewReader(bufferedReqBody))
+			clonedReq.Body = io.NopCloser(bytes.NewReader(bufferedReqBody.Bytes()))
 		}
 
 		var done bool
@@ -1534,18 +1542,19 @@ type BufferedTransport interface {
 // roundtrip succeeded, but an error occurred after-the-fact.
 type roundtripSucceededError struct{ error }
 
-// bodyReadCloser is a reader that, upon closing, will return
-// its buffer to the pool and close the underlying body reader.
+// bodyReadCloser is a reader that wraps an optional buffer and
+// an underlying body reader. Close will only close the underlying
+// body (if any); the buffer's lifetime is managed by the caller.
 type bodyReadCloser struct {
 	io.Reader
 	buf  *bytes.Buffer
 	body io.ReadCloser
 }
 
-func (brc bodyReadCloser) Close() error {
-	bufPool.Put(brc.buf)
-	if brc.body != nil {
-		return brc.body.Close()
+func (b bodyReadCloser) Close() error {
+	// For fully-buffered bodies, body is nil, so Close is a no-op.
+	if b.body != nil {
+		return b.body.Close()
 	}
 	return nil
 }
