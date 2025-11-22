@@ -1551,10 +1551,10 @@ type bodyReadCloser struct {
 	body io.ReadCloser
 }
 
-func (b bodyReadCloser) Close() error {
+func (brc bodyReadCloser) Close() error {
 	// For fully-buffered bodies, body is nil, so Close is a no-op.
-	if b.body != nil {
-		return b.body.Close()
+	if brc.body != nil {
+		return brc.body.Close()
 	}
 	return nil
 }
