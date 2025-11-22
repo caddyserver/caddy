@@ -294,9 +294,10 @@ func TestTracing_OpenTelemetry_Span_Attributes(t *testing.T) {
 	ot := &Tracing{
 		SpanName: "test-span",
 		SpanAttributes: map[string]string{
-			"placeholder": "{http.request.method}",
-			"static":      "test-service",
-			"mixed":       "prefix-{http.request.method}-suffix",
+			"static":               "test-service",
+			"request-placeholder":  "{http.request.method}",
+			"response-placeholder": "{http.response.header.X-Some-Header}",
+			"mixed":                "prefix-{http.request.method}-{http.response.header.X-Some-Header}",
 		},
 	}
 
@@ -304,18 +305,26 @@ func TestTracing_OpenTelemetry_Span_Attributes(t *testing.T) {
 	req, _ := http.NewRequest("POST", "https://api.example.com/v1/users?id=123", nil)
 	req.Host = "api.example.com"
 
-	// Set up the request context with proper replacer and vars
+	w := httptest.NewRecorder()
+
+	// Set up the replacer
 	repl := caddy.NewReplacer()
 	ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
 	ctx = context.WithValue(ctx, caddyhttp.VarsCtxKey, make(map[string]any))
 	req = req.WithContext(ctx)
+
+	// Set up request placeholders
 	repl.Set("http.request.method", req.Method)
+	repl.Set("http.request.uri", req.URL.RequestURI())
 
-	w := httptest.NewRecorder()
-
-	// Handler that ensures the request gets processed
+	// Handler to generate the response
 	var handler caddyhttp.HandlerFunc = func(writer http.ResponseWriter, request *http.Request) error {
+		writer.Header().Set("X-Some-Header", "some-value")
 		writer.WriteHeader(200)
+
+		// Make response headers available to replacer
+		repl.Set("http.response.header.X-Some-Header", writer.Header().Get("X-Some-Header"))
+
 		return nil
 	}
 
@@ -366,10 +375,10 @@ func TestTracing_OpenTelemetry_Span_Attributes(t *testing.T) {
 
 	// Verify that the span attributes were set correctly with placeholder replacement
 	expectedAttributes := map[string]string{
-		"placeholder":               "POST",
-		"static":                    "test-service",
-		"mixed":                     "prefix-POST-suffix",
-		"http.response.status_code": "200", // OTEL default
+		"static":               "test-service",
+		"request-placeholder":  "POST",
+		"response-placeholder": "some-value",
+		"mixed":                "prefix-POST-some-value",
 	}
 
 	actualAttributes := make(map[string]string)
