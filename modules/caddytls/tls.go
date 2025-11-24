@@ -428,10 +428,10 @@ func (t *TLS) Start() error {
 				case <-time.After(1 * time.Hour):
 					// ensure old keys are rotated out
 					t.EncryptedClientHello.configsMu.Lock()
-					rotateErr := t.EncryptedClientHello.rotateECHKeys(t.ctx, echLogger, false)
+					err := t.EncryptedClientHello.rotateECHKeys(t.ctx, echLogger, false)
 					t.EncryptedClientHello.configsMu.Unlock()
-					if rotateErr != nil {
-						echLogger.Error("rotating ECH configs failed", zap.Error(rotateErr))
+					if err != nil {
+						echLogger.Error("rotating ECH configs failed", zap.Error(err))
 					}
 				case <-t.ctx.Done():
 					return
