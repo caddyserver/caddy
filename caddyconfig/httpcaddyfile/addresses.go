@@ -393,6 +393,10 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 					continue
 				}
 
+				if caddy.IsReservedNetwork(lnNetw) {
+					continue
+				}
+
 				lnIfaceAddresses = append(lnIfaceAddresses, ifaceAddress.String())
 			}
 			if len(lnIfaceAddresses) == 0 {
