@@ -75,8 +75,8 @@ For proxying:
 			cmd.Flags().BoolP("insecure", "", false, "Disable TLS verification (WARNING: DISABLES SECURITY BY NOT VERIFYING TLS CERTIFICATES!)")
 			cmd.Flags().BoolP("disable-redirects", "r", false, "Disable HTTP->HTTPS redirects")
 			cmd.Flags().BoolP("internal-certs", "i", false, "Use internal CA for issuing certs")
-			cmd.Flags().StringSliceP("header-up", "H", []string{}, "Set a request header to send to the upstream (format: \"Field: value\")")
-			cmd.Flags().StringSliceP("header-down", "d", []string{}, "Set a response header to send back to the client (format: \"Field: value\")")
+			cmd.Flags().StringArrayP("header-up", "H", []string{}, "Set a request header to send to the upstream (format: \"Field: value\")")
+			cmd.Flags().StringArrayP("header-down", "d", []string{}, "Set a response header to send back to the client (format: \"Field: value\")")
 			cmd.Flags().BoolP("access-log", "", false, "Enable the access log")
 			cmd.Flags().BoolP("debug", "v", false, "Enable verbose debug logs")
 			cmd.RunE = caddycmd.WrapCommandFuncForCobra(cmdReverseProxy)
@@ -182,7 +182,7 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 	}
 
 	// set up header_up
-	headerUp, err := fs.GetStringSlice("header-up")
+	headerUp, err := fs.GetStringArray("header-up")
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("invalid header flag: %v", err)
 	}
@@ -204,7 +204,7 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 	}
 
 	// set up header_down
-	headerDown, err := fs.GetStringSlice("header-down")
+	headerDown, err := fs.GetStringArray("header-down")
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("invalid header flag: %v", err)
 	}

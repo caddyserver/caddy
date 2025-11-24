@@ -265,6 +265,22 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 		}
 	}
 
+	// if all servers have auto_https disabled and no domains need certs,
+	// skip the rest of the TLS automation setup to avoid creating
+	// unnecessary PKI infrastructure and automation policies
+	allServersDisabled := true
+	for _, srv := range app.Servers {
+		if srv.AutoHTTPS == nil || !srv.AutoHTTPS.Disabled {
+			allServersDisabled = false
+			break
+		}
+	}
+
+	if allServersDisabled && len(uniqueDomainsForCerts) == 0 {
+		logger.Debug("all servers have automatic HTTPS disabled and no domains need certificates, skipping TLS automation setup")
+		return nil
+	}
+
 	// we now have a list of all the unique names for which we need certs
 	var internal, tailscale []string
 uniqueDomainsLoop:

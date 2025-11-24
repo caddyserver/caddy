@@ -1,0 +1,13 @@
+(site) {
+    http://{args[0]} https://{args[0]} {
+        {block}
+    }
+}
+import site test.domain {
+    { 
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+    }
+}
+----------
+anonymous blocks are not supported

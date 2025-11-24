@@ -23,7 +23,6 @@ import (
 	"net/url"
 	"regexp"
 	"runtime/debug"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -405,14 +404,9 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 		u.Host = net.JoinHostPort(host, port)
 	}
 
-	// this is kind of a hacky way to know if we should use HTTPS, but whatever
-	if tt, ok := h.Transport.(TLSTransport); ok && tt.TLSEnabled() {
-		u.Scheme = "https"
-
-		// if the port is in the except list, flip back to HTTP
-		if ht, ok := h.Transport.(*HTTPTransport); ok && slices.Contains(ht.TLS.ExceptPorts, port) {
-			u.Scheme = "http"
-		}
+	// override health check schemes if applicable
+	if hcsot, ok := h.Transport.(HealthCheckSchemeOverriderTransport); ok {
+		hcsot.OverrideHealthCheckScheme(u, port)
 	}
 
 	// if we have a provisioned uri, use that, otherwise use

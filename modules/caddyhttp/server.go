@@ -33,7 +33,7 @@ import (
 	"github.com/caddyserver/certmagic"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
-	"github.com/quic-go/quic-go/qlog"
+	h3qlog "github.com/quic-go/quic-go/http3/qlog"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
@@ -76,8 +76,24 @@ type Server struct {
 
 	// KeepAliveInterval is the interval at which TCP keepalive packets
 	// are sent to keep the connection alive at the TCP layer when no other
-	// data is being transmitted. The default is 15s.
+	// data is being transmitted.
+	// If zero, the default is 15s.
+	// If negative, keepalive packets are not sent and other keepalive parameters
+	// are ignored.
 	KeepAliveInterval caddy.Duration `json:"keepalive_interval,omitempty"`
+
+	// KeepAliveIdle is the time that the connection must be idle before
+	// the first TCP keep-alive probe is sent when no other data is being
+	// transmitted.
+	// If zero, the default is 15s.
+	// If negative, underlying socket value is unchanged.
+	KeepAliveIdle caddy.Duration `json:"keepalive_idle,omitempty"`
+
+	// KeepAliveCount is the maximum number of TCP keep-alive probes that
+	// should be sent before dropping a connection.
+	// If zero, the default is 9.
+	// If negative, underlying socket value is unchanged.
+	KeepAliveCount int `json:"keepalive_count,omitempty"`
 
 	// MaxHeaderBytes is the maximum size to parse from a client's
 	// HTTP request headers.
@@ -186,6 +202,13 @@ type Server struct {
 	// This option is disabled by default.
 	TrustedProxiesStrict int `json:"trusted_proxies_strict,omitempty"`
 
+	// If greater than zero, enables trusting socket connections
+	// (e.g. Unix domain sockets) as coming from a trusted
+	// proxy.
+	//
+	// This option is disabled by default.
+	TrustedProxiesUnix bool `json:"trusted_proxies_unix,omitempty"`
+
 	// Enables access logging and configures how access logs are handled
 	// in this server. To minimally enable access logs, simply set this
 	// to a non-null, empty struct.
@@ -235,7 +258,8 @@ type Server struct {
 	primaryHandlerChain Handler
 	errorHandlerChain   Handler
 	listenerWrappers    []caddy.ListenerWrapper
-	listeners           []net.Listener
+	listeners           []net.Listener       // stdlib http.Server will close these
+	quicListeners       []http3.QUICListener // http3 now leave the quic.Listener management to us
 
 	tlsApp       *caddytls.TLS
 	events       *caddyevents.App
@@ -245,10 +269,9 @@ type Server struct {
 	traceLogger  *zap.Logger
 	ctx          caddy.Context
 
-	server      *http.Server
-	h3server    *http3.Server
-	h2listeners []*http2Listener
-	addresses   []caddy.NetworkAddress
+	server    *http.Server
+	h3server  *http3.Server
+	addresses []caddy.NetworkAddress
 
 	trustedProxies IPRangeSource
 
@@ -262,30 +285,28 @@ type Server struct {
 	onStopFuncs      []func(context.Context) error // TODO: Experimental (Nov. 2023)
 }
 
+var (
+	ServerHeader = "Caddy"
+	serverHeader = []string{ServerHeader}
+)
+
 // ServeHTTP is the entry point for all HTTP requests.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// If there are listener wrappers that process tls connections but don't return a *tls.Conn, this field will be nil.
-	// TODO: Can be removed if https://github.com/golang/go/pull/56110 is ever merged.
 	if r.TLS == nil {
-		// not all requests have a conn (like virtual requests) - see #5698
-		if conn, ok := r.Context().Value(ConnCtxKey).(net.Conn); ok {
-			if csc, ok := conn.(connectionStateConn); ok {
-				r.TLS = new(tls.ConnectionState)
-				*r.TLS = csc.ConnectionState()
-			}
+		if tlsConnStateFunc, ok := r.Context().Value(tlsConnectionStateFuncCtxKey).(func() *tls.ConnectionState); ok {
+			r.TLS = tlsConnStateFunc()
 		}
 	}
 
-	w.Header().Set("Server", "Caddy")
+	h := w.Header()
+	h["Server"] = serverHeader
 
 	// advertise HTTP/3, if enabled
-	if s.h3server != nil {
-		if r.ProtoMajor < 3 {
-			err := s.h3server.SetQUICHeaders(w.Header())
-			if err != nil {
-				if c := s.logger.Check(zapcore.ErrorLevel, "setting HTTP/3 Alt-Svc header"); c != nil {
-					c.Write(zap.Error(err))
-				}
+	if s.h3server != nil && r.ProtoMajor < 3 {
+		if err := s.h3server.SetQUICHeaders(h); err != nil {
+			if c := s.logger.Check(zapcore.ErrorLevel, "setting HTTP/3 Alt-Svc header"); c != nil {
+				c.Write(zap.Error(err))
 			}
 		}
 	}
@@ -310,9 +331,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// enable full-duplex for HTTP/1, ensuring the entire
 	// request body gets consumed before writing the response
 	if s.EnableFullDuplex && r.ProtoMajor == 1 {
-		//nolint:bodyclose
-		err := http.NewResponseController(w).EnableFullDuplex()
-		if err != nil {
+		if err := http.NewResponseController(w).EnableFullDuplex(); err != nil { //nolint:bodyclose
 			if c := s.logger.Check(zapcore.WarnLevel, "failed to enable full duplex"); c != nil {
 				c.Write(zap.Error(err))
 			}
@@ -399,8 +418,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var fields []zapcore.Field
 	if s.Errors != nil && len(s.Errors.Routes) > 0 {
 		// execute user-defined error handling route
-		err2 := s.errorHandlerChain.ServeHTTP(w, r)
-		if err2 == nil {
+		if err2 := s.errorHandlerChain.ServeHTTP(w, r); err2 == nil {
 			// user's error route handled the error response
 			// successfully, so now just log the error
 			for _, logger := range errLoggers {
@@ -620,11 +638,13 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 			MaxHeaderBytes: s.MaxHeaderBytes,
 			QUICConfig: &quic.Config{
 				Versions: []quic.Version{quic.Version1, quic.Version2},
-				Tracer:   qlog.DefaultConnectionTracer,
+				Tracer:   h3qlog.DefaultConnectionTracer,
 			},
 			IdleTimeout: time.Duration(s.IdleTimeout),
 		}
 	}
+
+	s.quicListeners = append(s.quicListeners, h3ln)
 
 	//nolint:errcheck
 	go s.h3server.ServeListener(h3ln)
@@ -773,8 +793,10 @@ func (s *Server) logRequest(
 	accLog *zap.Logger, r *http.Request, wrec ResponseRecorder, duration *time.Duration,
 	repl *caddy.Replacer, bodyReader *lengthReader, shouldLogCredentials bool,
 ) {
+	ctx := r.Context()
+
 	// this request may be flagged as omitted from the logs
-	if skip, ok := GetVar(r.Context(), LogSkipVar).(bool); ok && skip {
+	if skip, ok := GetVar(ctx, LogSkipVar).(bool); ok && skip {
 		return
 	}
 
@@ -792,7 +814,7 @@ func (s *Server) logRequest(
 	}
 
 	message := "handled request"
-	if nop, ok := GetVar(r.Context(), "unhandled").(bool); ok && nop {
+	if nop, ok := GetVar(ctx, "unhandled").(bool); ok && nop {
 		message = "NOP"
 	}
 
@@ -816,7 +838,7 @@ func (s *Server) logRequest(
 				reqBodyLength = bodyReader.Length
 			}
 
-			extra := r.Context().Value(ExtraLogFieldsCtxKey).(*ExtraLogFields)
+			extra := ctx.Value(ExtraLogFieldsCtxKey).(*ExtraLogFields)
 
 			fieldCount := 6
 			fields = make([]zapcore.Field, 0, fieldCount+len(extra.fields))
@@ -923,6 +945,17 @@ func determineTrustedProxy(r *http.Request, s *Server) (bool, string) {
 		return false, ""
 	}
 
+	if s.TrustedProxiesUnix && r.RemoteAddr == "@" {
+		if s.TrustedProxiesStrict > 0 {
+			ipRanges := []netip.Prefix{}
+			if s.trustedProxies != nil {
+				ipRanges = s.trustedProxies.GetIPRanges(r)
+			}
+			return true, strictUntrustedClientIp(r, s.ClientIPHeaders, ipRanges, "@")
+		} else {
+			return true, trustedRealClientIP(r, s.ClientIPHeaders, "@")
+		}
+	}
 	// Parse the remote IP, ignore the error as non-fatal,
 	// but the remote IP is required to continue, so we
 	// just return early. This should probably never happen
@@ -982,10 +1015,10 @@ func trustedRealClientIP(r *http.Request, headers []string, clientIP string) str
 
 	// Since there can be many header values, we need to
 	// join them together before splitting to get the full list
-	allValues := strings.Split(strings.Join(values, ","), ",")
+	allValues := strings.SplitSeq(strings.Join(values, ","), ",")
 
 	// Get first valid left-most IP address
-	for _, part := range allValues {
+	for part := range allValues {
 		// Some proxies may retain the port number, so split if possible
 		host, _, err := net.SplitHostPort(part)
 		if err != nil {
@@ -1079,8 +1112,13 @@ const (
 	// originally came into the server's entry handler
 	OriginalRequestCtxKey caddy.CtxKey = "original_request"
 
-	// For referencing underlying net.Conn
+	// DEPRECATED: not used anymore.
+	// To refer to the underlying connection, implement a middleware plugin
+	// that RegisterConnContext during provisioning.
 	ConnCtxKey caddy.CtxKey = "conn"
+
+	// used to get the tls connection state in the context, if available
+	tlsConnectionStateFuncCtxKey caddy.CtxKey = "tls_connection_state_func"
 
 	// For tracking whether the client is a trusted proxy
 	TrustedProxyVarKey string = "trusted_proxy"

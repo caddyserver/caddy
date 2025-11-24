@@ -173,6 +173,9 @@ type AutomationPolicy struct {
 	subjects []string
 	magic    *certmagic.Config
 	storage  certmagic.Storage
+
+	// Whether this policy had explicit managers configured directly on it.
+	hadExplicitManagers bool
 }
 
 // Provision sets up ap and builds its underlying CertMagic config.
@@ -209,9 +212,8 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 	// store them on the policy before putting it on the config
 
 	// load and provision any cert manager modules
-	var hadExplicitManagers bool
 	if ap.ManagersRaw != nil {
-		hadExplicitManagers = true
+		ap.hadExplicitManagers = true
 		vals, err := tlsApp.ctx.LoadModule(ap, "ManagersRaw")
 		if err != nil {
 			return fmt.Errorf("loading external certificate manager modules: %v", err)
@@ -271,9 +273,9 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 		// prevent issuance from Issuers (when Managers don't provide a certificate) if there's no
 		// permission module configured
 		noProtections := ap.isWildcardOrDefault() && !ap.onlyInternalIssuer() && (tlsApp.Automation == nil || tlsApp.Automation.OnDemand == nil || tlsApp.Automation.OnDemand.permission == nil)
-		failClosed := noProtections && !hadExplicitManagers // don't allow on-demand issuance (other than implicit managers) if no managers have been explicitly configured
+		failClosed := noProtections && !ap.hadExplicitManagers // don't allow on-demand issuance (other than implicit managers) if no managers have been explicitly configured
 		if noProtections {
-			if !hadExplicitManagers {
+			if !ap.hadExplicitManagers {
 				// no managers, no explicitly-configured permission module, this is a config error
 				return fmt.Errorf("on-demand TLS cannot be enabled without a permission module to prevent abuse; please refer to documentation for details")
 			}
@@ -454,6 +456,22 @@ type ChallengesConfig struct {
 	// Optionally customize the host to which a listener
 	// is bound if required for solving a challenge.
 	BindHost string `json:"bind_host,omitempty"`
+
+	// Whether distributed solving is enabled. This is
+	// enabled by default, so this is only used to
+	// disable it, which should only need to be done if
+	// you cannot reliably or affordably use storage
+	// backend for writing/distributing challenge info.
+	// (Applies to HTTP and TLS-ALPN challenges.)
+	// If set to false, challenges can only be solved
+	// from the Caddy instance that initiated the
+	// challenge, with the exception of HTTP challenges
+	// initiated with the same ACME account that this
+	// config uses. (Caddy can still solve those challenges
+	// without explicitly writing the info to storage.)
+	//
+	// Default: true
+	Distributed *bool `json:"distributed,omitempty"`
 }
 
 // HTTPChallengeConfig configures the ACME HTTP challenge.

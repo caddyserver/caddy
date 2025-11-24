@@ -1,0 +1,31 @@
+name: Issue
+description: An actionable development item, like a bug report or feature request
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for opening an issue! This is for actionable development items like bug reports and feature requests.
+        If you have a question about using Caddy, please [post on our forums](https://caddy.community) instead.
+  - type: textarea
+    id: content
+    attributes:
+      label: Issue Details
+      placeholder: Describe the issue here. Be specific by providing complete logs and minimal instructions to reproduce, or a thoughtful proposal, etc.
+    validations:
+      required: true
+  - type: dropdown
+    id: assistance-disclosure
+    attributes:
+      label: Assistance Disclosure
+      description: "Our project allows assistance by AI/LLM tools as long as it is disclosed and described so we can better respond. Please certify whether you have used any such tooling related to this issue:"
+      options:
+        - 
+        - AI used
+        - AI not used
+    validations:
+      required: true
+  - type: input
+    id: assistance-description
+    attributes:
+      label: If AI was used, describe the extent to which it was used.
+      description: 'Examples: "ChatGPT translated from my native language" or "Claude proposed this change/feature"'

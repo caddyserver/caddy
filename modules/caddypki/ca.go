@@ -124,8 +124,6 @@ func (ca *CA) Provision(ctx caddy.Context, id string, log *zap.Logger) error {
 	}
 	if ca.IntermediateLifetime == 0 {
 		ca.IntermediateLifetime = caddy.Duration(defaultIntermediateLifetime)
-	} else if time.Duration(ca.IntermediateLifetime) >= defaultRootLifetime {
-		return fmt.Errorf("intermediate certificate lifetime must be less than root certificate lifetime (%s)", defaultRootLifetime)
 	}
 
 	// load the certs and key that will be used for signing
@@ -143,6 +141,10 @@ func (ca *CA) Provision(ctx caddy.Context, id string, log *zap.Logger) error {
 	}
 	if err != nil {
 		return err
+	}
+	actualRootLifetime := time.Until(rootCert.NotAfter)
+	if time.Duration(ca.IntermediateLifetime) >= actualRootLifetime {
+		return fmt.Errorf("intermediate certificate lifetime must be less than actual root certificate lifetime (%s)", actualRootLifetime)
 	}
 	if ca.Intermediate != nil {
 		interCert, interKey, err = ca.Intermediate.Load()

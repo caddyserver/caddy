@@ -36,7 +36,7 @@ type storVal struct {
 // determineStorage returns the top-level storage module from the given config.
 // It may return nil even if no error.
 func determineStorage(configFile string, configAdapter string) (*storVal, error) {
-	cfg, _, err := LoadConfig(configFile, configAdapter)
+	cfg, _, _, err := LoadConfig(configFile, configAdapter)
 	if err != nil {
 		return nil, err
 	}

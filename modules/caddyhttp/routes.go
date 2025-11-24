@@ -302,13 +302,7 @@ func wrapRoute(route Route) Middleware {
 
 // wrapMiddleware wraps mh such that it can be correctly
 // appended to a list of middleware in preparation for
-// compiling into a handler chain. We can't do this inline
-// inside a loop, because it relies on a reference to mh
-// not changing until the execution of its handler (which
-// is deferred by multiple func closures). In other words,
-// we need to pull this particular MiddlewareHandler
-// pointer into its own stack frame to preserve it so it
-// won't be overwritten in future loop iterations.
+// compiling into a handler chain.
 func wrapMiddleware(ctx caddy.Context, mh MiddlewareHandler, metrics *Metrics) Middleware {
 	handlerToUse := mh
 	if metrics != nil {
@@ -317,18 +311,12 @@ func wrapMiddleware(ctx caddy.Context, mh MiddlewareHandler, metrics *Metrics) M
 	}
 
 	return func(next Handler) Handler {
-		// copy the next handler (it's an interface, so it's
-		// just a very lightweight copy of a pointer); this
-		// is a safeguard against the handler changing the
-		// value, which could affect future requests (yikes)
-		nextCopy := next
-
 		return HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 			// EXPERIMENTAL: Trace each module that gets invoked
 			if server, ok := r.Context().Value(ServerCtxKey).(*Server); ok && server != nil {
 				server.logTrace(handlerToUse)
 			}
-			return handlerToUse.ServeHTTP(w, r, nextCopy)
+			return handlerToUse.ServeHTTP(w, r, next)
 		})
 	}
 }

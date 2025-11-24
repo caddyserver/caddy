@@ -116,9 +116,7 @@ func BenchmarkServer_LogRequest(b *testing.B) {
 	buf := io.Discard
 	accLog := testLogger(buf.Write)
 
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		s.logRequest(accLog, req, wrec, &duration, repl, bodyReader, false)
 	}
 }
@@ -139,9 +137,7 @@ func BenchmarkServer_LogRequest_NopLogger(b *testing.B) {
 
 	accLog := zap.NewNop()
 
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		s.logRequest(accLog, req, wrec, &duration, repl, bodyReader, false)
 	}
 }
@@ -165,9 +161,7 @@ func BenchmarkServer_LogRequest_WithTrace(b *testing.B) {
 	buf := io.Discard
 	accLog := testLogger(buf.Write)
 
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		s.logRequest(accLog, req, wrec, &duration, repl, bodyReader, false)
 	}
 }
@@ -301,6 +295,39 @@ func TestServer_DetermineTrustedProxy_TrustedLoopback(t *testing.T) {
 
 	assert.True(t, trusted)
 	assert.Equal(t, clientIP, "31.40.0.10")
+}
+
+func TestServer_DetermineTrustedProxy_UnixSocket(t *testing.T) {
+	server := &Server{
+		ClientIPHeaders:    []string{"X-Forwarded-For"},
+		TrustedProxiesUnix: true,
+	}
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "@"
+	req.Header.Set("X-Forwarded-For", "2.2.2.2, 3.3.3.3")
+
+	trusted, clientIP := determineTrustedProxy(req, server)
+
+	assert.True(t, trusted)
+	assert.Equal(t, "2.2.2.2", clientIP)
+}
+
+func TestServer_DetermineTrustedProxy_UnixSocketStrict(t *testing.T) {
+	server := &Server{
+		ClientIPHeaders:      []string{"X-Forwarded-For"},
+		TrustedProxiesUnix:   true,
+		TrustedProxiesStrict: 1,
+	}
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "@"
+	req.Header.Set("X-Forwarded-For", "2.2.2.2, 3.3.3.3")
+
+	trusted, clientIP := determineTrustedProxy(req, server)
+
+	assert.True(t, trusted)
+	assert.Equal(t, "3.3.3.3", clientIP)
 }
 
 func TestServer_DetermineTrustedProxy_UntrustedPrefix(t *testing.T) {

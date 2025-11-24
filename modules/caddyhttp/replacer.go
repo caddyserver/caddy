@@ -172,8 +172,12 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 			// current URI, including any internal rewrites
 			case "http.request.uri":
 				return req.URL.RequestURI(), true
+			case "http.request.uri_escaped":
+				return url.QueryEscape(req.URL.RequestURI()), true
 			case "http.request.uri.path":
 				return req.URL.Path, true
+			case "http.request.uri.path_escaped":
+				return url.QueryEscape(req.URL.Path), true
 			case "http.request.uri.path.file":
 				_, file := path.Split(req.URL.Path)
 				return file, true
@@ -186,6 +190,8 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 				return path.Ext(req.URL.Path), true
 			case "http.request.uri.query":
 				return req.URL.RawQuery, true
+			case "http.request.uri.query_escaped":
+				return url.QueryEscape(req.URL.RawQuery), true
 			case "http.request.uri.prefixed_query":
 				if req.URL.RawQuery == "" {
 					return "", true
@@ -283,7 +289,7 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 				return prefix.String(), true
 			}
 
-			// hostname labels
+			// hostname labels (case insensitive, so normalize to lowercase)
 			if strings.HasPrefix(key, reqHostLabelsReplPrefix) {
 				idxStr := key[len(reqHostLabelsReplPrefix):]
 				idx, err := strconv.Atoi(idxStr)
@@ -298,7 +304,7 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 				if idx >= len(hostLabels) {
 					return "", true
 				}
-				return hostLabels[len(hostLabels)-idx-1], true
+				return strings.ToLower(hostLabels[len(hostLabels)-idx-1]), true
 			}
 
 			// path parts

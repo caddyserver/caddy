@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -881,6 +882,51 @@ func TestRejectsGlobalMatcher(t *testing.T) {
 	expected := "request matchers may not be defined globally, they must be in a site block; found @rejected, at Testfile:2"
 	if err.Error() != expected {
 		t.Errorf("Expected error to be '%s' but got '%v'", expected, err)
+	}
+}
+
+func TestRejectAnonymousImportBlock(t *testing.T) {
+	p := testParser(`
+		(site) {
+			http://{args[0]} https://{args[0]} {
+				{block}
+			}
+		}
+
+		import site test.domain {
+			{ 
+				header_up Host {host}
+				header_up X-Real-IP {remote_host}
+			}
+		}
+	`)
+	_, err := p.parseAll()
+	if err == nil {
+		t.Fatal("Expected an error, but got nil")
+	}
+	expected := "anonymous blocks are not supported"
+	if !strings.HasPrefix(err.Error(), "anonymous blocks are not supported") {
+		t.Errorf("Expected error to start with '%s' but got '%v'", expected, err)
+	}
+}
+
+func TestAcceptSiteImportWithBraces(t *testing.T) {
+	p := testParser(`
+		(site) {
+			http://{args[0]} https://{args[0]} {
+				{block}
+			}
+		}
+
+		import site test.domain {
+			reverse_proxy http://192.168.1.1:8080 { 
+				header_up Host {host}
+			}
+		}
+	`)
+	_, err := p.parseAll()
+	if err != nil {
+		t.Errorf("Expected error to be nil but got '%v'", err)
 	}
 }
 
