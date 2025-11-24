@@ -357,47 +357,45 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 
 			lnIfaceAddresses := []string{}
 			for _, ifaceAddress := range ifaceAddresses {
-				var addrok, netwok bool
-
-				var ip net.IP
-				switch ifaceAddressValue := ifaceAddress.(type) {
-				case *net.IPAddr:
-					ip, addrok, netwok = ifaceAddressValue.IP, true, true
-				case *net.IPNet:
-					ip, addrok, netwok = ifaceAddressValue.IP, true, true
-				case *net.TCPAddr:
-					ip, addrok, netwok = ifaceAddressValue.IP, true, caddy.IsTCPNetwork(lnNetw)
-				case *net.UDPAddr:
-					ip, addrok, netwok = ifaceAddressValue.IP, true, caddy.IsUDPNetwork(lnNetw)
-				}
-
-				if addrok {
-					if netwok {
-						if caddy.IsIPv4Network(lnNetw) && len(ip) == net.IPv4len || caddy.IsIPv6Network(lnNetw) && len(ip) == net.IPv6len {
-							lnIfaceAddresses = append(lnIfaceAddresses, ip.String())
-						}
-					}
-					continue
-				}
-
-				var name string
-				switch ifaceAddressValue := ifaceAddress.(type) {
-				case *net.UnixAddr:
-					name, addrok, netwok = ifaceAddressValue.Name, true, caddy.IsUnixNetwork(lnNetw)
-				}
-
-				if addrok {
-					if netwok {
-						lnIfaceAddresses = append(lnIfaceAddresses, name)
-					}
-					continue
-				}
-
 				if caddy.IsReservedNetwork(lnNetw) {
-					continue
-				}
+					var addrok, netwok bool
 
-				lnIfaceAddresses = append(lnIfaceAddresses, ifaceAddress.String())
+					var ip net.IP
+					switch ifaceAddressValue := ifaceAddress.(type) {
+					case *net.IPAddr:
+						ip, addrok, netwok = ifaceAddressValue.IP, true, true
+					case *net.IPNet:
+						ip, addrok, netwok = ifaceAddressValue.IP, true, true
+					case *net.TCPAddr:
+						ip, addrok, netwok = ifaceAddressValue.IP, true, caddy.IsTCPNetwork(lnNetw)
+					case *net.UDPAddr:
+						ip, addrok, netwok = ifaceAddressValue.IP, true, caddy.IsUDPNetwork(lnNetw)
+					}
+
+					if addrok {
+						if netwok {
+							if caddy.IsIPv4Network(lnNetw) && len(ip) == net.IPv4len || caddy.IsIPv6Network(lnNetw) && len(ip) == net.IPv6len {
+								lnIfaceAddresses = append(lnIfaceAddresses, ip.String())
+							}
+						}
+						continue
+					}
+
+					var name string
+					switch ifaceAddressValue := ifaceAddress.(type) {
+					case *net.UnixAddr:
+						name, addrok, netwok = ifaceAddressValue.Name, true, caddy.IsUnixNetwork(lnNetw)
+					}
+
+					if addrok {
+						if netwok {
+							lnIfaceAddresses = append(lnIfaceAddresses, name)
+						}
+						continue
+					}
+				} else {
+					lnIfaceAddresses = append(lnIfaceAddresses, ifaceAddress.String())
+				}
 			}
 			if len(lnIfaceAddresses) == 0 {
 				return nil, fmt.Errorf("no available listener interface addresses for network: %v: %v", lnDevice, lnNetw)
