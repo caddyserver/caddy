@@ -437,6 +437,20 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	reqHost := clonedReq.Host
 	reqHeader := clonedReq.Header
 
+	// If the cloned request body was fully buffered, keep a reference to its
+	// buffer so we can reuse it across retries and return it to the pool
+	// once we’re done.
+	var bufferedReqBody *bytes.Buffer
+	if reqBodyBuf, ok := clonedReq.Body.(bodyReadCloser); ok && reqBodyBuf.body == nil && reqBodyBuf.buf != nil {
+		bufferedReqBody = reqBodyBuf.buf
+		reqBodyBuf.buf = nil
+
+		defer func() {
+			bufferedReqBody.Reset()
+			bufPool.Put(bufferedReqBody)
+		}()
+	}
+
 	start := time.Now()
 	defer func() {
 		// total proxying duration, including time spent on LB and retries
@@ -455,8 +469,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		// and reusable, so if a backend partially or fully reads the body but then
 		// produces an error, the request can be repeated to the next backend with
 		// the full body (retries should only happen for idempotent requests) (see #6259)
-		if reqBodyBuf, ok := r.Body.(bodyReadCloser); ok && reqBodyBuf.body == nil {
-			r.Body = io.NopCloser(bytes.NewReader(reqBodyBuf.buf.Bytes()))
+		if bufferedReqBody != nil {
+			clonedReq.Body = io.NopCloser(bytes.NewReader(bufferedReqBody.Bytes()))
 		}
 
 		var done bool
@@ -1538,7 +1552,12 @@ type bodyReadCloser struct {
 }
 
 func (brc bodyReadCloser) Close() error {
-	bufPool.Put(brc.buf)
+	// Inside this package this will be set to nil for fully-buffered
+	// requests due to the possibility of retrial.
+	if brc.buf != nil {
+		bufPool.Put(brc.buf)
+	}
+	// For fully-buffered bodies, body is nil, so Close is a no-op.
 	if brc.body != nil {
 		return brc.body.Close()
 	}
