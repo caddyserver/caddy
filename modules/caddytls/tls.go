@@ -423,13 +423,18 @@ func (t *TLS) Start() error {
 
 		// keep ECH keys rotated
 		go func() {
-			for range time.Tick(1 * time.Hour) {
-				// ensure old keys are rotated out
-				t.EncryptedClientHello.configsMu.Lock()
-				err = t.EncryptedClientHello.rotateECHKeys(t.ctx, echLogger, false)
-				t.EncryptedClientHello.configsMu.Unlock()
-				if err != nil {
-					echLogger.Error("rotating ECH configs failed", zap.Error(err))
+			for {
+				select {
+				case <-time.After(1 * time.Hour):
+					// ensure old keys are rotated out
+					t.EncryptedClientHello.configsMu.Lock()
+					err = t.EncryptedClientHello.rotateECHKeys(t.ctx, echLogger, false)
+					t.EncryptedClientHello.configsMu.Unlock()
+					if err != nil {
+						echLogger.Error("rotating ECH configs failed", zap.Error(err))
+					}
+				case <-t.ctx.Done():
+					return
 				}
 			}
 		}()
