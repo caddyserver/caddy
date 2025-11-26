@@ -42,6 +42,12 @@ type LogAppend struct {
 	// map, the value of that key will be used. Otherwise
 	// the value will be used as-is as a constant string.
 	Value string `json:"value,omitempty"`
+
+	// Early, if true, adds the log field before calling
+	// the next handler in the chain. By default, the log
+	// field is added on the way back up the middleware chain,
+	// after all subsequent handlers have completed.
+	Early bool `json:"early,omitempty"`
 }
 
 // CaddyModule returns the Caddy module information.
@@ -53,13 +59,27 @@ func (LogAppend) CaddyModule() caddy.ModuleInfo {
 }
 
 func (h LogAppend) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	// Run the next handler in the chain first.
+	if h.Early {
+		// Add the log field before calling the next handler
+		h.addLogField(r)
+	}
+
+	// Run the next handler in the chain.
 	// If an error occurs, we still want to add
 	// any extra log fields that we can, so we
 	// hold onto the error and return it later.
 	handlerErr := next.ServeHTTP(w, r)
 
-	// On the way back up the chain, add the extra log field
+	if !h.Early {
+		// Add the log field after the handler completes
+		h.addLogField(r)
+	}
+
+	return handlerErr
+}
+
+// addLogField adds the log field to the request's extra log fields.
+func (h LogAppend) addLogField(r *http.Request) {
 	ctx := r.Context()
 
 	vars := ctx.Value(caddyhttp.VarsCtxKey).(map[string]any)
@@ -84,8 +104,6 @@ func (h LogAppend) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 	// We use zap.Any because it will reflect
 	// to the correct type for us.
 	extra.Add(zap.Any(h.Key, varValue))
-
-	return handlerErr
 }
 
 // Interface guards
