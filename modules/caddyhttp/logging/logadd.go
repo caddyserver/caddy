@@ -15,6 +15,8 @@
 package logging
 
 import (
+	"bytes"
+	"encoding/base64"
 	"net/http"
 	"strings"
 
@@ -59,9 +61,26 @@ func (LogAppend) CaddyModule() caddy.ModuleInfo {
 }
 
 func (h LogAppend) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	if h.Early {
+	// Check if we need to buffer the response for special placeholders
+	needsResponseBody := h.Value == placeholderResponseBody || h.Value == placeholderResponseBodyBase64
+
+	if h.Early && !needsResponseBody {
 		// Add the log field before calling the next handler
-		h.addLogField(r)
+		// (but not if we need the response body, which isn't available yet)
+		h.addLogField(r, nil)
+	}
+
+	var rec caddyhttp.ResponseRecorder
+	var buf *bytes.Buffer
+
+	if needsResponseBody {
+		// Wrap the response writer with a recorder to capture the response body
+		buf = new(bytes.Buffer)
+		rec = caddyhttp.NewResponseRecorder(w, buf, func(status int, header http.Header) bool {
+			// Always buffer the response when we need to log the body
+			return true
+		})
+		w = rec
 	}
 
 	// Run the next handler in the chain.
@@ -70,16 +89,30 @@ func (h LogAppend) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 	// hold onto the error and return it later.
 	handlerErr := next.ServeHTTP(w, r)
 
+	if needsResponseBody {
+		// Write the buffered response to the client
+		if rec.Buffered() {
+			h.addLogField(r, buf)
+			err := rec.WriteResponse()
+			if err != nil {
+				return err
+			}
+		}
+		return handlerErr
+	}
+
 	if !h.Early {
 		// Add the log field after the handler completes
-		h.addLogField(r)
+		h.addLogField(r, buf)
 	}
 
 	return handlerErr
 }
 
 // addLogField adds the log field to the request's extra log fields.
-func (h LogAppend) addLogField(r *http.Request) {
+// If buf is not nil, it contains the buffered response body for special
+// response body placeholders.
+func (h LogAppend) addLogField(r *http.Request, buf *bytes.Buffer) {
 	ctx := r.Context()
 
 	vars := ctx.Value(caddyhttp.VarsCtxKey).(map[string]any)
@@ -87,7 +120,21 @@ func (h LogAppend) addLogField(r *http.Request) {
 	extra := ctx.Value(caddyhttp.ExtraLogFieldsCtxKey).(*caddyhttp.ExtraLogFields)
 
 	var varValue any
-	if strings.HasPrefix(h.Value, "{") &&
+
+	// Handle special case placeholders for response body
+	if h.Value == placeholderResponseBody {
+		if buf != nil {
+			varValue = buf.String()
+		} else {
+			varValue = ""
+		}
+	} else if h.Value == placeholderResponseBodyBase64 {
+		if buf != nil {
+			varValue = base64.StdEncoding.EncodeToString(buf.Bytes())
+		} else {
+			varValue = ""
+		}
+	} else if strings.HasPrefix(h.Value, "{") &&
 		strings.HasSuffix(h.Value, "}") &&
 		strings.Count(h.Value, "{") == 1 {
 		// the value looks like a placeholder, so get its value
@@ -105,6 +152,13 @@ func (h LogAppend) addLogField(r *http.Request) {
 	// to the correct type for us.
 	extra.Add(zap.Any(h.Key, varValue))
 }
+
+const (
+	// Special placeholder values that are handled by log_append
+	// rather than by the replacer.
+	placeholderResponseBody       = "{http.response.body}"
+	placeholderResponseBodyBase64 = "{http.response.body_base64}"
+)
 
 // Interface guards
 var (
