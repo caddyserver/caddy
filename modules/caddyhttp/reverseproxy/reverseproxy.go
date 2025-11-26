@@ -243,18 +243,16 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("loading transport: %v", err)
 		}
 		h.Transport = mod.(http.RoundTripper)
-		// enable request buffering for fastcgi if not configured
-		// This is because most fastcgi servers are php-fpm that require the content length to be set to read the body, golang
-		// std has fastcgi implementation that doesn't need this value to process the body, but we can safely assume that's
-		// not used.
-		// http3 requests have a negative content length for GET and HEAD requests, if that header is not sent.
-		// see: https://github.com/caddyserver/caddy/issues/6678#issuecomment-2472224182
-		// Though it appears even if CONTENT_LENGTH is invalid, php-fpm can handle just fine if the body is empty (no Stdin records sent).
-		// php-fpm will hang if there is any data in the body though, https://github.com/caddyserver/caddy/issues/5420#issuecomment-2415943516
 
-		// TODO: better default buffering for fastcgi requests without content length, in theory a value of 1 should be enough, make it bigger anyway
-		if module, ok := h.Transport.(caddy.Module); ok && module.CaddyModule().ID.Name() == "fastcgi" && h.RequestBuffers == 0 {
-			h.RequestBuffers = 4096
+		// set default buffer sizes if applicable
+		if bt, ok := h.Transport.(BufferedTransport); ok {
+			reqBuffers, respBuffers := bt.DefaultBufferSizes()
+			if h.RequestBuffers == 0 {
+				h.RequestBuffers = reqBuffers
+			}
+			if h.ResponseBuffers == 0 {
+				h.ResponseBuffers = respBuffers
+			}
 		}
 	}
 	if h.LoadBalancing != nil && h.LoadBalancing.SelectionPolicyRaw != nil {
@@ -439,6 +437,20 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	reqHost := clonedReq.Host
 	reqHeader := clonedReq.Header
 
+	// If the cloned request body was fully buffered, keep a reference to its
+	// buffer so we can reuse it across retries and return it to the pool
+	// once we’re done.
+	var bufferedReqBody *bytes.Buffer
+	if reqBodyBuf, ok := clonedReq.Body.(bodyReadCloser); ok && reqBodyBuf.body == nil && reqBodyBuf.buf != nil {
+		bufferedReqBody = reqBodyBuf.buf
+		reqBodyBuf.buf = nil
+
+		defer func() {
+			bufferedReqBody.Reset()
+			bufPool.Put(bufferedReqBody)
+		}()
+	}
+
 	start := time.Now()
 	defer func() {
 		// total proxying duration, including time spent on LB and retries
@@ -457,8 +469,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		// and reusable, so if a backend partially or fully reads the body but then
 		// produces an error, the request can be repeated to the next backend with
 		// the full body (retries should only happen for idempotent requests) (see #6259)
-		if reqBodyBuf, ok := r.Body.(bodyReadCloser); ok && reqBodyBuf.body == nil {
-			r.Body = io.NopCloser(bytes.NewReader(reqBodyBuf.buf.Bytes()))
+		if bufferedReqBody != nil {
+			clonedReq.Body = io.NopCloser(bytes.NewReader(bufferedReqBody.Bytes()))
 		}
 
 		var done bool
@@ -1198,7 +1210,7 @@ func (lb LoadBalancing) tryAgain(ctx caddy.Context, start time.Time, retries int
 
 // directRequest modifies only req.URL so that it points to the upstream
 // in the given DialInfo. It must modify ONLY the request URL.
-func (Handler) directRequest(req *http.Request, di DialInfo) {
+func (h *Handler) directRequest(req *http.Request, di DialInfo) {
 	// we need a host, so set the upstream's host address
 	reqHost := di.Address
 
@@ -1207,6 +1219,13 @@ func (Handler) directRequest(req *http.Request, di DialInfo) {
 	if (req.URL.Scheme == "http" && di.Port == "80") ||
 		(req.URL.Scheme == "https" && di.Port == "443") {
 		reqHost = di.Host
+	}
+
+	// add client address to the host to let transport differentiate requests from different clients
+	if ppt, ok := h.Transport.(ProxyProtocolTransport); ok && ppt.ProxyProtocolEnabled() {
+		if proxyProtocolInfo, ok := caddyhttp.GetVar(req.Context(), proxyProtocolInfoVarKey).(ProxyProtocolInfo); ok {
+			reqHost = proxyProtocolInfo.AddrPort.String() + "->" + reqHost
+		}
 	}
 
 	req.URL.Host = reqHost
@@ -1494,6 +1513,32 @@ type TLSTransport interface {
 	EnableTLS(base *TLSConfig) error
 }
 
+// H2CTransport is implemented by transports
+// that are capable of using h2c.
+type H2CTransport interface {
+	EnableH2C() error
+}
+
+// ProxyProtocolTransport is implemented by transports
+// that are capable of using proxy protocol.
+type ProxyProtocolTransport interface {
+	ProxyProtocolEnabled() bool
+}
+
+// HealthCheckSchemeOverriderTransport is implemented by transports
+// that can override the scheme used for health checks.
+type HealthCheckSchemeOverriderTransport interface {
+	OverrideHealthCheckScheme(base *url.URL, port string)
+}
+
+// BufferedTransport is implemented by transports
+// that needs to buffer requests and/or responses.
+type BufferedTransport interface {
+	// DefaultBufferSizes returns the default buffer sizes
+	// for requests and responses, respectively if buffering isn't enabled.
+	DefaultBufferSizes() (int64, int64)
+}
+
 // roundtripSucceededError is an error type that is returned if the
 // roundtrip succeeded, but an error occurred after-the-fact.
 type roundtripSucceededError struct{ error }
@@ -1507,7 +1552,12 @@ type bodyReadCloser struct {
 }
 
 func (brc bodyReadCloser) Close() error {
-	bufPool.Put(brc.buf)
+	// Inside this package this will be set to nil for fully-buffered
+	// requests due to the possibility of retrial.
+	if brc.buf != nil {
+		bufPool.Put(brc.buf)
+	}
+	// For fully-buffered bodies, body is nil, so Close is a no-op.
 	if brc.body != nil {
 		return brc.body.Close()
 	}

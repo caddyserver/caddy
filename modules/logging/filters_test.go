@@ -404,12 +404,12 @@ func TestMultiRegexpFilterInputSizeLimit(t *testing.T) {
 	// Test with very large input (should be truncated)
 	largeInput := strings.Repeat("test", 300000) // Creates ~1.2MB string
 	out := f.Filter(zapcore.Field{String: largeInput})
-	
+
 	// The input should be truncated to 1MB and still processed
 	if len(out.String) > 1000000 {
 		t.Fatalf("output string not truncated: length %d", len(out.String))
 	}
-	
+
 	// Should still contain replacements within the truncated portion
 	if !strings.Contains(out.String, "REPLACED") {
 		t.Fatalf("replacements not applied to truncated input")

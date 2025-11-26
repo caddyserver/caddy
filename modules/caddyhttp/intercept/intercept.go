@@ -17,6 +17,7 @@ package intercept
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -175,9 +176,34 @@ func (ir Intercept) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 		c.Write(zap.Int("handler", rec.handlerIndex))
 	}
 
-	// pass the request through the response handler routes
-	return rec.handler.Routes.Compile(next).ServeHTTP(w, r)
+	// response recorder doesn't create a new copy of the original headers, they're
+	// present in the original response writer
+	// create a new recorder to see if any response body from the new handler is present,
+	// if not, use the already buffered response body
+	recorder := caddyhttp.NewResponseRecorder(w, nil, nil)
+	if err := rec.handler.Routes.Compile(emptyHandler).ServeHTTP(recorder, r); err != nil {
+		return err
+	}
+
+	// no new response status and the status is not 0
+	if recorder.Status() == 0 && rec.Status() != 0 {
+		w.WriteHeader(rec.Status())
+	}
+
+	// no new response body and there is some in the original response
+	// TODO: what if the new response doesn't have a body by design?
+	// see: https://github.com/caddyserver/caddy/pull/6232#issue-2235224400
+	if recorder.Size() == 0 && buf.Len() > 0 {
+		_, err := io.Copy(w, buf)
+		return err
+	}
+	return nil
 }
+
+// this handler does nothing because everything we need is already buffered
+var emptyHandler caddyhttp.Handler = caddyhttp.HandlerFunc(func(_ http.ResponseWriter, req *http.Request) error {
+	return nil
+})
 
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //

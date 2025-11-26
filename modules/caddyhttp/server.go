@@ -33,7 +33,7 @@ import (
 	"github.com/caddyserver/certmagic"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
-	"github.com/quic-go/quic-go/qlog"
+	h3qlog "github.com/quic-go/quic-go/http3/qlog"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
@@ -290,6 +290,11 @@ type Server struct {
 	onStopFuncs      []func(context.Context) error // TODO: Experimental (Nov. 2023)
 }
 
+var (
+	ServerHeader = "Caddy"
+	serverHeader = []string{ServerHeader}
+)
+
 // ServeHTTP is the entry point for all HTTP requests.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// If there are listener wrappers that process tls connections but don't return a *tls.Conn, this field will be nil.
@@ -299,16 +304,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	w.Header().Set("Server", "Caddy")
+	h := w.Header()
+	h["Server"] = serverHeader
 
 	// advertise HTTP/3, if enabled
-	if s.h3server != nil {
-		if r.ProtoMajor < 3 {
-			err := s.h3server.SetQUICHeaders(w.Header())
-			if err != nil {
-				if c := s.logger.Check(zapcore.ErrorLevel, "setting HTTP/3 Alt-Svc header"); c != nil {
-					c.Write(zap.Error(err))
-				}
+	if s.h3server != nil && r.ProtoMajor < 3 {
+		if err := s.h3server.SetQUICHeaders(h); err != nil {
+			if c := s.logger.Check(zapcore.ErrorLevel, "setting HTTP/3 Alt-Svc header"); c != nil {
+				c.Write(zap.Error(err))
 			}
 		}
 	}
@@ -333,9 +336,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// enable full-duplex for HTTP/1, ensuring the entire
 	// request body gets consumed before writing the response
 	if s.EnableFullDuplex && r.ProtoMajor == 1 {
-		//nolint:bodyclose
-		err := http.NewResponseController(w).EnableFullDuplex()
-		if err != nil {
+		if err := http.NewResponseController(w).EnableFullDuplex(); err != nil { //nolint:bodyclose
 			if c := s.logger.Check(zapcore.WarnLevel, "failed to enable full duplex"); c != nil {
 				c.Write(zap.Error(err))
 			}
@@ -422,8 +423,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var fields []zapcore.Field
 	if s.Errors != nil && len(s.Errors.Routes) > 0 {
 		// execute user-defined error handling route
-		err2 := s.errorHandlerChain.ServeHTTP(w, r)
-		if err2 == nil {
+		if err2 := s.errorHandlerChain.ServeHTTP(w, r); err2 == nil {
 			// user's error route handled the error response
 			// successfully, so now just log the error
 			for _, logger := range errLoggers {
@@ -643,7 +643,7 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 			MaxHeaderBytes: s.MaxHeaderBytes,
 			QUICConfig: &quic.Config{
 				Versions: []quic.Version{quic.Version1, quic.Version2},
-				Tracer:   qlog.DefaultConnectionTracer,
+				Tracer:   h3qlog.DefaultConnectionTracer,
 			},
 			IdleTimeout: time.Duration(s.IdleTimeout),
 		}
@@ -798,8 +798,10 @@ func (s *Server) logRequest(
 	accLog *zap.Logger, r *http.Request, wrec ResponseRecorder, duration *time.Duration,
 	repl *caddy.Replacer, bodyReader *lengthReader, shouldLogCredentials bool,
 ) {
+	ctx := r.Context()
+
 	// this request may be flagged as omitted from the logs
-	if skip, ok := GetVar(r.Context(), LogSkipVar).(bool); ok && skip {
+	if skip, ok := GetVar(ctx, LogSkipVar).(bool); ok && skip {
 		return
 	}
 
@@ -817,7 +819,7 @@ func (s *Server) logRequest(
 	}
 
 	message := "handled request"
-	if nop, ok := GetVar(r.Context(), "unhandled").(bool); ok && nop {
+	if nop, ok := GetVar(ctx, "unhandled").(bool); ok && nop {
 		message = "NOP"
 	}
 
@@ -841,7 +843,7 @@ func (s *Server) logRequest(
 				reqBodyLength = bodyReader.Length
 			}
 
-			extra := r.Context().Value(ExtraLogFieldsCtxKey).(*ExtraLogFields)
+			extra := ctx.Value(ExtraLogFieldsCtxKey).(*ExtraLogFields)
 
 			fieldCount := 6
 			fields = make([]zapcore.Field, 0, fieldCount+len(extra.fields))
