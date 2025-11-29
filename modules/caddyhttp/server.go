@@ -763,9 +763,11 @@ func (s *Server) shouldLogRequest(r *http.Request) bool {
 		hostWithoutPort = r.Host
 	}
 
-	if _, ok := s.Logs.LoggerNames[hostWithoutPort]; ok {
-		// this host is mapped to a particular logger name
-		return true
+	for loggerName := range s.Logs.LoggerNames {
+		if certmagic.MatchWildcard(hostWithoutPort, loggerName) {
+			// this host is mapped to a particular logger name
+			return true
+		}
 	}
 	for _, dh := range s.Logs.SkipHosts {
 		// logging for this particular host is disabled
