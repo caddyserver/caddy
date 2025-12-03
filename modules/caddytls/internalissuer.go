@@ -115,7 +115,8 @@ func (iss InternalIssuer) Issue(ctx context.Context, csr *x509.CertificateReques
 	if iss.SignWithRoot {
 		issuerCert = iss.ca.RootCertificate()
 	} else {
-		issuerCert = iss.ca.IntermediateCertificate()
+		chain := iss.ca.IntermediateCertificateChain()
+		issuerCert = chain[0]
 	}
 
 	// ensure issued certificate does not expire later than its issuer

@@ -84,7 +84,10 @@ type KeyPair struct {
 	Format string `json:"format,omitempty"`
 }
 
-// Load loads the certificate and key.
+// Load loads the certificate chain and (optional) private key from
+// the corresponding files, using the configured format. If a
+// private key is read, it will be verified to belong to the first
+// certificate in the chain.
 func (kp KeyPair) Load() ([]*x509.Certificate, crypto.Signer, error) {
 	switch kp.Format {
 	case "", "pem_file":

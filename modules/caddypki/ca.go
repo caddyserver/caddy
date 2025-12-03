@@ -78,7 +78,7 @@ type CA struct {
 	storage    certmagic.Storage
 	root       *x509.Certificate
 	interChain []*x509.Certificate
-	interKey   any // TODO: should we just store these as crypto.Signer?
+	interKey   crypto.Signer
 	mu         *sync.RWMutex
 
 	rootCertPath string // mainly used for logging purposes if trusting
@@ -177,17 +177,9 @@ func (ca CA) RootCertificate() *x509.Certificate {
 // RootKey returns the CA's root private key. Since the root key is
 // not cached in memory long-term, it needs to be loaded from storage,
 // which could yield an error.
-func (ca CA) RootKey() (any, error) {
+func (ca CA) RootKey() (crypto.Signer, error) {
 	_, rootKey, err := ca.loadOrGenRoot()
 	return rootKey, err
-}
-
-// IntermediateCertificate returns the CA's intermediate
-// certificate (public key).
-func (ca CA) IntermediateCertificate() *x509.Certificate {
-	ca.mu.RLock()
-	defer ca.mu.RUnlock()
-	return ca.interChain[0]
 }
 
 // IntermediateCertificateChain returns the CA's intermediate
@@ -199,7 +191,7 @@ func (ca CA) IntermediateCertificateChain() []*x509.Certificate {
 }
 
 // IntermediateKey returns the CA's intermediate private key.
-func (ca CA) IntermediateKey() any {
+func (ca CA) IntermediateKey() crypto.Signer {
 	ca.mu.RLock()
 	defer ca.mu.RUnlock()
 	return ca.interKey
@@ -220,14 +212,14 @@ func (ca *CA) NewAuthority(authorityConfig AuthorityConfig) (*authority.Authorit
 		// cert/key directly, since it's unlikely to expire
 		// while Caddy is running (long lifetime)
 		var issuerCert *x509.Certificate
-		var issuerKey any
+		var issuerKey crypto.Signer
 		issuerCert = rootCert
 		var err error
 		issuerKey, err = ca.RootKey()
 		if err != nil {
 			return nil, fmt.Errorf("loading signing key: %v", err)
 		}
-		signerOption = authority.WithX509Signer(issuerCert, issuerKey.(crypto.Signer))
+		signerOption = authority.WithX509Signer(issuerCert, issuerKey)
 	} else {
 		// if we're signing with intermediate, we need to make
 		// sure it's always fresh, because the intermediate may
@@ -235,7 +227,7 @@ func (ca *CA) NewAuthority(authorityConfig AuthorityConfig) (*authority.Authorit
 		signerOption = authority.WithX509SignerFunc(func() ([]*x509.Certificate, crypto.Signer, error) {
 			issuerChain := ca.IntermediateCertificateChain()
 			issuerCert := issuerChain[0]
-			issuerKey := ca.IntermediateKey().(crypto.Signer)
+			issuerKey := ca.IntermediateKey()
 			ca.log.Debug("using intermediate signer",
 				zap.String("serial", issuerCert.SerialNumber.String()),
 				zap.String("not_before", issuerCert.NotBefore.String()),
