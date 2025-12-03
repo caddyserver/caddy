@@ -160,8 +160,9 @@ jobs:
           fi
           
           # Store changelog for PR body
+          CLEANSED_COMMITS=$(echo "$COMMITS" | sed 's/`/\\`/g')
           echo "changelog<<EOF" >> $GITHUB_OUTPUT
-          echo "$COMMITS" >> $GITHUB_OUTPUT
+          echo "$CLEANSED_COMMITS" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
           
           # Create empty commit for the PR
