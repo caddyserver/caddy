@@ -222,11 +222,16 @@ func rootAndIntermediatePEM(ca *CA) (root, inter []byte, err error) {
 	if err != nil {
 		return root, inter, err
 	}
-	inter, err = pemEncodeCert(ca.IntermediateCertificate().Raw)
-	if err != nil {
-		return root, inter, err
+
+	for _, interCert := range ca.IntermediateCertificateChain() {
+		pemBytes, err := pemEncodeCert(interCert.Raw)
+		if err != nil {
+			return nil, nil, err
+		}
+		inter = append(inter, pemBytes...)
 	}
-	return root, inter, err
+
+	return
 }
 
 // caInfo is the response structure for the CA info API endpoint.
