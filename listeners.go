@@ -511,7 +511,7 @@ func JoinNetworkAddress(network, host, port string) string {
 //
 // NOTE: This API is EXPERIMENTAL and may be changed or removed.
 // NOTE: user should close the returned listener twice, once to stop accepting new connections, the second time to free up the packet conn.
-func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config net.ListenConfig, tlsConf *tls.Config) (http3.QUICListener, error) {
+func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config net.ListenConfig, tlsConf *tls.Config, pcWrappers []PacketConnWrapper) (http3.QUICListener, error) {
 	lnKey := listenerKey("quic"+na.Network, na.JoinHostPort(portOffset))
 
 	sharedEarlyListener, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
@@ -523,12 +523,19 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 		ln := lnAny.(net.PacketConn)
 
 		h3ln := ln
-		for {
-			// retrieve the underlying socket, so quic-go can optimize.
-			if unwrapper, ok := h3ln.(interface{ Unwrap() net.PacketConn }); ok {
-				h3ln = unwrapper.Unwrap()
-			} else {
-				break
+		if len(pcWrappers) == 0 {
+			for {
+				// retrieve the underlying socket, so quic-go can optimize.
+				if unwrapper, ok := h3ln.(interface{ Unwrap() net.PacketConn }); ok {
+					h3ln = unwrapper.Unwrap()
+				} else {
+					break
+				}
+			}
+		} else {
+			// wrap packet conn before QUIC
+			for _, pcWrapper := range pcWrappers {
+				h3ln = pcWrapper.WrapPacketConn(h3ln)
 			}
 		}
 
@@ -773,6 +780,19 @@ var networkTypes = map[string]ListenerFunc{}
 // appropriate.
 type ListenerWrapper interface {
 	WrapListener(net.Listener) net.Listener
+}
+
+// PacketConnWrapper is a type that wraps a packet conn
+// so it can modify the input packet conn methods.
+// Modules that implement this interface are found
+// in the caddy.packetconns namespace. Usually, to
+// wrap a packet conn, you will define your own struct
+// type that embeds the input packet conn, then
+// implement your own methods that you want to wrap,
+// calling the underlying packet conn methods where
+// appropriate.
+type PacketConnWrapper interface {
+	WrapPacketConn(net.PacketConn) net.PacketConn
 }
 
 // listenerPool stores and allows reuse of active listeners.
