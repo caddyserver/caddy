@@ -459,7 +459,8 @@ func (st ServerType) buildTLSApp(
 	}
 
 	// if there are any global options set for issuers (ACME ones in particular), make sure they
-	// take effect in every automation policy that does not have any issuers
+	// take effect in every automation policy that does not have any issuers, by creating one or
+	// more issuers to be iterated in the next step below
 	if tlsApp.Automation != nil {
 		globalEmail := options["email"]
 		globalACMECA := options["acme_ca"]
@@ -467,19 +468,20 @@ func (st ServerType) buildTLSApp(
 		_, globalACMEDNS := options["acme_dns"] // can be set to nil (to use globally-defined "dns" value instead), but it is still set
 		globalACMEEAB := options["acme_eab"]
 		globalPreferredChains := options["preferred_chains"]
-		hasGlobalACMEDefaults := globalEmail != nil || globalACMECA != nil || globalACMECARoot != nil || globalACMEDNS || globalACMEEAB != nil || globalPreferredChains != nil
-		if hasGlobalACMEDefaults {
-			for i := range tlsApp.Automation.Policies {
+		hasGlobalACMEDefaults := globalEmail != nil || globalACMECA != nil || globalACMECARoot != nil ||
+			globalACMEDNS || globalACMEEAB != nil || globalPreferredChains != nil
+		for i := range tlsApp.Automation.Policies {
+			if hasGlobalACMEDefaults {
 				ap := tlsApp.Automation.Policies[i]
-				if len(ap.Issuers) == 0 && automationPolicyHasAllPublicNames(ap) {
-					// for public names, create default issuers which will later be filled in with configured global defaults
-					// (internal names will implicitly use the internal issuer at auto-https time)
-					emailStr, _ := globalEmail.(string)
-					ap.Issuers = caddytls.DefaultIssuers(emailStr)
-
+				if len(ap.Issuers) == 0 {
 					// if a specific endpoint is configured, can't use multiple default issuers
 					if globalACMECA != nil {
 						ap.Issuers = []certmagic.Issuer{new(caddytls.ACMEIssuer)}
+					} else if automationPolicyHasAllPublicNames(ap) {
+						// for public names, create default issuers which will later be filled in with configured global defaults
+						// (internal names will implicitly use the internal issuer at auto-https time)
+						emailStr, _ := globalEmail.(string)
+						ap.Issuers = caddytls.DefaultIssuers(emailStr)
 					}
 				}
 			}
