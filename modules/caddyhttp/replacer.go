@@ -511,6 +511,8 @@ func getReqTLSReplacement(req *http.Request, key string) (any, bool) {
 		return true, true
 	case "server_name":
 		return req.TLS.ServerName, true
+	case "ech_accepted":
+		return req.TLS.ECHAccepted, true
 	}
 	return nil, false
 }
