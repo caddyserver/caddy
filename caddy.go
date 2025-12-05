@@ -757,6 +757,7 @@ func exitProcess(ctx context.Context, logger *zap.Logger) {
 			return
 		}
 	}
+	fmt.Println("exiting here")
 
 	// give the OS or service/process manager our 2 weeks' notice: we quit
 	if err := notify.Stopping(); err != nil {
