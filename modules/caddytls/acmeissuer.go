@@ -671,7 +671,7 @@ func ParseCaddyfilePreferredChainsOptions(d *caddyfile.Dispenser) (*ChainPrefere
 		switch d.Val() {
 		case "root_common_name":
 			rootCommonNameOpt := d.RemainingArgs()
-			chainPref.RootCommonName = rootCommonNameOpt
+			chainPref.RootCommonName = append(chainPref.RootCommonName, rootCommonNameOpt...)
 			if rootCommonNameOpt == nil {
 				return nil, d.ArgErr()
 			}
@@ -681,7 +681,7 @@ func ParseCaddyfilePreferredChainsOptions(d *caddyfile.Dispenser) (*ChainPrefere
 
 		case "any_common_name":
 			anyCommonNameOpt := d.RemainingArgs()
-			chainPref.AnyCommonName = anyCommonNameOpt
+			chainPref.AnyCommonName = append(chainPref.AnyCommonName, anyCommonNameOpt...)
 			if anyCommonNameOpt == nil {
 				return nil, d.ArgErr()
 			}
