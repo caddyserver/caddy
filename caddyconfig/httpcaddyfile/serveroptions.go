@@ -17,6 +17,8 @@ package httpcaddyfile
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
+	"strconv"
 
 	"github.com/dustin/go-humanize"
 
@@ -34,23 +36,27 @@ type serverOptions struct {
 	ListenerAddress string
 
 	// These will all map 1:1 to the caddyhttp.Server struct
-	Name                 string
-	ListenerWrappersRaw  []json.RawMessage
-	ReadTimeout          caddy.Duration
-	ReadHeaderTimeout    caddy.Duration
-	WriteTimeout         caddy.Duration
-	IdleTimeout          caddy.Duration
-	KeepAliveInterval    caddy.Duration
-	MaxHeaderBytes       int
-	EnableFullDuplex     bool
-	Protocols            []string
-	StrictSNIHost        *bool
-	TrustedProxiesRaw    json.RawMessage
-	TrustedProxiesStrict int
-	ClientIPHeaders      []string
-	ShouldLogCredentials bool
-	Metrics              *caddyhttp.Metrics
-	Trace                bool // TODO: EXPERIMENTAL
+	Name                  string
+	ListenerWrappersRaw   []json.RawMessage
+	PacketConnWrappersRaw []json.RawMessage
+	ReadTimeout           caddy.Duration
+	ReadHeaderTimeout     caddy.Duration
+	WriteTimeout          caddy.Duration
+	IdleTimeout           caddy.Duration
+	KeepAliveInterval     caddy.Duration
+	KeepAliveIdle         caddy.Duration
+	KeepAliveCount        int
+	MaxHeaderBytes        int
+	EnableFullDuplex      bool
+	Protocols             []string
+	StrictSNIHost         *bool
+	TrustedProxiesRaw     json.RawMessage
+	TrustedProxiesStrict  int
+	TrustedProxiesUnix    bool
+	ClientIPHeaders       []string
+	ShouldLogCredentials  bool
+	Metrics               *caddyhttp.Metrics
+	Trace                 bool // TODO: EXPERIMENTAL
 }
 
 func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
@@ -92,6 +98,26 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 					nil,
 				)
 				serverOpts.ListenerWrappersRaw = append(serverOpts.ListenerWrappersRaw, jsonListenerWrapper)
+			}
+
+		case "packet_conn_wrappers":
+			for nesting := d.Nesting(); d.NextBlock(nesting); {
+				modID := "caddy.packetconns." + d.Val()
+				unm, err := caddyfile.UnmarshalModule(d, modID)
+				if err != nil {
+					return nil, err
+				}
+				packetConnWrapper, ok := unm.(caddy.PacketConnWrapper)
+				if !ok {
+					return nil, fmt.Errorf("module %s (%T) is not a packet conn wrapper", modID, unm)
+				}
+				jsonPacketConnWrapper := caddyconfig.JSONModuleObject(
+					packetConnWrapper,
+					"wrapper",
+					packetConnWrapper.(caddy.Module).CaddyModule().ID.Name(),
+					nil,
+				)
+				serverOpts.PacketConnWrappersRaw = append(serverOpts.PacketConnWrappersRaw, jsonPacketConnWrapper)
 			}
 
 		case "timeouts":
@@ -141,6 +167,7 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 					return nil, d.Errf("unrecognized timeouts option '%s'", d.Val())
 				}
 			}
+
 		case "keepalive_interval":
 			if !d.NextArg() {
 				return nil, d.ArgErr()
@@ -150,6 +177,26 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 				return nil, d.Errf("parsing keepalive interval duration: %v", err)
 			}
 			serverOpts.KeepAliveInterval = caddy.Duration(dur)
+
+		case "keepalive_idle":
+			if !d.NextArg() {
+				return nil, d.ArgErr()
+			}
+			dur, err := caddy.ParseDuration(d.Val())
+			if err != nil {
+				return nil, d.Errf("parsing keepalive idle duration: %v", err)
+			}
+			serverOpts.KeepAliveIdle = caddy.Duration(dur)
+
+		case "keepalive_count":
+			if !d.NextArg() {
+				return nil, d.ArgErr()
+			}
+			cnt, err := strconv.ParseInt(d.Val(), 10, 32)
+			if err != nil {
+				return nil, d.Errf("parsing keepalive count int: %v", err)
+			}
+			serverOpts.KeepAliveCount = int(cnt)
 
 		case "max_header_size":
 			var sizeStr string
@@ -180,7 +227,7 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 				if proto != "h1" && proto != "h2" && proto != "h2c" && proto != "h3" {
 					return nil, d.Errf("unknown protocol '%s': expected h1, h2, h2c, or h3", proto)
 				}
-				if sliceContains(serverOpts.Protocols, proto) {
+				if slices.Contains(serverOpts.Protocols, proto) {
 					return nil, d.Errf("protocol %s specified more than once", proto)
 				}
 				serverOpts.Protocols = append(serverOpts.Protocols, proto)
@@ -226,10 +273,16 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 			}
 			serverOpts.TrustedProxiesStrict = 1
 
+		case "trusted_proxies_unix":
+			if d.NextArg() {
+				return nil, d.ArgErr()
+			}
+			serverOpts.TrustedProxiesUnix = true
+
 		case "client_ip_headers":
 			headers := d.RemainingArgs()
 			for _, header := range headers {
-				if sliceContains(serverOpts.ClientIPHeaders, header) {
+				if slices.Contains(serverOpts.ClientIPHeaders, header) {
 					return nil, d.Errf("client IP header %s specified more than once", header)
 				}
 				serverOpts.ClientIPHeaders = append(serverOpts.ClientIPHeaders, header)
@@ -239,13 +292,16 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 			}
 
 		case "metrics":
-			if d.NextArg() {
-				return nil, d.ArgErr()
-			}
-			if nesting := d.Nesting(); d.NextBlock(nesting) {
-				return nil, d.ArgErr()
-			}
+			caddy.Log().Warn("The nested 'metrics' option inside `servers` is deprecated and will be removed in the next major version. Use the global 'metrics' option instead.")
 			serverOpts.Metrics = new(caddyhttp.Metrics)
+			for nesting := d.Nesting(); d.NextBlock(nesting); {
+				switch d.Val() {
+				case "per_host":
+					serverOpts.Metrics.PerHost = true
+				default:
+					return nil, d.Errf("unrecognized metrics option '%s'", d.Val())
+				}
+			}
 
 		case "trace":
 			if d.NextArg() {
@@ -288,32 +344,26 @@ func applyServerOptions(
 
 	for key, server := range servers {
 		// find the options that apply to this server
-		opts := func() *serverOptions {
-			for _, entry := range serverOpts {
-				if entry.ListenerAddress == "" {
-					return &entry
-				}
-				for _, listener := range server.Listen {
-					if entry.ListenerAddress == listener {
-						return &entry
-					}
-				}
-			}
-			return nil
-		}()
+		optsIndex := slices.IndexFunc(serverOpts, func(s serverOptions) bool {
+			return s.ListenerAddress == "" || slices.Contains(server.Listen, s.ListenerAddress)
+		})
 
 		// if none apply, then move to the next server
-		if opts == nil {
+		if optsIndex == -1 {
 			continue
 		}
+		opts := serverOpts[optsIndex]
 
 		// set all the options
 		server.ListenerWrappersRaw = opts.ListenerWrappersRaw
+		server.PacketConnWrappersRaw = opts.PacketConnWrappersRaw
 		server.ReadTimeout = opts.ReadTimeout
 		server.ReadHeaderTimeout = opts.ReadHeaderTimeout
 		server.WriteTimeout = opts.WriteTimeout
 		server.IdleTimeout = opts.IdleTimeout
 		server.KeepAliveInterval = opts.KeepAliveInterval
+		server.KeepAliveIdle = opts.KeepAliveIdle
+		server.KeepAliveCount = opts.KeepAliveCount
 		server.MaxHeaderBytes = opts.MaxHeaderBytes
 		server.EnableFullDuplex = opts.EnableFullDuplex
 		server.Protocols = opts.Protocols
@@ -321,6 +371,7 @@ func applyServerOptions(
 		server.TrustedProxiesRaw = opts.TrustedProxiesRaw
 		server.ClientIPHeaders = opts.ClientIPHeaders
 		server.TrustedProxiesStrict = opts.TrustedProxiesStrict
+		server.TrustedProxiesUnix = opts.TrustedProxiesUnix
 		server.Metrics = opts.Metrics
 		if opts.ShouldLogCredentials {
 			if server.Logs == nil {

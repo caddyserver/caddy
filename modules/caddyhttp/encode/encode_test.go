@@ -2,14 +2,15 @@ package encode
 
 import (
 	"net/http"
+	"slices"
 	"sync"
 	"testing"
 )
 
 func BenchmarkOpenResponseWriter(b *testing.B) {
 	enc := new(Encode)
-	for n := 0; n < b.N; n++ {
-		enc.openResponseWriter("test", nil)
+	for b.Loop() {
+		enc.openResponseWriter("test", nil, false)
 	}
 }
 
@@ -112,25 +113,13 @@ func TestPreferOrder(t *testing.T) {
 			}
 			enc.Prefer = test.prefer
 			result := AcceptedEncodings(r, enc.Prefer)
-			if !sliceEqual(result, test.expected) {
+			if !slices.Equal(result, test.expected) {
 				t.Errorf("AcceptedEncodings() actual: %s expected: %s",
 					result,
 					test.expected)
 			}
 		})
 	}
-}
-
-func sliceEqual(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func TestValidate(t *testing.T) {

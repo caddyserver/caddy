@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"net/http"
 
+	"go.opentelemetry.io/contrib/exporters/autoexport"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/contrib/propagators/autoprop"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -59,7 +59,7 @@ func newOpenTelemetryWrapper(
 		return ot, fmt.Errorf("creating resource error: %w", err)
 	}
 
-	traceExporter, err := otlptracegrpc.New(ctx)
+	traceExporter, err := autoexport.NewSpanExporter(ctx)
 	if err != nil {
 		return ot, fmt.Errorf("creating trace exporter error: %w", err)
 	}
@@ -88,11 +88,15 @@ func (ot *openTelemetryWrapper) serveHTTP(w http.ResponseWriter, r *http.Request
 	spanCtx := trace.SpanContextFromContext(ctx)
 	if spanCtx.IsValid() {
 		traceID := spanCtx.TraceID().String()
+		spanID := spanCtx.SpanID().String()
 		// Add a trace_id placeholder, accessible via `{http.vars.trace_id}`.
 		caddyhttp.SetVar(ctx, "trace_id", traceID)
-		// Add the trace id to the log fields for the request.
+		// Add a span_id placeholder, accessible via `{http.vars.span_id}`.
+		caddyhttp.SetVar(ctx, "span_id", spanID)
+		// Add the traceID and spanID to the log fields for the request.
 		if extra, ok := ctx.Value(caddyhttp.ExtraLogFieldsCtxKey).(*caddyhttp.ExtraLogFields); ok {
 			extra.Add(zap.String("traceID", traceID))
+			extra.Add(zap.String("spanID", spanID))
 		}
 	}
 	next := ctx.Value(nextCallCtxKey).(*nextCall)

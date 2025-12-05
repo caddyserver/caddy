@@ -18,7 +18,11 @@ package caddy
 
 import (
 	"context"
+	"fmt"
 	"net"
+	"os"
+	"slices"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -26,15 +30,54 @@ import (
 	"go.uber.org/zap"
 )
 
-func reuseUnixSocket(network, addr string) (any, error) {
+func reuseUnixSocket(_, _ string) (any, error) {
 	return nil, nil
 }
 
 func listenReusable(ctx context.Context, lnKey string, network, address string, config net.ListenConfig) (any, error) {
-	switch network {
-	case "udp", "udp4", "udp6", "unixgram":
+	var socketFile *os.File
+
+	fd := slices.Contains([]string{"fd", "fdgram"}, network)
+	if fd {
+		socketFd, err := strconv.ParseUint(address, 0, strconv.IntSize)
+		if err != nil {
+			return nil, fmt.Errorf("invalid file descriptor: %v", err)
+		}
+
+		func() {
+			socketFilesMu.Lock()
+			defer socketFilesMu.Unlock()
+
+			socketFdWide := uintptr(socketFd)
+			var ok bool
+
+			socketFile, ok = socketFiles[socketFdWide]
+
+			if !ok {
+				socketFile = os.NewFile(socketFdWide, lnKey)
+				if socketFile != nil {
+					socketFiles[socketFdWide] = socketFile
+				}
+			}
+		}()
+
+		if socketFile == nil {
+			return nil, fmt.Errorf("invalid socket file descriptor: %d", socketFd)
+		}
+	}
+
+	datagram := slices.Contains([]string{"udp", "udp4", "udp6", "unixgram", "fdgram"}, network)
+	if datagram {
 		sharedPc, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
-			pc, err := config.ListenPacket(ctx, network, address)
+			var (
+				pc  net.PacketConn
+				err error
+			)
+			if fd {
+				pc, err = net.FilePacketConn(socketFile)
+			} else {
+				pc, err = config.ListenPacket(ctx, network, address)
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -44,20 +87,28 @@ func listenReusable(ctx context.Context, lnKey string, network, address string, 
 			return nil, err
 		}
 		return &fakeClosePacketConn{sharedPacketConn: sharedPc.(*sharedPacketConn)}, nil
+	}
 
-	default:
-		sharedLn, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
-			ln, err := config.Listen(ctx, network, address)
-			if err != nil {
-				return nil, err
-			}
-			return &sharedListener{Listener: ln, key: lnKey}, nil
-		})
+	sharedLn, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
+		var (
+			ln  net.Listener
+			err error
+		)
+		if fd {
+			ln, err = net.FileListener(socketFile)
+		} else {
+			ln, err = config.Listen(ctx, network, address)
+		}
 		if err != nil {
 			return nil, err
 		}
-		return &fakeCloseListener{sharedListener: sharedLn.(*sharedListener), keepAlivePeriod: config.KeepAlive}, nil
+		return &sharedListener{Listener: ln, key: lnKey}, nil
+	})
+	if err != nil {
+		return nil, err
 	}
+
+	return &fakeCloseListener{sharedListener: sharedLn.(*sharedListener), keepAliveConfig: config.KeepAliveConfig}, nil
 }
 
 // fakeCloseListener is a private wrapper over a listener that
@@ -71,12 +122,11 @@ func listenReusable(ctx context.Context, lnKey string, network, address string, 
 type fakeCloseListener struct {
 	closed          int32 // accessed atomically; belongs to this struct only
 	*sharedListener       // embedded, so we also become a net.Listener
-	keepAlivePeriod time.Duration
+	keepAliveConfig net.KeepAliveConfig
 }
 
-type canSetKeepAlive interface {
-	SetKeepAlivePeriod(d time.Duration) error
-	SetKeepAlive(bool) error
+type canSetKeepAliveConfig interface {
+	SetKeepAliveConfig(config net.KeepAliveConfig) error
 }
 
 func (fcl *fakeCloseListener) Accept() (net.Conn, error) {
@@ -90,12 +140,8 @@ func (fcl *fakeCloseListener) Accept() (net.Conn, error) {
 	if err == nil {
 		// if 0, do nothing, Go's default is already set
 		// and if the connection allows setting KeepAlive, set it
-		if tconn, ok := conn.(canSetKeepAlive); ok && fcl.keepAlivePeriod != 0 {
-			if fcl.keepAlivePeriod > 0 {
-				err = tconn.SetKeepAlivePeriod(fcl.keepAlivePeriod)
-			} else { // negative
-				err = tconn.SetKeepAlive(false)
-			}
+		if tconn, ok := conn.(canSetKeepAliveConfig); ok && fcl.keepAliveConfig.Enable {
+			err = tconn.SetKeepAliveConfig(fcl.keepAliveConfig)
 			if err != nil {
 				Log().With(zap.String("server", fcl.sharedListener.key)).Warn("unable to set keepalive for new connection:", zap.Error(err))
 			}
@@ -215,14 +261,14 @@ func (fcpc *fakeClosePacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err e
 		if atomic.LoadInt32(&fcpc.closed) == 1 {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				if err = fcpc.SetReadDeadline(time.Time{}); err != nil {
-					return
+					return n, addr, err
 				}
 			}
 		}
-		return
+		return n, addr, err
 	}
 
-	return
+	return n, addr, err
 }
 
 // Close won't close the underlying socket unless there is no more reference, then listenerPool will close it.
@@ -260,3 +306,9 @@ var (
 		Unwrap() net.PacketConn
 	}) = (*fakeClosePacketConn)(nil)
 )
+
+// socketFiles is a fd -> *os.File map used to make a FileListener/FilePacketConn from a socket file descriptor.
+var socketFiles = map[uintptr]*os.File{}
+
+// socketFilesMu synchronizes socketFiles insertions
+var socketFilesMu sync.Mutex

@@ -111,8 +111,8 @@ func (r *WeightedRoundRobinSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser)
 		if err != nil {
 			return d.Errf("invalid weight value '%s': %v", weight, err)
 		}
-		if weightInt < 1 {
-			return d.Errf("invalid weight value '%s': weight should be non-zero and positive", weight)
+		if weightInt < 0 {
+			return d.Errf("invalid weight value '%s': weight should be non-negative", weight)
 		}
 		r.Weights = append(r.Weights, weightInt)
 	}
@@ -136,8 +136,15 @@ func (r *WeightedRoundRobinSelection) Select(pool UpstreamPool, _ *http.Request,
 		return pool[0]
 	}
 	var index, totalWeight int
+	var weights []int
+
+	for _, w := range r.Weights {
+		if w > 0 {
+			weights = append(weights, w)
+		}
+	}
 	currentWeight := int(atomic.AddUint32(&r.index, 1)) % r.totalWeight
-	for i, weight := range r.Weights {
+	for i, weight := range weights {
 		totalWeight += weight
 		if currentWeight < totalWeight {
 			index = i
@@ -145,9 +152,9 @@ func (r *WeightedRoundRobinSelection) Select(pool UpstreamPool, _ *http.Request,
 		}
 	}
 
-	upstreams := make([]*Upstream, 0, len(r.Weights))
-	for _, upstream := range pool {
-		if !upstream.Available() {
+	upstreams := make([]*Upstream, 0, len(weights))
+	for i, upstream := range pool {
+		if !upstream.Available() || r.Weights[i] == 0 {
 			continue
 		}
 		upstreams = append(upstreams, upstream)
@@ -212,10 +219,7 @@ func (r RandomChoiceSelection) Validate() error {
 
 // Select returns an available host, if any.
 func (r RandomChoiceSelection) Select(pool UpstreamPool, _ *http.Request, _ http.ResponseWriter) *Upstream {
-	k := r.Choose
-	if k > len(pool) {
-		k = len(pool)
-	}
+	k := min(r.Choose, len(pool))
 	choices := make([]*Upstream, k)
 	for i, upstream := range pool {
 		if !upstream.Available() {
@@ -801,7 +805,7 @@ func leastRequests(upstreams []*Upstream) *Upstream {
 		return nil
 	}
 	var best []*Upstream
-	var bestReqs int = -1
+	bestReqs := -1
 	for _, upstream := range upstreams {
 		if upstream == nil {
 			continue

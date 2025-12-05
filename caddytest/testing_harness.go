@@ -71,7 +71,7 @@ func (tc *TestHarness) LoadConfig(rawConfig, configType string) {
 
 func (tc *TestHarness) init() {
 	// start the server
-	tester, err := NewTester()
+	tester, err := NewTester(tc.t)
 	if err != nil {
 		tc.t.Errorf("Failed to create caddy tester: %s", err)
 		return
@@ -87,7 +87,7 @@ func (tc *TestHarness) init() {
 	tc.t.Cleanup(func() {
 		func() {
 			if tc.t.Failed() {
-				res, err := http.Get(fmt.Sprintf("http://localhost:%d/config/", tc.tester.adminPort))
+				res, err := http.Get(fmt.Sprintf("http://localhost:%d/config/", tc.tester.AdminPort()))
 				if err != nil {
 					tc.t.Log("unable to read the current config")
 					return
@@ -100,7 +100,7 @@ func (tc *TestHarness) init() {
 				tc.t.Logf("----------- failed with config -----------\n%s", out.String())
 			}
 		}()
-		// shutdown server after extracing the config
+		// shutdown server after extracting the config
 		err = tc.tester.CleanupCaddy()
 		if err != nil {
 			tc.t.Errorf("failed to clean up caddy instance: %s", err)

@@ -22,15 +22,16 @@ import (
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
 func init() {
 	caddy.RegisterModule(LeafFolderLoader{})
 }
 
-// LeafFolderLoader loads certificates and their associated keys from disk
+// LeafFolderLoader loads certificates from disk
 // by recursively walking the specified directories, looking for PEM
-// files which contain both a certificate and a key.
+// files which contain a certificate.
 type LeafFolderLoader struct {
 	Folders []string `json:"folders,omitempty"`
 }
@@ -52,6 +53,13 @@ func (fl *LeafFolderLoader) Provision(ctx caddy.Context) error {
 	for k, path := range fl.Folders {
 		fl.Folders[k] = repl.ReplaceKnown(path, "")
 	}
+	return nil
+}
+
+// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+func (fl *LeafFolderLoader) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	d.NextArg()
+	fl.Folders = append(fl.Folders, d.RemainingArgs()...)
 	return nil
 }
 
@@ -94,4 +102,5 @@ func (fl LeafFolderLoader) LoadLeafCertificates() ([]*x509.Certificate, error) {
 var (
 	_ LeafCertificateLoader = (*LeafFolderLoader)(nil)
 	_ caddy.Provisioner     = (*LeafFolderLoader)(nil)
+	_ caddyfile.Unmarshaler = (*LeafFolderLoader)(nil)
 )

@@ -75,8 +75,8 @@ For proxying:
 			cmd.Flags().BoolP("insecure", "", false, "Disable TLS verification (WARNING: DISABLES SECURITY BY NOT VERIFYING TLS CERTIFICATES!)")
 			cmd.Flags().BoolP("disable-redirects", "r", false, "Disable HTTP->HTTPS redirects")
 			cmd.Flags().BoolP("internal-certs", "i", false, "Use internal CA for issuing certs")
-			cmd.Flags().StringSliceP("header-up", "H", []string{}, "Set a request header to send to the upstream (format: \"Field: value\")")
-			cmd.Flags().StringSliceP("header-down", "d", []string{}, "Set a response header to send back to the client (format: \"Field: value\")")
+			cmd.Flags().StringArrayP("header-up", "H", []string{}, "Set a request header to send to the upstream (format: \"Field: value\")")
+			cmd.Flags().StringArrayP("header-down", "d", []string{}, "Set a response header to send back to the client (format: \"Field: value\")")
 			cmd.Flags().BoolP("access-log", "", false, "Enable the access log")
 			cmd.Flags().BoolP("debug", "v", false, "Enable verbose debug logs")
 			cmd.RunE = caddycmd.WrapCommandFuncForCobra(cmdReverseProxy)
@@ -122,9 +122,10 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 		}
 	}
 	if fromAddr.Port == "" {
-		if fromAddr.Scheme == "http" {
+		switch fromAddr.Scheme {
+		case "http":
 			fromAddr.Port = httpPort
-		} else if fromAddr.Scheme == "https" {
+		case "https":
 			fromAddr.Port = httpsPort
 		}
 	}
@@ -181,7 +182,7 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 	}
 
 	// set up header_up
-	headerUp, err := fs.GetStringSlice("header-up")
+	headerUp, err := fs.GetStringArray("header-up")
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("invalid header flag: %v", err)
 	}
@@ -203,7 +204,7 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 	}
 
 	// set up header_down
-	headerDown, err := fs.GetStringSlice("header-down")
+	headerDown, err := fs.GetStringArray("header-down")
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("invalid header flag: %v", err)
 	}
@@ -229,11 +230,13 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 
 	if changeHost {
 		if handler.Headers == nil {
-			handler.Headers = &headers.Handler{
-				Request: &headers.HeaderOps{
-					Set: http.Header{},
-				},
-			}
+			handler.Headers = new(headers.Handler)
+		}
+		if handler.Headers.Request == nil {
+			handler.Headers.Request = new(headers.HeaderOps)
+		}
+		if handler.Headers.Request.Set == nil {
+			handler.Headers.Request.Set = http.Header{}
 		}
 		handler.Headers.Request.Set.Set("Host", "{http.reverse_proxy.upstream.hostport}")
 	}

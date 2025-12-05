@@ -1,0 +1,10 @@
+:80
+
+handle {
+	respond <<END
+	line1
+	line2
+  END
+}
+----------
+mismatched leading whitespace in heredoc <<END on line #5 [	line1], expected whitespace [  ] to match the closing marker

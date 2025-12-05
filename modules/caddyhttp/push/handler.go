@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -92,14 +93,17 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 
 	// push first!
 	for _, resource := range h.Resources {
-		h.logger.Debug("pushing resource",
-			zap.String("uri", r.RequestURI),
-			zap.String("push_method", resource.Method),
-			zap.String("push_target", resource.Target),
-			zap.Object("push_headers", caddyhttp.LoggableHTTPHeader{
-				Header:               hdr,
-				ShouldLogCredentials: shouldLogCredentials,
-			}))
+		if c := h.logger.Check(zapcore.DebugLevel, "pushing resource"); c != nil {
+			c.Write(
+				zap.String("uri", r.RequestURI),
+				zap.String("push_method", resource.Method),
+				zap.String("push_target", resource.Target),
+				zap.Object("push_headers", caddyhttp.LoggableHTTPHeader{
+					Header:               hdr,
+					ShouldLogCredentials: shouldLogCredentials,
+				}),
+			)
+		}
 		err := pusher.Push(repl.ReplaceAll(resource.Target, "."), &http.PushOptions{
 			Method: resource.Method,
 			Header: hdr,
@@ -209,7 +213,9 @@ func (lp linkPusher) WriteHeader(statusCode int) {
 	if links, ok := lp.ResponseWriter.Header()["Link"]; ok {
 		// only initiate these pushes if it hasn't been done yet
 		if val := caddyhttp.GetVar(lp.request.Context(), pushedLink); val == nil {
-			lp.handler.logger.Debug("pushing Link resources", zap.Strings("linked", links))
+			if c := lp.handler.logger.Check(zapcore.DebugLevel, "pushing Link resources"); c != nil {
+				c.Write(zap.Strings("linked", links))
+			}
 			caddyhttp.SetVar(lp.request.Context(), pushedLink, true)
 			lp.handler.servePreloadLinks(lp.pusher, lp.header, links)
 		}

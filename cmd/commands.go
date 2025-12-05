@@ -20,6 +20,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
@@ -80,10 +81,16 @@ type CommandFunc func(Flags) (int, error)
 // Commands returns a list of commands initialised by
 // RegisterCommand
 func Commands() map[string]Command {
+	commandsMu.RLock()
+	defer commandsMu.RUnlock()
+
 	return commands
 }
 
-var commands = make(map[string]Command)
+var (
+	commandsMu sync.RWMutex
+	commands   = make(map[string]Command)
+)
 
 func init() {
 	RegisterCommand(Command{
@@ -286,6 +293,8 @@ zero exit status will be returned.
 
 If --envfile is specified, an environment file with environment variables
 in the KEY=VALUE format will be loaded into the Caddy process.
+
+If you wish to use stdin instead of a regular file, use - as the path.
 `,
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().StringP("config", "c", "", "Configuration file to adapt (required)")
@@ -383,11 +392,12 @@ lines will be prefixed with '-' and '+' where they differ. Note that
 unchanged lines are prefixed with two spaces for alignment, and that this
 is not a valid patch format.
 
-If you wish you use stdin instead of a regular file, use - as the path.
+If you wish to use stdin instead of a regular file, use - as the path.
 When reading from stdin, the --overwrite flag has no effect: the result
 is always printed to stdout.
 `,
 		CobraFunc: func(cmd *cobra.Command) {
+			cmd.Flags().StringP("config", "c", "", "Configuration file")
 			cmd.Flags().BoolP("overwrite", "w", false, "Overwrite the input file with the results")
 			cmd.Flags().BoolP("diff", "d", false, "Print the differences between the input file and the formatted output")
 			cmd.RunE = WrapCommandFuncForCobra(cmdFmt)
@@ -409,12 +419,13 @@ latest versions. EXPERIMENTAL: May be changed or removed.
 
 	RegisterCommand(Command{
 		Name:  "add-package",
-		Usage: "<packages...>",
+		Usage: "<package[@version]...>",
 		Short: "Adds Caddy packages (EXPERIMENTAL)",
 		Long: `
 Downloads an updated Caddy binary with the specified packages (module/plugin)
-added. Retains existing packages. Returns an error if the any of packages are
-already included. EXPERIMENTAL: May be changed or removed.
+added, with an optional version specified (e.g., "package@version"). Retains
+existing packages. Returns an error if any of the specified packages are already
+included. EXPERIMENTAL: May be changed or removed.
 `,
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().BoolP("keep-backup", "k", false, "Keep the backed up binary, instead of deleting it")
@@ -438,43 +449,43 @@ EXPERIMENTAL: May be changed or removed.
 		},
 	})
 
-	RegisterCommand(Command{
-		Name:  "manpage",
-		Usage: "--directory <path>",
-		Short: "Generates the manual pages for Caddy commands",
-		Long: `
+	defaultFactory.Use(func(rootCmd *cobra.Command) {
+		manpageCommand := Command{
+			Name:  "manpage",
+			Usage: "--directory <path>",
+			Short: "Generates the manual pages for Caddy commands",
+			Long: `
 Generates the manual pages for Caddy commands into the designated directory
 tagged into section 8 (System Administration).
 
 The manual page files are generated into the directory specified by the
 argument of --directory. If the directory does not exist, it will be created.
 `,
-		CobraFunc: func(cmd *cobra.Command) {
-			cmd.Flags().StringP("directory", "o", "", "The output directory where the manpages are generated")
-			cmd.RunE = WrapCommandFuncForCobra(func(fl Flags) (int, error) {
-				dir := strings.TrimSpace(fl.String("directory"))
-				if dir == "" {
-					return caddy.ExitCodeFailedQuit, fmt.Errorf("designated output directory and specified section are required")
-				}
-				if err := os.MkdirAll(dir, 0o755); err != nil {
-					return caddy.ExitCodeFailedQuit, err
-				}
-				ccmd := defaultFactory.Build()
-				if err := doc.GenManTree(ccmd, &doc.GenManHeader{
-					Title:   "Caddy",
-					Section: "8", // https://en.wikipedia.org/wiki/Man_page#Manual_sections
-				}, dir); err != nil {
-					return caddy.ExitCodeFailedQuit, err
-				}
-				return caddy.ExitCodeSuccess, nil
-			})
-		},
-	})
+			CobraFunc: func(cmd *cobra.Command) {
+				cmd.Flags().StringP("directory", "o", "", "The output directory where the manpages are generated")
+				cmd.RunE = WrapCommandFuncForCobra(func(fl Flags) (int, error) {
+					dir := strings.TrimSpace(fl.String("directory"))
+					if dir == "" {
+						return caddy.ExitCodeFailedQuit, fmt.Errorf("designated output directory and specified section are required")
+					}
+					if err := os.MkdirAll(dir, 0o755); err != nil {
+						return caddy.ExitCodeFailedQuit, err
+					}
+					if err := doc.GenManTree(rootCmd, &doc.GenManHeader{
+						Title:   "Caddy",
+						Section: "8", // https://en.wikipedia.org/wiki/Man_page#Manual_sections
+					}, dir); err != nil {
+						return caddy.ExitCodeFailedQuit, err
+					}
+					return caddy.ExitCodeSuccess, nil
+				})
+			},
+		}
 
-	// source: https://github.com/spf13/cobra/blob/main/shell_completions.md
-	defaultFactory.Use(func(ccmd *cobra.Command) {
-		ccmd.AddCommand(&cobra.Command{
-			Use:   "completion [bash|zsh|fish|powershell]",
+		// source: https://github.com/spf13/cobra/blob/6dec1ae26659a130bdb4c985768d1853b0e1bc06/site/content/completions/_index.md
+		completionCommand := Command{
+			Name:  "completion",
+			Usage: "[bash|zsh|fish|powershell]",
 			Short: "Generate completion script",
 			Long: fmt.Sprintf(`To load completions:
 
@@ -514,25 +525,39 @@ argument of --directory. If the directory does not exist, it will be created.
 	  # To load completions for every new session, run:
 	  PS> %[1]s completion powershell > %[1]s.ps1
 	  # and source this file from your PowerShell profile.
-	`, defaultFactory.constructor().Name()),
-			DisableFlagsInUseLine: true,
-			ValidArgs:             []string{"bash", "zsh", "fish", "powershell"},
-			Args:                  cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
-			RunE: func(cmd *cobra.Command, args []string) error {
-				switch args[0] {
-				case "bash":
-					return cmd.Root().GenBashCompletion(os.Stdout)
-				case "zsh":
-					return cmd.Root().GenZshCompletion(os.Stdout)
-				case "fish":
-					return cmd.Root().GenFishCompletion(os.Stdout, true)
-				case "powershell":
-					return cmd.Root().GenPowerShellCompletionWithDesc(os.Stdout)
-				default:
-					return fmt.Errorf("unrecognized shell: %s", args[0])
+
+	`, rootCmd.Root().Name()),
+			CobraFunc: func(cmd *cobra.Command) {
+				cmd.DisableFlagsInUseLine = true
+				cmd.ValidArgs = []string{"bash", "zsh", "fish", "powershell"}
+				cmd.Args = cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs)
+				cmd.RunE = func(cmd *cobra.Command, args []string) error {
+					switch args[0] {
+					case "bash":
+						return cmd.Root().GenBashCompletion(os.Stdout)
+					case "zsh":
+						return cmd.Root().GenZshCompletion(os.Stdout)
+					case "fish":
+						return cmd.Root().GenFishCompletion(os.Stdout, true)
+					case "powershell":
+						return cmd.Root().GenPowerShellCompletionWithDesc(os.Stdout)
+					default:
+						return fmt.Errorf("unrecognized shell: %s", args[0])
+					}
 				}
 			},
-		})
+		}
+
+		rootCmd.AddCommand(caddyCmdToCobra(manpageCommand))
+		rootCmd.AddCommand(caddyCmdToCobra(completionCommand))
+
+		// add manpage and completion commands to the map of
+		// available commands, because they're not registered
+		// through RegisterCommand.
+		commandsMu.Lock()
+		commands[manpageCommand.Name] = manpageCommand
+		commands[completionCommand.Name] = completionCommand
+		commandsMu.Unlock()
 	})
 }
 
@@ -551,6 +576,9 @@ argument of --directory. If the directory does not exist, it will be created.
 //
 // This function should be used in init().
 func RegisterCommand(cmd Command) {
+	commandsMu.Lock()
+	defer commandsMu.Unlock()
+
 	if cmd.Name == "" {
 		panic("command name is required")
 	}
@@ -566,9 +594,10 @@ func RegisterCommand(cmd Command) {
 	if !commandNameRegex.MatchString(cmd.Name) {
 		panic("invalid command name")
 	}
-	defaultFactory.Use(func(ccmd *cobra.Command) {
-		ccmd.AddCommand(caddyCmdToCobra(cmd))
+	defaultFactory.Use(func(rootCmd *cobra.Command) {
+		rootCmd.AddCommand(caddyCmdToCobra(cmd))
 	})
+	commands[cmd.Name] = cmd
 }
 
 var commandNameRegex = regexp.MustCompile(`^[a-z0-9]$|^([a-z0-9]+-?[a-z0-9]*)+[a-z0-9]$`)

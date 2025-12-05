@@ -40,6 +40,9 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
 // FCGIListenSockFileno describes listen socket file number.
@@ -135,6 +138,15 @@ type client struct {
 // Do made the request and returns a io.Reader that translates the data read
 // from fcgi responder out of fcgi packet before returning it.
 func (c *client) Do(p map[string]string, req io.Reader) (r io.Reader, err error) {
+	// check for CONTENT_LENGTH, since the lack of it or wrong value will cause the backend to hang
+	if clStr, ok := p["CONTENT_LENGTH"]; !ok {
+		return nil, caddyhttp.Error(http.StatusLengthRequired, nil)
+	} else if _, err := strconv.ParseUint(clStr, 10, 64); err != nil {
+		// stdlib won't return a negative Content-Length, but we check just in case,
+		// the most likely cause is from a missing content length, which is -1
+		return nil, caddyhttp.Error(http.StatusLengthRequired, err)
+	}
+
 	writer := &streamWriter{c: c}
 	writer.buf = bufPool.Get().(*bytes.Buffer)
 	writer.buf.Reset()
@@ -142,13 +154,13 @@ func (c *client) Do(p map[string]string, req io.Reader) (r io.Reader, err error)
 
 	err = writer.writeBeginRequest(uint16(Responder), 0)
 	if err != nil {
-		return
+		return r, err
 	}
 
 	writer.recType = Params
 	err = writer.writePairs(p)
 	if err != nil {
-		return
+		return r, err
 	}
 
 	writer.recType = Stdin
@@ -164,7 +176,7 @@ func (c *client) Do(p map[string]string, req io.Reader) (r io.Reader, err error)
 	}
 
 	r = &streamReader{c: c}
-	return
+	return r, err
 }
 
 // clientCloser is a io.ReadCloser. It wraps a io.Reader with a Closer
@@ -184,10 +196,13 @@ func (f clientCloser) Close() error {
 		return f.rwc.Close()
 	}
 
+	logLevel := zapcore.WarnLevel
 	if f.status >= 400 {
-		f.logger.Error("stderr", zap.ByteString("body", stderr))
-	} else {
-		f.logger.Warn("stderr", zap.ByteString("body", stderr))
+		logLevel = zapcore.ErrorLevel
+	}
+
+	if c := f.logger.Check(logLevel, "stderr"); c != nil {
+		c.Write(zap.ByteString("body", stderr))
 	}
 
 	return f.rwc.Close()
@@ -198,7 +213,7 @@ func (f clientCloser) Close() error {
 func (c *client) Request(p map[string]string, req io.Reader) (resp *http.Response, err error) {
 	r, err := c.Do(p, req)
 	if err != nil {
-		return
+		return resp, err
 	}
 
 	rb := bufio.NewReader(r)
@@ -208,7 +223,7 @@ func (c *client) Request(p map[string]string, req io.Reader) (resp *http.Respons
 	// Parse the response headers.
 	mimeHeader, err := tp.ReadMIMEHeader()
 	if err != nil && err != io.EOF {
-		return
+		return resp, err
 	}
 	resp.Header = http.Header(mimeHeader)
 
@@ -216,7 +231,7 @@ func (c *client) Request(p map[string]string, req io.Reader) (resp *http.Respons
 		statusNumber, statusInfo, statusIsCut := strings.Cut(resp.Header.Get("Status"), " ")
 		resp.StatusCode, err = strconv.Atoi(statusNumber)
 		if err != nil {
-			return
+			return resp, err
 		}
 		if statusIsCut {
 			resp.Status = statusInfo
@@ -245,7 +260,7 @@ func (c *client) Request(p map[string]string, req io.Reader) (resp *http.Respons
 	}
 	resp.Body = closer
 
-	return
+	return resp, err
 }
 
 // Get issues a GET request to the fcgi responder.
@@ -314,7 +329,7 @@ func (c *client) PostFile(p map[string]string, data url.Values, file map[string]
 		for _, v0 := range val {
 			err = writer.WriteField(key, v0)
 			if err != nil {
-				return
+				return resp, err
 			}
 		}
 	}
@@ -332,13 +347,13 @@ func (c *client) PostFile(p map[string]string, data url.Values, file map[string]
 		}
 		_, err = io.Copy(part, fd)
 		if err != nil {
-			return
+			return resp, err
 		}
 	}
 
 	err = writer.Close()
 	if err != nil {
-		return
+		return resp, err
 	}
 
 	return c.Post(p, "POST", bodyType, buf, int64(buf.Len()))

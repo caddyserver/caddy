@@ -6,13 +6,16 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"fmt"
+	"log/slog"
 	"strings"
 	"testing"
 
-	"github.com/caddyserver/caddy/v2"
+	"github.com/mholt/acmez/v3"
+	"github.com/mholt/acmez/v3/acme"
+	"go.uber.org/zap"
+	"go.uber.org/zap/exp/zapslog"
+
 	"github.com/caddyserver/caddy/v2/caddytest"
-	"github.com/mholt/acmez/v2"
-	"github.com/mholt/acmez/v2/acme"
 )
 
 func TestACMEServerDirectory(t *testing.T) {
@@ -30,7 +33,7 @@ func TestACMEServerDirectory(t *testing.T) {
 			}
 		}
 	}
-	acme.localhost:{$TESTING_CADDY_PORT_TWO} {
+	https://acme.localhost:{$TESTING_CADDY_PORT_TWO} {
 		acme_server
 	}
   `, "caddyfile")
@@ -67,13 +70,17 @@ func TestACMEServerAllowPolicy(t *testing.T) {
   `, "caddyfile")
 
 	ctx := context.Background()
-	logger := caddy.Log().Named("acmez")
+	logger, err := zap.NewDevelopment()
+	if err != nil {
+		t.Error(err)
+		return
+	}
 
 	client := acmez.Client{
 		Client: &acme.Client{
 			Directory:  fmt.Sprintf("https://acme.localhost:%d/acme/local/directory", harness.Tester().PortTwo()),
 			HTTPClient: harness.Client(),
-			Logger:     logger,
+			Logger:     slog.New(zapslog.NewHandler(logger.Core())),
 		},
 		ChallengeSolvers: map[string]acmez.Solver{
 			acme.ChallengeTypeHTTP01: &naiveHTTPSolver{logger: logger},
@@ -152,13 +159,17 @@ func TestACMEServerDenyPolicy(t *testing.T) {
   `, "caddyfile")
 
 	ctx := context.Background()
-	logger := caddy.Log().Named("acmez")
+	logger, err := zap.NewDevelopment()
+	if err != nil {
+		t.Error(err)
+		return
+	}
 
 	client := acmez.Client{
 		Client: &acme.Client{
 			Directory:  fmt.Sprintf("https://acme.localhost:%d/acme/local/directory", harness.Tester().PortTwo()),
 			HTTPClient: harness.Client(),
-			Logger:     logger,
+			Logger:     slog.New(zapslog.NewHandler(logger.Core())),
 		},
 		ChallengeSolvers: map[string]acmez.Solver{
 			acme.ChallengeTypeHTTP01: &naiveHTTPSolver{logger: logger},

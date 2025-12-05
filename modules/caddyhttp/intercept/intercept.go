@@ -17,12 +17,14 @@ package intercept
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -50,7 +52,6 @@ type Intercept struct {
 	//
 	// Three new placeholders are available in this handler chain:
 	// - `{http.intercept.status_code}` The status code from the response
-	// - `{http.intercept.status_text}` The status text from the response
 	// - `{http.intercept.header.*}` The headers from the response
 	HandleResponse []caddyhttp.ResponseHandler `json:"handle_response,omitempty"`
 
@@ -119,6 +120,11 @@ func (irh interceptedResponseHandler) WriteHeader(statusCode int) {
 }
 
 // EXPERIMENTAL: Subject to change or removal.
+func (irh interceptedResponseHandler) Unwrap() http.ResponseWriter {
+	return irh.ResponseRecorder
+}
+
+// EXPERIMENTAL: Subject to change or removal.
 func (ir Intercept) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
@@ -161,16 +167,43 @@ func (ir Intercept) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 
 	// set up the replacer so that parts of the original response can be
 	// used for routing decisions
-	for field, value := range r.Header {
+	for field, value := range rec.Header() {
 		repl.Set("http.intercept.header."+field, strings.Join(value, ","))
 	}
 	repl.Set("http.intercept.status_code", rec.Status())
 
-	ir.logger.Debug("handling response", zap.Int("handler", rec.handlerIndex))
+	if c := ir.logger.Check(zapcore.DebugLevel, "handling response"); c != nil {
+		c.Write(zap.Int("handler", rec.handlerIndex))
+	}
 
-	// pass the request through the response handler routes
-	return rec.handler.Routes.Compile(next).ServeHTTP(w, r)
+	// response recorder doesn't create a new copy of the original headers, they're
+	// present in the original response writer
+	// create a new recorder to see if any response body from the new handler is present,
+	// if not, use the already buffered response body
+	recorder := caddyhttp.NewResponseRecorder(w, nil, nil)
+	if err := rec.handler.Routes.Compile(emptyHandler).ServeHTTP(recorder, r); err != nil {
+		return err
+	}
+
+	// no new response status and the status is not 0
+	if recorder.Status() == 0 && rec.Status() != 0 {
+		w.WriteHeader(rec.Status())
+	}
+
+	// no new response body and there is some in the original response
+	// TODO: what if the new response doesn't have a body by design?
+	// see: https://github.com/caddyserver/caddy/pull/6232#issue-2235224400
+	if recorder.Size() == 0 && buf.Len() > 0 {
+		_, err := io.Copy(w, buf)
+		return err
+	}
+	return nil
 }
+
+// this handler does nothing because everything we need is already buffered
+var emptyHandler caddyhttp.Handler = caddyhttp.HandlerFunc(func(_ http.ResponseWriter, req *http.Request) error {
+	return nil
+})
 
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //

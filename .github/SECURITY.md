@@ -5,11 +5,11 @@ The Caddy project would like to make sure that it stays on top of all practicall
 
 ## Supported Versions
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 2.x     | ✔️ |
-| 1.x     | :x:                |
-| < 1.x   | :x:                |
+| Version  | Supported |
+| -------- | ----------|
+| 2.latest | ✔️        |
+| 1.x      | :x:       |
+| < 1.x    | :x:       |
 
 
 ## Acceptable Scope
@@ -48,9 +48,9 @@ We consider publicly-registered domain names to be public information. This nece
 
 It will speed things up if you suggest a working patch, such as a code diff, and explain why and how it works. Reports that are not actionable, do not contain enough information, are too pushy/demanding, or are not able to convince us that it is a viable and practical attack on the web server itself may be deferred to a later time or possibly ignored, depending on available resources. Priority will be given to credible, responsible reports that are constructive, specific, and actionable. (We get a lot of invalid reports.) Thank you for understanding.
 
-When you are ready, please email Matt Holt (the author) directly: matt at dyanim dot com.
+When you are ready, please submit a [new private vulnerability report](https://github.com/caddyserver/caddy/security/advisories/new).
 
-Please don't encrypt the email body. It only makes the process more complicated.
+Please don't encrypt the message. It only makes the process more complicated.
 
 Please also understand that due to our nature as an open source project, we do not have a budget to award security bounties. We can only thank you.
 

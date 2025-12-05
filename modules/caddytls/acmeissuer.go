@@ -28,8 +28,9 @@ import (
 
 	"github.com/caddyserver/certmagic"
 	"github.com/caddyserver/zerossl"
-	"github.com/mholt/acmez/v2/acme"
+	"github.com/mholt/acmez/v3/acme"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -58,6 +59,14 @@ type ACMEIssuer struct {
 	// not sent to any Caddy mothership or used for any purpose
 	// other than ACME transactions.
 	Email string `json:"email,omitempty"`
+
+	// Optionally select an ACME profile to use for certificate
+	// orders. Must be a profile name offered by the ACME server,
+	// which are listed at its directory endpoint.
+	//
+	// EXPERIMENTAL: Subject to change.
+	// See https://datatracker.ietf.org/doc/draft-aaron-acme-profiles/
+	Profile string `json:"profile,omitempty"`
 
 	// If you have an existing account with the ACME server, put
 	// the private key here in PEM format. The ACME client will
@@ -96,6 +105,9 @@ type ACMEIssuer struct {
 	// documentation to see if this is allowed and what values may
 	// be used. EXPERIMENTAL: Subject to change.
 	CertificateLifetime caddy.Duration `json:"certificate_lifetime,omitempty"`
+
+	// Forward proxy module
+	NetworkProxyRaw json.RawMessage `json:"network_proxy,omitempty" caddy:"namespace=caddy.network_proxy inline_key=from"`
 
 	rootPool *x509.CertPool
 	logger   *zap.Logger
@@ -137,15 +149,30 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 		iss.AccountKey = accountKey
 	}
 
-	// DNS providers
-	if iss.Challenges != nil && iss.Challenges.DNS != nil && iss.Challenges.DNS.ProviderRaw != nil {
-		val, err := ctx.LoadModule(iss.Challenges.DNS, "ProviderRaw")
-		if err != nil {
-			return fmt.Errorf("loading DNS provider module: %v", err)
+	// DNS challenge provider, if not already established
+	if iss.Challenges != nil && iss.Challenges.DNS != nil && iss.Challenges.DNS.solver == nil {
+		var prov certmagic.DNSProvider
+		if iss.Challenges.DNS.ProviderRaw != nil {
+			// a challenge provider has been locally configured - use it
+			val, err := ctx.LoadModule(iss.Challenges.DNS, "ProviderRaw")
+			if err != nil {
+				return fmt.Errorf("loading DNS provider module: %v", err)
+			}
+			prov = val.(certmagic.DNSProvider)
+		} else if tlsAppIface, err := ctx.AppIfConfigured("tls"); err == nil {
+			// no locally configured DNS challenge provider, but if there is
+			// a global DNS module configured with the TLS app, use that
+			tlsApp := tlsAppIface.(*TLS)
+			if tlsApp.dns != nil {
+				prov = tlsApp.dns.(certmagic.DNSProvider)
+			}
+		}
+		if prov == nil {
+			return fmt.Errorf("DNS challenge enabled, but no DNS provider configured")
 		}
 		iss.Challenges.DNS.solver = &certmagic.DNS01Solver{
 			DNSManager: certmagic.DNSManager{
-				DNSProvider:        val.(certmagic.DNSProvider),
+				DNSProvider:        prov,
 				TTL:                time.Duration(iss.Challenges.DNS.TTL),
 				PropagationDelay:   time.Duration(iss.Challenges.DNS.PropagationDelay),
 				PropagationTimeout: time.Duration(iss.Challenges.DNS.PropagationTimeout),
@@ -170,7 +197,7 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 	}
 
 	var err error
-	iss.template, err = iss.makeIssuerTemplate()
+	iss.template, err = iss.makeIssuerTemplate(ctx)
 	if err != nil {
 		return err
 	}
@@ -178,17 +205,30 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-func (iss *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEIssuer, error) {
+func (iss *ACMEIssuer) makeIssuerTemplate(ctx caddy.Context) (certmagic.ACMEIssuer, error) {
 	template := certmagic.ACMEIssuer{
 		CA:                iss.CA,
 		TestCA:            iss.TestCA,
 		Email:             iss.Email,
+		Profile:           iss.Profile,
 		AccountKeyPEM:     iss.AccountKey,
 		CertObtainTimeout: time.Duration(iss.ACMETimeout),
 		TrustedRoots:      iss.rootPool,
 		ExternalAccount:   iss.ExternalAccount,
 		NotAfter:          time.Duration(iss.CertificateLifetime),
 		Logger:            iss.logger,
+	}
+
+	if len(iss.NetworkProxyRaw) != 0 {
+		proxyMod, err := ctx.LoadModule(iss, "NetworkProxyRaw")
+		if err != nil {
+			return template, fmt.Errorf("failed to load network_proxy module: %v", err)
+		}
+		if m, ok := proxyMod.(caddy.ProxyFuncProducer); ok {
+			template.HTTPProxy = m.ProxyFunc()
+		} else {
+			return template, fmt.Errorf("network_proxy module is not `(func(*http.Request) (*url.URL, error))``")
+		}
 	}
 
 	if iss.Challenges != nil {
@@ -204,6 +244,9 @@ func (iss *ACMEIssuer) makeIssuerTemplate() (certmagic.ACMEIssuer, error) {
 			template.DNS01Solver = iss.Challenges.DNS.solver
 		}
 		template.ListenHost = iss.Challenges.BindHost
+		if iss.Challenges.Distributed != nil {
+			template.DisableDistributedSolvers = !*iss.Challenges.Distributed
+		}
 	}
 
 	if iss.PreferredChains != nil {
@@ -321,7 +364,9 @@ func (iss *ACMEIssuer) generateZeroSSLEABCredentials(ctx context.Context, acct a
 		return nil, acct, fmt.Errorf("failed getting EAB credentials: HTTP %d", resp.StatusCode)
 	}
 
-	iss.logger.Info("generated EAB credentials", zap.String("key_id", result.EABKID))
+	if c := iss.logger.Check(zapcore.InfoLevel, "generated EAB credentials"); c != nil {
+		c.Write(zap.String("key_id", result.EABKID))
+	}
 
 	return &acme.EAB{
 		KeyID:  result.EABKID,
@@ -335,6 +380,7 @@ func (iss *ACMEIssuer) generateZeroSSLEABCredentials(ctx context.Context, acct a
 //	    dir <directory_url>
 //	    test_dir <test_directory_url>
 //	    email <email>
+//	    profile <profile_name>
 //	    timeout <duration>
 //	    disable_http_challenge
 //	    disable_tlsalpn_challenge
@@ -397,6 +443,11 @@ func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.ArgErr()
 			}
 
+		case "profile":
+			if !d.AllArgs(&iss.Profile) {
+				return d.ArgErr()
+			}
+
 		case "timeout":
 			var timeoutStr string
 			if !d.AllArgs(&timeoutStr) {
@@ -431,6 +482,20 @@ func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				iss.Challenges.TLSALPN = new(TLSALPNChallengeConfig)
 			}
 			iss.Challenges.TLSALPN.Disabled = true
+
+		case "distributed":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if d.Val() != "false" {
+				return d.Errf("only accepted value is 'false'")
+			}
+			if iss.Challenges == nil {
+				iss.Challenges = new(ChallengesConfig)
+			}
+			if iss.Challenges.Distributed == nil {
+				iss.Challenges.Distributed = new(bool)
+			}
 
 		case "alt_http_port":
 			if !d.NextArg() {
@@ -474,21 +539,20 @@ func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			iss.TrustedRootsPEMFiles = d.RemainingArgs()
 
 		case "dns":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-			provName := d.Val()
 			if iss.Challenges == nil {
 				iss.Challenges = new(ChallengesConfig)
 			}
 			if iss.Challenges.DNS == nil {
 				iss.Challenges.DNS = new(DNSChallengeConfig)
 			}
-			unm, err := caddyfile.UnmarshalModule(d, "dns.providers."+provName)
-			if err != nil {
-				return err
+			if d.NextArg() {
+				provName := d.Val()
+				unm, err := caddyfile.UnmarshalModule(d, "dns.providers."+provName)
+				if err != nil {
+					return err
+				}
+				iss.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(unm, "name", provName, nil)
 			}
-			iss.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(unm, "name", provName, nil)
 
 		case "propagation_delay":
 			if !d.NextArg() {

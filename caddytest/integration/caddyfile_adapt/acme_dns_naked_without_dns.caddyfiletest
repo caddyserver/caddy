@@ -1,0 +1,9 @@
+{
+	acme_dns
+}
+
+example.com {
+	respond "Hello World"
+}
+----------
+acme_dns specified without DNS provider config, but no provider specified with 'dns' global option

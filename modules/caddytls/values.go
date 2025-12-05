@@ -81,13 +81,15 @@ func getOptimalDefaultCipherSuites() []uint16 {
 	return defaultCipherSuitesWithoutAESNI
 }
 
-// SupportedCurves is the unordered map of supported curves.
+// SupportedCurves is the unordered map of supported curves
+// or key exchange mechanisms ("curves" traditionally).
 // https://golang.org/pkg/crypto/tls/#CurveID
 var SupportedCurves = map[string]tls.CurveID{
-	"x25519":    tls.X25519,
-	"secp256r1": tls.CurveP256,
-	"secp384r1": tls.CurveP384,
-	"secp521r1": tls.CurveP521,
+	"x25519mlkem768": tls.X25519MLKEM768,
+	"x25519":         tls.X25519,
+	"secp256r1":      tls.CurveP256,
+	"secp384r1":      tls.CurveP384,
+	"secp521r1":      tls.CurveP521,
 }
 
 // supportedCertKeyTypes is all the key types that are supported
@@ -100,15 +102,16 @@ var supportedCertKeyTypes = map[string]certmagic.KeyType{
 	"ed25519": certmagic.ED25519,
 }
 
-// defaultCurves is the list of only the curves we want to use
-// by default, in descending order of preference.
+// defaultCurves is the list of only the curves or key exchange
+// mechanisms we want to use by default. The order is irrelevant.
 //
-// This list should only include curves which are fast by design
-// (e.g. X25519) and those for which an optimized assembly
+// This list should only include mechanisms which are fast by
+// design (e.g. X25519) and those for which an optimized assembly
 // implementation exists (e.g. P256). The latter ones can be
 // found here:
 // https://github.com/golang/go/tree/master/src/crypto/elliptic
 var defaultCurves = []tls.CurveID{
+	tls.X25519MLKEM768,
 	tls.X25519,
 	tls.CurveP256,
 }

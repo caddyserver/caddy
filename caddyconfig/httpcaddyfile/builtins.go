@@ -15,6 +15,7 @@
 package httpcaddyfile
 
 import (
+	"encoding/json"
 	"fmt"
 	"html"
 	"net/http"
@@ -24,7 +25,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/certmagic"
-	"github.com/mholt/acmez/v2/acme"
+	"github.com/mholt/acmez/v3/acme"
 	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
@@ -56,21 +57,41 @@ func init() {
 
 // parseBind parses the bind directive. Syntax:
 //
-//	bind <addresses...>
+//		bind <addresses...> [{
+//	   protocols [h1|h2|h2c|h3] [...]
+//	 }]
 func parseBind(h Helper) ([]ConfigValue, error) {
 	h.Next() // consume directive name
-	return []ConfigValue{{Class: "bind", Value: h.RemainingArgs()}}, nil
+	var addresses, protocols []string
+	addresses = h.RemainingArgs()
+
+	for h.NextBlock(0) {
+		switch h.Val() {
+		case "protocols":
+			protocols = h.RemainingArgs()
+			if len(protocols) == 0 {
+				return nil, h.Errf("protocols requires one or more arguments")
+			}
+		default:
+			return nil, h.Errf("unknown subdirective: %s", h.Val())
+		}
+	}
+
+	return []ConfigValue{{Class: "bind", Value: addressesWithProtocols{
+		addresses: addresses,
+		protocols: protocols,
+	}}}, nil
 }
 
 // parseTLS parses the tls directive. Syntax:
 //
-//	tls [<email>|internal]|[<cert_file> <key_file>] {
+//	tls [<email>|internal|force_automate]|[<cert_file> <key_file>] {
 //	    protocols <min> [<max>]
 //	    ciphers   <cipher_suites...>
 //	    curves    <curves...>
 //	    client_auth {
 //	        mode                   [request|require|verify_if_given|require_and_verify]
-//	        trust_pool			   <module_name> [...]
+//	        trust_pool             <module_name> [...]
 //	        trusted_leaf_cert      <base64_der>
 //	        trusted_leaf_cert_file <filename>
 //	    }
@@ -79,7 +100,7 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 //	    ca                            <acme_ca_endpoint>
 //	    ca_root                       <pem_file>
 //	    key_type                      [ed25519|p256|p384|rsa2048|rsa4096]
-//	    dns                           <provider_name> [...]
+//	    dns                           [<provider_name> [...]]    (required, though, if DNS is not configured as global option)
 //	    propagation_delay             <duration>
 //	    propagation_timeout           <duration>
 //	    resolvers                     <dns_servers...>
@@ -87,6 +108,7 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 //	    dns_challenge_override_domain <domain>
 //	    on_demand
 //	    reuse_private_keys
+//	    force_automate
 //	    eab                           <key_id> <mac_key>
 //	    issuer                        <module_name> [...]
 //	    get_certificate               <module_name> [...]
@@ -106,6 +128,10 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	var certManagers []certmagic.Manager
 	var onDemand bool
 	var reusePrivateKeys bool
+	var forceAutomate bool
+
+	// Track which DNS challenge options are set
+	var dnsOptionsSet []string
 
 	firstLine := h.RemainingArgs()
 	switch len(firstLine) {
@@ -113,8 +139,10 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	case 1:
 		if firstLine[0] == "internal" {
 			internalIssuer = new(caddytls.InternalIssuer)
+		} else if firstLine[0] == "force_automate" {
+			forceAutomate = true
 		} else if !strings.Contains(firstLine[0], "@") {
-			return nil, h.Err("single argument must either be 'internal' or an email address")
+			return nil, h.Err("single argument must either be 'internal', 'force_automate', or an email address")
 		} else {
 			acmeIssuer = &caddytls.ACMEIssuer{
 				Email: firstLine[0],
@@ -288,10 +316,6 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			certManagers = append(certManagers, certManager)
 
 		case "dns":
-			if !h.NextArg() {
-				return nil, h.ArgErr()
-			}
-			provName := h.Val()
 			if acmeIssuer == nil {
 				acmeIssuer = new(caddytls.ACMEIssuer)
 			}
@@ -301,12 +325,19 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			if acmeIssuer.Challenges.DNS == nil {
 				acmeIssuer.Challenges.DNS = new(caddytls.DNSChallengeConfig)
 			}
-			modID := "dns.providers." + provName
-			unm, err := caddyfile.UnmarshalModule(h.Dispenser, modID)
-			if err != nil {
-				return nil, err
+			// DNS provider configuration optional, since it may be configured globally via the TLS app with global options
+			if h.NextArg() {
+				provName := h.Val()
+				modID := "dns.providers." + provName
+				unm, err := caddyfile.UnmarshalModule(h.Dispenser, modID)
+				if err != nil {
+					return nil, err
+				}
+				acmeIssuer.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(unm, "name", provName, h.warnings)
+			} else if h.Option("dns") == nil {
+				// if DNS is omitted locally, it needs to be configured globally
+				return nil, h.ArgErr()
 			}
-			acmeIssuer.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(unm, "name", provName, h.warnings)
 
 		case "resolvers":
 			args := h.RemainingArgs()
@@ -322,6 +353,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			if acmeIssuer.Challenges.DNS == nil {
 				acmeIssuer.Challenges.DNS = new(caddytls.DNSChallengeConfig)
 			}
+			dnsOptionsSet = append(dnsOptionsSet, "resolvers")
 			acmeIssuer.Challenges.DNS.Resolvers = args
 
 		case "propagation_delay":
@@ -343,6 +375,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			if acmeIssuer.Challenges.DNS == nil {
 				acmeIssuer.Challenges.DNS = new(caddytls.DNSChallengeConfig)
 			}
+			dnsOptionsSet = append(dnsOptionsSet, "propagation_delay")
 			acmeIssuer.Challenges.DNS.PropagationDelay = caddy.Duration(delay)
 
 		case "propagation_timeout":
@@ -370,6 +403,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			if acmeIssuer.Challenges.DNS == nil {
 				acmeIssuer.Challenges.DNS = new(caddytls.DNSChallengeConfig)
 			}
+			dnsOptionsSet = append(dnsOptionsSet, "propagation_timeout")
 			acmeIssuer.Challenges.DNS.PropagationTimeout = caddy.Duration(timeout)
 
 		case "dns_ttl":
@@ -391,6 +425,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			if acmeIssuer.Challenges.DNS == nil {
 				acmeIssuer.Challenges.DNS = new(caddytls.DNSChallengeConfig)
 			}
+			dnsOptionsSet = append(dnsOptionsSet, "dns_ttl")
 			acmeIssuer.Challenges.DNS.TTL = caddy.Duration(ttl)
 
 		case "dns_challenge_override_domain":
@@ -407,6 +442,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			if acmeIssuer.Challenges.DNS == nil {
 				acmeIssuer.Challenges.DNS = new(caddytls.DNSChallengeConfig)
 			}
+			dnsOptionsSet = append(dnsOptionsSet, "dns_challenge_override_domain")
 			acmeIssuer.Challenges.DNS.OverrideDomain = arg[0]
 
 		case "ca_root":
@@ -439,6 +475,18 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 
 		default:
 			return nil, h.Errf("unknown subdirective: %s", h.Val())
+		}
+	}
+
+	// Validate DNS challenge config: any DNS challenge option except "dns" requires a DNS provider
+	if acmeIssuer != nil && acmeIssuer.Challenges != nil && acmeIssuer.Challenges.DNS != nil {
+		dnsCfg := acmeIssuer.Challenges.DNS
+		providerSet := dnsCfg.ProviderRaw != nil || h.Option("dns") != nil || h.Option("acme_dns") != nil
+		if len(dnsOptionsSet) > 0 && !providerSet {
+			return nil, h.Errf(
+				"setting DNS challenge options [%s] requires a DNS provider (set with the 'dns' subdirective or 'acme_dns' global option)",
+				strings.Join(dnsOptionsSet, ", "),
+			)
 		}
 	}
 
@@ -545,6 +593,15 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	if reusePrivateKeys {
 		configVals = append(configVals, ConfigValue{
 			Class: "tls.reuse_private_keys",
+			Value: true,
+		})
+	}
+
+	// if enabled, the names in the site addresses will be
+	// added to the automation policies
+	if forceAutomate {
+		configVals = append(configVals, ConfigValue{
+			Class: "tls.force_automate",
 			Value: true,
 		})
 	}
@@ -807,13 +864,18 @@ func parseHandleErrors(h Helper) ([]ConfigValue, error) {
 		return nil, h.Errf("segment was not parsed as a subroute")
 	}
 
+	// wrap the subroutes
+	wrappingRoute := caddyhttp.Route{
+		HandlersRaw: []json.RawMessage{caddyconfig.JSONModuleObject(subroute, "handler", "subroute", nil)},
+	}
+	subroute = &caddyhttp.Subroute{
+		Routes: []caddyhttp.Route{wrappingRoute},
+	}
 	if expression != "" {
 		statusMatcher := caddy.ModuleMap{
 			"expression": h.JSON(caddyhttp.MatchExpression{Expr: expression}),
 		}
-		for i := range subroute.Routes {
-			subroute.Routes[i].MatcherSetsRaw = []caddy.ModuleMap{statusMatcher}
-		}
+		subroute.Routes[0].MatcherSetsRaw = []caddy.ModuleMap{statusMatcher}
 	}
 	return []ConfigValue{
 		{
@@ -961,6 +1023,50 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 			}
 			cl.WriterRaw = caddyconfig.JSONModuleObject(wo, "output", moduleName, h.warnings)
 
+		case "sampling":
+			d := h.Dispenser.NewFromNextSegment()
+			for d.NextArg() {
+				// consume any tokens on the same line, if any.
+			}
+
+			sampling := &caddy.LogSampling{}
+			for nesting := d.Nesting(); d.NextBlock(nesting); {
+				subdir := d.Val()
+				switch subdir {
+				case "interval":
+					if !d.NextArg() {
+						return nil, d.ArgErr()
+					}
+					interval, err := time.ParseDuration(d.Val() + "ns")
+					if err != nil {
+						return nil, d.Errf("failed to parse interval: %v", err)
+					}
+					sampling.Interval = interval
+				case "first":
+					if !d.NextArg() {
+						return nil, d.ArgErr()
+					}
+					first, err := strconv.Atoi(d.Val())
+					if err != nil {
+						return nil, d.Errf("failed to parse first: %v", err)
+					}
+					sampling.First = first
+				case "thereafter":
+					if !d.NextArg() {
+						return nil, d.ArgErr()
+					}
+					thereafter, err := strconv.Atoi(d.Val())
+					if err != nil {
+						return nil, d.Errf("failed to parse thereafter: %v", err)
+					}
+					sampling.Thereafter = thereafter
+				default:
+					return nil, d.Errf("unrecognized subdirective: %s", subdir)
+				}
+			}
+
+			cl.Sampling = sampling
+
 		case "core":
 			if !h.NextArg() {
 				return nil, h.ArgErr()
@@ -1080,6 +1186,11 @@ func parseLogSkip(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	if h.NextArg() {
 		return nil, h.ArgErr()
 	}
+
+	if h.NextBlock(0) {
+		return nil, h.Err("log_skip directive does not accept blocks")
+	}
+
 	return caddyhttp.VarsMiddleware{"log_skip": true}, nil
 }
 

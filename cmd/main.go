@@ -24,6 +24,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -33,10 +34,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/KimMachineGun/automemlimit/memlimit"
 	"github.com/caddyserver/certmagic"
 	"github.com/spf13/pflag"
 	"go.uber.org/automaxprocs/maxprocs"
 	"go.uber.org/zap"
+	"go.uber.org/zap/exp/zapslog"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -66,13 +69,7 @@ func Main() {
 		os.Exit(caddy.ExitCodeFailedStartup)
 	}
 
-	undo, err := maxprocs.Set()
-	defer undo()
-	if err != nil {
-		caddy.Log().Warn("failed to set GOMAXPROCS", zap.Error(err))
-	}
-	rootCmd := defaultFactory.Build()
-	if err := rootCmd.Execute(); err != nil {
+	if err := defaultFactory.Build().Execute(); err != nil {
 		var exitError *exitError
 		if errors.As(err, &exitError) {
 			os.Exit(exitError.ExitCode)
@@ -115,7 +112,12 @@ func handlePingbackConn(conn net.Conn, expect []byte) error {
 // there is no config available. It prints any warnings to stderr,
 // and returns the resulting JSON config bytes along with
 // the name of the loaded config file (if any).
-func LoadConfig(configFile, adapterName string) ([]byte, string, error) {
+// The return values are:
+//   - config bytes (nil if no config)
+//   - config file used ("" if none)
+//   - adapter used ("" if none)
+//   - error, if any
+func LoadConfig(configFile, adapterName string) ([]byte, string, string, error) {
 	return loadConfigWithLogger(caddy.Log(), configFile, adapterName)
 }
 
@@ -153,7 +155,7 @@ func isCaddyfile(configFile, adapterName string) (bool, error) {
 	return false, nil
 }
 
-func loadConfigWithLogger(logger *zap.Logger, configFile, adapterName string) ([]byte, string, error) {
+func loadConfigWithLogger(logger *zap.Logger, configFile, adapterName string) ([]byte, string, string, error) {
 	// if no logger is provided, use a nop logger
 	// just so we don't have to check for nil
 	if logger == nil {
@@ -162,7 +164,7 @@ func loadConfigWithLogger(logger *zap.Logger, configFile, adapterName string) ([
 
 	// specifying an adapter without a config file is ambiguous
 	if adapterName != "" && configFile == "" {
-		return nil, "", fmt.Errorf("cannot adapt config without config file (use --config)")
+		return nil, "", "", fmt.Errorf("cannot adapt config without config file (use --config)")
 	}
 
 	// load initial config and adapter
@@ -173,13 +175,13 @@ func loadConfigWithLogger(logger *zap.Logger, configFile, adapterName string) ([
 		if configFile == "-" {
 			config, err = io.ReadAll(os.Stdin)
 			if err != nil {
-				return nil, "", fmt.Errorf("reading config from stdin: %v", err)
+				return nil, "", "", fmt.Errorf("reading config from stdin: %v", err)
 			}
 			logger.Info("using config from stdin")
 		} else {
 			config, err = os.ReadFile(configFile)
 			if err != nil {
-				return nil, "", fmt.Errorf("reading config from file: %v", err)
+				return nil, "", "", fmt.Errorf("reading config from file: %v", err)
 			}
 			logger.Info("using config from file", zap.String("file", configFile))
 		}
@@ -194,7 +196,7 @@ func loadConfigWithLogger(logger *zap.Logger, configFile, adapterName string) ([
 				cfgAdapter = nil
 			} else if err != nil {
 				// default Caddyfile exists, but error reading it
-				return nil, "", fmt.Errorf("reading default Caddyfile: %v", err)
+				return nil, "", "", fmt.Errorf("reading default Caddyfile: %v", err)
 			} else {
 				// success reading default Caddyfile
 				configFile = "Caddyfile"
@@ -206,14 +208,14 @@ func loadConfigWithLogger(logger *zap.Logger, configFile, adapterName string) ([
 	if yes, err := isCaddyfile(configFile, adapterName); yes {
 		adapterName = "caddyfile"
 	} else if err != nil {
-		return nil, "", err
+		return nil, "", "", err
 	}
 
 	// load config adapter
 	if adapterName != "" {
 		cfgAdapter = caddyconfig.GetAdapter(adapterName)
 		if cfgAdapter == nil {
-			return nil, "", fmt.Errorf("unrecognized config adapter: %s", adapterName)
+			return nil, "", "", fmt.Errorf("unrecognized config adapter: %s", adapterName)
 		}
 	}
 
@@ -223,7 +225,7 @@ func loadConfigWithLogger(logger *zap.Logger, configFile, adapterName string) ([
 			"filename": configFile,
 		})
 		if err != nil {
-			return nil, "", fmt.Errorf("adapting config using %s: %v", adapterName, err)
+			return nil, "", "", fmt.Errorf("adapting config using %s: %v", adapterName, err)
 		}
 		logger.Info("adapted config to JSON", zap.String("adapter", adapterName))
 		for _, warn := range warnings {
@@ -241,11 +243,11 @@ func loadConfigWithLogger(logger *zap.Logger, configFile, adapterName string) ([
 		// validate that the config is at least valid JSON
 		err = json.Unmarshal(config, new(any))
 		if err != nil {
-			return nil, "", fmt.Errorf("config is not valid JSON: %v; did you mean to use a config adapter (the --adapter flag)?", err)
+			return nil, "", "", fmt.Errorf("config is not valid JSON: %v; did you mean to use a config adapter (the --adapter flag)?", err)
 		}
 	}
 
-	return config, configFile, nil
+	return config, configFile, adapterName, nil
 }
 
 // watchConfigFile watches the config file at filename for changes
@@ -271,7 +273,7 @@ func watchConfigFile(filename, adapterName string) {
 	}
 
 	// get current config
-	lastCfg, _, err := loadConfigWithLogger(nil, filename, adapterName)
+	lastCfg, _, _, err := loadConfigWithLogger(nil, filename, adapterName)
 	if err != nil {
 		logger().Error("unable to load latest config", zap.Error(err))
 		return
@@ -283,7 +285,7 @@ func watchConfigFile(filename, adapterName string) {
 	//nolint:staticcheck
 	for range time.Tick(1 * time.Second) {
 		// get current config
-		newCfg, _, err := loadConfigWithLogger(nil, filename, adapterName)
+		newCfg, _, _, err := loadConfigWithLogger(nil, filename, adapterName)
 		if err != nil {
 			logger().Error("unable to load latest config", zap.Error(err))
 			return
@@ -433,7 +435,7 @@ func parseEnvFile(envInput io.Reader) (map[string]string, error) {
 		// quoted value: support newlines
 		if strings.HasPrefix(val, `"`) || strings.HasPrefix(val, "'") {
 			quote := string(val[0])
-			for !(strings.HasSuffix(line, quote) && !strings.HasSuffix(line, `\`+quote)) {
+			for !strings.HasSuffix(line, quote) || strings.HasSuffix(line, `\`+quote) {
 				val = strings.ReplaceAll(val, `\`+quote, quote)
 				if !scanner.Scan() {
 					break
@@ -477,6 +479,31 @@ func printEnvironment() {
 	for _, v := range os.Environ() {
 		fmt.Println(v)
 	}
+}
+
+func setResourceLimits(logger *zap.Logger) func() {
+	// Configure the maximum number of CPUs to use to match the Linux container quota (if any)
+	// See https://pkg.go.dev/runtime#GOMAXPROCS
+	undo, err := maxprocs.Set(maxprocs.Logger(logger.Sugar().Infof))
+	if err != nil {
+		logger.Warn("failed to set GOMAXPROCS", zap.Error(err))
+	}
+
+	// Configure the maximum memory to use to match the Linux container quota (if any) or system memory
+	// See https://pkg.go.dev/runtime/debug#SetMemoryLimit
+	_, _ = memlimit.SetGoMemLimitWithOpts(
+		memlimit.WithLogger(
+			slog.New(zapslog.NewHandler(logger.Core())),
+		),
+		memlimit.WithProvider(
+			memlimit.ApplyFallback(
+				memlimit.FromCgroup,
+				memlimit.FromSystem,
+			),
+		),
+	)
+
+	return undo
 }
 
 // StringSlice is a flag.Value that enables repeated use of a string flag.

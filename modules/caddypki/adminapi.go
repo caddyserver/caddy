@@ -220,12 +220,17 @@ func (a *adminAPI) getCAFromAPIRequestPath(r *http.Request) (*CA, error) {
 func rootAndIntermediatePEM(ca *CA) (root, inter []byte, err error) {
 	root, err = pemEncodeCert(ca.RootCertificate().Raw)
 	if err != nil {
-		return
+		return root, inter, err
 	}
-	inter, err = pemEncodeCert(ca.IntermediateCertificate().Raw)
-	if err != nil {
-		return
+
+	for _, interCert := range ca.IntermediateCertificateChain() {
+		pemBytes, err := pemEncodeCert(interCert.Raw)
+		if err != nil {
+			return nil, nil, err
+		}
+		inter = append(inter, pemBytes...)
 	}
+
 	return
 }
 

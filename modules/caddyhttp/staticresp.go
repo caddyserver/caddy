@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"net/textproto"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"text/template"
@@ -78,7 +79,7 @@ Response headers may be added using the --header flag for each header field.
 			cmd.Flags().StringP("body", "b", "", "The body of the HTTP response")
 			cmd.Flags().BoolP("access-log", "", false, "Enable the access log")
 			cmd.Flags().BoolP("debug", "v", false, "Enable more verbose debug-level logging")
-			cmd.Flags().StringSliceP("header", "H", []string{}, "Set a header on the response (format: \"Field: value\")")
+			cmd.Flags().StringArrayP("header", "H", []string{}, "Set a header on the response (format: \"Field: value\")")
 			cmd.RunE = caddycmd.WrapCommandFuncForCobra(cmdRespond)
 		},
 	})
@@ -323,13 +324,7 @@ func cmdRespond(fl caddycmd.Flags) (int, error) {
 
 	// figure out if status code was explicitly specified; this lets
 	// us set a non-zero value as the default but is a little hacky
-	var statusCodeFlagSpecified bool
-	for _, fl := range os.Args {
-		if fl == "--status" {
-			statusCodeFlagSpecified = true
-			break
-		}
-	}
+	statusCodeFlagSpecified := slices.Contains(os.Args, "--status")
 
 	// try to determine what kind of parameter the unnamed argument is
 	if arg != "" {
@@ -364,7 +359,7 @@ func cmdRespond(fl caddycmd.Flags) (int, error) {
 	}
 
 	// build headers map
-	headers, err := fl.GetStringSlice("header")
+	headers, err := fl.GetStringArray("header")
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("invalid header flag: %v", err)
 	}
@@ -387,7 +382,7 @@ func cmdRespond(fl caddycmd.Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, err
 	}
 
-	if !listenAddr.IsUnixNetwork() {
+	if !listenAddr.IsUnixNetwork() && !listenAddr.IsFdNetwork() {
 		listenAddrs := make([]string, 0, listenAddr.PortRangeSize())
 		for offset := uint(0); offset < listenAddr.PortRangeSize(); offset++ {
 			listenAddrs = append(listenAddrs, listenAddr.JoinHostPort(offset))

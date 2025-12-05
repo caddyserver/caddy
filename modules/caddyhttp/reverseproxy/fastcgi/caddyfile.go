@@ -17,7 +17,9 @@ package fastcgi
 import (
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -130,15 +132,18 @@ func (t *Transport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // is equivalent to a route consisting of:
 //
 //	# Add trailing slash for directory requests
+//	# This redirection is automatically disabled if "{http.request.uri.path}/index.php"
+//	# doesn't appear in the try_files list
 //	@canonicalPath {
 //	    file {path}/index.php
 //	    not path */
 //	}
 //	redir @canonicalPath {path}/ 308
 //
-//	# If the requested file does not exist, try index files
+//	# If the requested file does not exist, try index files and assume index.php always exists
 //	@indexFiles file {
 //	    try_files {path} {path}/index.php index.php
+//	    try_policy first_exist_fallback
 //	    split_path .php
 //	}
 //	rewrite @indexFiles {http.matchers.file.relative}
@@ -179,7 +184,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 	indexFile := "index.php"
 
 	// set up for explicitly overriding try_files
-	tryFiles := []string{}
+	var tryFiles []string
 
 	// if the user specified a matcher token, use that
 	// matcher in a route that wraps both of our routes;
@@ -310,37 +315,54 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 
 	// if the index is turned off, we skip the redirect and try_files
 	if indexFile != "off" {
-		// route to redirect to canonical path if index PHP file
-		redirMatcherSet := caddy.ModuleMap{
-			"file": h.JSON(fileserver.MatchFile{
-				TryFiles: []string{"{http.request.uri.path}/" + indexFile},
-			}),
-			"not": h.JSON(caddyhttp.MatchNot{
-				MatcherSetsRaw: []caddy.ModuleMap{
-					{
-						"path": h.JSON(caddyhttp.MatchPath{"*/"}),
-					},
-				},
-			}),
-		}
-		redirHandler := caddyhttp.StaticResponse{
-			StatusCode: caddyhttp.WeakString(strconv.Itoa(http.StatusPermanentRedirect)),
-			Headers:    http.Header{"Location": []string{"{http.request.orig_uri.path}/"}},
-		}
-		redirRoute := caddyhttp.Route{
-			MatcherSetsRaw: []caddy.ModuleMap{redirMatcherSet},
-			HandlersRaw:    []json.RawMessage{caddyconfig.JSONModuleObject(redirHandler, "handler", "static_response", nil)},
-		}
+		var dirRedir bool
+		dirIndex := "{http.request.uri.path}/" + indexFile
+		tryPolicy := "first_exist_fallback"
 
 		// if tryFiles wasn't overridden, use a reasonable default
 		if len(tryFiles) == 0 {
-			tryFiles = []string{"{http.request.uri.path}", "{http.request.uri.path}/" + indexFile, indexFile}
+			tryFiles = []string{"{http.request.uri.path}", dirIndex, indexFile}
+			dirRedir = true
+		} else {
+			if !strings.HasSuffix(tryFiles[len(tryFiles)-1], ".php") {
+				// use first_exist strategy if the last file is not a PHP file
+				tryPolicy = ""
+			}
+
+			dirRedir = slices.Contains(tryFiles, dirIndex)
+		}
+
+		if dirRedir {
+			// route to redirect to canonical path if index PHP file
+			redirMatcherSet := caddy.ModuleMap{
+				"file": h.JSON(fileserver.MatchFile{
+					TryFiles: []string{dirIndex},
+				}),
+				"not": h.JSON(caddyhttp.MatchNot{
+					MatcherSetsRaw: []caddy.ModuleMap{
+						{
+							"path": h.JSON(caddyhttp.MatchPath{"*/"}),
+						},
+					},
+				}),
+			}
+			redirHandler := caddyhttp.StaticResponse{
+				StatusCode: caddyhttp.WeakString(strconv.Itoa(http.StatusPermanentRedirect)),
+				Headers:    http.Header{"Location": []string{"{http.request.orig_uri.path}/{http.request.orig_uri.prefixed_query}"}},
+			}
+			redirRoute := caddyhttp.Route{
+				MatcherSetsRaw: []caddy.ModuleMap{redirMatcherSet},
+				HandlersRaw:    []json.RawMessage{caddyconfig.JSONModuleObject(redirHandler, "handler", "static_response", nil)},
+			}
+
+			routes = append(routes, redirRoute)
 		}
 
 		// route to rewrite to PHP index file
 		rewriteMatcherSet := caddy.ModuleMap{
 			"file": h.JSON(fileserver.MatchFile{
 				TryFiles:  tryFiles,
+				TryPolicy: tryPolicy,
 				SplitPath: extensions,
 			}),
 		}
@@ -352,7 +374,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 			HandlersRaw:    []json.RawMessage{caddyconfig.JSONModuleObject(rewriteHandler, "handler", "rewrite", nil)},
 		}
 
-		routes = append(routes, redirRoute, rewriteRoute)
+		routes = append(routes, rewriteRoute)
 	}
 
 	// route to actually reverse proxy requests to PHP files;

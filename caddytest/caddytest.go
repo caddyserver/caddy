@@ -1,6 +1,7 @@
 package caddytest
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -14,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"testing"
 	"time"
 
 	caddycmd "github.com/caddyserver/caddy/v2/cmd"
@@ -22,8 +24,10 @@ import (
 	_ "github.com/caddyserver/caddy/v2/modules/standard"
 )
 
-// Defaults store any configuration required to make the tests run
-type Defaults struct {
+// Config store any configuration required to make the tests run
+type Config struct {
+	// Port we expect caddy to listening on
+	AdminPort int
 	// Certificates we expect to be loaded before attempting to run the tests
 	Certificates []string
 	// TestRequestTimeout is the time to wait for a http request to
@@ -33,7 +37,7 @@ type Defaults struct {
 }
 
 // Default testing values
-var Default = Defaults{
+var Default = Config{
 	Certificates:       []string{"/caddy.localhost.crt", "/caddy.localhost.key"},
 	TestRequestTimeout: 5 * time.Second,
 	LoadRequestTimeout: 5 * time.Second,
@@ -43,8 +47,6 @@ var Default = Defaults{
 type Tester struct {
 	Client *http.Client
 
-	adminPort int
-
 	portOne int
 	portTwo int
 
@@ -52,10 +54,13 @@ type Tester struct {
 	configLoaded   bool
 	configFileName string
 	envFileName    string
+
+	t      testing.TB
+	config Config
 }
 
 // NewTester will create a new testing client with an attached cookie jar
-func NewTester() (*Tester, error) {
+func NewTester(t testing.TB) (*Tester, error) {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cookiejar: %w", err)
@@ -68,7 +73,28 @@ func NewTester() (*Tester, error) {
 			Timeout:   Default.TestRequestTimeout,
 		},
 		configLoaded: false,
+		t:            t,
+		config:       Default,
 	}, nil
+}
+
+// WithDefaultOverrides this will override the default test configuration with the provided values.
+func (tc *Tester) WithDefaultOverrides(overrides Config) *Tester {
+	if overrides.AdminPort != 0 {
+		tc.config.AdminPort = overrides.AdminPort
+	}
+	if len(overrides.Certificates) > 0 {
+		tc.config.Certificates = overrides.Certificates
+	}
+	if overrides.TestRequestTimeout != 0 {
+		tc.config.TestRequestTimeout = overrides.TestRequestTimeout
+		tc.Client.Timeout = overrides.TestRequestTimeout
+	}
+	if overrides.LoadRequestTimeout != 0 {
+		tc.config.LoadRequestTimeout = overrides.LoadRequestTimeout
+	}
+
+	return tc
 }
 
 type configLoadError struct {
@@ -103,13 +129,28 @@ func (tc *Tester) CleanupCaddy() error {
 		if tc.envFileName != "" {
 			os.Remove(tc.envFileName)
 		}
+
+		if tc.t.Failed() && tc.configLoaded {
+			res, err := http.Get(fmt.Sprintf("http://localhost:%d/config/", tc.config.AdminPort))
+			if err != nil {
+				tc.t.Log("unable to read the current config")
+				return
+			}
+			defer res.Body.Close()
+			body, _ := io.ReadAll(res.Body)
+
+			var out bytes.Buffer
+			_ = json.Indent(&out, body, "", "  ")
+			tc.t.Logf("----------- failed with config -----------\n%s", out.String())
+		}
 	}()
-	resp, err := http.Post(fmt.Sprintf("http://localhost:%d/stop", tc.adminPort), "", nil)
+
+	resp, err := http.Post(fmt.Sprintf("http://localhost:%d/stop", tc.config.AdminPort), "", nil)
 	if err != nil {
 		return fmt.Errorf("couldn't stop caddytest server: %w", err)
 	}
 	resp.Body.Close()
-	for retries := 0; retries < 10; retries++ {
+	for range 10 {
 		if tc.isCaddyAdminRunning() != nil {
 			return nil
 		}
@@ -120,7 +161,7 @@ func (tc *Tester) CleanupCaddy() error {
 }
 
 func (tc *Tester) AdminPort() int {
-	return tc.adminPort
+	return tc.config.AdminPort
 }
 
 func (tc *Tester) PortOne() int {
@@ -132,8 +173,8 @@ func (tc *Tester) PortTwo() int {
 }
 
 func (tc *Tester) ReplaceTestingPlaceholders(x string) string {
-	x = strings.ReplaceAll(x, "{$TESTING_CADDY_ADMIN_BIND}", fmt.Sprintf("localhost:%d", tc.adminPort))
-	x = strings.ReplaceAll(x, "{$TESTING_CADDY_ADMIN_PORT}", fmt.Sprintf("%d", tc.adminPort))
+	x = strings.ReplaceAll(x, "{$TESTING_CADDY_ADMIN_BIND}", fmt.Sprintf("localhost:%d", tc.config.AdminPort))
+	x = strings.ReplaceAll(x, "{$TESTING_CADDY_ADMIN_PORT}", fmt.Sprintf("%d", tc.config.AdminPort))
 	x = strings.ReplaceAll(x, "{$TESTING_CADDY_PORT_ONE}", fmt.Sprintf("%d", tc.portOne))
 	x = strings.ReplaceAll(x, "{$TESTING_CADDY_PORT_TWO}", fmt.Sprintf("%d", tc.portTwo))
 	return x
@@ -142,13 +183,15 @@ func (tc *Tester) ReplaceTestingPlaceholders(x string) string {
 // LoadConfig loads the config to the tester server and also ensures that the config was loaded
 // it should not be run
 func (tc *Tester) LoadConfig(rawConfig string, configType string) error {
-	if tc.adminPort == 0 {
+	if tc.config.AdminPort == 0 {
 		return fmt.Errorf("load config called where startServer didnt succeed")
 	}
+
 	rawConfig = tc.ReplaceTestingPlaceholders(rawConfig)
 	// replace special testing placeholders so we can have our admin api be on a random port
 	// normalize JSON config
 	if configType == "json" {
+		tc.t.Logf("Before: %s", rawConfig)
 		var conf any
 		if err := json.Unmarshal([]byte(rawConfig), &conf); err != nil {
 			return err
@@ -158,12 +201,13 @@ func (tc *Tester) LoadConfig(rawConfig string, configType string) error {
 			return err
 		}
 		rawConfig = string(c)
+		tc.t.Logf("After: %s", rawConfig)
 	}
 	client := &http.Client{
-		Timeout: Default.LoadRequestTimeout,
+		Timeout: tc.config.LoadRequestTimeout,
 	}
 	start := time.Now()
-	req, err := http.NewRequest("POST", fmt.Sprintf("http://localhost:%d/load", tc.adminPort), strings.NewReader(rawConfig))
+	req, err := http.NewRequest("POST", fmt.Sprintf("http://localhost:%d/load", tc.config.AdminPort), strings.NewReader(rawConfig))
 	if err != nil {
 		return fmt.Errorf("failed to create request. %w", err)
 	}
@@ -200,21 +244,20 @@ func (tc *Tester) LoadConfig(rawConfig string, configType string) error {
 
 func (tc *Tester) GetCurrentConfig(receiver any) error {
 	client := &http.Client{
-		Timeout: Default.LoadRequestTimeout,
+		Timeout: tc.config.LoadRequestTimeout,
 	}
-
-	resp, err := client.Get(fmt.Sprintf("http://localhost:%d/config/", tc.adminPort))
+	resp, err := client.Get(fmt.Sprintf("http://localhost:%d/config/", tc.config.AdminPort))
 	if err != nil {
-		return err
+		return nil
 	}
 	defer resp.Body.Close()
 	actualBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return err
+		return nil
 	}
-	err = json.Unmarshal(actualBytes, receiver)
+	err = json.Unmarshal(actualBytes, &receiver)
 	if err != nil {
-		return err
+		return nil
 	}
 	return nil
 }
@@ -224,6 +267,7 @@ func getFreePort() (int, error) {
 	if err != nil {
 		return 0, err
 	}
+
 	port := strings.Split(lr.Addr().String(), ":")
 	if len(port) < 2 {
 		return 0, fmt.Errorf("no port available")
@@ -248,7 +292,7 @@ func (tc *Tester) startServer() error {
 	if err != nil {
 		return fmt.Errorf("could not find a open port to listen on: %w", err)
 	}
-	tc.adminPort = a
+	tc.config.AdminPort = a
 	tc.portOne, err = getFreePort()
 	if err != nil {
 		return fmt.Errorf("could not find a open portOne: %w", err)
@@ -265,10 +309,13 @@ func (tc *Tester) startServer() error {
 		}
 		tc.configFileName = f.Name()
 
-		initConfig := fmt.Sprintf(`{
+		initConfig := `{
 	admin localhost:%d
-}`, a)
-		if _, err := f.WriteString(initConfig); err != nil {
+}`
+		if _, err := fmt.Fprintf(f, initConfig, tc.config.AdminPort); err != nil {
+			return err
+		}
+		if err := f.Close(); err != nil {
 			return err
 		}
 	}
@@ -285,15 +332,14 @@ func (tc *Tester) startServer() error {
 	// one more time to return the error
 	return tc.isCaddyAdminRunning()
 }
-
 func (tc *Tester) isCaddyAdminRunning() error {
 	// assert that caddy is running
 	client := &http.Client{
 		Timeout: Default.LoadRequestTimeout,
 	}
-	resp, err := client.Get(fmt.Sprintf("http://localhost:%d/config/", tc.adminPort))
+	resp, err := client.Get(fmt.Sprintf("http://localhost:%d/config/", tc.config.AdminPort))
 	if err != nil {
-		return fmt.Errorf("caddy integration test caddy server not running. Expected to be listening on localhost:%d", tc.adminPort)
+		return fmt.Errorf("caddy integration test caddy server not running. Expected to be listening on localhost:%d", tc.config.AdminPort)
 	}
 	resp.Body.Close()
 

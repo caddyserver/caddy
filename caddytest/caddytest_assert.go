@@ -16,7 +16,7 @@ import (
 
 // AssertLoadError will load a config and expect an error
 func AssertLoadError(t *testing.T, rawConfig string, configType string, expectedError string) {
-	tc, err := NewTester()
+	tc, err := NewTester(t)
 	require.NoError(t, err)
 	err = tc.LaunchCaddy()
 	require.NoError(t, err)

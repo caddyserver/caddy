@@ -16,6 +16,7 @@ package reverseproxy
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -27,10 +28,12 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
+	"github.com/caddyserver/caddy/v2/internal"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/rewrite"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
+	"github.com/caddyserver/caddy/v2/modules/internal/network"
 )
 
 func init() {
@@ -67,14 +70,16 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //	    lb_retry_match <request-matcher>
 //
 //	    # active health checking
-//	    health_uri      <uri>
-//	    health_port     <port>
-//	    health_interval <interval>
-//	    health_passes   <num>
-//	    health_fails    <num>
-//	    health_timeout  <duration>
-//	    health_status   <status>
-//	    health_body     <regexp>
+//	    health_uri          <uri>
+//	    health_port         <port>
+//	    health_interval     <interval>
+//	    health_passes       <num>
+//	    health_fails        <num>
+//	    health_timeout      <duration>
+//	    health_status       <status>
+//	    health_body         <regexp>
+//	    health_method       <value>
+//	    health_request_body <value>
 //	    health_follow_redirects
 //	    health_headers {
 //	        <field> [<values...>]
@@ -89,12 +94,11 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //
 //	    # streaming
 //	    flush_interval     <duration>
-//	    buffer_requests
-//	    buffer_responses
-//	    max_buffer_size    <size>
+//	    request_buffers    <size>
+//	    response_buffers   <size>
 //	    stream_timeout     <duration>
 //	    stream_close_delay <duration>
-//	    trace_logs
+//	    verbose_logs
 //
 //	    # request manipulation
 //	    trusted_proxies [private_ranges] <ranges...>
@@ -353,6 +357,26 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			h.HealthChecks.Active.Path = d.Val()
 			caddy.Log().Named("config.adapter.caddyfile").Warn("the 'health_path' subdirective is deprecated, please use 'health_uri' instead!")
 
+		case "health_upstream":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if h.HealthChecks == nil {
+				h.HealthChecks = new(HealthChecks)
+			}
+			if h.HealthChecks.Active == nil {
+				h.HealthChecks.Active = new(ActiveHealthChecks)
+			}
+			_, port, err := net.SplitHostPort(d.Val())
+			if err != nil {
+				return d.Errf("health_upstream is malformed '%s': %v", d.Val(), err)
+			}
+			_, err = strconv.Atoi(port)
+			if err != nil {
+				return d.Errf("bad port number '%s': %v", d.Val(), err)
+			}
+			h.HealthChecks.Active.Upstream = d.Val()
+
 		case "health_port":
 			if !d.NextArg() {
 				return d.ArgErr()
@@ -362,6 +386,9 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 			if h.HealthChecks.Active == nil {
 				h.HealthChecks.Active = new(ActiveHealthChecks)
+			}
+			if h.HealthChecks.Active.Upstream != "" {
+				return d.Errf("the 'health_port' subdirective is ignored if 'health_upstream' is used!")
 			}
 			portNum, err := strconv.Atoi(d.Val())
 			if err != nil {
@@ -386,6 +413,30 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				h.HealthChecks.Active = new(ActiveHealthChecks)
 			}
 			h.HealthChecks.Active.Headers = healthHeaders
+
+		case "health_method":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if h.HealthChecks == nil {
+				h.HealthChecks = new(HealthChecks)
+			}
+			if h.HealthChecks.Active == nil {
+				h.HealthChecks.Active = new(ActiveHealthChecks)
+			}
+			h.HealthChecks.Active.Method = d.Val()
+
+		case "health_request_body":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			if h.HealthChecks == nil {
+				h.HealthChecks = new(HealthChecks)
+			}
+			if h.HealthChecks.Active == nil {
+				h.HealthChecks.Active = new(ActiveHealthChecks)
+			}
+			h.HealthChecks.Active.Body = d.Val()
 
 		case "health_interval":
 			if !d.NextArg() {
@@ -614,9 +665,10 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if d.NextArg() {
 				return d.ArgErr()
 			}
-			if subdir == "request_buffers" {
+			switch subdir {
+			case "request_buffers":
 				h.RequestBuffers = size
-			} else if subdir == "response_buffers" {
+			case "response_buffers":
 				h.ResponseBuffers = size
 			}
 
@@ -651,7 +703,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		case "trusted_proxies":
 			for d.NextArg() {
 				if d.Val() == "private_ranges" {
-					h.TrustedProxies = append(h.TrustedProxies, caddyhttp.PrivateRangesCIDR()...)
+					h.TrustedProxies = append(h.TrustedProxies, internal.PrivateRangesCIDR()...)
 					continue
 				}
 				h.TrustedProxies = append(h.TrustedProxies, d.Val())
@@ -836,8 +888,11 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if commonScheme == "http" && te.TLSEnabled() {
 				return d.Errf("upstream address scheme is HTTP but transport is configured for HTTP+TLS (HTTPS)")
 			}
-			if te, ok := transport.(*HTTPTransport); ok && commonScheme == "h2c" {
-				te.Versions = []string{"h2c", "2"}
+			if h2ct, ok := transport.(H2CTransport); ok && commonScheme == "h2c" {
+				err := h2ct.EnableH2C()
+				if err != nil {
+					return err
+				}
 			}
 		} else if commonScheme == "https" {
 			return d.Errf("upstreams are configured for HTTPS but transport module does not support TLS: %T", transport)
@@ -929,7 +984,9 @@ func (h *Handler) FinalizeUnmarshalCaddyfile(helper httpcaddyfile.Helper) error 
 //	    read_buffer             <size>
 //	    write_buffer            <size>
 //	    max_response_header     <size>
-//	    forward_proxy_url       <url>
+//	    network_proxy           <module> {
+//	        ...
+//	    }
 //	    dial_timeout            <duration>
 //	    dial_fallback_delay     <duration>
 //	    response_header_timeout <duration>
@@ -940,6 +997,9 @@ func (h *Handler) FinalizeUnmarshalCaddyfile(helper httpcaddyfile.Helper) error 
 //	    tls_insecure_skip_verify
 //	    tls_timeout <duration>
 //	    tls_trusted_ca_certs <cert_files...>
+//	    tls_trust_pool <module> {
+//	        ...
+//	    }
 //	    tls_server_name <sni>
 //	    tls_renegotiation <level>
 //	    tls_except_ports <ports...>
@@ -1018,10 +1078,24 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 
 		case "forward_proxy_url":
+			caddy.Log().Warn("The 'forward_proxy_url' field is deprecated. Use 'network_proxy <url>' instead.")
 			if !d.NextArg() {
 				return d.ArgErr()
 			}
-			h.ForwardProxyURL = d.Val()
+			u := network.ProxyFromURL{URL: d.Val()}
+			h.NetworkProxyRaw = caddyconfig.JSONModuleObject(u, "from", "url", nil)
+
+		case "network_proxy":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			modStem := d.Val()
+			modID := "caddy.network_proxy." + modStem
+			unm, err := caddyfile.UnmarshalModule(d, modID)
+			if err != nil {
+				return err
+			}
+			h.NetworkProxyRaw = caddyconfig.JSONModuleObject(unm, "from", modStem, nil)
 
 		case "dial_timeout":
 			if !d.NextArg() {
@@ -1275,7 +1349,11 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.Err("cannot specify \"tls_trust_pool\" twice in caddyfile")
 			}
 			h.TLS.CARaw = caddyconfig.JSONModuleObject(ca, "provider", modStem, nil)
-
+		case "local_address":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			h.LocalAddress = d.Val()
 		default:
 			return d.Errf("unrecognized subdirective %s", d.Val())
 		}

@@ -15,14 +15,17 @@
 package httpcaddyfile
 
 import (
+	"slices"
 	"strconv"
 
 	"github.com/caddyserver/certmagic"
-	"github.com/mholt/acmez/v2/acme"
+	"github.com/libdns/libdns"
+	"github.com/mholt/acmez/v3/acme"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 )
 
@@ -30,19 +33,20 @@ func init() {
 	RegisterGlobalOption("debug", parseOptTrue)
 	RegisterGlobalOption("http_port", parseOptHTTPPort)
 	RegisterGlobalOption("https_port", parseOptHTTPSPort)
-	RegisterGlobalOption("default_bind", parseOptStringList)
+	RegisterGlobalOption("default_bind", parseOptDefaultBind)
 	RegisterGlobalOption("grace_period", parseOptDuration)
 	RegisterGlobalOption("shutdown_delay", parseOptDuration)
 	RegisterGlobalOption("default_sni", parseOptSingleString)
 	RegisterGlobalOption("fallback_sni", parseOptSingleString)
 	RegisterGlobalOption("order", parseOptOrder)
 	RegisterGlobalOption("storage", parseOptStorage)
-	RegisterGlobalOption("storage_clean_interval", parseOptDuration)
+	RegisterGlobalOption("storage_check", parseStorageCheck)
+	RegisterGlobalOption("storage_clean_interval", parseStorageCleanInterval)
 	RegisterGlobalOption("renew_interval", parseOptDuration)
 	RegisterGlobalOption("ocsp_interval", parseOptDuration)
 	RegisterGlobalOption("acme_ca", parseOptSingleString)
 	RegisterGlobalOption("acme_ca_root", parseOptSingleString)
-	RegisterGlobalOption("acme_dns", parseOptACMEDNS)
+	RegisterGlobalOption("acme_dns", parseOptDNS)
 	RegisterGlobalOption("acme_eab", parseOptACMEEAB)
 	RegisterGlobalOption("cert_issuer", parseOptCertIssuer)
 	RegisterGlobalOption("skip_install_trust", parseOptTrue)
@@ -52,12 +56,15 @@ func init() {
 	RegisterGlobalOption("local_certs", parseOptTrue)
 	RegisterGlobalOption("key_type", parseOptSingleString)
 	RegisterGlobalOption("auto_https", parseOptAutoHTTPS)
+	RegisterGlobalOption("metrics", parseMetricsOptions)
 	RegisterGlobalOption("servers", parseServerOptions)
 	RegisterGlobalOption("ocsp_stapling", parseOCSPStaplingOptions)
 	RegisterGlobalOption("cert_lifetime", parseOptDuration)
 	RegisterGlobalOption("log", parseLogOptions)
 	RegisterGlobalOption("preferred_chains", parseOptPreferredChains)
 	RegisterGlobalOption("persist_config", parseOptPersistConfig)
+	RegisterGlobalOption("dns", parseOptDNS)
+	RegisterGlobalOption("ech", parseOptECH)
 }
 
 func parseOptTrue(d *caddyfile.Dispenser, _ any) (any, error) { return true, nil }
@@ -110,17 +117,12 @@ func parseOptOrder(d *caddyfile.Dispenser, _ any) (any, error) {
 	}
 	pos := Positional(d.Val())
 
-	newOrder := directiveOrder
+	// if directive already had an order, drop it
+	newOrder := slices.DeleteFunc(directiveOrder, func(d string) bool {
+		return d == dirName
+	})
 
-	// if directive exists, first remove it
-	for i, d := range newOrder {
-		if d == dirName {
-			newOrder = append(newOrder[:i], newOrder[i+1:]...)
-			break
-		}
-	}
-
-	// act on the positional
+	// act on the positional; if it's First or Last, we're done right away
 	switch pos {
 	case First:
 		newOrder = append([]string{dirName}, newOrder...)
@@ -129,6 +131,7 @@ func parseOptOrder(d *caddyfile.Dispenser, _ any) (any, error) {
 		}
 		directiveOrder = newOrder
 		return newOrder, nil
+
 	case Last:
 		newOrder = append(newOrder, dirName)
 		if d.NextArg() {
@@ -136,8 +139,11 @@ func parseOptOrder(d *caddyfile.Dispenser, _ any) (any, error) {
 		}
 		directiveOrder = newOrder
 		return newOrder, nil
+
+	// if it's Before or After, continue
 	case Before:
 	case After:
+
 	default:
 		return nil, d.Errf("unknown positional '%s'", pos)
 	}
@@ -151,17 +157,17 @@ func parseOptOrder(d *caddyfile.Dispenser, _ any) (any, error) {
 		return nil, d.ArgErr()
 	}
 
-	// insert directive into proper position
-	for i, d := range newOrder {
-		if d == otherDir {
-			if pos == Before {
-				newOrder = append(newOrder[:i], append([]string{dirName}, newOrder[i:]...)...)
-			} else if pos == After {
-				newOrder = append(newOrder[:i+1], append([]string{dirName}, newOrder[i+1:]...)...)
-			}
-			break
-		}
+	// get the position of the target directive
+	targetIndex := slices.Index(newOrder, otherDir)
+	if targetIndex == -1 {
+		return nil, d.Errf("directive '%s' not found", otherDir)
 	}
+	// if we're inserting after, we need to increment the index to go after
+	if pos == After {
+		targetIndex++
+	}
+	// insert the directive into the new order
+	newOrder = slices.Insert(newOrder, targetIndex, dirName)
 
 	directiveOrder = newOrder
 
@@ -187,6 +193,40 @@ func parseOptStorage(d *caddyfile.Dispenser, _ any) (any, error) {
 	return storage, nil
 }
 
+func parseStorageCheck(d *caddyfile.Dispenser, _ any) (any, error) {
+	d.Next() // consume option name
+	if !d.Next() {
+		return "", d.ArgErr()
+	}
+	val := d.Val()
+	if d.Next() {
+		return "", d.ArgErr()
+	}
+	if val != "off" {
+		return "", d.Errf("storage_check must be 'off'")
+	}
+	return val, nil
+}
+
+func parseStorageCleanInterval(d *caddyfile.Dispenser, _ any) (any, error) {
+	d.Next() // consume option name
+	if !d.Next() {
+		return "", d.ArgErr()
+	}
+	val := d.Val()
+	if d.Next() {
+		return "", d.ArgErr()
+	}
+	if val == "off" {
+		return false, nil
+	}
+	dur, err := caddy.ParseDuration(d.Val())
+	if err != nil {
+		return nil, d.Errf("failed to parse storage_clean_interval, must be a duration or 'off' %w", err)
+	}
+	return caddy.Duration(dur), nil
+}
+
 func parseOptDuration(d *caddyfile.Dispenser, _ any) (any, error) {
 	if !d.Next() { // consume option name
 		return nil, d.ArgErr()
@@ -199,25 +239,6 @@ func parseOptDuration(d *caddyfile.Dispenser, _ any) (any, error) {
 		return nil, err
 	}
 	return caddy.Duration(dur), nil
-}
-
-func parseOptACMEDNS(d *caddyfile.Dispenser, _ any) (any, error) {
-	if !d.Next() { // consume option name
-		return nil, d.ArgErr()
-	}
-	if !d.Next() { // get DNS module name
-		return nil, d.ArgErr()
-	}
-	modID := "dns.providers." + d.Val()
-	unm, err := caddyfile.UnmarshalModule(d, modID)
-	if err != nil {
-		return nil, err
-	}
-	prov, ok := unm.(certmagic.DNSProvider)
-	if !ok {
-		return nil, d.Errf("module %s (%T) is not a certmagic.DNSProvider", modID, unm)
-	}
-	return prov, nil
 }
 
 func parseOptACMEEAB(d *caddyfile.Dispenser, _ any) (any, error) {
@@ -284,13 +305,32 @@ func parseOptSingleString(d *caddyfile.Dispenser, _ any) (any, error) {
 	return val, nil
 }
 
-func parseOptStringList(d *caddyfile.Dispenser, _ any) (any, error) {
+func parseOptDefaultBind(d *caddyfile.Dispenser, _ any) (any, error) {
 	d.Next() // consume option name
-	val := d.RemainingArgs()
-	if len(val) == 0 {
-		return "", d.ArgErr()
+
+	var addresses, protocols []string
+	addresses = d.RemainingArgs()
+
+	if len(addresses) == 0 {
+		addresses = append(addresses, "")
 	}
-	return val, nil
+
+	for d.NextBlock(0) {
+		switch d.Val() {
+		case "protocols":
+			protocols = d.RemainingArgs()
+			if len(protocols) == 0 {
+				return nil, d.Errf("protocols requires one or more arguments")
+			}
+		default:
+			return nil, d.Errf("unknown subdirective: %s", d.Val())
+		}
+	}
+
+	return []ConfigValue{{Class: "bind", Value: addressesWithProtocols{
+		addresses: addresses,
+		protocols: protocols,
+	}}}, nil
 }
 
 func parseOptAdmin(d *caddyfile.Dispenser, _ any) (any, error) {
@@ -375,36 +415,10 @@ func parseOptOnDemand(d *caddyfile.Dispenser, _ any) (any, error) {
 			ond.PermissionRaw = caddyconfig.JSONModuleObject(perm, "module", modName, nil)
 
 		case "interval":
-			if !d.NextArg() {
-				return nil, d.ArgErr()
-			}
-			dur, err := caddy.ParseDuration(d.Val())
-			if err != nil {
-				return nil, err
-			}
-			if ond == nil {
-				ond = new(caddytls.OnDemandConfig)
-			}
-			if ond.RateLimit == nil {
-				ond.RateLimit = new(caddytls.RateLimit)
-			}
-			ond.RateLimit.Interval = caddy.Duration(dur)
+			return nil, d.Errf("the on_demand_tls 'interval' option is no longer supported, remove it from your config")
 
 		case "burst":
-			if !d.NextArg() {
-				return nil, d.ArgErr()
-			}
-			burst, err := strconv.Atoi(d.Val())
-			if err != nil {
-				return nil, err
-			}
-			if ond == nil {
-				ond = new(caddytls.OnDemandConfig)
-			}
-			if ond.RateLimit == nil {
-				ond.RateLimit = new(caddytls.RateLimit)
-			}
-			ond.RateLimit.Burst = burst
+			return nil, d.Errf("the on_demand_tls 'burst' option is no longer supported, remove it from your config")
 
 		default:
 			return nil, d.Errf("unrecognized parameter '%s'", d.Val())
@@ -433,17 +447,40 @@ func parseOptPersistConfig(d *caddyfile.Dispenser, _ any) (any, error) {
 
 func parseOptAutoHTTPS(d *caddyfile.Dispenser, _ any) (any, error) {
 	d.Next() // consume option name
-	if !d.Next() {
+	val := d.RemainingArgs()
+	if len(val) == 0 {
 		return "", d.ArgErr()
 	}
-	val := d.Val()
-	if d.Next() {
-		return "", d.ArgErr()
-	}
-	if val != "off" && val != "disable_redirects" && val != "disable_certs" && val != "ignore_loaded_certs" {
-		return "", d.Errf("auto_https must be one of 'off', 'disable_redirects', 'disable_certs', or 'ignore_loaded_certs'")
+	for _, v := range val {
+		switch v {
+		case "off":
+		case "disable_redirects":
+		case "disable_certs":
+		case "ignore_loaded_certs":
+		case "prefer_wildcard":
+		default:
+			return "", d.Errf("auto_https must be one of 'off', 'disable_redirects', 'disable_certs', 'ignore_loaded_certs', or 'prefer_wildcard'")
+		}
 	}
 	return val, nil
+}
+
+func unmarshalCaddyfileMetricsOptions(d *caddyfile.Dispenser) (any, error) {
+	d.Next() // consume option name
+	metrics := new(caddyhttp.Metrics)
+	for d.NextBlock(0) {
+		switch d.Val() {
+		case "per_host":
+			metrics.PerHost = true
+		default:
+			return nil, d.Errf("unrecognized servers option '%s'", d.Val())
+		}
+	}
+	return metrics, nil
+}
+
+func parseMetricsOptions(d *caddyfile.Dispenser, _ any) (any, error) {
+	return unmarshalCaddyfileMetricsOptions(d)
 }
 
 func parseServerOptions(d *caddyfile.Dispenser, _ any) (any, error) {
@@ -514,4 +551,75 @@ func parseLogOptions(d *caddyfile.Dispenser, existingVal any) (any, error) {
 func parseOptPreferredChains(d *caddyfile.Dispenser, _ any) (any, error) {
 	d.Next()
 	return caddytls.ParseCaddyfilePreferredChainsOptions(d)
+}
+
+func parseOptDNS(d *caddyfile.Dispenser, _ any) (any, error) {
+	d.Next() // consume option name
+	optName := d.Val()
+
+	// get DNS module name
+	if !d.Next() {
+		// this is allowed if this is the "acme_dns" option since it may refer to the globally-configured "dns" option's value
+		if optName == "acme_dns" {
+			return nil, nil
+		}
+		return nil, d.ArgErr()
+	}
+	modID := "dns.providers." + d.Val()
+	unm, err := caddyfile.UnmarshalModule(d, modID)
+	if err != nil {
+		return nil, err
+	}
+	switch unm.(type) {
+	case libdns.RecordGetter,
+		libdns.RecordSetter,
+		libdns.RecordAppender,
+		libdns.RecordDeleter:
+	default:
+		return nil, d.Errf("module %s (%T) is not a libdns provider", modID, unm)
+	}
+	return unm, nil
+}
+
+func parseOptECH(d *caddyfile.Dispenser, _ any) (any, error) {
+	d.Next() // consume option name
+
+	ech := new(caddytls.ECH)
+
+	publicNames := d.RemainingArgs()
+	for _, publicName := range publicNames {
+		ech.Configs = append(ech.Configs, caddytls.ECHConfiguration{
+			PublicName: publicName,
+		})
+	}
+	if len(ech.Configs) == 0 {
+		return nil, d.ArgErr()
+	}
+
+	for nesting := d.Nesting(); d.NextBlock(nesting); {
+		switch d.Val() {
+		case "dns":
+			if !d.Next() {
+				return nil, d.ArgErr()
+			}
+			providerName := d.Val()
+			modID := "dns.providers." + providerName
+			unm, err := caddyfile.UnmarshalModule(d, modID)
+			if err != nil {
+				return nil, err
+			}
+			ech.Publication = append(ech.Publication, &caddytls.ECHPublication{
+				Configs: publicNames,
+				PublishersRaw: caddy.ModuleMap{
+					"dns": caddyconfig.JSON(caddytls.ECHDNSPublisher{
+						ProviderRaw: caddyconfig.JSONModuleObject(unm, "name", providerName, nil),
+					}, nil),
+				},
+			})
+		default:
+			return nil, d.Errf("ech: unrecognized subdirective '%s'", d.Val())
+		}
+	}
+
+	return ech, nil
 }

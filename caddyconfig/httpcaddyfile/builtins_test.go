@@ -62,6 +62,20 @@ func TestLogDirectiveSyntax(t *testing.T) {
 			output:      `{"logging":{"logs":{"default":{"exclude":["http.log.access.name-override"]},"name-override":{"writer":{"filename":"foo.log","output":"file"},"core":{"module":"mock"},"include":["http.log.access.name-override"]}}},"apps":{"http":{"servers":{"srv0":{"listen":[":8080"],"logs":{"default_logger_name":"name-override"}}}}}}`,
 			expectError: false,
 		},
+		{
+			input: `:8080 {
+				log {
+					sampling {
+						interval 2
+						first 3
+						thereafter 4
+					}
+				}
+			}
+			`,
+			output:      `{"logging":{"logs":{"default":{"exclude":["http.log.access.log0"]},"log0":{"sampling":{"interval":2,"first":3,"thereafter":4},"include":["http.log.access.log0"]}}},"apps":{"http":{"servers":{"srv0":{"listen":[":8080"],"logs":{"default_logger_name":"log0"}}}}}}`,
+			expectError: false,
+		},
 	} {
 
 		adapter := caddyfile.Adapter{

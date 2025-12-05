@@ -1,0 +1,249 @@
+name: Release Proposal
+
+# This workflow creates a release proposal as a PR that requires approval from maintainers
+# Triggered manually by maintainers when ready to prepare a release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., v2.8.0)'
+        required: true
+        type: string
+      commit_hash:
+        description: 'Commit hash to release from'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  create-proposal:
+    name: Create Release Proposal
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        with:
+          egress-policy: audit
+      - name: Checkout code
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Trim and validate inputs
+        id: inputs
+        run: |
+          # Trim whitespace from inputs
+          VERSION=$(echo "${{ inputs.version }}" | xargs)
+          COMMIT_HASH=$(echo "${{ inputs.commit_hash }}" | xargs)
+          
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "commit_hash=$COMMIT_HASH" >> $GITHUB_OUTPUT
+          
+          # Validate version format
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+            echo "Error: Version must follow semver format (e.g., v2.8.0 or v2.8.0-beta.1)"
+            exit 1
+          fi
+          
+          # Validate commit hash format
+          if [[ ! "$COMMIT_HASH" =~ ^[a-f0-9]{7,40}$ ]]; then
+            echo "Error: Commit hash must be a valid SHA (7-40 characters)"
+            exit 1
+          fi
+          
+          # Check if commit exists
+          if ! git cat-file -e "$COMMIT_HASH"; then
+            echo "Error: Commit $COMMIT_HASH does not exist"
+            exit 1
+          fi
+
+      - name: Check if tag already exists
+        run: |
+          if git rev-parse "${{ steps.inputs.outputs.version }}" >/dev/null 2>&1; then
+            echo "Error: Tag ${{ steps.inputs.outputs.version }} already exists"
+            exit 1
+          fi
+
+      - name: Check for existing proposal PR
+        id: check_existing
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            const version = '${{ steps.inputs.outputs.version }}';
+            
+            // Search for existing open PRs with release-proposal label that match this version
+            const openPRs = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              sort: 'updated',
+              direction: 'desc'
+            });
+            
+            const existingOpenPR = openPRs.data.find(pr => 
+              pr.title.includes(version) && 
+              pr.labels.some(label => label.name === 'release-proposal')
+            );
+            
+            if (existingOpenPR) {
+              const hasReleased = existingOpenPR.labels.some(label => label.name === 'released');
+              const hasReleaseInProgress = existingOpenPR.labels.some(label => label.name === 'release-in-progress');
+              
+              if (hasReleased || hasReleaseInProgress) {
+                core.setFailed(`A release for ${version} is already in progress or completed: ${existingOpenPR.html_url}`);
+              } else {
+                core.setFailed(`An open release proposal already exists for ${version}: ${existingOpenPR.html_url}\n\nPlease use the existing PR or close it first.`);
+              }
+              return;
+            }
+            
+            // Check for closed PRs with this version that were cancelled
+            const closedPRs = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'closed',
+              sort: 'updated',
+              direction: 'desc'
+            });
+            
+            const cancelledPR = closedPRs.data.find(pr => 
+              pr.title.includes(version) && 
+              pr.labels.some(label => label.name === 'release-proposal') &&
+              pr.labels.some(label => label.name === 'cancelled')
+            );
+            
+            if (cancelledPR) {
+              console.log(`Found previously cancelled proposal for ${version}: ${cancelledPR.html_url}`);
+              console.log('Creating new proposal to replace cancelled one...');
+            } else {
+              console.log(`No existing proposal found for ${version}, proceeding...`);
+            }
+
+      - name: Generate changelog and create branch
+        id: setup
+        run: |
+          VERSION="${{ steps.inputs.outputs.version }}"
+          COMMIT_HASH="${{ steps.inputs.outputs.commit_hash }}"
+          
+          # Create a new branch for the release proposal
+          BRANCH_NAME="release_proposal-$VERSION"
+          git checkout -b "$BRANCH_NAME"
+          
+          # Calculate how many commits behind HEAD
+          COMMITS_BEHIND=$(git rev-list --count ${COMMIT_HASH}..HEAD)
+          
+          if [ "$COMMITS_BEHIND" -eq 0 ]; then
+            BEHIND_INFO="This is the latest commit (HEAD)"
+          else
+            BEHIND_INFO="This commit is **${COMMITS_BEHIND} commits behind HEAD**"
+          fi
+          
+          echo "commits_behind=$COMMITS_BEHIND" >> $GITHUB_OUTPUT
+          echo "behind_info=$BEHIND_INFO" >> $GITHUB_OUTPUT
+          
+          # Get the last tag
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          
+          if [ -z "$LAST_TAG" ]; then
+            echo "No previous tag found, generating full changelog"
+            COMMITS=$(git log --pretty=format:"- %s (%h)" --reverse "$COMMIT_HASH")
+          else
+            echo "Generating changelog since $LAST_TAG"
+            COMMITS=$(git log --pretty=format:"- %s (%h)" --reverse "${LAST_TAG}..$COMMIT_HASH")
+          fi
+          
+          # Store changelog for PR body
+          CLEANSED_COMMITS=$(echo "$COMMITS" | sed 's/`/\\`/g')
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo "$CLEANSED_COMMITS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          # Create empty commit for the PR
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit --allow-empty -m "Release proposal for $VERSION"
+          
+          # Push the branch
+          git push origin "$BRANCH_NAME"
+          
+          echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+
+      - name: Create release proposal PR
+        id: create_pr
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            const changelog = `${{ steps.setup.outputs.changelog }}`;
+            
+            const pr = await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Release Proposal: ${{ steps.inputs.outputs.version }}`,
+              head: '${{ steps.setup.outputs.branch_name }}',
+              base: 'master',
+              body: `## Release Proposal: ${{ steps.inputs.outputs.version }}
+            
+            **Target Commit:** \`${{ steps.inputs.outputs.commit_hash }}\`
+            **Requested by:** @${{ github.actor }}
+            **Commit Status:** ${{ steps.setup.outputs.behind_info }}
+            
+            This PR proposes creating release tag \`${{ steps.inputs.outputs.version }}\` at commit \`${{ steps.inputs.outputs.commit_hash }}\`.
+            
+            ### Approval Process
+            
+            This PR requires **approval from 2+ maintainers** before the tag can be created.
+            
+            ### What happens next?
+            
+            1. Maintainers review this proposal
+            2. When 2+ maintainer approvals are received, an automated workflow will post tagging instructions
+            3. A maintainer manually creates and pushes the signed tag
+            4. The release workflow is triggered automatically by the tag push
+            5. Upon release completion, this PR is closed and the branch is deleted
+            
+            ### Changes Since Last Release
+            
+            ${changelog}
+            
+            ### Release Checklist
+            
+            - [ ] All tests pass
+            - [ ] Security review completed
+            - [ ] Documentation updated
+            - [ ] Breaking changes documented
+            
+            ---
+            
+            **Note:** Tag creation is manual and requires a signed tag from a maintainer.`,
+              draft: true
+            });
+            
+            // Add labels
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.data.number,
+              labels: ['release-proposal', 'awaiting-approval']
+            });
+            
+            console.log(`Created PR: ${pr.data.html_url}`);
+            
+            return { number: pr.data.number, url: pr.data.html_url };
+          result-encoding: json
+
+      - name: Post summary
+        run: |
+          echo "## Release Proposal PR Created! 🚀" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Version: **${{ steps.inputs.outputs.version }}**" >> $GITHUB_STEP_SUMMARY
+          echo "Commit: **${{ steps.inputs.outputs.commit_hash }}**" >> $GITHUB_STEP_SUMMARY
+          echo "Status: ${{ steps.setup.outputs.behind_info }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "PR: ${{ fromJson(steps.create_pr.outputs.result).url }}" >> $GITHUB_STEP_SUMMARY

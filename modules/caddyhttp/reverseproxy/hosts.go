@@ -17,7 +17,6 @@ package reverseproxy
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"net/netip"
 	"strconv"
 	"sync/atomic"
@@ -57,10 +56,11 @@ type Upstream struct {
 	// HeaderAffinity string
 	// IPAffinity     string
 
-	activeHealthCheckPort int
-	healthCheckPolicy     *PassiveHealthChecks
-	cb                    CircuitBreaker
-	unhealthy             int32 // accessed atomically; status from active health checker
+	activeHealthCheckPort     int
+	activeHealthCheckUpstream string
+	healthCheckPolicy         *PassiveHealthChecks
+	cb                        CircuitBreaker
+	unhealthy                 int32 // accessed atomically; status from active health checker
 }
 
 // (pointer receiver necessary to avoid a race condition, since
@@ -99,8 +99,7 @@ func (u *Upstream) Full() bool {
 
 // fillDialInfo returns a filled DialInfo for upstream u, using the request
 // context. Note that the returned value is not a pointer.
-func (u *Upstream) fillDialInfo(r *http.Request) (DialInfo, error) {
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+func (u *Upstream) fillDialInfo(repl *caddy.Replacer) (DialInfo, error) {
 	var addr caddy.NetworkAddress
 
 	// use provided dial address
@@ -282,3 +281,10 @@ const proxyProtocolInfoVarKey = "reverse_proxy.proxy_protocol_info"
 type ProxyProtocolInfo struct {
 	AddrPort netip.AddrPort
 }
+
+// tlsH1OnlyVarKey is the key used that indicates the connection will use h1 only for TLS.
+// https://github.com/caddyserver/caddy/issues/7292
+const tlsH1OnlyVarKey = "reverse_proxy.tls_h1_only"
+
+// proxyVarKey is the key used that indicates the proxy server used for a request.
+const proxyVarKey = "reverse_proxy.proxy"

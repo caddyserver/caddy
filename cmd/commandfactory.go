@@ -4,22 +4,22 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type RootCommandFactory struct {
+type rootCommandFactory struct {
 	constructor func() *cobra.Command
 	options     []func(*cobra.Command)
 }
 
-func NewRootCommandFactory(fn func() *cobra.Command) *RootCommandFactory {
-	return &RootCommandFactory{
+func newRootCommandFactory(fn func() *cobra.Command) *rootCommandFactory {
+	return &rootCommandFactory{
 		constructor: fn,
 	}
 }
 
-func (f *RootCommandFactory) Use(fn func(cmd *cobra.Command)) {
+func (f *rootCommandFactory) Use(fn func(cmd *cobra.Command)) {
 	f.options = append(f.options, fn)
 }
 
-func (f *RootCommandFactory) Build() *cobra.Command {
+func (f *rootCommandFactory) Build() *cobra.Command {
 	o := f.constructor()
 	for _, v := range f.options {
 		v(o)

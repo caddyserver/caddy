@@ -52,9 +52,9 @@ func Format(input []byte) []byte {
 
 		newLines int // count of newlines consumed
 
-		comment bool // whether we're in a comment
-		quoted  bool // whether we're in a quoted segment
-		escaped bool // whether current char is escaped
+		comment bool   // whether we're in a comment
+		quotes  string // encountered quotes ('', '`', '"', '"`', '`"')
+		escaped bool   // whether current char is escaped
 
 		heredoc              heredocState // whether we're in a heredoc
 		heredocEscaped       bool         // whether heredoc is escaped
@@ -88,9 +88,8 @@ func Format(input []byte) []byte {
 			}
 			panic(err)
 		}
-
 		// detect whether we have the start of a heredoc
-		if !quoted && !(heredoc != heredocClosed || heredocEscaped) &&
+		if quotes == "" && (heredoc == heredocClosed && !heredocEscaped) &&
 			space && last == '<' && ch == '<' {
 			write(ch)
 			heredoc = heredocOpening
@@ -176,16 +175,38 @@ func Format(input []byte) []byte {
 			continue
 		}
 
-		if quoted {
+		if ch == '`' {
+			switch quotes {
+			case "\"`":
+				quotes = "\""
+			case "`":
+				quotes = ""
+			case "\"":
+				quotes = "\"`"
+			default:
+				quotes = "`"
+			}
+		}
+
+		if quotes == "\"" {
 			if ch == '"' {
-				quoted = false
+				quotes = ""
 			}
 			write(ch)
 			continue
 		}
 
-		if space && ch == '"' {
-			quoted = true
+		if ch == '"' {
+			switch quotes {
+			case "":
+				if space {
+					quotes = "\""
+				}
+			case "`\"":
+				quotes = "`"
+			case "\"`":
+				quotes = ""
+			}
 		}
 
 		if unicode.IsSpace(ch) {
@@ -220,7 +241,7 @@ func Format(input []byte) []byte {
 			openBrace = false
 			if beginningOfLine {
 				indent()
-			} else if !openBraceSpace {
+			} else if !openBraceSpace || !unicode.IsSpace(last) {
 				write(' ')
 			}
 			write('{')
@@ -236,14 +257,23 @@ func Format(input []byte) []byte {
 		switch {
 		case ch == '{':
 			openBrace = true
-			openBraceWritten = false
 			openBraceSpace = spacePrior && !beginningOfLine
-			if openBraceSpace {
+			if openBraceSpace && newLines == 0 {
 				write(' ')
+			}
+			openBraceWritten = false
+			if quotes == "`" {
+				write('{')
+				openBraceWritten = true
+				continue
 			}
 			continue
 
 		case ch == '}' && (spacePrior || !openBrace):
+			if quotes == "`" {
+				write('}')
+				continue
+			}
 			if last != '\n' {
 				nextLine()
 			}

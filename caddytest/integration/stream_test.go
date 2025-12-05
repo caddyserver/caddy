@@ -13,9 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/caddyserver/caddy/v2/caddytest"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
+
+	"github.com/caddyserver/caddy/v2/caddytest"
 )
 
 // (see https://github.com/caddyserver/caddy/issues/3556 for use case)

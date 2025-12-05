@@ -15,6 +15,7 @@
 package metrics
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -62,7 +63,11 @@ func (l *zapLogger) Println(v ...any) {
 // Provision sets up m.
 func (m *Metrics) Provision(ctx caddy.Context) error {
 	log := ctx.Logger()
-	m.metricsHandler = createMetricsHandler(&zapLogger{log}, !m.DisableOpenMetrics)
+	registry := ctx.GetMetricsRegistry()
+	if registry == nil {
+		return errors.New("no metrics registry found")
+	}
+	m.metricsHandler = createMetricsHandler(&zapLogger{log}, !m.DisableOpenMetrics, registry)
 	return nil
 }
 
@@ -107,9 +112,9 @@ var (
 	_ caddyfile.Unmarshaler       = (*Metrics)(nil)
 )
 
-func createMetricsHandler(logger promhttp.Logger, enableOpenMetrics bool) http.Handler {
-	return promhttp.InstrumentMetricHandler(prometheus.DefaultRegisterer,
-		promhttp.HandlerFor(prometheus.DefaultGatherer, promhttp.HandlerOpts{
+func createMetricsHandler(logger promhttp.Logger, enableOpenMetrics bool, registry *prometheus.Registry) http.Handler {
+	return promhttp.InstrumentMetricHandler(registry,
+		promhttp.HandlerFor(registry, promhttp.HandlerOpts{
 			// will only log errors if logger is non-nil
 			ErrorLog: logger,
 

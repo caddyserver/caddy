@@ -1,25 +1,19 @@
-linters-settings:
-  errcheck:
-    ignore: fmt:.*,go.uber.org/zap/zapcore:^Add.*
-    ignoretests: true
-  gci:
-    sections:
-      - standard # Standard section: captures all standard packages.
-      - default # Default section: contains all imports that could not be matched to another section type.
-      - prefix(github.com/caddyserver/caddy/v2/cmd) # ensure that this is always at the top and always has a line break.
-      - prefix(github.com/caddyserver/caddy) # Custom section: groups all imports with the specified Prefix.
-    # Skip generated files.
-    # Default: true
-    skip-generated: true
-    # Enable custom order of sections.
-    # If `true`, make the section order the same as the order of `sections`.
-    # Default: false
-    custom-order: true
-  exhaustive:
-    ignore-enum-types: reflect.Kind|svc.Cmd
-
+version: "2"
+run:
+  issues-exit-code: 1
+  tests: false
+  build-tags:
+    - nobadger
+    - nomysql
+    - nopgx
+output:
+  formats:
+    text:
+      path: stdout
+      print-linter-name: true
+      print-issued-lines: true
 linters:
-  disable-all: true
+  default: none
   enable:
     - asasalint
     - asciicheck
@@ -33,136 +27,96 @@ linters:
     - errcheck
     - errname
     - exhaustive
-    - exportloopref
-    - gci
-    - gofmt
-    - goimports
-    - gofumpt
     - gosec
-    - gosimple
     - govet
-    - ineffassign
     - importas
+    - ineffassign
     - misspell
     - prealloc
     - promlinter
     - sloglint
     - sqlclosecheck
     - staticcheck
-    - tenv
     - testableexamples
     - testifylint
     - tparallel
-    - typecheck
     - unconvert
     - unused
     - wastedassign
     - whitespace
     - zerologlint
-  # these are implicitly disabled:
-  # - containedctx
-  # - contextcheck
-  # - cyclop
-  # - depguard
-  # - errchkjson
-  # - errorlint
-  # - exhaustruct
-  # - execinquery
-  # - exhaustruct
-  # - forbidigo
-  # - forcetypeassert
-  # - funlen
-  # - ginkgolinter
-  # - gocheckcompilerdirectives
-  # - gochecknoglobals
-  # - gochecknoinits
-  # - gochecksumtype
-  # - gocognit
-  # - goconst
-  # - gocritic
-  # - gocyclo
-  # - godot
-  # - godox
-  # - goerr113
-  # - goheader
-  # - gomnd
-  # - gomoddirectives
-  # - gomodguard
-  # - goprintffuncname
-  # - gosmopolitan
-  # - grouper
-  # - inamedparam
-  # - interfacebloat
-  # - ireturn
-  # - lll
-  # - loggercheck
-  # - maintidx
-  # - makezero
-  # - mirror
-  # - musttag
-  # - nakedret
-  # - nestif
-  # - nilerr
-  # - nilnil
-  # - nlreturn
-  # - noctx
-  # - nolintlint
-  # - nonamedreturns
-  # - nosprintfhostport
-  # - paralleltest
-  # - perfsprint
-  # - predeclared
-  # - protogetter
-  # - reassign
-  # - revive
-  # - rowserrcheck
-  # - stylecheck
-  # - tagalign
-  # - tagliatelle
-  # - testpackage
-  # - thelper
-  # - unparam
-  # - usestdlibvars
-  # - varnamelen
-  # - wrapcheck
-  # - wsl
-
-run:
-  # default concurrency is a available CPU number.
-  # concurrency: 4 # explicitly omit this value to fully utilize available resources.
-  deadline: 5m
-  issues-exit-code: 1
-  tests: false
-
-# output configuration options
-output:
-  format: 'colored-line-number'
-  print-issued-lines: true
-  print-linter-name: true
-
-issues:
-  exclude-rules:
-    # we aren't calling unknown URL
-    - text: 'G107' # G107: Url provided to HTTP request as taint input
-      linters:
-        - gosec
-    # as a web server that's expected to handle any template, this is totally in the hands of the user.
-    - text: 'G203' # G203: Use of unescaped data in HTML templates
-      linters:
-        - gosec
-    # we're shelling out to known commands, not relying on user-defined input.
-    - text: 'G204' # G204: Audit use of command execution
-      linters:
-        - gosec
-    # the choice of weakrand is deliberate, hence the named import "weakrand"
-    - path: modules/caddyhttp/reverseproxy/selectionpolicies.go
-      text: 'G404' # G404: Insecure random number source (rand)
-      linters:
-        - gosec
-    - path: modules/caddyhttp/reverseproxy/streaming.go
-      text: 'G404' # G404: Insecure random number source (rand)
-      linters:
-        - gosec
-    - path: modules/logging/filters.go
-      linters:
-        - dupl
+  settings:
+    staticcheck:
+      checks: ["all", "-ST1000", "-ST1003", "-ST1016", "-ST1020", "-ST1021", "-ST1022",  "-QF1006", "-QF1008"] # default, and exclude 1 more undesired check
+    errcheck:
+      exclude-functions:
+        - fmt.*
+        - (go.uber.org/zap/zapcore.ObjectEncoder).AddObject
+        - (go.uber.org/zap/zapcore.ObjectEncoder).AddArray
+    exhaustive:
+      ignore-enum-types: reflect.Kind|svc.Cmd
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - gosec
+        text: G115 # TODO: Either we should fix the issues or nuke the linter if it's bad
+      - linters:
+          - gosec
+        text: G107 # we aren't calling unknown URL
+      - linters:
+          - gosec
+        text: G203 # as a web server that's expected to handle any template, this is totally in the hands of the user.
+      - linters:
+          - gosec
+        text: G204 # we're shelling out to known commands, not relying on user-defined input.
+      - linters:
+          - gosec
+        # the choice of weakrand is deliberate, hence the named import "weakrand"
+        path: modules/caddyhttp/reverseproxy/selectionpolicies.go
+        text: G404
+      - linters:
+          - gosec
+        path: modules/caddyhttp/reverseproxy/streaming.go
+        text: G404
+      - linters:
+          - dupl
+        path: modules/logging/filters.go
+      - linters:
+          - dupl
+        path: modules/caddyhttp/matchers.go
+      - linters:
+          - dupl
+        path: modules/caddyhttp/vars.go
+      - linters:
+          - errcheck
+        path: _test\.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - gofumpt
+    - goimports
+  settings:
+    gci:
+      sections:
+        - standard # Standard section: captures all standard packages.
+        - default # Default section: contains all imports that could not be matched to another section type.
+        - prefix(github.com/caddyserver/caddy/v2/cmd) # ensure that this is always at the top and always has a line break.
+        - prefix(github.com/caddyserver/caddy) # Custom section: groups all imports with the specified Prefix.
+      custom-order: true
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

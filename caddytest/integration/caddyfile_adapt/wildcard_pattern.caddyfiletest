@@ -1,0 +1,157 @@
+*.example.com {
+	tls foo@example.com {
+		dns mock
+	}
+
+	@foo host foo.example.com
+	handle @foo {
+		respond "Foo!"
+	}
+
+	@bar host bar.example.com
+	handle @bar {
+		respond "Bar!"
+	}
+
+	# Fallback for otherwise unhandled domains
+	handle {
+		abort
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"*.example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"group": "group3",
+											"handle": [
+												{
+													"handler": "subroute",
+													"routes": [
+														{
+															"handle": [
+																{
+																	"body": "Foo!",
+																	"handler": "static_response"
+																}
+															]
+														}
+													]
+												}
+											],
+											"match": [
+												{
+													"host": [
+														"foo.example.com"
+													]
+												}
+											]
+										},
+										{
+											"group": "group3",
+											"handle": [
+												{
+													"handler": "subroute",
+													"routes": [
+														{
+															"handle": [
+																{
+																	"body": "Bar!",
+																	"handler": "static_response"
+																}
+															]
+														}
+													]
+												}
+											],
+											"match": [
+												{
+													"host": [
+														"bar.example.com"
+													]
+												}
+											]
+										},
+										{
+											"group": "group3",
+											"handle": [
+												{
+													"handler": "subroute",
+													"routes": [
+														{
+															"handle": [
+																{
+																	"abort": true,
+																	"handler": "static_response"
+																}
+															]
+														}
+													]
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"subjects": [
+							"*.example.com"
+						],
+						"issuers": [
+							{
+								"challenges": {
+									"dns": {
+										"provider": {
+											"name": "mock"
+										}
+									}
+								},
+								"email": "foo@example.com",
+								"module": "acme"
+							},
+							{
+								"ca": "https://acme.zerossl.com/v2/DV90",
+								"challenges": {
+									"dns": {
+										"provider": {
+											"name": "mock"
+										}
+									}
+								},
+								"email": "foo@example.com",
+								"module": "acme"
+							}
+						]
+					}
+				]
+			}
+		}
+	}
+}

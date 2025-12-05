@@ -145,6 +145,9 @@ func (nw *NetWriter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.ArgErr()
 			}
 			nw.SoftStart = true
+
+		default:
+			return d.Errf("unrecognized subdirective '%s'", d.Val())
 		}
 	}
 	return nil
@@ -169,7 +172,7 @@ func (reconn *redialerConn) Write(b []byte) (n int, err error) {
 	reconn.connMu.RUnlock()
 	if conn != nil {
 		if n, err = conn.Write(b); err == nil {
-			return
+			return n, err
 		}
 	}
 
@@ -181,7 +184,7 @@ func (reconn *redialerConn) Write(b []byte) (n int, err error) {
 	// one of them might have already re-dialed by now; try writing again
 	if reconn.Conn != nil {
 		if n, err = reconn.Conn.Write(b); err == nil {
-			return
+			return n, err
 		}
 	}
 
@@ -195,7 +198,7 @@ func (reconn *redialerConn) Write(b []byte) (n int, err error) {
 		if err2 != nil {
 			// logger socket still offline; instead of discarding the log, dump it to stderr
 			os.Stderr.Write(b)
-			return
+			return n, err
 		}
 		if n, err = conn2.Write(b); err == nil {
 			if reconn.Conn != nil {
@@ -208,7 +211,7 @@ func (reconn *redialerConn) Write(b []byte) (n int, err error) {
 		os.Stderr.Write(b)
 	}
 
-	return
+	return n, err
 }
 
 func (reconn *redialerConn) dial() (net.Conn, error) {

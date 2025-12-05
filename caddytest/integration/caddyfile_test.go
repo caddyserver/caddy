@@ -803,6 +803,46 @@ func TestHandleErrorRangeAndCodes(t *testing.T) {
 	harness.AssertGetResponse(target+"private", 410, "Error in the [400 .. 499] range")
 }
 
+func TestHandleErrorSubHandlers(t *testing.T) {
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`{
+		admin localhost:2999
+		http_port     9080
+	}
+	localhost:9080 {
+		root * /srv
+		file_server
+		error /*/internalerr* "Internal Server Error" 500
+
+		handle_errors 404 {
+			handle /en/* {
+				respond "not found" 404
+			}
+			handle /es/* {
+				respond "no encontrado" 404
+			}
+			handle {
+				respond "default not found"
+			}
+		}
+		handle_errors {
+			handle {
+				respond "Default error"
+			}
+			handle /en/* {
+				respond "English error"
+			}
+		}
+	}
+	`, "caddyfile")
+	// act and assert
+	harness.AssertGetResponse("http://localhost:9080/en/notfound", 404, "not found")
+	harness.AssertGetResponse("http://localhost:9080/es/notfound", 404, "no encontrado")
+	harness.AssertGetResponse("http://localhost:9080/notfound", 404, "default not found")
+	harness.AssertGetResponse("http://localhost:9080/es/internalerr", 500, "Default error")
+	harness.AssertGetResponse("http://localhost:9080/en/internalerr", 500, "English error")
+}
+
 func TestInvalidSiteAddressesAsDirectives(t *testing.T) {
 	type testCase struct {
 		config, expectedError string

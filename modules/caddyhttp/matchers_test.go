@@ -158,7 +158,10 @@ func TestHostMatcher(t *testing.T) {
 			t.Errorf("Test %d %v: provisioning failed: %v", i, tc.match, err)
 		}
 
-		actual := tc.match.Match(req)
+		actual, err := tc.match.MatchWithError(req)
+		if err != nil {
+			t.Errorf("Test %d %v: matching failed: %v", i, tc.match, err)
+		}
 		if actual != tc.expect {
 			t.Errorf("Test %d %v: Expected %t, got %t for '%s'", i, tc.match, tc.expect, actual, tc.input)
 			continue
@@ -430,7 +433,10 @@ func TestPathMatcher(t *testing.T) {
 		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
 		req = req.WithContext(ctx)
 
-		actual := tc.match.Match(req)
+		actual, err := tc.match.MatchWithError(req)
+		if err != nil {
+			t.Errorf("Test %d %v: matching failed: %v", i, tc.match, err)
+		}
 		if actual != tc.expect {
 			t.Errorf("Test %d %v: Expected %t, got %t for '%s'", i, tc.match, tc.expect, actual, tc.input)
 			continue
@@ -451,7 +457,10 @@ func TestPathMatcherWindows(t *testing.T) {
 	req = req.WithContext(ctx)
 
 	match := MatchPath{"*.php"}
-	matched := match.Match(req)
+	matched, err := match.MatchWithError(req)
+	if err != nil {
+		t.Errorf("Expected no error, but got: %v", err)
+	}
 	if !matched {
 		t.Errorf("Expected to match; should ignore trailing dots and spaces")
 	}
@@ -555,7 +564,10 @@ func TestPathREMatcher(t *testing.T) {
 		req = req.WithContext(ctx)
 		addHTTPVarsToReplacer(repl, req, httptest.NewRecorder())
 
-		actual := tc.match.Match(req)
+		actual, err := tc.match.MatchWithError(req)
+		if err != nil {
+			t.Errorf("Test %d %v: matching failed: %v", i, tc.match, err)
+		}
 		if actual != tc.expect {
 			t.Errorf("Test %d [%v]: Expected %t, got %t for input '%s'",
 				i, tc.match.Pattern, tc.expect, actual, tc.input)
@@ -691,7 +703,10 @@ func TestHeaderMatcher(t *testing.T) {
 		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
 		req = req.WithContext(ctx)
 
-		actual := tc.match.Match(req)
+		actual, err := tc.match.MatchWithError(req)
+		if err != nil {
+			t.Errorf("Test %d %v: matching failed: %v", i, tc.match, err)
+		}
 		if actual != tc.expect {
 			t.Errorf("Test %d %v: Expected %t, got %t for '%s'", i, tc.match, tc.expect, actual, tc.input)
 			continue
@@ -818,7 +833,10 @@ func TestQueryMatcher(t *testing.T) {
 		repl.Set("http.vars.debug", "1")
 		repl.Set("http.vars.key", "somekey")
 		req = req.WithContext(ctx)
-		actual := tc.match.Match(req)
+		actual, err := tc.match.MatchWithError(req)
+		if err != nil {
+			t.Errorf("Test %d %v: matching failed: %v", i, tc.match, err)
+		}
 		if actual != tc.expect {
 			t.Errorf("Test %d %v: Expected %t, got %t for '%s'", i, tc.match, tc.expect, actual, tc.input)
 			continue
@@ -887,7 +905,10 @@ func TestHeaderREMatcher(t *testing.T) {
 		req = req.WithContext(ctx)
 		addHTTPVarsToReplacer(repl, req, httptest.NewRecorder())
 
-		actual := tc.match.Match(req)
+		actual, err := tc.match.MatchWithError(req)
+		if err != nil {
+			t.Errorf("Test %d %v: matching failed: %v", i, tc.match, err)
+		}
 		if actual != tc.expect {
 			t.Errorf("Test %d [%v]: Expected %t, got %t for input '%s'",
 				i, tc.match, tc.expect, actual, tc.input)
@@ -926,8 +947,8 @@ func BenchmarkHeaderREMatcher(b *testing.B) {
 	ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
 	req = req.WithContext(ctx)
 	addHTTPVarsToReplacer(repl, req, httptest.NewRecorder())
-	for run := 0; run < b.N; run++ {
-		match.Match(req)
+	for b.Loop() {
+		match.MatchWithError(req)
 	}
 }
 
@@ -971,8 +992,6 @@ func TestVarREMatcher(t *testing.T) {
 			expect: true,
 		},
 	} {
-		i := i   // capture range value
-		tc := tc // capture range value
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
 			// compile the regexp and validate its name
@@ -998,7 +1017,10 @@ func TestVarREMatcher(t *testing.T) {
 
 			tc.input.ServeHTTP(httptest.NewRecorder(), req, emptyHandler)
 
-			actual := tc.match.Match(req)
+			actual, err := tc.match.MatchWithError(req)
+			if err != nil {
+				t.Errorf("Test %d %v: matching failed: %v", i, tc.match, err)
+			}
 			if actual != tc.expect {
 				t.Errorf("Test %d [%v]: Expected %t, got %t for input '%s'",
 					i, tc.match, tc.expect, actual, tc.input)
@@ -1123,7 +1145,10 @@ func TestNotMatcher(t *testing.T) {
 		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
 		req = req.WithContext(ctx)
 
-		actual := tc.match.Match(req)
+		actual, err := tc.match.MatchWithError(req)
+		if err != nil {
+			t.Errorf("Test %d %v: matching failed: %v", i, tc.match, err)
+		}
 		if actual != tc.expect {
 			t.Errorf("Test %d %+v: Expected %t, got %t for: host=%s path=%s'", i, tc.match, tc.expect, actual, tc.host, tc.path)
 			continue
@@ -1153,9 +1178,8 @@ func BenchmarkLargeHostMatcher(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		matcher.Match(req)
+	for b.Loop() {
+		matcher.MatchWithError(req)
 	}
 }
 
@@ -1167,9 +1191,8 @@ func BenchmarkHostMatcherWithoutPlaceholder(b *testing.B) {
 
 	match := MatchHost{"localhost"}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		match.Match(req)
+	for b.Loop() {
+		match.MatchWithError(req)
 	}
 }
 
@@ -1185,8 +1208,7 @@ func BenchmarkHostMatcherWithPlaceholder(b *testing.B) {
 	req = req.WithContext(ctx)
 	match := MatchHost{"{env.GO_BENCHMARK_DOMAIN}"}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		match.Match(req)
+	for b.Loop() {
+		match.MatchWithError(req)
 	}
 }

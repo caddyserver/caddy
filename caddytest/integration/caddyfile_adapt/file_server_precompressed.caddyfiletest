@@ -3,6 +3,10 @@
 file_server {
 	precompressed zstd br gzip
 }
+
+file_server {
+	precompressed
+}
 ----------
 {
 	"apps": {
@@ -28,6 +32,22 @@ file_server {
 									"precompressed_order": [
 										"zstd",
 										"br",
+										"gzip"
+									]
+								},
+								{
+									"handler": "file_server",
+									"hide": [
+										"./Caddyfile"
+									],
+									"precompressed": {
+										"br": {},
+										"gzip": {},
+										"zstd": {}
+									},
+									"precompressed_order": [
+										"br",
+										"zstd",
 										"gzip"
 									]
 								}

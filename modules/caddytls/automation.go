@@ -21,11 +21,14 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"strings"
 
 	"github.com/caddyserver/certmagic"
-	"github.com/mholt/acmez/v2"
+	"github.com/mholt/acmez/v3"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"golang.org/x/net/idna"
 
 	"github.com/caddyserver/caddy/v2"
 )
@@ -181,7 +184,12 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 	repl := caddy.NewReplacer()
 	subjects := make([]string, len(ap.SubjectsRaw))
 	for i, sub := range ap.SubjectsRaw {
-		subjects[i] = repl.ReplaceAll(sub, "")
+		sub = repl.ReplaceAll(sub, "")
+		subASCII, err := idna.ToASCII(sub)
+		if err != nil {
+			return fmt.Errorf("could not convert automation policy subject '%s' to punycode: %v", sub, err)
+		}
+		subjects[i] = subASCII
 	}
 	ap.subjects = subjects
 
@@ -292,29 +300,32 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 						remoteIP, _, _ = net.SplitHostPort(remote.String())
 					}
 				}
-				tlsApp.logger.Debug("asking for permission for on-demand certificate",
-					zap.String("remote_ip", remoteIP),
-					zap.String("domain", name))
+				if c := tlsApp.logger.Check(zapcore.DebugLevel, "asking for permission for on-demand certificate"); c != nil {
+					c.Write(
+						zap.String("remote_ip", remoteIP),
+						zap.String("domain", name),
+					)
+				}
 
 				// ask the permission module if this cert is allowed
 				if err := tlsApp.Automation.OnDemand.permission.CertificateAllowed(ctx, name); err != nil {
 					// distinguish true errors from denials, because it's important to elevate actual errors
 					if errors.Is(err, ErrPermissionDenied) {
-						tlsApp.logger.Debug("on-demand certificate issuance denied",
-							zap.String("domain", name),
-							zap.Error(err))
+						if c := tlsApp.logger.Check(zapcore.DebugLevel, "on-demand certificate issuance denied"); c != nil {
+							c.Write(
+								zap.String("domain", name),
+								zap.Error(err),
+							)
+						}
 					} else {
-						tlsApp.logger.Error("failed to get permission for on-demand certificate",
-							zap.String("domain", name),
-							zap.Error(err))
+						if c := tlsApp.logger.Check(zapcore.ErrorLevel, "failed to get permission for on-demand certificate"); c != nil {
+							c.Write(
+								zap.String("domain", name),
+								zap.Error(err),
+							)
+						}
 					}
 					return err
-				}
-
-				// check the rate limiter last because
-				// doing so makes a reservation
-				if !onDemandRateLimiter.Allow() {
-					return fmt.Errorf("on-demand rate limit exceeded")
 				}
 
 				return nil
@@ -363,12 +374,9 @@ func (ap *AutomationPolicy) Subjects() []string {
 
 // AllInternalSubjects returns true if all the subjects on this policy are internal.
 func (ap *AutomationPolicy) AllInternalSubjects() bool {
-	for _, subj := range ap.subjects {
-		if !certmagic.SubjectIsInternal(subj) {
-			return false
-		}
-	}
-	return true
+	return !slices.ContainsFunc(ap.subjects, func(s string) bool {
+		return !certmagic.SubjectIsInternal(s)
+	})
 }
 
 func (ap *AutomationPolicy) onlyInternalIssuer() bool {
@@ -382,10 +390,8 @@ func (ap *AutomationPolicy) onlyInternalIssuer() bool {
 // isWildcardOrDefault determines if the subjects include any wildcard domains,
 // or is the "default" policy (i.e. no subjects) which is unbounded.
 func (ap *AutomationPolicy) isWildcardOrDefault() bool {
-	isWildcardOrDefault := false
-	if len(ap.subjects) == 0 {
-		isWildcardOrDefault = true
-	}
+	isWildcardOrDefault := len(ap.subjects) == 0
+
 	for _, sub := range ap.subjects {
 		if strings.HasPrefix(sub, "*") {
 			isWildcardOrDefault = true
@@ -450,6 +456,22 @@ type ChallengesConfig struct {
 	// Optionally customize the host to which a listener
 	// is bound if required for solving a challenge.
 	BindHost string `json:"bind_host,omitempty"`
+
+	// Whether distributed solving is enabled. This is
+	// enabled by default, so this is only used to
+	// disable it, which should only need to be done if
+	// you cannot reliably or affordably use storage
+	// backend for writing/distributing challenge info.
+	// (Applies to HTTP and TLS-ALPN challenges.)
+	// If set to false, challenges can only be solved
+	// from the Caddy instance that initiated the
+	// challenge, with the exception of HTTP challenges
+	// initiated with the same ACME account that this
+	// config uses. (Caddy can still solve those challenges
+	// without explicitly writing the info to storage.)
+	//
+	// Default: true
+	Distributed *bool `json:"distributed,omitempty"`
 }
 
 // HTTPChallengeConfig configures the ACME HTTP challenge.

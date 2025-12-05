@@ -15,11 +15,14 @@
 package requestbody
 
 import (
+	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -41,6 +44,10 @@ type RequestBody struct {
 	// EXPERIMENTAL. Subject to change/removal.
 	WriteTimeout time.Duration `json:"write_timeout,omitempty"`
 
+	// This field permit to replace body on the fly
+	// EXPERIMENTAL. Subject to change/removal.
+	Set string `json:"set,omitempty"`
+
 	logger *zap.Logger
 }
 
@@ -58,6 +65,18 @@ func (rb *RequestBody) Provision(ctx caddy.Context) error {
 }
 
 func (rb RequestBody) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+	if rb.Set != "" {
+		if r.Body != nil {
+			err := r.Body.Close()
+			if err != nil {
+				return err
+			}
+		}
+		repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+		replacedBody := repl.ReplaceAll(rb.Set, "")
+		r.Body = io.NopCloser(strings.NewReader(replacedBody))
+		r.ContentLength = int64(len(replacedBody))
+	}
 	if r.Body == nil {
 		return next.ServeHTTP(w, r)
 	}
@@ -69,12 +88,16 @@ func (rb RequestBody) ServeHTTP(w http.ResponseWriter, r *http.Request, next cad
 		rc := http.NewResponseController(w)
 		if rb.ReadTimeout > 0 {
 			if err := rc.SetReadDeadline(time.Now().Add(rb.ReadTimeout)); err != nil {
-				rb.logger.Error("could not set read deadline", zap.Error(err))
+				if c := rb.logger.Check(zapcore.ErrorLevel, "could not set read deadline"); c != nil {
+					c.Write(zap.Error(err))
+				}
 			}
 		}
 		if rb.WriteTimeout > 0 {
 			if err := rc.SetWriteDeadline(time.Now().Add(rb.WriteTimeout)); err != nil {
-				rb.logger.Error("could not set write deadline", zap.Error(err))
+				if c := rb.logger.Check(zapcore.ErrorLevel, "could not set write deadline"); c != nil {
+					c.Write(zap.Error(err))
+				}
 			}
 		}
 	}
@@ -89,10 +112,11 @@ type errorWrapper struct {
 
 func (ew errorWrapper) Read(p []byte) (n int, err error) {
 	n, err = ew.ReadCloser.Read(p)
-	if err != nil && err.Error() == "http: request body too large" {
+	var mbe *http.MaxBytesError
+	if errors.As(err, &mbe) {
 		err = caddyhttp.Error(http.StatusRequestEntityTooLarge, err)
 	}
-	return
+	return n, err
 }
 
 // Interface guard

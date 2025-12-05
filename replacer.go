@@ -15,6 +15,7 @@
 package caddy
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"net/http"
@@ -298,11 +299,11 @@ func ToString(val any) string {
 	case int64:
 		return strconv.Itoa(int(v))
 	case uint:
-		return strconv.Itoa(int(v))
+		return strconv.FormatUint(uint64(v), 10)
 	case uint32:
-		return strconv.Itoa(int(v))
+		return strconv.FormatUint(uint64(v), 10)
 	case uint64:
-		return strconv.Itoa(int(v))
+		return strconv.FormatUint(v, 10)
 	case float32:
 		return strconv.FormatFloat(float64(v), 'f', -1, 32)
 	case float64:
@@ -334,7 +335,7 @@ type replacementProvider interface {
 	replace(key string) (any, bool)
 }
 
-// fileReplacementsProvider handles {file.*} replacements,
+// fileReplacementProvider handles {file.*} replacements,
 // reading a file from disk and replacing with its contents.
 type fileReplacementProvider struct{}
 
@@ -354,10 +355,12 @@ func (f fileReplacementProvider) replace(key string) (any, bool) {
 			zap.Error(err))
 		return nil, true
 	}
+	body = bytes.TrimSuffix(body, []byte("\n"))
+	body = bytes.TrimSuffix(body, []byte("\r"))
 	return string(body), true
 }
 
-// globalDefaultReplacementsProvider handles replacements
+// globalDefaultReplacementProvider handles replacements
 // that can be used in any context, such as system variables,
 // time, or environment variables.
 type globalDefaultReplacementProvider struct{}

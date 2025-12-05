@@ -115,7 +115,8 @@ func (iss InternalIssuer) Issue(ctx context.Context, csr *x509.CertificateReques
 	if iss.SignWithRoot {
 		issuerCert = iss.ca.RootCertificate()
 	} else {
-		issuerCert = iss.ca.IntermediateCertificate()
+		chain := iss.ca.IntermediateCertificateChain()
+		issuerCert = chain[0]
 	}
 
 	// ensure issued certificate does not expire later than its issuer
@@ -178,6 +179,9 @@ func (iss *InternalIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.ArgErr()
 			}
 			iss.SignWithRoot = true
+
+		default:
+			return d.Errf("unrecognized subdirective '%s'", d.Val())
 		}
 	}
 	return nil

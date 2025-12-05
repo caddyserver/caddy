@@ -42,9 +42,13 @@ func (rww *ResponseWriterWrapper) Push(target string, opts *http.PushOptions) er
 	return ErrNotImplemented
 }
 
-// ReadFrom implements io.ReaderFrom. It simply calls io.Copy,
-// which uses io.ReaderFrom if available.
+// ReadFrom implements io.ReaderFrom. It retries to use io.ReaderFrom if available,
+// then fallback to io.Copy.
+// see: https://github.com/caddyserver/caddy/issues/6546
 func (rww *ResponseWriterWrapper) ReadFrom(r io.Reader) (n int64, err error) {
+	if rf, ok := rww.ResponseWriter.(io.ReaderFrom); ok {
+		return rf.ReadFrom(r)
+	}
 	return io.Copy(rww.ResponseWriter, r)
 }
 
@@ -150,16 +154,16 @@ func (rr *responseRecorder) WriteHeader(statusCode int) {
 	// connections by manually setting headers and writing status 101
 	rr.statusCode = statusCode
 
+	// decide whether we should buffer the response
+	if rr.shouldBuffer == nil {
+		rr.stream = true
+	} else {
+		rr.stream = !rr.shouldBuffer(rr.statusCode, rr.ResponseWriterWrapper.Header())
+	}
+
 	// 1xx responses aren't final; just informational
 	if statusCode < 100 || statusCode > 199 {
 		rr.wroteHeader = true
-
-		// decide whether we should buffer the response
-		if rr.shouldBuffer == nil {
-			rr.stream = true
-		} else {
-			rr.stream = !rr.shouldBuffer(rr.statusCode, rr.ResponseWriterWrapper.Header())
-		}
 	}
 
 	// if informational or not buffered, immediately write header

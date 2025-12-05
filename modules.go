@@ -18,6 +18,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/url"
 	"reflect"
 	"sort"
 	"strings"
@@ -343,9 +345,11 @@ func StrictUnmarshalJSON(data []byte, v any) error {
 	return dec.Decode(v)
 }
 
+var JSONRawMessageType = reflect.TypeFor[json.RawMessage]()
+
 // isJSONRawMessage returns true if the type is encoding/json.RawMessage.
 func isJSONRawMessage(typ reflect.Type) bool {
-	return typ.PkgPath() == "encoding/json" && typ.Name() == "RawMessage"
+	return typ == JSONRawMessageType
 }
 
 // isModuleMapType returns true if the type is map[string]json.RawMessage.
@@ -358,6 +362,14 @@ func isModuleMapType(typ reflect.Type) bool {
 	return typ.Kind() == reflect.Map &&
 		typ.Key().Kind() == reflect.String &&
 		isJSONRawMessage(typ.Elem())
+}
+
+// ProxyFuncProducer is implemented by modules which produce a
+// function that returns a URL to use as network proxy. Modules
+// in the namespace `caddy.network_proxy` must implement this
+// interface.
+type ProxyFuncProducer interface {
+	ProxyFunc() func(*http.Request) (*url.URL, error)
 }
 
 var (
