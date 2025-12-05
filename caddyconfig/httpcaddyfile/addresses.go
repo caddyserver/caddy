@@ -331,7 +331,7 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 	listeners := map[string]map[string]struct{}{}
 	interfaces := map[string][]net.Addr{}
 	for _, lnCfgVal := range lnCfgVals {
-		lnAddresses := make([]string, 0, len(lnCfgVal.addresses))
+		var lnAddresses []string
 		for _, lnAddress := range lnCfgVal.addresses {
 			if lnCfgVal.to_device {
 				lnNetw, lnDevice, _, err := caddy.SplitNetworkAddress(lnAddress)
