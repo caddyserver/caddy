@@ -320,9 +320,9 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 			}
 		} else {
 			lnCfgVals = []bindOptions{{
-				addresses:  []string{""},
-				interfaces: nil,
-				protocols:  nil,
+				addresses: []string{""},
+				protocols: nil,
+				to_device: false,
 			}}
 		}
 	}
@@ -332,76 +332,79 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 	interfaces := map[string][]net.Addr{}
 	for _, lnCfgVal := range lnCfgVals {
 		lnAddresses := make([]string, 0, len(lnCfgVal.addresses))
-		lnAddresses = append(lnAddresses, lnCfgVal.addresses...)
-		for _, lnIface := range lnCfgVal.interfaces {
-			lnNetw, lnDevice, _, err := caddy.SplitNetworkAddress(lnIface)
-			if err != nil {
-				return nil, fmt.Errorf("splitting listener interface: %v", err)
-			}
-
-			ifaceAddresses, ok := interfaces[lnDevice]
-			if !ok {
-				iface, err := net.InterfaceByName(lnDevice)
+		for _, lnAddress := range lnCfgVal.addresses {
+			if lnCfgVal.to_device {
+				lnNetw, lnDevice, _, err := caddy.SplitNetworkAddress(lnAddress)
 				if err != nil {
-					return nil, fmt.Errorf("querying listener interface: %v: %v", lnDevice, err)
+					return nil, fmt.Errorf("splitting listener interface: %v", err)
 				}
-				if iface == nil {
-					return nil, fmt.Errorf("querying listener interface: %v", lnDevice)
-				}
-				ifaceAddresses, err := iface.Addrs()
-				if err != nil {
-					return nil, fmt.Errorf("querying listener interface addresses: %v: %v", lnDevice, err)
-				}
-				interfaces[lnDevice] = ifaceAddresses
-			}
 
-			lnIfaceAddresses := []string{}
-			for _, ifaceAddress := range ifaceAddresses {
-				if caddy.IsReservedNetwork(lnNetw) {
-					var addrok, netwok bool
-
-					var ip net.IP
-					switch ifaceAddressValue := ifaceAddress.(type) {
-					case *net.IPAddr:
-						ip, addrok, netwok = ifaceAddressValue.IP, true, true
-					case *net.IPNet:
-						ip, addrok, netwok = ifaceAddressValue.IP, true, true
-					case *net.TCPAddr:
-						ip, addrok, netwok = ifaceAddressValue.IP, true, caddy.IsTCPNetwork(lnNetw)
-					case *net.UDPAddr:
-						ip, addrok, netwok = ifaceAddressValue.IP, true, caddy.IsUDPNetwork(lnNetw)
+				ifaceAddresses, ok := interfaces[lnDevice]
+				if !ok {
+					iface, err := net.InterfaceByName(lnDevice)
+					if err != nil {
+						return nil, fmt.Errorf("querying listener interface: %v: %v", lnDevice, err)
 					}
+					if iface == nil {
+						return nil, fmt.Errorf("querying listener interface: %v", lnDevice)
+					}
+					ifaceAddresses, err := iface.Addrs()
+					if err != nil {
+						return nil, fmt.Errorf("querying listener interface addresses: %v: %v", lnDevice, err)
+					}
+					interfaces[lnDevice] = ifaceAddresses
+				}
 
-					if addrok {
-						if netwok {
-							if caddy.IsIPv4Network(lnNetw) && len(ip) == net.IPv4len || caddy.IsIPv6Network(lnNetw) && len(ip) == net.IPv6len {
-								lnIfaceAddresses = append(lnIfaceAddresses, ip.String())
+				lnIfaceAddresses := []string{}
+				for _, ifaceAddress := range ifaceAddresses {
+					if caddy.IsReservedNetwork(lnNetw) {
+						var addrok, netwok bool
+
+						var ip net.IP
+						switch ifaceAddressValue := ifaceAddress.(type) {
+						case *net.IPAddr:
+							ip, addrok, netwok = ifaceAddressValue.IP, true, true
+						case *net.IPNet:
+							ip, addrok, netwok = ifaceAddressValue.IP, true, true
+						case *net.TCPAddr:
+							ip, addrok, netwok = ifaceAddressValue.IP, true, caddy.IsTCPNetwork(lnNetw)
+						case *net.UDPAddr:
+							ip, addrok, netwok = ifaceAddressValue.IP, true, caddy.IsUDPNetwork(lnNetw)
+						}
+
+						if addrok {
+							if netwok {
+								if caddy.IsIPv4Network(lnNetw) && len(ip) == net.IPv4len || caddy.IsIPv6Network(lnNetw) && len(ip) == net.IPv6len {
+									lnIfaceAddresses = append(lnIfaceAddresses, ip.String())
+								}
 							}
+							continue
 						}
-						continue
-					}
 
-					var name string
-					switch ifaceAddressValue := ifaceAddress.(type) {
-					case *net.UnixAddr:
-						name, addrok, netwok = ifaceAddressValue.Name, true, caddy.IsUnixNetwork(lnNetw)
-					}
-
-					if addrok {
-						if netwok {
-							lnIfaceAddresses = append(lnIfaceAddresses, name)
+						var name string
+						switch ifaceAddressValue := ifaceAddress.(type) {
+						case *net.UnixAddr:
+							name, addrok, netwok = ifaceAddressValue.Name, true, caddy.IsUnixNetwork(lnNetw)
 						}
-						continue
+
+						if addrok {
+							if netwok {
+								lnIfaceAddresses = append(lnIfaceAddresses, name)
+							}
+							continue
+						}
+					} else {
+						lnIfaceAddresses = append(lnIfaceAddresses, ifaceAddress.String())
 					}
-				} else {
-					lnIfaceAddresses = append(lnIfaceAddresses, ifaceAddress.String())
 				}
-			}
-			if len(lnIfaceAddresses) == 0 {
-				return nil, fmt.Errorf("no available listener interface addresses for network: %v: %v", lnDevice, lnNetw)
-			}
-			for _, lnIfaceAddress := range lnIfaceAddresses {
-				lnAddresses = append(lnAddresses, caddy.JoinNetworkAddress(lnNetw, lnIfaceAddress, ""))
+				if len(lnIfaceAddresses) == 0 {
+					return nil, fmt.Errorf("no available listener interface addresses for network: %v: %v", lnDevice, lnNetw)
+				}
+				for _, lnIfaceAddress := range lnIfaceAddresses {
+					lnAddresses = append(lnAddresses, caddy.JoinNetworkAddress(lnNetw, lnIfaceAddress, ""))
+				}
+			} else {
+				lnAddresses = append(lnAddresses, lnAddress)
 			}
 		}
 		for _, lnAddr := range lnAddresses {
@@ -426,9 +429,9 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 }
 
 type bindOptions struct {
-	addresses  []string
-	interfaces []string
-	protocols  []string
+	addresses []string
+	protocols []string
+	to_device bool
 }
 
 // Address represents a site address. It contains
