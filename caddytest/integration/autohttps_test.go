@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -8,69 +9,69 @@ import (
 )
 
 func TestAutoHTTPtoHTTPSRedirectsImplicitPort(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
 	{
-		admin localhost:2999
+		admin {$TESTING_CADDY_ADMIN_BIND}
 		skip_install_trust
-		http_port     9080
-		https_port    9443
+		http_port     {$TESTING_CADDY_PORT_ONE}
+		https_port    {$TESTING_CADDY_PORT_TWO}
 	}
 	localhost
 	respond "Yahaha! You found me!"
   `, "caddyfile")
 
-	tester.AssertRedirect("http://localhost:9080/", "https://localhost/", http.StatusPermanentRedirect)
+	harness.AssertRedirect(fmt.Sprintf("http://localhost:%d/", harness.Tester().PortOne()), "https://localhost/", http.StatusPermanentRedirect)
 }
 
 func TestAutoHTTPtoHTTPSRedirectsExplicitPortSameAsHTTPSPort(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
 	{
 		skip_install_trust
-		admin localhost:2999
-		http_port     9080
-		https_port    9443
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
+		https_port    {$TESTING_CADDY_PORT_TWO}
 	}
-	localhost:9443
+	localhost:{$TESTING_CADDY_PORT_TWO}
 	respond "Yahaha! You found me!"
   `, "caddyfile")
 
-	tester.AssertRedirect("http://localhost:9080/", "https://localhost/", http.StatusPermanentRedirect)
+	harness.AssertRedirect(fmt.Sprintf("http://localhost:%d/", harness.Tester().PortOne()), "https://localhost/", http.StatusPermanentRedirect)
 }
 
 func TestAutoHTTPtoHTTPSRedirectsExplicitPortDifferentFromHTTPSPort(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
 	{
 		skip_install_trust
-		admin localhost:2999
-		http_port     9080
-		https_port    9443
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
+		https_port    {$TESTING_CADDY_PORT_TWO}
 	}
 	localhost:1234
 	respond "Yahaha! You found me!"
   `, "caddyfile")
 
-	tester.AssertRedirect("http://localhost:9080/", "https://localhost:1234/", http.StatusPermanentRedirect)
+	harness.AssertRedirect(fmt.Sprintf("http://localhost:%d/", harness.Tester().PortOne()), "https://localhost:1234/", http.StatusPermanentRedirect)
 }
 
 func TestAutoHTTPRedirectsWithHTTPListenerFirstInAddresses(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
 {
   "admin": {
-	"listen": "localhost:2999"
+	"listen": "{$TESTING_CADDY_ADMIN_BIND}"
   },
   "apps": {
     "http": {
-      "http_port": 9080,
-      "https_port": 9443,
+      "http_port": {$TESTING_CADDY_PORT_ONE},
+      "https_port": {$TESTING_CADDY_PORT_TWO},
       "servers": {
         "ingress_server": {
           "listen": [
-            ":9080",
-            ":9443"
+            ":{$TESTING_CADDY_PORT_ONE}",
+            ":{$TESTING_CADDY_PORT_TWO}"
           ],
           "routes": [
             {
@@ -94,52 +95,52 @@ func TestAutoHTTPRedirectsWithHTTPListenerFirstInAddresses(t *testing.T) {
   }
 }
 `, "json")
-	tester.AssertRedirect("http://localhost:9080/", "https://localhost/", http.StatusPermanentRedirect)
+	harness.AssertRedirect(fmt.Sprintf("http://localhost:%d/", harness.Tester().PortOne()), "https://localhost/", http.StatusPermanentRedirect)
 }
 
 func TestAutoHTTPRedirectsInsertedBeforeUserDefinedCatchAll(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
 	{
 		skip_install_trust
-		admin localhost:2999
-		http_port     9080
-		https_port    9443
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
+		https_port    {$TESTING_CADDY_PORT_TWO}
 		local_certs
 	}
-	http://:9080 {
+	http://:{$TESTING_CADDY_PORT_ONE} {
 		respond "Foo"
 	}
-	http://baz.localhost:9080 {
+	http://baz.localhost:{$TESTING_CADDY_PORT_ONE} {
 		respond "Baz"
 	}
 	bar.localhost {
 		respond "Bar"
 	}
   `, "caddyfile")
-	tester.AssertRedirect("http://bar.localhost:9080/", "https://bar.localhost/", http.StatusPermanentRedirect)
-	tester.AssertGetResponse("http://foo.localhost:9080/", 200, "Foo")
-	tester.AssertGetResponse("http://baz.localhost:9080/", 200, "Baz")
+	harness.AssertRedirect(fmt.Sprintf("http://bar.localhost:%d/", harness.Tester().PortOne()), "https://bar.localhost/", http.StatusPermanentRedirect)
+	harness.AssertGetResponse(fmt.Sprintf("http://foo.localhost:%d/", harness.Tester().PortOne()), 200, "Foo")
+	harness.AssertGetResponse(fmt.Sprintf("http://baz.localhost:%d/", harness.Tester().PortOne()), 200, "Baz")
 }
 
 func TestAutoHTTPRedirectsInsertedBeforeUserDefinedCatchAllWithNoExplicitHTTPSite(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
 	{
 		skip_install_trust
-		admin localhost:2999
-		http_port     9080
-		https_port    9443
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
+		https_port    {$TESTING_CADDY_PORT_TWO}
 		local_certs
 	}
-	http://:9080 {
+	http://:{$TESTING_CADDY_PORT_ONE} {
 		respond "Foo"
 	}
 	bar.localhost {
 		respond "Bar"
 	}
   `, "caddyfile")
-	tester.AssertRedirect("http://bar.localhost:9080/", "https://bar.localhost/", http.StatusPermanentRedirect)
-	tester.AssertGetResponse("http://foo.localhost:9080/", 200, "Foo")
-	tester.AssertGetResponse("http://baz.localhost:9080/", 200, "Foo")
+	harness.AssertRedirect(fmt.Sprintf("http://bar.localhost:%d/", harness.Tester().PortOne()), "https://bar.localhost/", http.StatusPermanentRedirect)
+	harness.AssertGetResponse(fmt.Sprintf("http://foo.localhost:%d/", harness.Tester().PortOne()), 200, "Foo")
+	harness.AssertGetResponse(fmt.Sprintf("http://baz.localhost:%d/", harness.Tester().PortOne()), 200, "Foo")
 }

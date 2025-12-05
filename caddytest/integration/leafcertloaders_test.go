@@ -7,21 +7,21 @@ import (
 )
 
 func TestLeafCertLoaders(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
 	{
 		"admin": {
-			"listen": "localhost:2999"
+			"listen": "{$TESTING_CADDY_ADMIN_BIND}"
 		},
 		"apps": {
 			"http": {
-				"http_port": 9080,
-       			"https_port": 9443,
+				"http_port": {$TESTING_CADDY_PORT_ONE},
+       			"https_port": {$TESTING_CADDY_PORT_TWO},
 				"grace_period": 1,
 				"servers": {
 					"srv0": {
 						"listen": [
-							":9443"
+							":{$TESTING_CADDY_PORT_TWO}"
 						],
 						"routes": [
 							{

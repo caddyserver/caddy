@@ -525,6 +525,7 @@ argument of --directory. If the directory does not exist, it will be created.
 	  # To load completions for every new session, run:
 	  PS> %[1]s completion powershell > %[1]s.ps1
 	  # and source this file from your PowerShell profile.
+
 	`, rootCmd.Root().Name()),
 			CobraFunc: func(cmd *cobra.Command) {
 				cmd.DisableFlagsInUseLine = true
