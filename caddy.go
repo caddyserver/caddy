@@ -750,13 +750,13 @@ func Validate(cfg *Config) error {
 // Errors are logged along the way, and an appropriate exit
 // code is emitted.
 func exitProcess(ctx context.Context, logger *zap.Logger) {
-	fmt.Println("exiting")
+	runningInTest := flag.Lookup("test.v") == nil && !strings.Contains(os.Args[0], ".test")
 	// let the rest of the program know we're quitting; only do it once
-	if !atomic.CompareAndSwapInt32(exiting, 0, 1) {
-		fmt.Println("earlly exiting")
-		return
+	if !runningInTest {
+		if !atomic.CompareAndSwapInt32(exiting, 0, 1) {
+			return
+		}
 	}
-	fmt.Println("doing exiting")
 
 	// give the OS or service/process manager our 2 weeks' notice: we quit
 	if err := notify.Stopping(); err != nil {
@@ -814,7 +814,7 @@ func exitProcess(ctx context.Context, logger *zap.Logger) {
 				logger.Error("unclean shutdown")
 			}
 			// check if we are in test environment, and dont call exit if we are
-			if flag.Lookup("test.v") == nil && !strings.Contains(os.Args[0], ".test") {
+			if runningInTest {
 				os.Exit(exitCode)
 			}
 		}()
