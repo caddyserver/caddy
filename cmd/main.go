@@ -78,6 +78,18 @@ func Main() {
 	}
 }
 
+// MainForTesting implements the main function of the caddy command, used internally for testing
+func MainForTesting(args ...string) error {
+	// create a root command for testing which will not pollute the global namespace, and does not
+	// call os.Exit().
+	rootCmd := defaultFactory.Build()
+	rootCmd.SetArgs(args)
+	if err := rootCmd.Execute(); err != nil {
+		return err
+	}
+	return nil
+}
+
 // handlePingbackConn reads from conn and ensures it matches
 // the bytes in expect, or returns an error if it doesn't.
 func handlePingbackConn(conn net.Conn, expect []byte) error {

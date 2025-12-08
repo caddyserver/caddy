@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"testing"
@@ -10,62 +11,63 @@ import (
 
 func TestRespond(t *testing.T) {
 	// arrange
-	tester := caddytest.NewTester(t)
-	tester.InitServer(` 
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
   {
-    admin localhost:2999
-    http_port     9080
-    https_port    9443
+    admin {$TESTING_CADDY_ADMIN_BIND}
+    http_port     {$TESTING_CADDY_PORT_ONE}
+    https_port    {$TESTING_CADDY_PORT_TWO}
     grace_period  1ns
   }
-  
-  localhost:9080 {
+
+  localhost:{$TESTING_CADDY_PORT_ONE} {
     respond /version 200 {
       body "hello from localhost"
-    }	
+    }
     }
   `, "caddyfile")
 
 	// act and assert
-	tester.AssertGetResponse("http://localhost:9080/version", 200, "hello from localhost")
+	harness.AssertGetResponse(fmt.Sprintf("http://localhost:%d/version", harness.Tester().PortOne()), 200, "hello from localhost")
 }
 
 func TestRedirect(t *testing.T) {
 	// arrange
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
   {
-    admin localhost:2999
-    http_port     9080
-    https_port    9443
+    admin {$TESTING_CADDY_ADMIN_BIND}
+    http_port     {$TESTING_CADDY_PORT_ONE}
+    https_port    {$TESTING_CADDY_PORT_TWO}
     grace_period  1ns
   }
-  
-  localhost:9080 {
-    
-    redir / http://localhost:9080/hello 301
-    
+
+  localhost:{$TESTING_CADDY_PORT_ONE} {
+
+    redir / http://localhost:{$TESTING_CADDY_PORT_ONE}/hello 301
+
     respond /hello 200 {
       body "hello from localhost"
-    }	
+    }
     }
   `, "caddyfile")
 
+	target := fmt.Sprintf("http://localhost:%d/", harness.Tester().PortOne())
 	// act and assert
-	tester.AssertRedirect("http://localhost:9080/", "http://localhost:9080/hello", 301)
+	harness.AssertRedirect(target, target+"hello", 301)
 
 	// follow redirect
-	tester.AssertGetResponse("http://localhost:9080/", 200, "hello from localhost")
+	harness.AssertGetResponse(target, 200, "hello from localhost")
 }
 
 func TestDuplicateHosts(t *testing.T) {
 	// act and assert
 	caddytest.AssertLoadError(t,
 		`
-    localhost:9080 {
+    localhost:{$TESTING_CADDY_PORT_ONE} {
     }
-  
-    localhost:9080 { 
+
+    localhost:{$TESTING_CADDY_PORT_ONE} {
     }
     `,
 		"caddyfile",
@@ -80,18 +82,18 @@ func TestReadCookie(t *testing.T) {
 	}
 
 	// arrange
-	tester := caddytest.NewTester(t)
-	tester.Client.Jar.SetCookies(localhost, []*http.Cookie{&cookie})
-	tester.InitServer(` 
+	harness := caddytest.StartHarness(t)
+	harness.Client().Jar.SetCookies(localhost, []*http.Cookie{&cookie})
+	harness.LoadConfig(`
   {
     skip_install_trust
-    admin localhost:2999
-    http_port     9080
-    https_port    9443
+    admin {$TESTING_CADDY_ADMIN_BIND}
+    http_port     {$TESTING_CADDY_PORT_ONE}
+    https_port    {$TESTING_CADDY_PORT_TWO}
     grace_period  1ns
   }
-  
-  localhost:9080 {
+
+  localhost:{$TESTING_CADDY_PORT_ONE} {
     templates {
       root testdata
     }
@@ -102,21 +104,22 @@ func TestReadCookie(t *testing.T) {
   `, "caddyfile")
 
 	// act and assert
-	tester.AssertGetResponse("http://localhost:9080/cookie.html", 200, "<h2>Cookie.ClientName caddytest</h2>")
+	target := fmt.Sprintf("http://localhost:%d/", harness.Tester().PortOne())
+	harness.AssertGetResponse(target+"cookie.html", 200, "<h2>Cookie.ClientName caddytest</h2>")
 }
 
 func TestReplIndex(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
   {
     skip_install_trust
-    admin localhost:2999
-    http_port     9080
-    https_port    9443
+    admin {$TESTING_CADDY_ADMIN_BIND}
+    http_port     {$TESTING_CADDY_PORT_ONE}
+    https_port    {$TESTING_CADDY_PORT_TWO}
     grace_period  1ns
   }
 
-  localhost:9080 {
+  localhost:{$TESTING_CADDY_PORT_ONE} {
     templates {
       root testdata
     }
@@ -128,7 +131,8 @@ func TestReplIndex(t *testing.T) {
   `, "caddyfile")
 
 	// act and assert
-	tester.AssertGetResponse("http://localhost:9080/", 200, "")
+	target := fmt.Sprintf("http://localhost:%d/", harness.Tester().PortOne())
+	harness.AssertGetResponse(target, 200, "")
 }
 
 func TestInvalidPrefix(t *testing.T) {
@@ -481,40 +485,42 @@ func TestValidPrefix(t *testing.T) {
 }
 
 func TestUriReplace(t *testing.T) {
-	tester := caddytest.NewTester(t)
+	harness := caddytest.StartHarness(t)
 
-	tester.InitServer(`
+	harness.LoadConfig(`
 	{
-		admin localhost:2999
-		http_port     9080
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
 	}
-	:9080
+	:{$TESTING_CADDY_PORT_ONE}
 	uri replace "\}" %7D
 	uri replace "\{" %7B
-	
+
 	respond "{query}"`, "caddyfile")
 
-	tester.AssertGetResponse("http://localhost:9080/endpoint?test={%20content%20}", 200, "test=%7B%20content%20%7D")
+	target := fmt.Sprintf("http://localhost:%d/", harness.Tester().PortOne())
+	harness.AssertGetResponse(target+"endpoint?test={%20content%20}", 200, "test=%7B%20content%20%7D")
 }
 
 func TestUriOps(t *testing.T) {
-	tester := caddytest.NewTester(t)
+	harness := caddytest.StartHarness(t)
 
-	tester.InitServer(`
+	harness.LoadConfig(`
 	{
-		admin localhost:2999
-		http_port     9080
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
 	}
-	:9080
+	:{$TESTING_CADDY_PORT_ONE}
 	uri query +foo bar
 	uri query -baz
 	uri query taz test
 	uri query key=value example
 	uri query changethis>changed
-	
+
 	respond "{query}"`, "caddyfile")
 
-	tester.AssertGetResponse("http://localhost:9080/endpoint?foo=bar0&baz=buz&taz=nottest&changethis=val", 200, "changed=val&foo=bar0&foo=bar&key%3Dvalue=example&taz=test")
+	target := fmt.Sprintf("http://localhost:%d/", harness.Tester().PortOne())
+	harness.AssertGetResponse(target+"endpoint?foo=bar0&baz=buz&taz=nottest&changethis=val", 200, "changed=val&foo=bar0&foo=bar&key%3Dvalue=example&taz=test")
 }
 
 // Tests the `http.request.local.port` placeholder.
@@ -523,203 +529,215 @@ func TestUriOps(t *testing.T) {
 // refer to 127.0.0.1 or ::1.
 // TODO: Test each http version separately (especially http/3)
 func TestHttpRequestLocalPortPlaceholder(t *testing.T) {
-	tester := caddytest.NewTester(t)
+	harness := caddytest.StartHarness(t)
 
-	tester.InitServer(`
+	harness.LoadConfig(`
 	{
-		admin localhost:2999
-		http_port     9080
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
 	}
-	:9080
+	:{$TESTING_CADDY_PORT_ONE}
 	respond "{http.request.local.port}"`, "caddyfile")
 
-	tester.AssertGetResponse("http://localhost:9080/", 200, "9080")
+	target := fmt.Sprintf("http://localhost:%d/", harness.Tester().PortOne())
+	harness.AssertGetResponse(target, 200, fmt.Sprintf("%d", harness.Tester().PortOne()))
 }
 
 func TestSetThenAddQueryParams(t *testing.T) {
-	tester := caddytest.NewTester(t)
+	harness := caddytest.StartHarness(t)
 
-	tester.InitServer(`
+	harness.LoadConfig(`
 	{
-		admin localhost:2999
-		http_port     9080
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
 	}
-	:9080
+	:{$TESTING_CADDY_PORT_ONE}
 	uri query foo bar
 	uri query +foo baz
-	
+
 	respond "{query}"`, "caddyfile")
 
-	tester.AssertGetResponse("http://localhost:9080/endpoint", 200, "foo=bar&foo=baz")
+	target := fmt.Sprintf("http://localhost:%d/", harness.Tester().PortOne())
+	harness.AssertGetResponse(target+"endpoint", 200, "foo=bar&foo=baz")
 }
 
 func TestSetThenDeleteParams(t *testing.T) {
-	tester := caddytest.NewTester(t)
+	harness := caddytest.StartHarness(t)
 
-	tester.InitServer(`
+	harness.LoadConfig(`
 	{
-		admin localhost:2999
-		http_port     9080
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
 	}
-	:9080
+	:{$TESTING_CADDY_PORT_ONE}
 	uri query bar foo{query.foo}
 	uri query -foo
-	
+
 	respond "{query}"`, "caddyfile")
 
-	tester.AssertGetResponse("http://localhost:9080/endpoint?foo=bar", 200, "bar=foobar")
+	target := fmt.Sprintf("http://localhost:%d/", harness.Tester().PortOne())
+	harness.AssertGetResponse(target+"endpoint?foo=bar", 200, "bar=foobar")
 }
 
 func TestRenameAndOtherOps(t *testing.T) {
-	tester := caddytest.NewTester(t)
+	harness := caddytest.StartHarness(t)
 
-	tester.InitServer(`
+	harness.LoadConfig(`
 	{
-		admin localhost:2999
-		http_port     9080
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
 	}
-	:9080
+	:{$TESTING_CADDY_PORT_ONE}
 	uri query foo>bar
 	uri query bar taz
 	uri query +bar baz
-	
+
 	respond "{query}"`, "caddyfile")
 
-	tester.AssertGetResponse("http://localhost:9080/endpoint?foo=bar", 200, "bar=taz&bar=baz")
+	target := fmt.Sprintf("http://localhost:%d/", harness.Tester().PortOne())
+	harness.AssertGetResponse(target+"endpoint?foo=bar", 200, "bar=taz&bar=baz")
 }
 
 func TestReplaceOps(t *testing.T) {
-	tester := caddytest.NewTester(t)
+	harness := caddytest.StartHarness(t)
 
-	tester.InitServer(`
+	harness.LoadConfig(`
 	{
-		admin localhost:2999
-		http_port     9080
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
 	}
-	:9080
-	uri query foo bar baz	
+	:{$TESTING_CADDY_PORT_ONE}
+	uri query foo bar baz
 	respond "{query}"`, "caddyfile")
 
-	tester.AssertGetResponse("http://localhost:9080/endpoint?foo=bar", 200, "foo=baz")
+	target := fmt.Sprintf("http://localhost:%d/", harness.Tester().PortOne())
+	harness.AssertGetResponse(target+"endpoint?foo=bar", 200, "foo=baz")
 }
 
 func TestReplaceWithReplacementPlaceholder(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
 	{
-		admin localhost:2999
-		http_port     9080
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
 	}
-	:9080
-	uri query foo bar {query.placeholder}	
+	:{$TESTING_CADDY_PORT_ONE}
+	uri query foo bar {query.placeholder}
 	respond "{query}"`, "caddyfile")
 
-	tester.AssertGetResponse("http://localhost:9080/endpoint?placeholder=baz&foo=bar", 200, "foo=baz&placeholder=baz")
+	target := fmt.Sprintf("http://localhost:%d/", harness.Tester().PortOne())
+	harness.AssertGetResponse(target+"endpoint?placeholder=baz&foo=bar", 200, "foo=baz&placeholder=baz")
 }
 
 func TestReplaceWithKeyPlaceholder(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
 	{
-		admin localhost:2999
-		http_port     9080
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
 	}
-	:9080
-	uri query {query.placeholder} bar baz	
+	:{$TESTING_CADDY_PORT_ONE}
+	uri query {query.placeholder} bar baz
 	respond "{query}"`, "caddyfile")
 
-	tester.AssertGetResponse("http://localhost:9080/endpoint?placeholder=foo&foo=bar", 200, "foo=baz&placeholder=foo")
+	target := fmt.Sprintf("http://localhost:%d/", harness.Tester().PortOne())
+	harness.AssertGetResponse(target+"endpoint?placeholder=foo&foo=bar", 200, "foo=baz&placeholder=foo")
 }
 
 func TestPartialReplacement(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
 	{
-		admin localhost:2999
-		http_port     9080
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
 	}
-	:9080
-	uri query foo ar az	
+	:{$TESTING_CADDY_PORT_ONE}
+	uri query foo ar az
 	respond "{query}"`, "caddyfile")
 
-	tester.AssertGetResponse("http://localhost:9080/endpoint?foo=bar", 200, "foo=baz")
+	target := fmt.Sprintf("http://localhost:%d/", harness.Tester().PortOne())
+	harness.AssertGetResponse(target+"endpoint?foo=bar", 200, "foo=baz")
 }
 
 func TestNonExistingSearch(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`
 	{
-		admin localhost:2999
-		http_port     9080
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
 	}
-	:9080
-	uri query foo var baz	
+	:{$TESTING_CADDY_PORT_ONE}
+	uri query foo var baz
 	respond "{query}"`, "caddyfile")
 
-	tester.AssertGetResponse("http://localhost:9080/endpoint?foo=bar", 200, "foo=bar")
+	target := fmt.Sprintf("http://localhost:%d/", harness.Tester().PortOne())
+	harness.AssertGetResponse(target+"endpoint?foo=bar", 200, "foo=bar")
 }
 
 func TestReplaceAllOps(t *testing.T) {
-	tester := caddytest.NewTester(t)
+	harness := caddytest.StartHarness(t)
 
-	tester.InitServer(`
+	harness.LoadConfig(`
 	{
-		admin localhost:2999
-		http_port     9080
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
 	}
-	:9080
-	uri query * bar baz	
+	:{$TESTING_CADDY_PORT_ONE}
+	uri query * bar baz
 	respond "{query}"`, "caddyfile")
 
-	tester.AssertGetResponse("http://localhost:9080/endpoint?foo=bar&baz=bar", 200, "baz=baz&foo=baz")
+	target := fmt.Sprintf("http://localhost:%d/", harness.Tester().PortOne())
+	harness.AssertGetResponse(target+"endpoint?foo=bar&baz=bar", 200, "baz=baz&foo=baz")
 }
 
 func TestUriOpsBlock(t *testing.T) {
-	tester := caddytest.NewTester(t)
+	harness := caddytest.StartHarness(t)
 
-	tester.InitServer(`
+	harness.LoadConfig(`
 	{
-		admin localhost:2999
-		http_port     9080
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
 	}
-	:9080
+	:{$TESTING_CADDY_PORT_ONE}
 	uri query {
 		+foo bar
 		-baz
 		taz test
-	} 
+	}
 	respond "{query}"`, "caddyfile")
 
-	tester.AssertGetResponse("http://localhost:9080/endpoint?foo=bar0&baz=buz&taz=nottest", 200, "foo=bar0&foo=bar&taz=test")
+	target := fmt.Sprintf("http://localhost:%d/", harness.Tester().PortOne())
+	harness.AssertGetResponse(target+"endpoint?foo=bar0&baz=buz&taz=nottest", 200, "foo=bar0&foo=bar&taz=test")
 }
 
 func TestHandleErrorSimpleCodes(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`{
-		admin localhost:2999
-		http_port     9080
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`{
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
 	}
-	localhost:9080 {
+	localhost:{$TESTING_CADDY_PORT_ONE} {
 		root * /srv
 		error /private* "Unauthorized" 410
 		error /hidden* "Not found" 404
-	
+
 		handle_errors 404 410 {
 			respond "404 or 410 error"
 		}
 	}`, "caddyfile")
 	// act and assert
-	tester.AssertGetResponse("http://localhost:9080/private", 410, "404 or 410 error")
-	tester.AssertGetResponse("http://localhost:9080/hidden", 404, "404 or 410 error")
+	target := fmt.Sprintf("http://localhost:%d/", harness.Tester().PortOne())
+	harness.AssertGetResponse(target+"private", 410, "404 or 410 error")
+	harness.AssertGetResponse(target+"hidden", 404, "404 or 410 error")
 }
 
 func TestHandleErrorRange(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`{
-		admin localhost:2999
-		http_port     9080
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`{
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
 	}
-	localhost:9080 {
+	localhost:{$TESTING_CADDY_PORT_ONE} {
 		root * /srv
 		error /private* "Unauthorized" 410
 		error /hidden* "Not found" 404
@@ -729,17 +747,18 @@ func TestHandleErrorRange(t *testing.T) {
 		}
 	}`, "caddyfile")
 	// act and assert
-	tester.AssertGetResponse("http://localhost:9080/private", 410, "Error in the [400 .. 499] range")
-	tester.AssertGetResponse("http://localhost:9080/hidden", 404, "Error in the [400 .. 499] range")
+	target := fmt.Sprintf("http://localhost:%d/", harness.Tester().PortOne())
+	harness.AssertGetResponse(target+"private", 410, "Error in the [400 .. 499] range")
+	harness.AssertGetResponse(target+"hidden", 404, "Error in the [400 .. 499] range")
 }
 
 func TestHandleErrorSort(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`{
-		admin localhost:2999
-		http_port     9080
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`{
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
 	}
-	localhost:9080 {
+	localhost:{$TESTING_CADDY_PORT_ONE} {
 		root * /srv
 		error /private* "Unauthorized" 410
 		error /hidden* "Not found" 404
@@ -753,17 +772,18 @@ func TestHandleErrorSort(t *testing.T) {
 		}
 	}`, "caddyfile")
 	// act and assert
-	tester.AssertGetResponse("http://localhost:9080/internalerr", 500, "Fallback route: code outside the [400..499] range")
-	tester.AssertGetResponse("http://localhost:9080/hidden", 404, "Error in the [400 .. 499] range")
+	target := fmt.Sprintf("http://localhost:%d/", harness.Tester().PortOne())
+	harness.AssertGetResponse(target+"internalerr", 500, "Fallback route: code outside the [400..499] range")
+	harness.AssertGetResponse(target+"hidden", 404, "Error in the [400 .. 499] range")
 }
 
 func TestHandleErrorRangeAndCodes(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`{
-		admin localhost:2999
-		http_port     9080
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`{
+		admin {$TESTING_CADDY_ADMIN_BIND}
+		http_port     {$TESTING_CADDY_PORT_ONE}
 	}
-	localhost:9080 {
+	localhost:{$TESTING_CADDY_PORT_ONE} {
 		root * /srv
 		error /private* "Unauthorized" 410
 		error /threehundred* "Moved Permanently" 301
@@ -777,14 +797,15 @@ func TestHandleErrorRangeAndCodes(t *testing.T) {
 		}
 	}`, "caddyfile")
 	// act and assert
-	tester.AssertGetResponse("http://localhost:9080/internalerr", 500, "Error code is equal to 500 or in the [300..399] range")
-	tester.AssertGetResponse("http://localhost:9080/threehundred", 301, "Error code is equal to 500 or in the [300..399] range")
-	tester.AssertGetResponse("http://localhost:9080/private", 410, "Error in the [400 .. 499] range")
+	target := fmt.Sprintf("http://localhost:%d/", harness.Tester().PortOne())
+	harness.AssertGetResponse(target+"internalerr", 500, "Error code is equal to 500 or in the [300..399] range")
+	harness.AssertGetResponse(target+"threehundred", 301, "Error code is equal to 500 or in the [300..399] range")
+	harness.AssertGetResponse(target+"private", 410, "Error in the [400 .. 499] range")
 }
 
 func TestHandleErrorSubHandlers(t *testing.T) {
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`{
+	harness := caddytest.StartHarness(t)
+	harness.LoadConfig(`{
 		admin localhost:2999
 		http_port     9080
 	}
@@ -815,11 +836,11 @@ func TestHandleErrorSubHandlers(t *testing.T) {
 	}
 	`, "caddyfile")
 	// act and assert
-	tester.AssertGetResponse("http://localhost:9080/en/notfound", 404, "not found")
-	tester.AssertGetResponse("http://localhost:9080/es/notfound", 404, "no encontrado")
-	tester.AssertGetResponse("http://localhost:9080/notfound", 404, "default not found")
-	tester.AssertGetResponse("http://localhost:9080/es/internalerr", 500, "Default error")
-	tester.AssertGetResponse("http://localhost:9080/en/internalerr", 500, "English error")
+	harness.AssertGetResponse("http://localhost:9080/en/notfound", 404, "not found")
+	harness.AssertGetResponse("http://localhost:9080/es/notfound", 404, "no encontrado")
+	harness.AssertGetResponse("http://localhost:9080/notfound", 404, "default not found")
+	harness.AssertGetResponse("http://localhost:9080/es/internalerr", 500, "Default error")
+	harness.AssertGetResponse("http://localhost:9080/en/internalerr", 500, "English error")
 }
 
 func TestInvalidSiteAddressesAsDirectives(t *testing.T) {
