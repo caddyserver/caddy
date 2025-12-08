@@ -65,7 +65,7 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 	h.Next() // consume directive name
 	var (
 		addresses, protocols []string
-		to_device            bool
+		toDevice             bool
 	)
 	addresses = h.RemainingArgs()
 
@@ -77,7 +77,7 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 				return nil, h.Errf("protocols requires one or more arguments")
 			}
 		case "to_device":
-			to_device = true
+			toDevice = true
 		default:
 			return nil, h.Errf("unknown subdirective: %s", h.Val())
 		}
@@ -86,7 +86,7 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 	return []ConfigValue{{Class: "bind", Value: bindOptions{
 		addresses: addresses,
 		protocols: protocols,
-		to_device: to_device,
+		toDevice:  toDevice,
 	}}}, nil
 }
 

@@ -322,7 +322,7 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 			lnCfgVals = []bindOptions{{
 				addresses: []string{""},
 				protocols: nil,
-				to_device: false,
+				toDevice:  false,
 			}}
 		}
 	}
@@ -333,7 +333,7 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 	for _, lnCfgVal := range lnCfgVals {
 		var lnAddresses []string
 		for _, lnAddress := range lnCfgVal.addresses {
-			if lnCfgVal.to_device {
+			if lnCfgVal.toDevice {
 				lnNetw, lnDevice, _, err := caddy.SplitNetworkAddress(lnAddress)
 				if err != nil {
 					return nil, fmt.Errorf("splitting listener interface: %v", err)
@@ -431,7 +431,7 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 type bindOptions struct {
 	addresses []string
 	protocols []string
-	to_device bool
+	toDevice  bool
 }
 
 // Address represents a site address. It contains
