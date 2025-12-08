@@ -104,7 +104,8 @@ func Error(err error, code int) error {
 			State:                   svc.StopPending,
 			ServiceSpecificExitCode: uint32(code),
 		}
+		return fmt.Errorf("service failed (code=%d): %w", code, err)
 	}
 
-	return fmt.Errorf("service failed (code=%d): %w", code, err)
+	return nil
 }
