@@ -71,6 +71,8 @@ func Status(name string) error {
 	}
 
 	var state svc.State
+	var accepts svc.Accepted
+	accepts = 0
 
 	switch strings.ToLower(name) {
 	case "stopped":
@@ -81,17 +83,19 @@ func Status(name string) error {
 		state = svc.StopPending
 	case "running":
 		state = svc.Running
+		accepts = svc.AcceptStop | svc.AcceptShutdown
 	case "continue_pending":
 		state = svc.ContinuePending
 	case "pause_pending":
 		state = svc.PausePending
 	case "paused":
 		state = svc.Paused
+		accepts = svc.AcceptStop | svc.AcceptShutdown | svc.AcceptPauseAndContinue
 	default:
 		return fmt.Errorf("unknown status: %s", name)
 	}
 
-	globalStatus <- svc.Status{State: state}
+	globalStatus <- svc.Status{State: state, Accepts: accepts}
 	return nil
 }
 
