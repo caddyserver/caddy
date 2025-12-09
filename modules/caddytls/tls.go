@@ -414,15 +414,15 @@ func (t *TLS) Start() error {
 		echLogger := t.logger.Named("ech")
 
 		// publish ECH configs in the background; does not need to block
-		// server startup, as it could take a while
+		// server startup, as it could take a while; then keep keys rotated
 		go func() {
-			if err := t.publishECHConfigs(); err != nil {
+			// publish immediately first
+			if err := t.publishECHConfigs(echLogger); err != nil {
 				echLogger.Error("publication(s) failed", zap.Error(err))
 			}
-		}()
 
-		// keep ECH keys rotated
-		go func() {
+			// then every so often, rotate and publish if needed
+			// (both of these functions only do something if needed)
 			for {
 				select {
 				case <-time.After(1 * time.Hour):
@@ -432,6 +432,11 @@ func (t *TLS) Start() error {
 					t.EncryptedClientHello.configsMu.Unlock()
 					if err != nil {
 						echLogger.Error("rotating ECH configs failed", zap.Error(err))
+						return
+					}
+					err := t.publishECHConfigs(echLogger)
+					if err != nil {
+						echLogger.Error("publication(s) failed", zap.Error(err))
 					}
 				case <-t.ctx.Done():
 					return

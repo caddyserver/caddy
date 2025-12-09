@@ -187,7 +187,7 @@ func (ech *ECH) setConfigsFromStorage(ctx caddy.Context, logger *zap.Logger) ([]
 
 // rotateECHKeys updates the ECH keys/configs that are outdated. It should be called
 // in a write lock on ech.configsMu. If a lock is already obtained in storage, then
-// pass true for isSynced.
+// pass true for storageSynced.
 func (ech *ECH) rotateECHKeys(ctx caddy.Context, logger *zap.Logger, storageSynced bool) error {
 	storage := ctx.Storage()
 
@@ -311,9 +311,8 @@ func (ech *ECH) updateKeyList() {
 	}
 }
 
-func (t *TLS) publishECHConfigs() error {
-	logger := t.logger.Named("ech")
-
+// publishECHConfigs publishes any configs that are configured for publication and which haven't been published already.
+func (t *TLS) publishECHConfigs(logger *zap.Logger) error {
 	// make publication exclusive, since we don't need to repeat this unnecessarily
 	storage := t.ctx.Storage()
 	const echLockName = "ech_publish"
@@ -338,7 +337,7 @@ func (t *TLS) publishECHConfigs() error {
 					publishers: []ECHPublisher{
 						&ECHDNSPublisher{
 							provider: dnsProv,
-							logger:   t.logger,
+							logger:   logger,
 						},
 					},
 				},
@@ -350,6 +349,7 @@ func (t *TLS) publishECHConfigs() error {
 	// publish with it, and figure out which inner names to publish
 	// to/for, then publish
 	for _, publication := range publicationList {
+		t.EncryptedClientHello.configsMu.RLock()
 		// this publication is either configured for specific ECH configs,
 		// or we just use an implied default of all ECH configs
 		var echCfgList echConfigList
@@ -372,6 +372,7 @@ func (t *TLS) publishECHConfigs() error {
 				}
 			}
 		}
+		t.EncryptedClientHello.configsMu.RUnlock()
 
 		// marshal the ECH config list as binary for publication
 		echCfgListBin, err := echCfgList.MarshalBinary()
@@ -445,7 +446,7 @@ func (t *TLS) publishECHConfigs() error {
 				// at least a partial failure, maybe a complete failure, but we can
 				// log each error by domain
 				for innerName, domainErr := range publishErrs {
-					t.logger.Error("failed to publish ECH configuration list",
+					logger.Error("failed to publish ECH configuration list",
 						zap.String("publisher", publisherKey),
 						zap.String("domain", innerName),
 						zap.Uint8s("config_ids", configIDs),
@@ -453,7 +454,7 @@ func (t *TLS) publishECHConfigs() error {
 				}
 			} else if err != nil {
 				// generic error; assume the entire thing failed, I guess
-				t.logger.Error("failed publishing ECH configuration list",
+				logger.Error("failed publishing ECH configuration list",
 					zap.String("publisher", publisherKey),
 					zap.Strings("domains", dnsNamesToPublish),
 					zap.Uint8s("config_ids", configIDs),
@@ -475,7 +476,7 @@ func (t *TLS) publishECHConfigs() error {
 						successNames = append(successNames, name)
 					}
 				}
-				t.logger.Info("successfully published ECH configuration list for "+someAll+" domains",
+				logger.Info("successfully published ECH configuration list for "+someAll+" domains",
 					zap.String("publisher", publisherKey),
 					zap.Strings("domains", successNames),
 					zap.Uint8s("config_ids", configIDs))
@@ -499,7 +500,7 @@ func (t *TLS) publishECHConfigs() error {
 					}
 				}
 			} else {
-				t.logger.Error("all domains failed to publish ECH configuration list (see earlier errors)",
+				logger.Error("all domains failed to publish ECH configuration list (see earlier errors)",
 					zap.String("publisher", publisherKey),
 					zap.Strings("domains", dnsNamesToPublish),
 					zap.Uint8s("config_ids", configIDs))
