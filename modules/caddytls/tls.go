@@ -335,7 +335,6 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 
 	// ECH (Encrypted ClientHello) initialization
 	if t.EncryptedClientHello != nil {
-		t.EncryptedClientHello.configs = make(map[string][]echConfig)
 		outerNames, err := t.EncryptedClientHello.Provision(ctx)
 		if err != nil {
 			return fmt.Errorf("provisioning Encrypted ClientHello components: %v", err)
@@ -411,12 +410,37 @@ func (t *TLS) Start() error {
 		return fmt.Errorf("automate: managing %v: %v", t.automateNames, err)
 	}
 
-	// publish ECH configs in the background; does not need to block
-	// server startup, as it could take a while
 	if t.EncryptedClientHello != nil {
+		echLogger := t.logger.Named("ech")
+
+		// publish ECH configs in the background; does not need to block
+		// server startup, as it could take a while; then keep keys rotated
 		go func() {
-			if err := t.publishECHConfigs(); err != nil {
-				t.logger.Named("ech").Error("publication(s) failed", zap.Error(err))
+			// publish immediately first
+			if err := t.publishECHConfigs(echLogger); err != nil {
+				echLogger.Error("publication(s) failed", zap.Error(err))
+			}
+
+			// then every so often, rotate and publish if needed
+			// (both of these functions only do something if needed)
+			for {
+				select {
+				case <-time.After(1 * time.Hour):
+					// ensure old keys are rotated out
+					t.EncryptedClientHello.configsMu.Lock()
+					err = t.EncryptedClientHello.rotateECHKeys(t.ctx, echLogger, false)
+					t.EncryptedClientHello.configsMu.Unlock()
+					if err != nil {
+						echLogger.Error("rotating ECH configs failed", zap.Error(err))
+						return
+					}
+					err := t.publishECHConfigs(echLogger)
+					if err != nil {
+						echLogger.Error("publication(s) failed", zap.Error(err))
+					}
+				case <-t.ctx.Done():
+					return
+				}
 			}
 		}()
 	}
