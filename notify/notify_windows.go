@@ -15,7 +15,7 @@
 package notify
 
 import (
-	"fmt"
+	"log"
 	"strings"
 
 	"golang.org/x/sys/windows/svc"
@@ -63,8 +63,8 @@ func Stopping() error {
 }
 
 // Status sends an arbitrary service state to the SCM based on a string
-// identifier. This allows higher-level code to map custom states to
-// Windows service states when appropriate.
+// identifier of [svc.State].
+// The unknown states will be logged.
 func Status(name string) error {
 	if globalStatus == nil {
 		return nil
@@ -92,7 +92,8 @@ func Status(name string) error {
 		state = svc.Paused
 		accepts = svc.AcceptStop | svc.AcceptShutdown | svc.AcceptPauseAndContinue
 	default:
-		return fmt.Errorf("unknown status: %s", name)
+		log.Printf("unknown state: %s", name)
+		return nil
 	}
 
 	globalStatus <- svc.Status{State: state, Accepts: accepts}
@@ -100,15 +101,13 @@ func Status(name string) error {
 }
 
 // Error notifies the SCM that the service is stopping due to a failure,
-// including a service-specific exit code. The returned error allows the
-// caller to abort execution and let the service terminate.
+// including a service-specific exit code.
 func Error(err error, code int) error {
 	if globalStatus != nil {
 		globalStatus <- svc.Status{
 			State:                   svc.StopPending,
 			ServiceSpecificExitCode: uint32(code),
 		}
-		return fmt.Errorf("service failed (code=%d): %w", code, err)
 	}
 
 	return nil
