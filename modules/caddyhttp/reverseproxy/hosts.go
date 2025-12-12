@@ -132,6 +132,16 @@ func (u *Upstream) fillHost() {
 	u.Host = host
 }
 
+func (u *Upstream) fillInfilghtHost(numRemaiRequests int) {
+	host := new(Host)
+	existingHost, loaded := inflightHosts.LoadOrStore(u.String(), host)
+	if loaded {
+		host = existingHost.(*Host)
+	}
+	_ = host.countRequest(numRemaiRequests)
+	u.Host = host
+}
+
 // Host is the basic, in-memory representation of the state of a remote host.
 // Its fields are accessed atomically and Host values must not be copied.
 type Host struct {
@@ -267,6 +277,10 @@ func GetDialInfo(ctx context.Context) (DialInfo, bool) {
 // allows the state of remote hosts to be preserved
 // through config reloads.
 var hosts = caddy.NewUsagePool()
+
+// inflightHosts is the global repository for hosts that are
+// currently in use by inflight upstream request.
+var inflightHosts = caddy.NewUsagePool()
 
 // dialInfoVarKey is the key used for the variable that holds
 // the dial info for the upstream connection.
