@@ -21,33 +21,33 @@
 // Original source, copied because the package was marked internal:
 // https://github.com/golang/go/blob/5c489514bc5e61ad9b5b07bd7d8ec65d66a0512a/src/net/http/internal/ascii/print.go
 
-package reverseproxy
+package ascii
 
-// asciiEqualFold is strings.EqualFold, ASCII only. It reports whether s and t
+// EqualFold is strings.EqualFold, ASCII only. It reports whether s and t
 // are equal, ASCII-case-insensitively.
-func asciiEqualFold(s, t string) bool {
+func EqualFold(s, t string) bool {
 	if len(s) != len(t) {
 		return false
 	}
 	for i := 0; i < len(s); i++ {
-		if asciiLower(s[i]) != asciiLower(t[i]) {
+		if lower(s[i]) != lower(t[i]) {
 			return false
 		}
 	}
 	return true
 }
 
-// asciiLower returns the ASCII lowercase version of b.
-func asciiLower(b byte) byte {
+// lower returns the ASCII lowercase version of b.
+func lower(b byte) byte {
 	if 'A' <= b && b <= 'Z' {
 		return b + ('a' - 'A')
 	}
 	return b
 }
 
-// asciiIsPrint returns whether s is ASCII and printable according to
+// IsPrint returns whether s is ASCII and printable according to
 // https://tools.ietf.org/html/rfc20#section-4.2.
-func asciiIsPrint(s string) bool {
+func IsPrint(s string) bool {
 	for i := 0; i < len(s); i++ {
 		if s[i] < ' ' || s[i] > '~' {
 			return false
