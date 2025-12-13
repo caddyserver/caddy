@@ -147,8 +147,8 @@ func Load(cfgJSON []byte, forceReload bool) error {
 // the new value (if applicable; i.e. "DELETE" doesn't have an input).
 // If the resulting config is the same as the previous, no reload will
 // occur unless forceReload is true. If the config is unchanged and not
-// forcefully reloaded, then errConfigUnchanged is returned. This function is safe for
-// concurrent use.
+// forcefully reloaded, then errConfigUnchanged is returned. This function
+// is safe for concurrent use.
 // The ifMatchHeader can optionally be given a string of the format:
 //
 //	"<path> <hash>"
