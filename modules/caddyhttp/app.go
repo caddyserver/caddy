@@ -51,6 +51,7 @@ func init() {
 // Placeholder | Description
 // ------------|---------------
 // `{http.request.body}` | The request body (⚠️ inefficient; use only for debugging)
+// `{http.request.body_base64}` | The request body, base64-encoded (⚠️ for debugging)
 // `{http.request.cookie.*}` | HTTP request cookie
 // `{http.request.duration}` | Time up to now spent handling the request (after decoding headers from client)
 // `{http.request.duration_ms}` | Same as 'duration', but in milliseconds.
