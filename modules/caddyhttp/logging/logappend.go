@@ -61,10 +61,15 @@ func (LogAppend) CaddyModule() caddy.ModuleInfo {
 }
 
 func (h LogAppend) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+	// Determine if we need to add the log field early.
+	// We do if the Early flag is set, or for convenience,
+	// if the value is a special placeholder for the request body.
+	needsEarly := h.Early || h.Value == placeholderRequestBody || h.Value == placeholderRequestBodyBase64
+
 	// Check if we need to buffer the response for special placeholders
 	needsResponseBody := h.Value == placeholderResponseBody || h.Value == placeholderResponseBodyBase64
 
-	if h.Early && !needsResponseBody {
+	if needsEarly && !needsResponseBody {
 		// Add the log field before calling the next handler
 		// (but not if we need the response body, which isn't available yet)
 		h.addLogField(r, nil)
@@ -156,6 +161,8 @@ func (h LogAppend) addLogField(r *http.Request, buf *bytes.Buffer) {
 const (
 	// Special placeholder values that are handled by log_append
 	// rather than by the replacer.
+	placeholderRequestBody        = "{http.request.body}"
+	placeholderRequestBodyBase64  = "{http.request.body_base64}"
 	placeholderResponseBody       = "{http.response.body}"
 	placeholderResponseBodyBase64 = "{http.response.body_base64}"
 )
