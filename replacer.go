@@ -36,16 +36,12 @@ func NewReplacer() *Replacer {
 		static:   make(map[string]any),
 		mapMutex: &sync.RWMutex{},
 	}
-	rep.providers = []replacementProvider{
-		globalDefaultReplacementProvider{},
-		fileReplacementProvider{},
-		ReplacerFunc(rep.fromStatic),
-	}
+	rep.providers = append(globalReplacementProviders, ReplacerFunc(rep.fromStatic))
 	return rep
 }
 
 // NewEmptyReplacer returns a new Replacer,
-// without the global default replacements.
+// without the global replacements.
 func NewEmptyReplacer() *Replacer {
 	rep := &Replacer{
 		static:   make(map[string]any),
@@ -360,12 +356,11 @@ func (f fileReplacementProvider) replace(key string) (any, bool) {
 	return string(body), true
 }
 
-// globalDefaultReplacementProvider handles replacements
-// that can be used in any context, such as system variables,
-// time, or environment variables.
-type globalDefaultReplacementProvider struct{}
+// defaultReplacementProvider handles replacements
+// such as system variables, time, or environment variables.
+type defaultReplacementProvider struct{}
 
-func (f globalDefaultReplacementProvider) replace(key string) (any, bool) {
+func (f defaultReplacementProvider) replace(key string) (any, bool) {
 	// check environment variable
 	const envPrefix = "env."
 	if strings.HasPrefix(key, envPrefix) {

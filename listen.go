@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"slices"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -37,7 +36,7 @@ func reuseUnixSocket(_, _ string) (any, error) {
 func listenReusable(ctx context.Context, lnKey string, network, address string, config net.ListenConfig) (any, error) {
 	var socketFile *os.File
 
-	fd := slices.Contains([]string{"fd", "fdgram"}, network)
+	fd := IsFDNetwork(network)
 	if fd {
 		socketFd, err := strconv.ParseUint(address, 0, strconv.IntSize)
 		if err != nil {
@@ -66,8 +65,8 @@ func listenReusable(ctx context.Context, lnKey string, network, address string, 
 		}
 	}
 
-	datagram := slices.Contains([]string{"udp", "udp4", "udp6", "unixgram", "fdgram"}, network)
-	if datagram {
+	packet := IsPacketNetwork(network)
+	if packet {
 		sharedPc, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
 			var (
 				pc  net.PacketConn

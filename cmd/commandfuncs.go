@@ -729,7 +729,7 @@ func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io
 			return nil, err
 		}
 		parsedAddr.Host = addr
-	} else if parsedAddr.IsFdNetwork() {
+	} else if parsedAddr.IsFDNetwork() {
 		origin = "http://127.0.0.1"
 	}
 
@@ -738,7 +738,7 @@ func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io
 	if err != nil {
 		return nil, fmt.Errorf("making request: %v", err)
 	}
-	if parsedAddr.IsUnixNetwork() || parsedAddr.IsFdNetwork() {
+	if parsedAddr.IsUnixNetwork() || parsedAddr.IsFDNetwork() {
 		// We used to conform to RFC 2616 Section 14.26 which requires
 		// an empty host header when there is no host, as is the case
 		// with unix sockets and socket fds. However, Go required a
