@@ -90,6 +90,15 @@ type FileWriter struct {
 	// 0600 by default.
 	Mode fileMode `json:"mode,omitempty"`
 
+	// DirMode controls permissions for any directories created to reach Filename.
+	// Default: 0700 (current behavior).
+	//
+	// Special values:
+	//   - "inherit"   → copy the nearest existing parent directory's perms (with r→x normalization)
+	//   - "from_file" → derive from the file Mode (with r→x), e.g. 0644 → 0755, 0600 → 0700
+	// Numeric octal strings (e.g. "0755") are also accepted. Subject to process umask.
+	DirMode string `json:"dir_mode,omitempty"`
+
 	// Roll toggles log rolling or rotation, which is
 	// enabled by default.
 	Roll *bool `json:"roll,omitempty"`
@@ -177,11 +186,33 @@ func (fw FileWriter) OpenWriter() (io.WriteCloser, error) {
 	// roll log files as a sensible default to avoid disk space exhaustion
 	roll := fw.Roll == nil || *fw.Roll
 
-	// create the file if it does not exist; create with the configured mode, or default
-	// to restrictive if not set. (timberjack will reuse the file mode across log rotation)
-	if err := os.MkdirAll(filepath.Dir(fw.Filename), 0o700); err != nil {
-		return nil, err
+	// Ensure directory exists before opening the file.
+	dirPath := filepath.Dir(fw.Filename)
+	switch strings.ToLower(strings.TrimSpace(fw.DirMode)) {
+	case "", "0":
+		// Preserve current behavior: locked-down directories by default.
+		if err := os.MkdirAll(dirPath, 0o700); err != nil {
+			return nil, err
+		}
+	case "inherit":
+		if err := mkdirAllInherit(dirPath); err != nil {
+			return nil, err
+		}
+	case "from_file":
+		if err := mkdirAllFromFile(dirPath, os.FileMode(fw.Mode)); err != nil {
+			return nil, err
+		}
+	default:
+		dm, err := parseFileMode(fw.DirMode)
+		if err != nil {
+			return nil, fmt.Errorf("dir_mode: %w", err)
+		}
+		if err := os.MkdirAll(dirPath, dm); err != nil {
+			return nil, err
+		}
 	}
+
+	// create/open the file
 	file, err := os.OpenFile(fw.Filename, os.O_WRONLY|os.O_APPEND|os.O_CREATE, modeIfCreating)
 	if err != nil {
 		return nil, err
@@ -234,13 +265,70 @@ func (fw FileWriter) OpenWriter() (io.WriteCloser, error) {
 		RotateAtMinutes:  fw.RollAtMinutes,
 		RotateAt:         fw.RollAt,
 		BackupTimeFormat: fw.BackupTimeFormat,
+		FileMode:         os.FileMode(fw.Mode),
 	}, nil
+}
+
+// normalizeDirPerm ensures that read bits also have execute bits set.
+func normalizeDirPerm(p os.FileMode) os.FileMode {
+	if p&0o400 != 0 {
+		p |= 0o100
+	}
+	if p&0o040 != 0 {
+		p |= 0o010
+	}
+	if p&0o004 != 0 {
+		p |= 0o001
+	}
+	return p
+}
+
+// mkdirAllInherit creates missing dirs using the nearest existing parent's
+// permissions, normalized with r→x.
+func mkdirAllInherit(dir string) error {
+	if fi, err := os.Stat(dir); err == nil && fi.IsDir() {
+		return nil
+	}
+	cur := dir
+	var parent string
+	for {
+		next := filepath.Dir(cur)
+		if next == cur {
+			parent = next
+			break
+		}
+		if fi, err := os.Stat(next); err == nil {
+			if !fi.IsDir() {
+				return fmt.Errorf("path component %s exists and is not a directory", next)
+			}
+			parent = next
+			break
+		}
+		cur = next
+	}
+	perm := os.FileMode(0o700)
+	if fi, err := os.Stat(parent); err == nil && fi.IsDir() {
+		perm = fi.Mode().Perm()
+	}
+	perm = normalizeDirPerm(perm)
+	return os.MkdirAll(dir, perm)
+}
+
+// mkdirAllFromFile creates missing dirs using the file's mode (with r→x) so
+// 0644 → 0755, 0600 → 0700, etc.
+func mkdirAllFromFile(dir string, fileMode os.FileMode) error {
+	if fi, err := os.Stat(dir); err == nil && fi.IsDir() {
+		return nil
+	}
+	perm := normalizeDirPerm(fileMode.Perm()) | 0o200 // ensure owner write on dir so files can be created
+	return os.MkdirAll(dir, perm)
 }
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens. Syntax:
 //
 //	file <filename> {
 //	    mode          <mode>
+//	    dir_mode      <mode|inherit|from_file>
 //	    roll_disabled
 //	    roll_size     <size>
 //	    roll_uncompressed
@@ -283,6 +371,22 @@ func (fw *FileWriter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.Errf("parsing mode: %v", err)
 			}
 			fw.Mode = fileMode(mode)
+
+		case "dir_mode":
+			var val string
+			if !d.AllArgs(&val) {
+				return d.ArgErr()
+			}
+			val = strings.TrimSpace(val)
+			switch strings.ToLower(val) {
+			case "inherit", "from_file":
+				fw.DirMode = val
+			default:
+				if _, err := parseFileMode(val); err != nil {
+					return d.Errf("parsing dir_mode: %v", err)
+				}
+				fw.DirMode = val
+			}
 
 		case "roll_disabled":
 			var f bool
