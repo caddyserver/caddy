@@ -171,6 +171,17 @@ func parsePKIApp(d *caddyfile.Dispenser, existingVal any) (any, error) {
 	return pki, nil
 }
 
+// BuildPKIApp builds the PKI app from server block pairings and global options.
+// This is exported for use by xcaddyfile and other adapters.
+func BuildPKIApp(
+	pairings ServerBlockPairings,
+	options map[string]any,
+	warnings []caddyconfig.Warning,
+) (*caddypki.PKI, []caddyconfig.Warning, error) {
+	st := ServerType{}
+	return st.buildPKIApp(pairings, options, warnings)
+}
+
 func (st ServerType) buildPKIApp(
 	pairings []sbAddrAssociation,
 	options map[string]any,
@@ -211,7 +222,7 @@ func (st ServerType) buildPKIApp(
 		for _, sblock := range p.serverBlocks {
 			// find all the CAs that were defined and add them to the app config
 			// i.e. from any "acme_server" directives
-			for _, caCfgValue := range sblock.pile["pki.ca"] {
+			for _, caCfgValue := range sblock.Pile["pki.ca"] {
 				ca := caCfgValue.Value.(*caddypki.CA)
 				if skipInstallTrust {
 					ca.InstallTrust = &falseBool
