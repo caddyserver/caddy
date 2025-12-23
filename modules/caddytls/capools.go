@@ -27,6 +27,8 @@ func init() {
 	caddy.RegisterModule(PKIIntermediateCAPool{})
 	caddy.RegisterModule(StoragePool{})
 	caddy.RegisterModule(HTTPCertPool{})
+	caddy.RegisterModule(SystemCAPool{})
+	caddy.RegisterModule(CombinedCAPool{})
 }
 
 // The interface to be implemented by all guest modules part of
@@ -665,6 +667,151 @@ func (hcp HTTPCertPool) CertPool() *x509.CertPool {
 	return hcp.pool
 }
 
+// SystemCAPool obtains the trusted root certificates from the system's
+// certificate pool using x509.SystemCertPool()
+type SystemCAPool struct {
+	pool *x509.CertPool
+}
+
+// CaddyModule implements caddy.Module.
+func (SystemCAPool) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID: "tls.ca_pool.source.system",
+		New: func() caddy.Module {
+			return new(SystemCAPool)
+		},
+	}
+}
+
+// Provision implements caddy.Provisioner.
+func (scp *SystemCAPool) Provision(ctx caddy.Context) error {
+	pool, err := x509.SystemCertPool()
+	if err != nil {
+		return fmt.Errorf("failed to load system cert pool: %v", err)
+	}
+	scp.pool = pool
+	return nil
+}
+
+func (scp *SystemCAPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	d.Next() // consume module name
+	if d.CountRemainingArgs() > 0 {
+		return d.ArgErr()
+	}
+	if d.NextBlock(0) {
+		return d.Err("system trust pool does not support any configuration")
+	}
+	return nil
+}
+
+// CertPool implements CA.
+func (scp SystemCAPool) CertPool() *x509.CertPool {
+	return scp.pool
+}
+
+type CombinedCAPool struct {
+	// The CA pool sources to combine. Each source is a CA pool provider module.
+	SourcesRaw []json.RawMessage `json:"sources,omitempty" caddy:"namespace=tls.ca_pool.source inline_key=provider"`
+
+	sources []CA
+	pool    *x509.CertPool
+}
+
+// CaddyModule implements caddy.Module.
+func (CombinedCAPool) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID: "tls.ca_pool.source.combined",
+		New: func() caddy.Module {
+			return new(CombinedCAPool)
+		},
+	}
+}
+
+// Provision implements caddy.Provisioner.
+func (ccp *CombinedCAPool) Provision(ctx caddy.Context) error {
+	if len(ccp.SourcesRaw) == 0 {
+		return fmt.Errorf("no sources specified for combined CA pool")
+	}
+
+	// Load all source modules
+	sources, err := ctx.LoadModule(ccp, "SourcesRaw")
+	if err != nil {
+		return fmt.Errorf("loading CA pool sources: %v", err)
+	}
+
+	// Store all sources
+	for _, src := range sources.([]any) {
+		ca, ok := src.(CA)
+		if !ok {
+			return fmt.Errorf("source module is not a CA pool provider")
+		}
+		ccp.sources = append(ccp.sources, ca)
+	}
+
+	// LIMITATION: x509.CertPool doesn't expose its certificates, making it impossible
+	// to merge multiple pools. Return an error if multiple sources are configured.
+	if len(ccp.sources) > 1 {
+		return fmt.Errorf("combined CA pool currently supports only a single source due to x509.CertPool API limitations (got %d sources); to use multiple certificate sources, consider using a single 'file' source with multiple pem_file entries, or contribute a fix to expose certificate data from the CA interface", len(ccp.sources))
+	}
+
+	// At this point we have exactly one source
+	ccp.pool = ccp.sources[0].CertPool()
+
+	return nil
+}
+
+// Syntax:
+//
+//	trust_pool combined {
+//		source <module_name> {
+//			<module_config>
+//		}
+//	}
+//
+// LIMITATION: Currently only a single source is supported due to x509.CertPool
+// API limitations. Specifying multiple sources will result in a provisioning error.
+// To combine multiple certificate files, use a single 'file' source with multiple
+// pem_file entries instead.
+func (ccp *CombinedCAPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	d.Next() // consume module name
+	if d.CountRemainingArgs() > 0 {
+		return d.ArgErr()
+	}
+	
+	for nesting := d.Nesting(); d.NextBlock(nesting); {
+		switch d.Val() {
+		case "source":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			modStem := d.Val()
+			modID := "tls.ca_pool.source." + modStem
+			unm, err := caddyfile.UnmarshalModule(d, modID)
+			if err != nil {
+				return err
+			}
+			ca, ok := unm.(CA)
+			if !ok {
+				return d.Errf("module %s is not a CA pool provider", modID)
+			}
+			ccp.SourcesRaw = append(ccp.SourcesRaw, caddyconfig.JSONModuleObject(ca, "provider", modStem, nil))
+		default:
+			return d.Errf("unrecognized directive: %s", d.Val())
+		}
+	}
+	
+	if len(ccp.SourcesRaw) == 0 {
+		return d.Err("no sources specified")
+	}
+	
+	return nil
+}
+
+// CertPool implements CA.
+func (ccp CombinedCAPool) CertPool() *x509.CertPool {
+	return ccp.pool
+}
+
 var (
 	_ caddy.Module          = (*InlineCAPool)(nil)
 	_ caddy.Provisioner     = (*InlineCAPool)(nil)
@@ -696,4 +843,14 @@ var (
 	_ caddy.Validator       = (*HTTPCertPool)(nil)
 	_ CA                    = (*HTTPCertPool)(nil)
 	_ caddyfile.Unmarshaler = (*HTTPCertPool)(nil)
+
+	_ caddy.Module          = (*SystemCAPool)(nil)
+	_ caddy.Provisioner     = (*SystemCAPool)(nil)
+	_ CA                    = (*SystemCAPool)(nil)
+	_ caddyfile.Unmarshaler = (*SystemCAPool)(nil)
+
+	_ caddy.Module          = (*CombinedCAPool)(nil)
+	_ caddy.Provisioner     = (*CombinedCAPool)(nil)
+	_ CA                    = (*CombinedCAPool)(nil)
+	_ caddyfile.Unmarshaler = (*CombinedCAPool)(nil)
 )
