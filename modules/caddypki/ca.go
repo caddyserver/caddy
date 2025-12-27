@@ -161,7 +161,9 @@ func (ca *CA) Provision(ctx caddy.Context, id string, log *zap.Logger) error {
 }
 
 // RootCertificate returns the CA's root certificate (public key).
-func (ca CA) RootCertificate() *x509.Certificate {
+// Note: This method uses a pointer receiver to prevent data races.
+// Using a value receiver would copy the struct before acquiring the lock.
+func (ca *CA) RootCertificate() *x509.Certificate {
 	ca.mu.RLock()
 	defer ca.mu.RUnlock()
 	return ca.root
@@ -170,21 +172,25 @@ func (ca CA) RootCertificate() *x509.Certificate {
 // RootKey returns the CA's root private key. Since the root key is
 // not cached in memory long-term, it needs to be loaded from storage,
 // which could yield an error.
-func (ca CA) RootKey() (any, error) {
+func (ca *CA) RootKey() (any, error) {
 	_, rootKey, err := ca.loadOrGenRoot()
 	return rootKey, err
 }
 
 // IntermediateCertificate returns the CA's intermediate
 // certificate (public key).
-func (ca CA) IntermediateCertificate() *x509.Certificate {
+// Note: This method uses a pointer receiver to prevent data races.
+// Using a value receiver would copy the struct before acquiring the lock.
+func (ca *CA) IntermediateCertificate() *x509.Certificate {
 	ca.mu.RLock()
 	defer ca.mu.RUnlock()
 	return ca.inter
 }
 
 // IntermediateKey returns the CA's intermediate private key.
-func (ca CA) IntermediateKey() any {
+// Note: This method uses a pointer receiver to prevent data races.
+// Using a value receiver would copy the struct before acquiring the lock.
+func (ca *CA) IntermediateKey() any {
 	ca.mu.RLock()
 	defer ca.mu.RUnlock()
 	return ca.interKey

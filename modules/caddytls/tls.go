@@ -130,6 +130,7 @@ type TLS struct {
 	ctx                caddy.Context
 	storageCleanTicker *time.Ticker
 	storageCleanStop   chan struct{}
+	storageCleanMu     sync.Mutex // protects storageCleanTicker and storageCleanStop
 	logger             *zap.Logger
 	events             *caddyevents.App
 
@@ -433,11 +434,18 @@ func (t *TLS) Start() error {
 // Stop stops the TLS module and cleans up any allocations.
 func (t *TLS) Stop() error {
 	// stop the storage cleaner goroutine and ticker
-	if t.storageCleanStop != nil {
-		close(t.storageCleanStop)
+	t.storageCleanMu.Lock()
+	stopChan := t.storageCleanStop
+	ticker := t.storageCleanTicker
+	t.storageCleanStop = nil
+	t.storageCleanTicker = nil
+	t.storageCleanMu.Unlock()
+
+	if stopChan != nil {
+		close(stopChan)
 	}
-	if t.storageCleanTicker != nil {
-		t.storageCleanTicker.Stop()
+	if ticker != nil {
+		ticker.Stop()
 	}
 	return nil
 }
@@ -786,8 +794,10 @@ func (t *TLS) HasCertificateForSubject(subject string) bool {
 // known storage units if it was not recently done, and then runs the
 // operation at every tick from t.storageCleanTicker.
 func (t *TLS) keepStorageClean() {
+	t.storageCleanMu.Lock()
 	t.storageCleanTicker = time.NewTicker(t.storageCleanInterval())
 	t.storageCleanStop = make(chan struct{})
+	t.storageCleanMu.Unlock()
 	go func() {
 		defer func() {
 			if err := recover(); err != nil {
