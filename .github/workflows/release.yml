@@ -28,7 +28,7 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           fetch-depth: 0
       # Force fetch upstream tags -- because 65 minutes
@@ -355,23 +355,23 @@ jobs:
 
     steps:
     - name: Harden the runner (Audit all outbound calls)
-      uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
       with:
         egress-policy: audit
 
     - name: Checkout code
-      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
       with:
         fetch-depth: 0
 
     - name: Install Go
-      uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+      uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
       with:
         go-version: ${{ matrix.GO_SEMVER }}
         check-latest: true
 
     # Force fetch upstream tags -- because 65 minutes
-    # tl;dr: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v4.2.2 runs this line:
+    # tl;dr: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v4.2.2 runs this line:
     #   git -c protocol.version=2 fetch --no-tags --prune --progress --no-recurse-submodules --depth=1 origin +ebc278ec98bb24f2852b61fde2a9bf2e3d83818b:refs/tags/
     # which makes its own local lightweight tag, losing all the annotations in the process. Our earlier script ran:
     #   git fetch --prune --unshallow
@@ -415,11 +415,11 @@ jobs:
       run: pip install --upgrade cloudsmith-cli
 
     - name: Install Cosign
-      uses: sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62 # main
+      uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # main
     - name: Cosign version
       run: cosign version
     - name: Install Syft
-      uses: anchore/sbom-action/download-syft@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # main
+      uses: anchore/sbom-action/download-syft@a930d0ac434e3182448fe678398ba5713717112a # main
     - name: Syft version
       run: syft version
     - name: Install xcaddy
