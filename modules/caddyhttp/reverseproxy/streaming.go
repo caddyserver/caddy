@@ -24,7 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	weakrand "math/rand"
+	weakrand "math/rand/v2"
 	"mime"
 	"net/http"
 	"sync"
