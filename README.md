@@ -119,7 +119,7 @@ replacing `username` with your actual username. Please be careful and only do th
 
 Then you can run the tests in all modules or a specific one:
 
-````bash
+```bash
 $ go test ./...
 $ go test ./modules/caddyhttp/tracing/
 ```
