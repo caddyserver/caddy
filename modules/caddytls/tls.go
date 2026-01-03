@@ -252,17 +252,13 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		DisableStorageCheck: t.DisableStorageCheck,
 	})
 	certCacheMu.RUnlock()
+
 	for _, loader := range t.certificateLoaders {
-		certs, err := loader.LoadCertificates()
+		err := loader.Initialize(func(add []Certificate, remove []string) error {
+			return t.updateCertificates(ctx, magic, add, remove)
+		})
 		if err != nil {
 			return fmt.Errorf("loading certificates: %v", err)
-		}
-		for _, cert := range certs {
-			hash, err := magic.CacheUnmanagedTLSCertificate(ctx, cert.Certificate, cert.Tags)
-			if err != nil {
-				return fmt.Errorf("caching unmanaged certificate: %v", err)
-			}
-			t.loaded[hash] = ""
 		}
 	}
 
@@ -806,6 +802,20 @@ func (t *TLS) HasCertificateForSubject(subject string) bool {
 	return false
 }
 
+func (t *TLS) updateCertificates(ctx caddy.Context, magic *certmagic.Config, add []Certificate, remove []string) error {
+	for _, cert := range add {
+		hash, err := magic.CacheUnmanagedTLSCertificate(ctx, cert.Certificate, cert.Tags)
+		if err != nil {
+			return fmt.Errorf("caching unmanaged certificate: %v", err)
+		}
+		t.loaded[hash] = ""
+	}
+	certCacheMu.Lock()
+	certCache.Remove(remove)
+	certCacheMu.Unlock()
+	return nil
+}
+
 // keepStorageClean starts a goroutine that immediately cleans up all
 // known storage units if it was not recently done, and then runs the
 // operation at every tick from t.storageCleanTicker.
@@ -911,7 +921,7 @@ func (t *TLS) onEvent(ctx context.Context, eventName string, data map[string]any
 // CertificateLoader is a type that can load certificates.
 // Certificates can optionally be associated with tags.
 type CertificateLoader interface {
-	LoadCertificates() ([]Certificate, error)
+	Initialize(updateCertificates func(add []Certificate, remove []string) error) error
 }
 
 // Certificate is a TLS certificate, optionally
