@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	weakrand "math/rand"
+	weakrand "math/rand/v2"
 	"mime"
 	"net/http"
 	"os"
@@ -601,7 +601,7 @@ func (fsrv *FileServer) openFile(fileSystem fs.FS, filename string, w http.Respo
 		// maybe the server is under load and ran out of file descriptors?
 		// have client wait arbitrary seconds to help prevent a stampede
 		//nolint:gosec
-		backoff := weakrand.Intn(maxBackoff-minBackoff) + minBackoff
+		backoff := weakrand.IntN(maxBackoff-minBackoff) + minBackoff
 		w.Header().Set("Retry-After", strconv.Itoa(backoff))
 		if c := fsrv.logger.Check(zapcore.DebugLevel, "retry after backoff"); c != nil {
 			c.Write(zap.String("filename", filename), zap.Int("backoff", backoff), zap.Error(err))

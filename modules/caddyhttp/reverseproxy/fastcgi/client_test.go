@@ -27,7 +27,7 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math/rand"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"net/http/fcgi"
@@ -197,7 +197,7 @@ func generateRandFile(size int) (p string, m string) {
 	h := md5.New()
 	for i := 0; i < size/16; i++ {
 		buf := make([]byte, 16)
-		binary.PutVarint(buf, rand.Int63())
+		binary.PutVarint(buf, rand.Int64())
 		if _, err := fo.Write(buf); err != nil {
 			log.Printf("[ERROR] failed to write buffer: %v\n", err)
 		}
