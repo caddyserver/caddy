@@ -63,6 +63,7 @@ jobs:
       contents: read
       pull-requests: read
       actions: write # to allow uploading artifacts and cache
+      checks: write
     steps:
     - name: Harden the runner (Audit all outbound calls)
       uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
@@ -151,6 +152,111 @@ jobs:
     #   run: |
     #     echo "step_test ${{ steps.step_test.outputs.status }}\n"
     #     exit 1
+
+  spec-test:
+    permissions:
+      checks: write
+      pull-requests: write
+    strategy:
+      matrix:
+        os: 
+          - linux
+        go: 
+          - '1.25'
+
+        include:
+        # Set the minimum Go patch version for the given Go minor
+        # Usable via ${{ matrix.GO_SEMVER }}
+        - go: '1.25'
+          GO_SEMVER: '~1.25.0'
+
+        # Set some variables per OS, usable via ${{ matrix.VAR }}
+        # OS_LABEL: the VM label from GitHub Actions (see https://docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners/about-github-hosted-runners#standard-github-hosted-runners-for-public-repositories)
+        # CADDY_BIN_PATH: the path to the compiled Caddy binary, for artifact publishing
+        # SUCCESS: the typical value for $? per OS (Windows/pwsh returns 'True')
+        - os: linux
+          OS_LABEL: ubuntu-latest
+          CADDY_BIN_PATH: ./cmd/caddy/caddy
+          SUCCESS: 0
+
+    runs-on: ${{ matrix.OS_LABEL }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+    - name: Install Go
+      uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+      with:
+        go-version: ${{ matrix.GO_SEMVER }}
+        check-latest: true
+
+    - name: Print Go version and environment
+      id: vars
+      shell: bash
+      run: |
+        printf "curl version: $(curl --version)\n"
+        printf "Using go at: $(which go)\n"
+        printf "Go version: $(go version)\n"
+        printf "\n\nGo environment:\n\n"
+        go env
+        printf "\n\nSystem environment:\n\n"
+        env
+        printf "Git version: $(git version)\n\n"
+        # Calculate the short SHA1 hash of the git commit
+        echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+    - name: Get dependencies
+      run: |
+        go get -v -t ./...
+        # mkdir test-results
+    - name: Build Caddy
+      working-directory: ./cmd/caddy
+      env:
+        CGO_ENABLED: 0
+      run: |
+        go build -cover -tags nobadger,nopgx,nomysql -trimpath -ldflags="-w -s" -v
+      
+    - name: Install Hurl
+      env:
+        HURL_VERSION: "7.0.0"
+      run: |
+        curl --location --remote-name https://github.com/Orange-OpenSource/hurl/releases/download/${HURL_VERSION}/hurl_${HURL_VERSION}_amd64.deb
+        sudo dpkg -i hurl_${HURL_VERSION}_amd64.deb
+        hurl --version
+  
+    - name: Run Caddy
+      run: |
+        ./cmd/caddy/caddy environ
+        mkdir coverdir
+        export GOCOVERDIR=./coverdir
+        ./cmd/caddy/caddy start
+        sleep 5
+
+    - name: Run tests with Hurl
+      run: |
+        mkdir hurl-report
+        find . -name *.hurl -exec hurl --jobs 1 --variables-file caddytest/spec/hurl_vars.properties --very-verbose --verbose --test --report-junit hurl-report/junit.xml --color {} \;
+    
+    - name: Publish Test Results
+      uses: EnricoMi/publish-unit-test-result-action@3a74b2957438d0b6e2e61d67b05318aa25c9e6c6 # v2.20.0
+      with:
+        files: |
+          hurl-report/junit.xml
+
+    - name: Generate Coverage Data
+      run: |
+        export GOCOVERDIR=./coverdir
+        ./cmd/caddy/caddy stop
+        go tool covdata textfmt -i=coverdir -o hurl-report/caddy_cover_${{ steps.vars.outputs.short_sha }}.txt
+        go tool cover -html hurl-report/caddy_cover_${{ steps.vars.outputs.short_sha }}.txt -o hurl-report/caddy_cover_${{ steps.vars.outputs.short_sha }}.html
+
+
+    - name: Publish Coverage Profile
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      with:
+        path: hurl-report/caddy_cover_${{ steps.vars.outputs.short_sha }}.html
+        compression-level: 0
 
   s390x-test:
     name: test (s390x on IBM Z)
