@@ -102,6 +102,33 @@ func (adminUpstreams) handleUpstreams(w http.ResponseWriter, r *http.Request) er
 		})
 		return true
 	})
+	// Iterate over the inflight hosts
+	inflightHosts.Range(func(key, val any) bool {
+		address, ok := key.(string)
+		if !ok {
+			rangeErr = caddy.APIError{
+				HTTPStatus: http.StatusInternalServerError,
+				Err:        fmt.Errorf("could not type assert upstream address"),
+			}
+			return false
+		}
+
+		upstream, ok := val.(*Host)
+		if !ok {
+			rangeErr = caddy.APIError{
+				HTTPStatus: http.StatusInternalServerError,
+				Err:        fmt.Errorf("could not type assert upstream struct"),
+			}
+			return false
+		}
+
+		results = append(results, upstreamStatus{
+			Address:     address,
+			NumRequests: upstream.NumRequests(),
+			Fails:       upstream.Fails(),
+		})
+		return true
+	})
 
 	// If an error happened during the range, return it
 	if rangeErr != nil {
