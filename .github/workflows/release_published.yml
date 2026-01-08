@@ -24,12 +24,12 @@ jobs:
 
     # See https://github.com/peter-evans/repository-dispatch
     - name: Harden the runner (Audit all outbound calls)
-      uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
       with:
         egress-policy: audit
 
     - name: Trigger event on caddyserver/dist
-      uses: peter-evans/repository-dispatch@5fc4efd1a4797ddb68ffd0714a238564e4cc0e6f # v4.0.0
+      uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4.0.1
       with:
         token: ${{ secrets.REPO_DISPATCH_TOKEN }}
         repository: caddyserver/dist
@@ -37,7 +37,7 @@ jobs:
         client-payload: '{"tag": "${{ github.event.release.tag_name }}"}'
 
     - name: Trigger event on caddyserver/caddy-docker
-      uses: peter-evans/repository-dispatch@5fc4efd1a4797ddb68ffd0714a238564e4cc0e6f # v4.0.0
+      uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4.0.1
       with:
         token: ${{ secrets.REPO_DISPATCH_TOKEN }}
         repository: caddyserver/caddy-docker
