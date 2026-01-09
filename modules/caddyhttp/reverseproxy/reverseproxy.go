@@ -789,16 +789,19 @@ func (h Handler) addForwardedHeaders(req *http.Request) error {
 	// to pull that out before parsing the IP
 	clientIP, _, _ = strings.Cut(clientIP, "%")
 	ipAddr, err := netip.ParseAddr(clientIP)
-	if err != nil {
-		return fmt.Errorf("invalid IP address: '%s': %v", clientIP, err)
-	}
 
 	// Check if the client is a trusted proxy
 	trusted := caddyhttp.GetVar(req.Context(), caddyhttp.TrustedProxyVarKey).(bool)
-	for _, ipRange := range h.trustedProxies {
-		if ipRange.Contains(ipAddr) {
-			trusted = true
-			break
+
+	// If ParseAddr fails (e.g. non-IP network like SCION), we cannot check
+	// if it is a trusted proxy by IP range. In this case, we ignore the
+	// error and treat the connection as untrusted (or retain existing status).
+	if err == nil {
+		for _, ipRange := range h.trustedProxies {
+			if ipRange.Contains(ipAddr) {
+				trusted = true
+				break
+			}
 		}
 	}
 
