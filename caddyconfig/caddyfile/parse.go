@@ -761,7 +761,7 @@ type ServerBlock struct {
 }
 
 func (sb ServerBlock) GetKeysText() []string {
-	res := []string{}
+	res := make([]string, 0, len(sb.Keys))
 	for _, k := range sb.Keys {
 		res = append(res, k.Text)
 	}

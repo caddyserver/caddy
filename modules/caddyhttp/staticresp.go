@@ -258,7 +258,7 @@ func (s StaticResponse) ServeHTTP(w http.ResponseWriter, r *http.Request, next H
 }
 
 func buildHTTPServer(i int, port uint, addr string, statusCode int, hdr http.Header, body string, accessLog bool) (*Server, error) {
-	var handlers []json.RawMessage
+	handlers := make([]json.RawMessage, 0, 1)
 
 	// response body supports a basic template; evaluate it
 	tplCtx := struct {
