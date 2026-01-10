@@ -1010,7 +1010,11 @@ func isTrustedClientIP(ipAddr netip.Addr, trusted []netip.Prefix) bool {
 // then the first value from those headers is used.
 func trustedRealClientIP(r *http.Request, headers []string, clientIP string) string {
 	// Read all the values of the configured client IP headers, in order
-	var values []string
+	totalVals := 0
+	for _, field := range headers {
+		totalVals += len(r.Header.Values(field))
+	}
+	values := make([]string, 0, totalVals)
 	for _, field := range headers {
 		values = append(values, r.Header.Values(field)...)
 	}

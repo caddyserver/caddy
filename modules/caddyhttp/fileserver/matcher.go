@@ -404,7 +404,7 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 		}
 
 		// for each glob result, combine all the forms of the path
-		var candidates []matchCandidate
+		candidates := make([]matchCandidate, 0, len(globResults))
 		for _, result := range globResults {
 			candidates = append(candidates, matchCandidate{
 				fullpath:       result,

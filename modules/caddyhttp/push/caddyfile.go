@@ -64,8 +64,11 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				var err error
 
 				// include current token, which we treat as an argument here
-				args := []string{h.Val()}
-				args = append(args, h.RemainingArgs()...)
+				cur := h.Val()
+				rem := h.RemainingArgs()
+				args := make([]string, 0, 1+len(rem))
+				args = append(args, cur)
+				args = append(args, rem...)
 
 				if handler.Headers == nil {
 					handler.Headers = new(HeaderConfig)
