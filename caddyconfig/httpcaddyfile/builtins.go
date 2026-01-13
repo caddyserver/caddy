@@ -930,6 +930,7 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 	// modifications to the parsing behavior.
 	parseAsGlobalOption := globalLogNames != nil
 
+	// nolint:prealloc
 	var configValues []ConfigValue
 
 	// Logic below expects that a name is always present when a
