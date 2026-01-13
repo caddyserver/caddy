@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"io"
 	"slices"
+	"strings"
 	"unicode"
 )
 
@@ -207,6 +208,15 @@ func Format(input []byte) []byte {
 			case "\"`":
 				quotes = ""
 			}
+		}
+
+		if strings.Contains(quotes, "`") {
+			if ch == '`' && space && !beginningOfLine {
+				write(' ')
+			}
+			write(ch)
+			space = false
+			continue
 		}
 
 		if unicode.IsSpace(ch) {
