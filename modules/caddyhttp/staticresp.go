@@ -257,7 +257,16 @@ func (s StaticResponse) ServeHTTP(w http.ResponseWriter, r *http.Request, next H
 	return nil
 }
 
-func buildHTTPServer(i int, port uint, addr string, statusCode int, hdr http.Header, body string, accessLog bool) (*Server, error) {
+func buildHTTPServer(
+	i int,
+	port uint,
+	addr string,
+	statusCode int,
+	hdr http.Header,
+	body string,
+	accessLog bool,
+) (*Server, error) {
+	// nolint:prealloc
 	var handlers []json.RawMessage
 
 	// response body supports a basic template; evaluate it
