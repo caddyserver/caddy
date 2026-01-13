@@ -207,11 +207,11 @@ func TestMetricsInstrumentedHandler(t *testing.T) {
 func TestMetricsInstrumentedHandlerPerHost(t *testing.T) {
 	ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
 	metrics := &Metrics{
-		PerHost:            true,
-		AllowCatchAllHosts: true, // Allow all hosts for testing
-		init:               sync.Once{},
-		httpMetrics:        &httpMetrics{},
-		allowedHosts:       make(map[string]struct{}),
+		PerHost:              true,
+		ObserveCatchallHosts: true, // Allow all hosts for testing
+		init:                 sync.Once{},
+		httpMetrics:          &httpMetrics{},
+		allowedHosts:         make(map[string]struct{}),
 	}
 	handlerErr := errors.New("oh noes")
 	response := []byte("hello world!")
@@ -387,11 +387,11 @@ func TestMetricsCardinalityProtection(t *testing.T) {
 
 	// Test 1: Without AllowCatchAllHosts, arbitrary hosts should be mapped to "_other"
 	metrics := &Metrics{
-		PerHost:            true,
-		AllowCatchAllHosts: false, // Default - should map unknown hosts to "_other"
-		init:               sync.Once{},
-		httpMetrics:        &httpMetrics{},
-		allowedHosts:       make(map[string]struct{}),
+		PerHost:              true,
+		ObserveCatchallHosts: false, // Default - should map unknown hosts to "_other"
+		init:                 sync.Once{},
+		httpMetrics:          &httpMetrics{},
+		allowedHosts:         make(map[string]struct{}),
 	}
 
 	// Add one allowed host
@@ -444,12 +444,12 @@ func TestMetricsHTTPSCatchAll(t *testing.T) {
 
 	// Test that HTTPS requests allow catch-all even when AllowCatchAllHosts is false
 	metrics := &Metrics{
-		PerHost:            true,
-		AllowCatchAllHosts: false,
-		hasHTTPSServer:     true, // Simulate having HTTPS servers
-		init:               sync.Once{},
-		httpMetrics:        &httpMetrics{},
-		allowedHosts:       make(map[string]struct{}), // Empty - no explicitly allowed hosts
+		PerHost:              true,
+		ObserveCatchallHosts: false,
+		hasHTTPSServer:       true, // Simulate having HTTPS servers
+		init:                 sync.Once{},
+		httpMetrics:          &httpMetrics{},
+		allowedHosts:         make(map[string]struct{}), // Empty - no explicitly allowed hosts
 	}
 
 	mh := middlewareHandlerFunc(func(w http.ResponseWriter, r *http.Request, h Handler) error {

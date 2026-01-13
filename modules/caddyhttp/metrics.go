@@ -65,7 +65,7 @@ type Metrics struct {
 	//
 	// Set to true to allow all hosts to get individual metrics (NOT RECOMMENDED
 	// for production environments exposed to the internet).
-	AllowCatchAllHosts bool `json:"allow_catch_all_hosts,omitempty"`
+	ObserveCatchallHosts bool `json:"allow_catchall_hosts,omitempty"`
 
 	init           sync.Once
 	httpMetrics    *httpMetrics
@@ -200,7 +200,7 @@ func (m *Metrics) shouldAllowHostMetrics(host string, isHTTPS bool) bool {
 	}
 
 	// For catch-all requests (not in allowed hosts)
-	allowCatchAll := m.AllowCatchAllHosts || (isHTTPS && m.hasHTTPSServer)
+	allowCatchAll := m.ObserveCatchallHosts || (isHTTPS && m.hasHTTPSServer)
 	return allowCatchAll
 }
 
