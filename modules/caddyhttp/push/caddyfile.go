@@ -64,6 +64,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				var err error
 
 				// include current token, which we treat as an argument here
+				// nolint:prealloc
 				args := []string{h.Val()}
 				args = append(args, h.RemainingArgs()...)
 
