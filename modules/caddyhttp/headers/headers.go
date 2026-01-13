@@ -217,7 +217,10 @@ type RespHeaderOps struct {
 }
 
 // ApplyTo applies ops to hdr using repl.
-func (ops HeaderOps) ApplyTo(hdr http.Header, repl *caddy.Replacer) {
+func (ops *HeaderOps) ApplyTo(hdr http.Header, repl *caddy.Replacer) {
+	if ops == nil {
+		return
+	}
 	// before manipulating headers in other ways, check if there
 	// is configuration to delete all headers, and do that first
 	// because if a header is to be added, we don't want to delete

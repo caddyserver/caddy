@@ -411,11 +411,65 @@ func cmdBuildInfo(_ Flags) (int, error) {
 	return caddy.ExitCodeSuccess, nil
 }
 
+// jsonModuleInfo holds metadata about a Caddy module for JSON output.
+type jsonModuleInfo struct {
+	ModuleName string `json:"module_name"`
+	ModuleType string `json:"module_type"`
+	Version    string `json:"version,omitempty"`
+	PackageURL string `json:"package_url,omitempty"`
+}
+
 func cmdListModules(fl Flags) (int, error) {
 	packages := fl.Bool("packages")
 	versions := fl.Bool("versions")
 	skipStandard := fl.Bool("skip-standard")
+	jsonOutput := fl.Bool("json")
 
+	// Organize modules by whether they come with the standard distribution
+	standard, nonstandard, unknown, err := getModules()
+	if err != nil {
+		// If module info can't be fetched, just print the IDs and exit
+		for _, m := range caddy.Modules() {
+			fmt.Println(m)
+		}
+		return caddy.ExitCodeSuccess, nil
+	}
+
+	// Logic for JSON output
+	if jsonOutput {
+		output := []jsonModuleInfo{}
+
+		// addToOutput is a helper to convert internal module info to the JSON-serializable struct
+		addToOutput := func(list []moduleInfo, moduleType string) {
+			for _, mi := range list {
+				item := jsonModuleInfo{
+					ModuleName: mi.caddyModuleID,
+					ModuleType: moduleType, // Mapping the type here
+				}
+				if mi.goModule != nil {
+					item.Version = mi.goModule.Version
+					item.PackageURL = mi.goModule.Path
+				}
+				output = append(output, item)
+			}
+		}
+
+		// Pass the respective type for each category
+		if !skipStandard {
+			addToOutput(standard, "standard")
+		}
+		addToOutput(nonstandard, "non-standard")
+		addToOutput(unknown, "unknown")
+
+		jsonBytes, err := json.MarshalIndent(output, "", "  ")
+		if err != nil {
+			return caddy.ExitCodeFailedQuit, err
+		}
+		fmt.Println(string(jsonBytes))
+		return caddy.ExitCodeSuccess, nil
+	}
+
+	// Logic for Text output (Fallback)
 	printModuleInfo := func(mi moduleInfo) {
 		fmt.Print(mi.caddyModuleID)
 		if versions && mi.goModule != nil {
@@ -431,16 +485,6 @@ func cmdListModules(fl Flags) (int, error) {
 			fmt.Printf(" [%v]", mi.err)
 		}
 		fmt.Println()
-	}
-
-	// organize modules by whether they come with the standard distribution
-	standard, nonstandard, unknown, err := getModules()
-	if err != nil {
-		// oh well, just print the module IDs and exit
-		for _, m := range caddy.Modules() {
-			fmt.Println(m)
-		}
-		return caddy.ExitCodeSuccess, nil
 	}
 
 	// Standard modules (always shipped with Caddy)
@@ -461,8 +505,8 @@ func cmdListModules(fl Flags) (int, error) {
 		for _, mod := range nonstandard {
 			printModuleInfo(mod)
 		}
+		fmt.Printf("\n  Non-standard modules: %d\n", len(nonstandard))
 	}
-	fmt.Printf("\n  Non-standard modules: %d\n", len(nonstandard))
 
 	// Unknown modules (couldn't get Caddy module info)
 	if len(unknown) > 0 {
@@ -472,8 +516,8 @@ func cmdListModules(fl Flags) (int, error) {
 		for _, mod := range unknown {
 			printModuleInfo(mod)
 		}
+		fmt.Printf("\n  Unknown modules: %d\n", len(unknown))
 	}
-	fmt.Printf("\n  Unknown modules: %d\n", len(unknown))
 
 	return caddy.ExitCodeSuccess, nil
 }
