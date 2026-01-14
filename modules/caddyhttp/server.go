@@ -541,14 +541,33 @@ func (s *Server) hasListenerAddress(fullAddr string) bool {
 			continue
 		}
 
-		// If hosts match exactly (e.g. 127.0.0.2 == 127.0.0.2), it's a conflict/match.
+		// Apparently, Linux requires all bound ports to be distinct
+		// *regardless of host interface* even if the addresses are
+		// in fact different; binding "192.168.0.1:9000" and then
+		// ":9000" will fail for ":9000" because "address is already
+		// in use" even though it's not, and the same bindings work
+		// fine on macOS. I also found on Linux that listening on
+		// "[::]:9000" would fail with a similar error, except with
+		// the address "0.0.0.0:9000", as if deliberately ignoring
+		// that I specified the IPv6 interface explicitly. This seems
+		// to be a major bug in the Linux network stack and I don't
+		// know why it hasn't been fixed yet, so for now we have to
+		// special-case ourselves around Linux like a doting parent.
+		// The second issue seems very similar to a discussion here:
+		// https://github.com/nodejs/node/issues/9390
+		//
+		// However, binding to *different specific* interfaces
+		// (e.g. 127.0.0.2:80 and 127.0.0.3:80) IS allowed on Linux.
+		// The conflict only happens when mixing specific IPs with
+		// wildcards (0.0.0.0 or ::).
+
+		// Hosts match exactly (e.g. 127.0.0.2 == 127.0.0.2) -> Conflict.
 		hostMatch := thisAddrs.Host == laddrs.Host
 
-		// Linux allows binding to the same port on different specific interfaces
-		// (e.g., 127.0.0.2:80 and 127.0.0.3:80 are distinct).
-		// However, it does NOT allow binding to a specific IP if the wildcard (0.0.0.0 or ::)
-		// is already bound to that port (or vice-versa).
-		// So, if we are on Linux, we consider it a match (conflict) only if one of the hosts is empty (wildcard).
+		// On Linux, specific IP vs Wildcard fails to bind.
+		// So if we are on Linux AND either host is empty (wildcard), we treat
+		// it as a match (conflict). But if both are specific and different
+		// (127.0.0.2 vs 127.0.0.3), this remains false (no conflict).
 		linuxWildcardConflict := runtime.GOOS == "linux" && (thisAddrs.Host == "" || laddrs.Host == "")
 
 		if (hostMatch || linuxWildcardConflict) &&
