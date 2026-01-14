@@ -25,7 +25,7 @@ import (
 //			"http": {
 //				"metrics": {
 //					"per_host": true,
-//					"allow_catch_all_hosts": false
+//					"observe_catchall_hosts": false
 //				},
 //				"servers": {
 //					"srv0": {
@@ -65,7 +65,7 @@ type Metrics struct {
 	//
 	// Set to true to allow all hosts to get individual metrics (NOT RECOMMENDED
 	// for production environments exposed to the internet).
-	ObserveCatchallHosts bool `json:"allow_catchall_hosts,omitempty"`
+	ObserveCatchallHosts bool `json:"observe_catchall_hosts,omitempty"`
 
 	init           sync.Once
 	httpMetrics    *httpMetrics
