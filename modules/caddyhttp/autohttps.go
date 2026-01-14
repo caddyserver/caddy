@@ -90,7 +90,16 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 	// the log configuration for an HTTPS enabled server
 	var logCfg *ServerLogConfig
 
-	for srvName, srv := range app.Servers {
+	// Sort server names to ensure deterministic iteration.
+	// This prevents race conditions where the order of server processing
+	// could affect which server gets assigned the HTTP->HTTPS redirect listener.
+	srvNames := make([]string, 0, len(app.Servers))
+	for name := range app.Servers {
+		srvNames = append(srvNames, name)
+	}
+	slices.Sort(srvNames)
+	for _, srvName := range srvNames {
+		srv := app.Servers[srvName]
 		// as a prerequisite, provision route matchers; this is
 		// required for all routes on all servers, and must be
 		// done before we attempt to do phase 1 of auto HTTPS,
@@ -398,15 +407,26 @@ uniqueDomainsLoop:
 		return append(routes, app.makeRedirRoute(uint(app.httpsPort()), MatcherSet{MatchProtocol("http")}))
 	}
 
+	// Sort redirect addresses to ensure deterministic process
+	redirServerAddrsSorted := make([]string, 0, len(redirServers))
+	for addr := range redirServers {
+		redirServerAddrsSorted = append(redirServerAddrsSorted, addr)
+	}
+	slices.Sort(redirServerAddrsSorted)
+
 redirServersLoop:
-	for redirServerAddr, routes := range redirServers {
+	for _, redirServerAddr := range redirServerAddrsSorted {
+		routes := redirServers[redirServerAddr]
 		// for each redirect listener, see if there's already a
 		// server configured to listen on that exact address; if so,
 		// insert the redirect route to the end of its route list
 		// after any other routes with host matchers; otherwise,
 		// we'll create a new server for all the listener addresses
 		// that are unused and serve the remaining redirects from it
-		for _, srv := range app.Servers {
+
+		// Use the sorted srvNames to consistently find the target server
+		for _, srvName := range srvNames {
+			srv := app.Servers[srvName]
 			// only look at servers which listen on an address which
 			// we want to add redirects to
 			if !srv.hasListenerAddress(redirServerAddr) {
