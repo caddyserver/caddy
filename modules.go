@@ -342,7 +342,11 @@ func ParseStructTag(tag string) (map[string]string, error) {
 func StrictUnmarshalJSON(data []byte, v any) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
-	return dec.Decode(v)
+	err := dec.Decode(v)
+	if jsonErr, ok := err.(*json.SyntaxError); ok {
+		return fmt.Errorf("%w, at offset %d", jsonErr, jsonErr.Offset)
+	}
+	return err
 }
 
 var JSONRawMessageType = reflect.TypeFor[json.RawMessage]()
