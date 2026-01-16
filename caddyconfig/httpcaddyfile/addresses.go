@@ -307,29 +307,107 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 	}
 
 	// the bind directive specifies hosts (and potentially network), and the protocols to serve them with, but is optional
-	lnCfgVals := make([]addressesWithProtocols, 0, len(sblock.pile["bind"]))
+	lnCfgVals := make([]bindOptions, 0, len(sblock.pile["bind"]))
 	for _, cfgVal := range sblock.pile["bind"] {
-		if val, ok := cfgVal.Value.(addressesWithProtocols); ok {
+		if val, ok := cfgVal.Value.(bindOptions); ok {
 			lnCfgVals = append(lnCfgVals, val)
 		}
 	}
 	if len(lnCfgVals) == 0 {
 		if defaultBindValues, ok := options["default_bind"].([]ConfigValue); ok {
 			for _, defaultBindValue := range defaultBindValues {
-				lnCfgVals = append(lnCfgVals, defaultBindValue.Value.(addressesWithProtocols))
+				lnCfgVals = append(lnCfgVals, defaultBindValue.Value.(bindOptions))
 			}
 		} else {
-			lnCfgVals = []addressesWithProtocols{{
+			lnCfgVals = []bindOptions{{
 				addresses: []string{""},
 				protocols: nil,
+				toDevice:  false,
 			}}
 		}
 	}
 
 	// use a map to prevent duplication
 	listeners := map[string]map[string]struct{}{}
+	interfaces := map[string][]net.Addr{}
 	for _, lnCfgVal := range lnCfgVals {
-		for _, lnAddr := range lnCfgVal.addresses {
+		var lnAddresses []string
+		for _, lnAddress := range lnCfgVal.addresses {
+			if lnCfgVal.toDevice {
+				lnNetw, lnDevice, _, err := caddy.SplitNetworkAddress(lnAddress)
+				if err != nil {
+					return nil, fmt.Errorf("splitting listener interface: %v", err)
+				}
+
+				ifaceAddresses, ok := interfaces[lnDevice]
+				if !ok {
+					iface, err := net.InterfaceByName(lnDevice)
+					if err != nil {
+						return nil, fmt.Errorf("querying listener interface: %v: %v", lnDevice, err)
+					}
+					if iface == nil {
+						return nil, fmt.Errorf("querying listener interface: %v", lnDevice)
+					}
+					ifaceAddresses, err := iface.Addrs()
+					if err != nil {
+						return nil, fmt.Errorf("querying listener interface addresses: %v: %v", lnDevice, err)
+					}
+					interfaces[lnDevice] = ifaceAddresses
+				}
+
+				lnIfaceAddresses := []string{}
+				for _, ifaceAddress := range ifaceAddresses {
+					if caddy.IsReservedNetwork(lnNetw) {
+						var addrok, netwok bool
+
+						var ip net.IP
+						switch ifaceAddressValue := ifaceAddress.(type) {
+						case *net.IPAddr:
+							ip, addrok, netwok = ifaceAddressValue.IP, true, true
+						case *net.IPNet:
+							ip, addrok, netwok = ifaceAddressValue.IP, true, true
+						case *net.TCPAddr:
+							ip, addrok, netwok = ifaceAddressValue.IP, true, caddy.IsTCPNetwork(lnNetw)
+						case *net.UDPAddr:
+							ip, addrok, netwok = ifaceAddressValue.IP, true, caddy.IsUDPNetwork(lnNetw)
+						}
+
+						if addrok {
+							if netwok {
+								if caddy.IsIPv4Network(lnNetw) && len(ip) == net.IPv4len || caddy.IsIPv6Network(lnNetw) && len(ip) == net.IPv6len {
+									lnIfaceAddresses = append(lnIfaceAddresses, ip.String())
+								}
+							}
+							continue
+						}
+
+						var name string
+						switch ifaceAddressValue := ifaceAddress.(type) {
+						case *net.UnixAddr:
+							name, addrok, netwok = ifaceAddressValue.Name, true, caddy.IsUnixNetwork(lnNetw)
+						}
+
+						if addrok {
+							if netwok {
+								lnIfaceAddresses = append(lnIfaceAddresses, name)
+							}
+							continue
+						}
+					} else {
+						lnIfaceAddresses = append(lnIfaceAddresses, ifaceAddress.String())
+					}
+				}
+				if len(lnIfaceAddresses) == 0 {
+					return nil, fmt.Errorf("no available listener interface addresses for network: %v: %v", lnDevice, lnNetw)
+				}
+				for _, lnIfaceAddress := range lnIfaceAddresses {
+					lnAddresses = append(lnAddresses, caddy.JoinNetworkAddress(lnNetw, lnIfaceAddress, ""))
+				}
+			} else {
+				lnAddresses = append(lnAddresses, lnAddress)
+			}
+		}
+		for _, lnAddr := range lnAddresses {
 			lnNetw, lnHost, _, err := caddy.SplitNetworkAddress(lnAddr)
 			if err != nil {
 				return nil, fmt.Errorf("splitting listener address: %v", err)
@@ -350,11 +428,10 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 	return listeners, nil
 }
 
-// addressesWithProtocols associates a list of listen addresses
-// with a list of protocols to serve them with
-type addressesWithProtocols struct {
+type bindOptions struct {
 	addresses []string
 	protocols []string
+	toDevice  bool
 }
 
 // Address represents a site address. It contains
