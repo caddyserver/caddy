@@ -556,15 +556,21 @@ func (s *Server) hasListenerAddress(fullAddr string) bool {
 		// The second issue seems very similar to a discussion here:
 		// https://github.com/nodejs/node/issues/9390
 		//
-		// This is very easy to reproduce by creating an HTTP server
-		// that listens to both addresses or just one with a host
-		// interface; or for a more confusing reproduction, try
-		// listening on "127.0.0.1:80" and ":443" and you'll see
-		// the error, if you take away the GOOS condition below.
-		//
-		// So, an address is equivalent if the port is in the port
-		// range, and if not on Linux, the host is the same... sigh.
-		if (runtime.GOOS == "linux" || thisAddrs.Host == laddrs.Host) &&
+		// However, binding to *different specific* interfaces
+		// (e.g. 127.0.0.2:80 and 127.0.0.3:80) IS allowed on Linux.
+		// The conflict only happens when mixing specific IPs with
+		// wildcards (0.0.0.0 or ::).
+
+		// Hosts match exactly (e.g. 127.0.0.2 == 127.0.0.2) -> Conflict.
+		hostMatch := thisAddrs.Host == laddrs.Host
+
+		// On Linux, specific IP vs Wildcard fails to bind.
+		// So if we are on Linux AND either host is empty (wildcard), we treat
+		// it as a match (conflict). But if both are specific and different
+		// (127.0.0.2 vs 127.0.0.3), this remains false (no conflict).
+		linuxWildcardConflict := runtime.GOOS == "linux" && (thisAddrs.Host == "" || laddrs.Host == "")
+
+		if (hostMatch || linuxWildcardConflict) &&
 			(laddrs.StartPort <= thisAddrs.EndPort) &&
 			(laddrs.StartPort >= thisAddrs.StartPort) {
 			return true
