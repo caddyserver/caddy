@@ -29,13 +29,13 @@ import (
 
 	"github.com/caddyserver/certmagic"
 	"github.com/libdns/libdns"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/internal"
 	"github.com/caddyserver/caddy/v2/modules/caddyevents"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 func init() {
@@ -58,7 +58,6 @@ func init() {
 		Name:      "on_demand_ask_total",
 		Help:      "Total number of on-demand TLS ask requests",
 	}, []string{"result"})
-
 }
 
 var (
