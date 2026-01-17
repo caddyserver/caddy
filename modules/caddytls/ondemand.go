@@ -147,6 +147,7 @@ func (p PermissionByHTTP) CertificateAllowed(ctx context.Context, name string) e
 
 	resp, err := onDemandAskClient.Get(askURLString)
 	if err != nil {
+		onDemandAskTotal.WithLabelValues("error").Inc()
 		return fmt.Errorf("checking %v to determine if certificate for hostname '%s' should be allowed: %v",
 			askEndpoint, name, err)
 	}
@@ -162,8 +163,10 @@ func (p PermissionByHTTP) CertificateAllowed(ctx context.Context, name string) e
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		onDemandAskTotal.WithLabelValues("denied").Inc()
 		return fmt.Errorf("%s: %w %s - non-2xx status code %d", name, ErrPermissionDenied, askEndpoint, resp.StatusCode)
 	}
+	onDemandAskTotal.WithLabelValues("allowed").Inc()
 
 	return nil
 }
