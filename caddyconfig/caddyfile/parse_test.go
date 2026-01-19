@@ -16,7 +16,6 @@ package caddyfile
 
 import (
 	"bytes"
-	"iter"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -936,13 +935,13 @@ func TestAcceptImportWithinInvoke(t *testing.T) {
 	}
 
 	keys := make([]string, 0)
-	var namedBlock ServerBlock
+	var namedBlock TestServerBlock
 
 	for _, block := range blocks {
 		blockKeys := block.GetKeysText()
 
 		if slices.Contains(blockKeys, "named") {
-			namedBlock = block
+			namedBlock = testServerBlock(block)
 		}
 
 		keys = slices.Concat(keys, blockKeys)
@@ -952,7 +951,7 @@ func TestAcceptImportWithinInvoke(t *testing.T) {
 	assert.True(t, namedBlock.HasBraces)
 
 	snippet := p.definedSnippets["proxy"]
-	blockTokens := namedBlock.BlockTokens()
+	blockTokens := namedBlock.InnerTokens
 	assert.Equalf(
 		t, len(snippet), len(blockTokens),
 		"Token mismatch, snippet has %d tokens while the named route ends up with %d",
@@ -960,7 +959,7 @@ func TestAcceptImportWithinInvoke(t *testing.T) {
 	)
 
 	placeholderRegexp := regexp.MustCompile("\\{.+}")
-	for idx, tok := range namedBlock.BlockTokens() {
+	for idx, tok := range blockTokens {
 		assert.Equal(t, tok.snippetName, "proxy")
 
 		isPlaceholder := placeholderRegexp.MatchString(snippet[idx].Text)
@@ -1015,19 +1014,9 @@ func TestComplexImportInvokeConfig(t *testing.T) {
 		strings.Join(blocks[0].GetKeysText(), ", "),
 	)
 
-	stringifyTokens := func(tokens []Token) iter.Seq[string] {
-		return func(yield func(string) bool) {
-			for _, tok := range tokens {
-				if !yield(tok.Text) {
-					return
-				}
-			}
-		}
-	}
-
-	namedBlock := blocks[0]
-	blockText := slices.Collect(stringifyTokens(namedBlock.BlockTokens()))
-	deeplyNestedImport := slices.Collect(stringifyTokens(p.definedSnippets["nesting_further"]))
+	namedBlock := testServerBlock(blocks[0])
+	blockText := stringifyTokens(namedBlock.InnerTokens)
+	deeplyNestedImport := stringifyTokens(p.definedSnippets["nesting_further"])
 	nestedImport := slices.Concat(
 		[]string{"directive", "again", "with", "more", "{", "interesting", "=", "content"},
 		deeplyNestedImport,
@@ -1046,7 +1035,6 @@ func TestComplexImportInvokeConfig(t *testing.T) {
 	)
 
 	assert.ElementsMatch(t, blockText, expectedText)
-	
 }
 
 func TestAcceptSiteImportWithBraces(t *testing.T) {
@@ -1071,4 +1059,40 @@ func TestAcceptSiteImportWithBraces(t *testing.T) {
 
 func testParser(input string) parser {
 	return parser{Dispenser: NewTestDispenser(input)}
+}
+
+type TestServerBlock struct {
+	ServerBlock
+
+	InnerTokens []Token
+}
+
+func stringifyTokens(tokens []Token) []string {
+	return slices.Collect(func(yield func(string) bool) {
+		for _, tok := range tokens {
+			if !yield(tok.Text) {
+				return
+			}
+		}
+	})
+}
+
+func testServerBlock(block ServerBlock) TestServerBlock {
+	innerTokens := slices.Collect(func(yield func(Token) bool) {
+		for _, segment := range block.Segments {
+			tokens := []Token(segment)
+			for _, token := range tokens {
+				if !yield(token) {
+					return
+				}
+			}
+		}
+	})
+
+	keyLength := len(block.Keys)
+	return TestServerBlock{
+		ServerBlock: block,
+		// Exclude keys, opening brace and closing brace
+		InnerTokens: innerTokens[keyLength+1 : len(innerTokens)-1],
+	}
 }

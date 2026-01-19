@@ -800,25 +800,6 @@ func (sb ServerBlock) GetKeysText() []string {
 	return res
 }
 
-func (sb ServerBlock) BlockTokens() []Token {
-	allTokens := sb.Tokens()
-
-	// Skip name and {, exclude } at end
-	return allTokens[2 : len(allTokens)-1]
-}
-
-func (sb ServerBlock) Tokens() []Token {
-	return slices.Collect(func(yield func(Token) bool) {
-		for _, segment := range sb.Segments {
-			for _, token := range segment.Tokens() {
-				if !yield(token) {
-					return
-				}
-			}
-		}
-	})
-}
-
 // DispenseDirective returns a dispenser that contains
 // all the tokens in the server block.
 func (sb ServerBlock) DispenseDirective(dir string) *Dispenser {
@@ -843,20 +824,6 @@ func (s Segment) Directive() string {
 		return s[0].Text
 	}
 	return ""
-}
-
-func (s Segment) Tokens() []Token {
-	return s
-}
-
-func (s Segment) GetTokenText() []string {
-	return slices.Collect(func(yield func(string) bool) {
-		for _, token := range s {
-			if !yield(token.Text) {
-				return
-			}
-		}
-	})
 }
 
 // spanOpen and spanClose are used to bound spans that
