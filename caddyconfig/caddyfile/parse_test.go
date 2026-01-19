@@ -16,10 +16,15 @@ package caddyfile
 
 import (
 	"bytes"
+	"iter"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestParseVariadic(t *testing.T) {
@@ -908,6 +913,140 @@ func TestRejectAnonymousImportBlock(t *testing.T) {
 	if !strings.HasPrefix(err.Error(), "anonymous blocks are not supported") {
 		t.Errorf("Expected error to start with '%s' but got '%v'", expected, err)
 	}
+}
+
+func TestAcceptImportWithinInvoke(t *testing.T) {
+	p := testParser(`
+		(proxy) {
+			reverse_proxy {args[:]}
+		}
+		
+		&(named) {
+			import proxy 192.168.1.1:80
+		}
+
+		site {
+			invoke named
+		}
+	`)
+
+	blocks, err := p.parseAll()
+	if err != nil {
+		t.Errorf("Expected error to be nil but got '%v'", err)
+	}
+
+	keys := make([]string, 0)
+	var namedBlock ServerBlock
+
+	for _, block := range blocks {
+		blockKeys := block.GetKeysText()
+
+		if slices.Contains(blockKeys, "named") {
+			namedBlock = block
+		}
+
+		keys = slices.Concat(keys, blockKeys)
+	}
+
+	assert.Equal(t, keys, []string{"named", "site"})
+	assert.True(t, namedBlock.HasBraces)
+
+	snippet := p.definedSnippets["proxy"]
+	blockTokens := namedBlock.BlockTokens()
+	assert.Equalf(
+		t, len(snippet), len(blockTokens),
+		"Token mismatch, snippet has %d tokens while the named route ends up with %d",
+		len(snippet), len(blockTokens),
+	)
+
+	placeholderRegexp := regexp.MustCompile("\\{.+}")
+	for idx, tok := range namedBlock.BlockTokens() {
+		assert.Equal(t, tok.snippetName, "proxy")
+
+		isPlaceholder := placeholderRegexp.MatchString(snippet[idx].Text)
+		if !isPlaceholder {
+			assert.Equal(t, tok.Text, snippet[idx].Text)
+		} else {
+			assert.NotRegexpf(
+				t, placeholderRegexp, tok.Text,
+				"Imported tokens still include a placeholder: %s", tok.Text,
+			)
+		}
+	}
+}
+
+func TestComplexImportInvokeConfig(t *testing.T) {
+	p := testParser(`
+		(nesting_further) {
+			do something
+		}
+
+		(nesting) {
+			directive again with more {
+				interesting = content
+				import nesting_further
+			}
+		}
+
+		(proxy) {
+			reverse_proxy {args[:]}
+			import nesting
+		}
+
+		&(named) {
+			import proxy 192.168.1.1:80
+			
+			handle_error {
+				import nesting_further
+				respond 404
+			}
+		}
+	`)
+
+	blocks, err := p.parseAll()
+	if err != nil {
+		t.Errorf("Expected error to be nil but got '%v'", err)
+	}
+
+	assert.Len(t, blocks, 1, "Expected only the named route to be in blocks")
+	assert.Equalf(
+		t, blocks[0].GetKeysText(), []string{"named"},
+		"Block in result is not the named route, expected name 'named' got: %s",
+		strings.Join(blocks[0].GetKeysText(), ", "),
+	)
+
+	stringifyTokens := func(tokens []Token) iter.Seq[string] {
+		return func(yield func(string) bool) {
+			for _, tok := range tokens {
+				if !yield(tok.Text) {
+					return
+				}
+			}
+		}
+	}
+
+	namedBlock := blocks[0]
+	blockText := slices.Collect(stringifyTokens(namedBlock.BlockTokens()))
+	deeplyNestedImport := slices.Collect(stringifyTokens(p.definedSnippets["nesting_further"]))
+	nestedImport := slices.Concat(
+		[]string{"directive", "again", "with", "more", "{", "interesting", "=", "content"},
+		deeplyNestedImport,
+		[]string{"}"},
+	)
+	proxyImport := slices.Concat(
+		[]string{"reverse_proxy", "192.168.1.1:80"},
+		nestedImport,
+	)
+
+	expectedText := slices.Concat(
+		proxyImport,
+		[]string{"handle_error", "{"},
+		deeplyNestedImport,
+		[]string{"respond", "404", "}"},
+	)
+
+	assert.ElementsMatch(t, blockText, expectedText)
+	
 }
 
 func TestAcceptSiteImportWithBraces(t *testing.T) {
