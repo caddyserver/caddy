@@ -18,13 +18,13 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"go.uber.org/zap"
-
 	"github.com/caddyserver/caddy/v2"
+	"go.uber.org/zap"
 )
 
 // Parse parses the input just enough to group tokens, in
@@ -170,11 +170,24 @@ func (p *parser) begin() error {
 
 		// get all the tokens from the block, including the braces
 		tokens, err := p.blockTokens(true)
+		tokens = append([]Token{nameToken}, tokens...)
 		if err != nil {
 			return err
 		}
-		tokens = append([]Token{nameToken}, tokens...)
-		p.block.Segments = []Segment{tokens}
+
+		// Parse the whole block, to evaluate all imports and
+		// other potential parse-time constructs at parse time,
+		// then use result as the block definition
+		routeParser := p.childParser(tokens)
+		if err := routeParser.parseOne(); err != nil {
+			return err
+		}
+
+		// Copy parsed segment tokens back along with any changes
+		// to the import graph, in case it was modified.
+		p.block.Segments = []Segment{routeParser.tokens}
+		p.importGraph = routeParser.importGraph
+
 		return nil
 	}
 
@@ -714,6 +727,24 @@ func (p *parser) isSnippet() (bool, string) {
 		return true, strings.TrimSuffix(keys[0].Text[1:], ")")
 	}
 	return false, ""
+}
+
+func (p *parser) childParser(tokens []Token) parser {
+	nodes := maps.Clone(p.importGraph.nodes)
+	edges := maps.Clone(p.importGraph.edges)
+
+	context := maps.Clone(p.context)
+	snippets := maps.Clone(p.definedSnippets)
+
+	return parser{
+		Dispenser:       &Dispenser{tokens: tokens, context: context},
+		definedSnippets: snippets,
+		importGraph: importGraph{
+			nodes: nodes,
+			edges: edges,
+		},
+		nesting: p.Nesting(),
+	}
 }
 
 // read and store everything in a block for later replay.
