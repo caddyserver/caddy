@@ -214,7 +214,10 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 		timeoutc = timer.C
 	}
 
-	errc := make(chan error, 1)
+	// when a stream timeout is encountered, no error will be read from errc
+	// a buffer size of 2 will allow both the read and write goroutines to send the error and exit
+	// see: https://github.com/caddyserver/caddy/issues/7418
+	errc := make(chan error, 2)
 	wg.Add(2)
 	go spc.copyToBackend(errc)
 	go spc.copyFromBackend(errc)

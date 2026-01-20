@@ -13,23 +13,51 @@
 <h3 align="center">Every site on HTTPS</h3>
 <p align="center">Caddy is an extensible server platform that uses TLS by default.</p>
 <p align="center">
-	<a href="https://github.com/caddyserver/caddy/actions/workflows/ci.yml"><img src="https://github.com/caddyserver/caddy/actions/workflows/ci.yml/badge.svg"></a>
-	<a href="https://www.bestpractices.dev/projects/7141"><img src="https://www.bestpractices.dev/projects/7141/badge"></a>
-	<a href="https://pkg.go.dev/github.com/caddyserver/caddy/v2"><img src="https://img.shields.io/badge/godoc-reference-%23007d9c.svg"></a>
-	<br>
-	<a href="https://x.com/caddyserver" title="@caddyserver on Twitter"><img src="https://img.shields.io/twitter/follow/caddyserver" alt="@caddyserver on Twitter"></a>
-	<a href="https://caddy.community" title="Caddy Forum"><img src="https://img.shields.io/badge/community-forum-ff69b4.svg" alt="Caddy Forum"></a>
-	<br>
-	<a href="https://sourcegraph.com/github.com/caddyserver/caddy?badge" title="Caddy on Sourcegraph"><img src="https://sourcegraph.com/github.com/caddyserver/caddy/-/badge.svg" alt="Caddy on Sourcegraph"></a>
-	<a href="https://cloudsmith.io/~caddy/repos/"><img src="https://img.shields.io/badge/OSS%20hosting%20by-cloudsmith-blue?logo=cloudsmith" alt="Cloudsmith"></a>
-</p>
-<p align="center">
 	<a href="https://github.com/caddyserver/caddy/releases">Releases</a> ·
 	<a href="https://caddyserver.com/docs/">Documentation</a> ·
 	<a href="https://caddy.community">Get Help</a>
 </p>
+<p align="center">
+	<a href="https://github.com/caddyserver/caddy/actions/workflows/ci.yml"><img src="https://github.com/caddyserver/caddy/actions/workflows/ci.yml/badge.svg"></a>
+	&nbsp;
+	<a href="https://www.bestpractices.dev/projects/7141"><img src="https://www.bestpractices.dev/projects/7141/badge"></a>
+	&nbsp;
+	<a href="https://pkg.go.dev/github.com/caddyserver/caddy/v2"><img src="https://img.shields.io/badge/godoc-reference-%23007d9c.svg"></a>
+	&nbsp;
+	<a href="https://x.com/caddyserver" title="@caddyserver on Twitter"><img src="https://img.shields.io/twitter/follow/caddyserver" alt="@caddyserver on Twitter"></a>
+	&nbsp;
+	<a href="https://caddy.community" title="Caddy Forum"><img src="https://img.shields.io/badge/community-forum-ff69b4.svg" alt="Caddy Forum"></a>
+	<br>
+	<a href="https://sourcegraph.com/github.com/caddyserver/caddy?badge" title="Caddy on Sourcegraph"><img src="https://sourcegraph.com/github.com/caddyserver/caddy/-/badge.svg" alt="Caddy on Sourcegraph"></a>
+	&nbsp;
+	<a href="https://cloudsmith.io/~caddy/repos/"><img src="https://img.shields.io/badge/OSS%20hosting%20by-cloudsmith-blue?logo=cloudsmith" alt="Cloudsmith"></a>
+</p>
+<p align="center">
+	<b>Powered by</b>
+	<br>
+	<a href="https://github.com/caddyserver/certmagic">
+		<picture>
+			<source media="(prefers-color-scheme: dark)" srcset="https://user-images.githubusercontent.com/55066419/206946718-740b6371-3df3-4d72-a822-47e4c48af999.png">
+			<source media="(prefers-color-scheme: light)" srcset="https://user-images.githubusercontent.com/1128849/49704830-49d37200-fbd5-11e8-8385-767e0cd033c3.png">
+			<img src="https://user-images.githubusercontent.com/1128849/49704830-49d37200-fbd5-11e8-8385-767e0cd033c3.png" alt="CertMagic" width="250">
+		</picture>
+	</a>
+</p>
 
+<!-- Warp sponsorship requests this section -->
+<div align="center" markdown="1">
+	<hr>
+	<sup>Special thanks to:</sup>
+	<br>
+	<a href="https://go.warp.dev/caddy">
+		<img alt="Warp sponsorship" width="400" src="https://github.com/user-attachments/assets/c8efffde-18c7-4af4-83ed-b1aba2dda394">
+	</a>
 
+### [Warp, built for coding with multiple AI agents](https://go.warp.dev/caddy)
+[Available for MacOS, Linux, & Windows](https://go.warp.dev/caddy)<br>
+</div>
+
+<hr>
 
 ### Menu
 
@@ -43,18 +71,6 @@
 - [Full documentation](#full-documentation)
 - [Getting help](#getting-help)
 - [About](#about)
-
-<p align="center">
-	<b>Powered by</b>
-	<br>
-	<a href="https://github.com/caddyserver/certmagic">
-		<picture>
-			<source media="(prefers-color-scheme: dark)" srcset="https://user-images.githubusercontent.com/55066419/206946718-740b6371-3df3-4d72-a822-47e4c48af999.png">
-			<source media="(prefers-color-scheme: light)" srcset="https://user-images.githubusercontent.com/1128849/49704830-49d37200-fbd5-11e8-8385-767e0cd033c3.png">
-			<img src="https://user-images.githubusercontent.com/1128849/49704830-49d37200-fbd5-11e8-8385-767e0cd033c3.png" alt="CertMagic" width="250">
-		</picture>
-	</a>
-</p>
 
 
 ## [Features](https://caddyserver.com/features)
@@ -117,11 +133,18 @@ username ALL=(ALL:ALL) NOPASSWD: /usr/sbin/setcap
 
 replacing `username` with your actual username. Please be careful and only do this if you know what you are doing! We are only qualified to document how to use Caddy, not Go tooling or your computer, and we are providing these instructions for convenience only; please learn how to use your own computer at your own risk and make any needful adjustments.
 
+Then you can run the tests in all modules or a specific one:
+
+```bash
+$ go test ./...
+$ go test ./modules/caddyhttp/tracing/
+```
+
 ### With version information and/or plugins
 
 Using [our builder tool, `xcaddy`](https://github.com/caddyserver/xcaddy)...
 
-```
+```bash
 $ xcaddy build
 ```
 

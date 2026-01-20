@@ -1110,7 +1110,10 @@ func unsyncedConfigAccess(method, path string, body []byte, out io.Writer) error
 	if len(body) > 0 {
 		err = json.Unmarshal(body, &val)
 		if err != nil {
-			return fmt.Errorf("decoding request body: %v", err)
+			if jsonErr, ok := err.(*json.SyntaxError); ok {
+				return fmt.Errorf("decoding request body: %w, at offset %d", jsonErr, jsonErr.Offset)
+			}
+			return fmt.Errorf("decoding request body: %w", err)
 		}
 	}
 
