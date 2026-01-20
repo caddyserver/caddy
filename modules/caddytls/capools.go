@@ -852,30 +852,30 @@ func (ccp *CombinedCAPool) Provision(ctx caddy.Context) error {
 
 	caPool := x509.NewCertPool()
 	var allCerts []*x509.Certificate
-	
+
 	for _, src := range sources.([]any) {
 		ca, ok := src.(CA)
 		if !ok {
 			return fmt.Errorf("source module is not a CA pool provider")
 		}
 		ccp.sources = append(ccp.sources, ca)
-		
+
 		certProvider, ok := ca.(CertificateProvider)
 		if !ok {
 			return fmt.Errorf("source %T does not implement CertificateProvider (required for combining)", ca)
 		}
-		
+
 		certs := certProvider.Certificates()
 		if certs == nil {
 			return fmt.Errorf("source %T returned nil certificates", ca)
 		}
-		
+
 		for _, cert := range certs {
 			caPool.AddCert(cert)
 			allCerts = append(allCerts, cert)
 		}
 	}
-	
+
 	ccp.pool = caPool
 	ccp.certs = allCerts
 
@@ -897,7 +897,7 @@ func (ccp *CombinedCAPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	if d.CountRemainingArgs() > 0 {
 		return d.ArgErr()
 	}
-	
+
 	for nesting := d.Nesting(); d.NextBlock(nesting); {
 		switch d.Val() {
 		case "source":
@@ -919,11 +919,11 @@ func (ccp *CombinedCAPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			return d.Errf("unrecognized directive: %s", d.Val())
 		}
 	}
-	
+
 	if len(ccp.SourcesRaw) == 0 {
 		return d.Err("no sources specified")
 	}
-	
+
 	return nil
 }
 
