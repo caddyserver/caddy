@@ -927,3 +927,69 @@ func TestSystemCAPoolProvision(t *testing.T) {
 		t.Error("SystemCAPool.CertPool() returned nil")
 	}
 }
+
+func TestCombinedCAPoolProvisionWithSystemFails(t *testing.T) {
+	// Test that combining system pool fails during Provision
+	// because SystemCAPool doesn't implement CertificateProvider
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+	
+	// Create a combined pool with system source
+	ccp := &CombinedCAPool{
+		SourcesRaw: []json.RawMessage{
+			json.RawMessage(`{"provider":"system"}`),
+		},
+	}
+	
+	err := ccp.Provision(ctx)
+	if err == nil {
+		t.Error("CombinedCAPool.Provision() with system source should fail, but succeeded")
+	}
+	
+	// Verify error message mentions CertificateProvider
+	if err != nil && !contains(err.Error(), "CertificateProvider") {
+		t.Errorf("Expected error to mention CertificateProvider, got: %v", err)
+	}
+}
+
+func TestCombinedCAPoolProvisionWithInlineSucceeds(t *testing.T) {
+	// Test that combining inline pools works
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+	
+	// Create a combined pool with inline source
+	ccp := &CombinedCAPool{
+		SourcesRaw: []json.RawMessage{
+			json.RawMessage(fmt.Sprintf(`{"provider":"inline","trusted_ca_certs":["%s"]}`, test_der_1)),
+		},
+	}
+	
+	err := ccp.Provision(ctx)
+	if err != nil {
+		t.Errorf("CombinedCAPool.Provision() with inline source failed: %v", err)
+	}
+	
+	if ccp.pool == nil {
+		t.Error("CombinedCAPool.Provision() did not create a cert pool")
+	}
+	
+	pool := ccp.CertPool()
+	if pool == nil {
+		t.Error("CombinedCAPool.CertPool() returned nil")
+	}
+}
+
+// Helper function for string contains check
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(substr) == 0 || 
+		(len(s) > 0 && len(substr) > 0 && findSubstring(s, substr)))
+}
+
+func findSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
