@@ -17,7 +17,7 @@ package acmeserver
 import (
 	"context"
 	"fmt"
-	weakrand "math/rand"
+	weakrand "math/rand/v2"
 	"net"
 	"net/http"
 	"os"
@@ -307,7 +307,7 @@ func (ash Handler) makeClient() (acme.Client, error) {
 			PreferGo: true,
 			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
 				//nolint:gosec
-				addr := ash.resolvers[weakrand.Intn(len(ash.resolvers))]
+				addr := ash.resolvers[weakrand.IntN(len(ash.resolvers))]
 				return dialer.DialContext(ctx, addr.Network, addr.JoinHostPort(0))
 			},
 		}
