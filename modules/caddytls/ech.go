@@ -392,6 +392,10 @@ func (t *TLS) publishECHConfigs(logger *zap.Logger) error {
 			if publication.Domains == nil {
 				serverNamesSet = make(map[string]struct{}, len(t.serverNames))
 				for name := range t.serverNames {
+					// skip Tailscale names, a special case we also handle differently in our auto-HTTPS
+					if strings.HasSuffix(name, ".ts.net") {
+						continue
+					}
 					serverNamesSet[name] = struct{}{}
 				}
 			} else {
