@@ -338,7 +338,38 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 			if err != nil {
 				return nil, fmt.Errorf("parsing network address: %v", err)
 			}
-			if _, ok := listeners[addr.String()]; !ok {
+
+			// Check if this is an interface with multi-address modes - expand to multiple IPs
+			if networkAddr.IsInterfaceNetwork() && strings.Contains(networkAddr.Host, caddy.InterfaceDelimiter) {
+				parts := strings.SplitN(networkAddr.Host, caddy.InterfaceDelimiter, 2)
+				if len(parts) == 2 {
+					mode := caddy.InterfaceBindingMode(parts[1])
+					// Check if this mode returns multiple addresses
+					if mode == caddy.InterfaceBindingAll || mode == caddy.InterfaceBindingIPv4 || mode == caddy.InterfaceBindingIPv6 {
+						// Resolve IPs for the interface with the specified mode
+						ipAddresses, err := caddy.ResolveInterfaceNameWithMode(parts[0], mode)
+						if err != nil {
+							return nil, fmt.Errorf("resolving interface %s with mode '%s': %v", parts[0], mode, err)
+						}
+
+						// Create a listener for each IP
+						for _, ip := range ipAddresses {
+							ipNA := networkAddr
+							ipNA.Host = ip
+							if _, ok := listeners[ipNA.String()]; !ok {
+								listeners[ipNA.String()] = map[string]struct{}{}
+							}
+							for _, protocol := range lnCfgVal.protocols {
+								listeners[ipNA.String()][protocol] = struct{}{}
+							}
+						}
+						continue
+					}
+				}
+			}
+
+			// Normal case - single address
+			if _, ok := listeners[networkAddr.String()]; !ok {
 				listeners[networkAddr.String()] = map[string]struct{}{}
 			}
 			for _, protocol := range lnCfgVal.protocols {
