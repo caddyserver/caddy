@@ -70,6 +70,11 @@ type SRVUpstreams struct {
 	// A negative value disables this.
 	FallbackDelay caddy.Duration `json:"dial_fallback_delay,omitempty"`
 
+	// Specific network to dial when connecting to the upstream(s)
+	// provided by SRV records upstream. See Go's net package for
+	// accepted values. For example, to restrict to IPv4, use "tcp4".
+	DialNetwork string `json:"dial_network,omitempty"`
+
 	resolver *net.Resolver
 
 	logger *zap.Logger
@@ -177,6 +182,9 @@ func (su SRVUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 			)
 		}
 		addr := net.JoinHostPort(rec.Target, strconv.Itoa(int(rec.Port)))
+		if su.DialNetwork != "" {
+			addr = su.DialNetwork + "/" + addr
+		}
 		upstreams[i] = Upstream{Dial: addr}
 	}
 
