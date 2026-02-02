@@ -1528,6 +1528,7 @@ func (u *SRVUpstreams) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.Errf("bad delay value '%s': %v", d.Val(), err)
 			}
 			u.FallbackDelay = caddy.Duration(dur)
+
 		case "grace_period":
 			if !d.NextArg() {
 				return d.ArgErr()
