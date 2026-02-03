@@ -502,8 +502,8 @@ func (t *TLSConfig) unmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // If there is no custom TLS configuration, a nil config may be returned.
 // copied from with minor modifications: modules/caddyhttp/reverseproxy/httptransport.go
 func (t *TLSConfig) makeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
-	repl, _ := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-	if repl == nil {
+	repl, ok := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	if !ok || repl == nil {
 		repl = caddy.NewReplacer()
 	}
 	cfg := new(tls.Config)
