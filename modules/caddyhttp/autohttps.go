@@ -497,7 +497,8 @@ func (app *App) makeRedirRoute(redirToPort uint, matcherSet MatcherSet) Route {
 	if redirToPort != uint(app.httpPort()) &&
 		redirToPort != uint(app.httpsPort()) &&
 		redirToPort != DefaultHTTPPort &&
-		redirToPort != DefaultHTTPSPort {
+		redirToPort != DefaultHTTPSPort &&
+		redirToPort > 0 {
 		redirTo += ":" + strconv.Itoa(int(redirToPort))
 	}
 
