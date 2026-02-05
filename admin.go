@@ -807,12 +807,37 @@ func (h adminHandler) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// common mitigations in browser contexts
 	if strings.Contains(r.Header.Get("Upgrade"), "websocket") {
 		// I've never been able demonstrate a vulnerability myself, but apparently
 		// WebSocket connections originating from browsers aren't subject to CORS
 		// restrictions, so we'll just be on the safe side
-		h.handleError(w, r, fmt.Errorf("websocket connections aren't allowed"))
+		h.handleError(w, r, APIError{
+			HTTPStatus: http.StatusBadRequest,
+			Err:        errors.New("websocket connections aren't allowed"),
+			Message:    "WebSocket connections aren't allowed.",
+		})
 		return
+	}
+	if strings.Contains(r.Header.Get("Sec-Fetch-Mode"), "no-cors") {
+		// turns out web pages can just disable the same-origin policy (!???!?)
+		// but at least browsers let us know that's the case, holy heck
+		h.handleError(w, r, APIError{
+			HTTPStatus: http.StatusBadRequest,
+			Err:        errors.New("client attempted to make request by disabling same-origin policy using no-cors mode"),
+			Message:    "Disabling same-origin restrictions is not allowed.",
+		})
+		return
+	}
+	if r.Header.Get("Origin") == "null" {
+		// bug in Firefox in certain cross-origin situations (yikes?)
+		// (not strictly a security vuln on its own, but it's red flaggy,
+		// since it seems to manifest in cross-origin contexts)
+		h.handleError(w, r, APIError{
+			HTTPStatus: http.StatusBadRequest,
+			Err:        errors.New("invalid origin 'null'"),
+			Message:    "Buggy browser is sending null Origin header.",
+		})
 	}
 
 	if h.enforceHost {
