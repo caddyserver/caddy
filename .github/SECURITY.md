@@ -33,6 +33,8 @@ We get a lot of difficult reports that turn out to be invalid. Clear, obvious re
 
 First please ensure your report falls within the accepted scope of security bugs (above).
 
+**YOU MUST DISCLOSE THE USE OF LLMs ("AI"), WHETHER FOR DISCOVERING SECURITY BUGS OR WRITING THE REPORT.** Even if you are using AI as part of writing the report or its replies, we require you to mention the extent of it.
+
 We'll need enough information to verify the bug and make a patch. To speed things up, please include:
 
 - Most minimal possible config (without redactions!)
