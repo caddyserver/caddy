@@ -499,7 +499,6 @@ func (p StoragePool) Certificates() []*x509.Certificate {
 
 // TLSConfig holds configuration related to the TLS configuration for the
 // transport/client.
-// copied from with minor modifications: modules/caddyhttp/reverseproxy/httptransport.go
 type TLSConfig struct {
 	// Provides the guest module that provides the trusted certificate authority (CA) certificates
 	CARaw json.RawMessage `json:"ca,omitempty" caddy:"namespace=tls.ca_pool.source inline_key=provider"`
@@ -584,7 +583,6 @@ func (t *TLSConfig) unmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // MakeTLSClientConfig returns a tls.Config usable by a client to a backend.
 // If there is no custom TLS configuration, a nil config may be returned.
-// copied from with minor modifications: modules/caddyhttp/reverseproxy/httptransport.go
 func (t *TLSConfig) makeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 	repl, _ := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	if repl == nil {
@@ -724,7 +722,6 @@ func (hcp *HTTPCertPool) Provision(ctx caddy.Context) error {
 //		renegotiation <never|once|freely>
 //
 //	<ca_module> is the name of the CA module to source the trust
-//
 // certificate pool and follows the syntax of the named CA module.
 func (hcp *HTTPCertPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	d.Next() // consume module name
