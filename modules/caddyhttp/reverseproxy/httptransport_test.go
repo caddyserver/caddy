@@ -94,3 +94,24 @@ func TestHTTPTransportUnmarshalCaddyFileWithCaPools(t *testing.T) {
 		})
 	}
 }
+
+func TestHTTPTransport_RequestHeaderOps_TLS(t *testing.T) {
+	var ht HTTPTransport
+	// When TLS is nil, expect no header ops
+	if ops := ht.RequestHeaderOps(); ops != nil {
+		t.Fatalf("expected nil HeaderOps when TLS is nil, got: %#v", ops)
+	}
+
+	// When TLS is configured, expect a HeaderOps that sets Host
+	ht.TLS = &TLSConfig{}
+	ops := ht.RequestHeaderOps()
+	if ops == nil {
+		t.Fatal("expected non-nil HeaderOps when TLS is set")
+	}
+	if ops.Set == nil {
+		t.Fatalf("expected ops.Set to be non-nil, got nil")
+	}
+	if got := ops.Set.Get("Host"); got != "{http.reverse_proxy.upstream.hostport}" {
+		t.Fatalf("unexpected Host value; want placeholder, got: %s", got)
+	}
+}

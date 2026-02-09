@@ -192,6 +192,13 @@ type Handler struct {
 	CB               CircuitBreaker    `json:"-"`
 	DynamicUpstreams UpstreamSource    `json:"-"`
 
+	// transportHeaderOps is a set of header operations provided
+	// by the transport at provision time, if the transport
+	// implements TransportHeaderOpsProvider. These ops are
+	// applied before any user-configured header ops so the
+	// user can override transport defaults.
+	transportHeaderOps *headers.HeaderOps
+
 	// Holds the parsed CIDR ranges from TrustedProxies
 	trustedProxies []netip.Prefix
 
@@ -320,6 +327,18 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("provisioning default transport: %v", err)
 		}
 		h.Transport = t
+	}
+
+	// If the transport can provide header ops, cache them now so we don't
+	// have to compute them per-request. Provision the HeaderOps if present
+	// so any runtime artifacts (like precompiled regex) are prepared.
+	if tph, ok := h.Transport.(RequestHeaderOpsTransport); ok {
+		h.transportHeaderOps = tph.RequestHeaderOps()
+		if h.transportHeaderOps != nil {
+			if err := h.transportHeaderOps.Provision(ctx); err != nil {
+				return fmt.Errorf("provisioning transport header ops: %v", err)
+			}
+		}
 	}
 
 	// set up load balancing
@@ -575,14 +594,26 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	repl.Set("http.reverse_proxy.upstream.fails", upstream.Host.Fails())
 
 	// mutate request headers according to this upstream;
-	// because we're in a retry loop, we have to copy
-	// headers (and the r.Host value) from the original
-	// so that each retry is identical to the first
-	if h.Headers != nil && h.Headers.Request != nil {
+	// because we're in a retry loop, we have to copy headers
+	// (and the r.Host value) from the original so that each
+	// retry is identical to the first. If either transport or
+	// user ops exist, apply them in order (transport first,
+	// then user, so user's config wins).
+	var userOps *headers.HeaderOps
+	if h.Headers != nil {
+		userOps = h.Headers.Request
+	}
+	transportOps := h.transportHeaderOps
+	if transportOps != nil || userOps != nil {
 		r.Header = make(http.Header)
 		copyHeader(r.Header, reqHeader)
 		r.Host = reqHost
-		h.Headers.Request.ApplyToRequest(r)
+		if transportOps != nil {
+			transportOps.ApplyToRequest(r)
+		}
+		if userOps != nil {
+			userOps.ApplyToRequest(r)
+		}
 	}
 
 	// proxy the request to that upstream
@@ -1540,6 +1571,17 @@ type BufferedTransport interface {
 	// DefaultBufferSizes returns the default buffer sizes
 	// for requests and responses, respectively if buffering isn't enabled.
 	DefaultBufferSizes() (int64, int64)
+}
+
+// RequestHeaderOpsTransport may be implemented by a transport to provide
+// header operations to apply to requests immediately before the RoundTrip.
+// For example, overriding the default Host when TLS is enabled.
+type RequestHeaderOpsTransport interface {
+	// RequestHeaderOps allows a transport to provide header operations
+	// to apply to the request. The transport is asked at provision time
+	// to return a HeaderOps (or nil) that will be applied before
+	// user-configured header ops.
+	RequestHeaderOps() *headers.HeaderOps
 }
 
 // roundtripSucceededError is an error type that is returned if the

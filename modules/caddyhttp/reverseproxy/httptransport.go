@@ -40,6 +40,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 	"github.com/caddyserver/caddy/v2/modules/internal/network"
 )
@@ -512,6 +513,28 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 	}
 
 	return rt, nil
+}
+
+// RequestHeaderOps implements TransportHeaderOpsProvider. It returns header
+// operations for requests when the transport's configuration indicates they
+// should be applied. In particular, when TLS is enabled for this transport,
+// return an operation to set the Host header to the upstream host:port
+// placeholder so HTTPS upstreams get the proper Host by default.
+//
+// Note: this is a provision-time hook; the Handler will call this during
+// its Provision and cache the resulting HeaderOps. The HeaderOps are
+// applied per-request (so placeholders are expanded at request time).
+func (h *HTTPTransport) RequestHeaderOps() *headers.HeaderOps {
+	// If TLS is not configured for this transport, don't inject Host
+	// defaults. TLS being non-nil indicates HTTPS to the upstream.
+	if h.TLS == nil {
+		return nil
+	}
+	return &headers.HeaderOps{
+		Set: http.Header{
+			"Host": []string{"{http.reverse_proxy.upstream.hostport}"},
+		},
+	}
 }
 
 // RoundTrip implements http.RoundTripper.
