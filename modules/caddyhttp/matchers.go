@@ -319,7 +319,7 @@ func (m MatchHost) MatchWithError(r *http.Request) (bool, error) {
 			}
 			return m[i] >= reqHost
 		})
-		if pos < len(m) && m[pos] == reqHost {
+		if pos < len(m) && strings.EqualFold(m[pos], reqHost) {
 			return true, nil
 		}
 	}
