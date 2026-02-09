@@ -632,8 +632,8 @@ func (MatchPath) matchPatternWithEscapeSequence(escapedPath, matchPath string) b
 	// we can now treat rawpath globs (%*) as regular globs (*)
 	matchPath = strings.ReplaceAll(matchPath, "%*", "*")
 
-	// ignore error here because we can't handle it anyway=
-	matches, _ := path.Match(matchPath, sb.String())
+	// ignore error here because we can't handle it anyway
+	matches, _ := path.Match(matchPath, strings.ToLower(sb.String()))
 	return matches
 }
 

@@ -412,6 +412,11 @@ func TestPathMatcher(t *testing.T) {
 			input:  "/foo%2fbar/baz",
 			expect: true,
 		},
+		{
+			match:  MatchPath{"/admin%2fpanel"},
+			input:  "/ADMIN%2fpanel",
+			expect: true,
+		},
 	} {
 		err := tc.match.Provision(caddy.Context{})
 		if err == nil && tc.provisionErr {
