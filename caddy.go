@@ -762,7 +762,7 @@ func exitProcess(ctx context.Context, logger *zap.Logger) {
 	if logger == nil {
 		logger = Log()
 	}
-	logger.Warn("exiting; byeee!! 👋")
+	logger.Warn("exiting; byeee!! :3")
 
 	exitCode := ExitCodeSuccess
 	lastContext := ActiveContext()
