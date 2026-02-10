@@ -801,37 +801,53 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 // the headers at all, then they will be added with the values
 // that we can glean from the request.
 func (h Handler) addForwardedHeaders(req *http.Request) error {
-	// Parse the remote IP, ignore the error as non-fatal,
-	// but the remote IP is required to continue, so we
-	// just return early. This should probably never happen
-	// though, unless some other module manipulated the request's
-	// remote address and used an invalid value.
-	clientIP, _, err := net.SplitHostPort(req.RemoteAddr)
-	if err != nil {
-		// Remove the `X-Forwarded-*` headers to avoid upstreams
-		// potentially trusting a header that came from the client
-		req.Header.Del("X-Forwarded-For")
-		req.Header.Del("X-Forwarded-Proto")
-		req.Header.Del("X-Forwarded-Host")
-		return nil
-	}
-
-	// Client IP may contain a zone if IPv6, so we need
-	// to pull that out before parsing the IP
-	clientIP, _, _ = strings.Cut(clientIP, "%")
-	ipAddr, err := netip.ParseAddr(clientIP)
-
 	// Check if the client is a trusted proxy
 	trusted := caddyhttp.GetVar(req.Context(), caddyhttp.TrustedProxyVarKey).(bool)
 
-	// If ParseAddr fails (e.g. non-IP network like SCION), we cannot check
-	// if it is a trusted proxy by IP range. In this case, we ignore the
-	// error and treat the connection as untrusted (or retain existing status).
-	if err == nil {
-		for _, ipRange := range h.trustedProxies {
-			if ipRange.Contains(ipAddr) {
-				trusted = true
-				break
+	var clientIP string
+
+	if req.RemoteAddr == "@" {
+		// For Unix socket connections, RemoteAddr is "@" which cannot
+		// be parsed as host:port. If untrusted, strip forwarded headers
+		// for security. If trusted, there is no peer IP to append to
+		// X-Forwarded-For, so clientIP stays empty.
+		if !trusted {
+			req.Header.Del("X-Forwarded-For")
+			req.Header.Del("X-Forwarded-Proto")
+			req.Header.Del("X-Forwarded-Host")
+			return nil
+		}
+	} else {
+		// Parse the remote IP, ignore the error as non-fatal,
+		// but the remote IP is required to continue, so we
+		// just return early. This should probably never happen
+		// though, unless some other module manipulated the request's
+		// remote address and used an invalid value.
+		var err error
+		clientIP, _, err = net.SplitHostPort(req.RemoteAddr)
+		if err != nil {
+			// Remove the `X-Forwarded-*` headers to avoid upstreams
+			// potentially trusting a header that came from the client
+			req.Header.Del("X-Forwarded-For")
+			req.Header.Del("X-Forwarded-Proto")
+			req.Header.Del("X-Forwarded-Host")
+			return nil
+		}
+
+		// Client IP may contain a zone if IPv6, so we need
+		// to pull that out before parsing the IP
+		clientIP, _, _ = strings.Cut(clientIP, "%")
+		ipAddr, err := netip.ParseAddr(clientIP)
+
+		// If ParseAddr fails (e.g. non-IP network like SCION), we cannot check
+		// if it is a trusted proxy by IP range. In this case, we ignore the
+		// error and treat the connection as untrusted (or retain existing status).
+		if err == nil {
+			for _, ipRange := range h.trustedProxies {
+				if ipRange.Contains(ipAddr) {
+					trusted = true
+					break
+				}
 			}
 		}
 	}
@@ -839,13 +855,17 @@ func (h Handler) addForwardedHeaders(req *http.Request) error {
 	// If we aren't the first proxy, and the proxy is trusted,
 	// retain prior X-Forwarded-For information as a comma+space
 	// separated list and fold multiple headers into one.
-	clientXFF := clientIP
 	prior, ok, omit := allHeaderValues(req.Header, "X-Forwarded-For")
-	if trusted && ok && prior != "" {
-		clientXFF = prior + ", " + clientXFF
-	}
 	if !omit {
-		req.Header.Set("X-Forwarded-For", clientXFF)
+		if trusted && ok && prior != "" {
+			if clientIP != "" {
+				req.Header.Set("X-Forwarded-For", prior+", "+clientIP)
+			} else {
+				req.Header.Set("X-Forwarded-For", prior)
+			}
+		} else if clientIP != "" {
+			req.Header.Set("X-Forwarded-For", clientIP)
+		}
 	}
 
 	// Set X-Forwarded-Proto; many backend apps expect this,
