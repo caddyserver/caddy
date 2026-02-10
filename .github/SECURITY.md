@@ -18,7 +18,7 @@ A security report must demonstrate a security bug in the source code from this r
 
 Some security problems are the result of interplay between different components of the Web, rather than a vulnerability in the web server itself. Please only report vulnerabilities in the web server itself, as we cannot coerce the rest of the Web to be fixed (for example, we do not consider IP spoofing, BGP hijacks, or missing/misconfigured HTTP headers a vulnerability in the Caddy web server).
 
-Vulnerabilities caused by misconfigurations are out of scope. Yes, it is entirely possible to craft and use a configuration that is unsafe, just like with every other web server; we recommend against doing that.
+Vulnerabilities caused by misconfigurations are out of scope. Yes, it is entirely possible to craft and use a configuration that is unsafe, just like with every other web server; we recommend against doing that. Similarly, external misconfigurations are out of scope. For example, an open or forwarded port from a public network to a Caddy instance intended to serve only internal clients is not a vulnerability in Caddy.
 
 We do not accept reports if the steps imply or require a compromised system or third-party software, as we cannot control those. We expect that users secure their own systems and keep all their software patched. For example, if untrusted users are able to upload/write/host arbitrary files in the web root directory, it is NOT a security bug in Caddy if those files get served to clients; however, it _would_ be a valid report if a bug in Caddy's source code unintentionally gave unauthorized users the ability to upload unsafe files or delete files without relying on an unpatched system or piece of software.
 
@@ -33,7 +33,7 @@ We get a lot of difficult reports that turn out to be invalid. Clear, obvious re
 
 First please ensure your report falls within the accepted scope of security bugs (above).
 
-**YOU MUST DISCLOSE THE USE OF LLMs ("AI") INVOLVED IN ANY WAY.** Whether you are using AI for discovery, as part of writing the report or its replies, and/or testing or validating proofs and changes, we require you to mention the extent of it. **FAILURE TO INCLUDE A DISCLOSURE MAY LEAD TO IMMEDIATE DISMISSAL OF YOUR REPORT.**
+**YOU MUST DISCLOSE THE USE OF LLMs ("AI") INVOLVED IN ANY WAY.** Whether you are using AI for discovery, as part of writing the report or its replies, and/or testing or validating proofs and changes, we require you to mention the extent of it. **FAILURE TO INCLUDE A DISCLOSURE MAY LEAD TO IMMEDIATE DISMISSAL OF YOUR REPORT AND POTENTIAL BLOCKLISTING.**
 
 We'll need enough information to verify the bug and make a patch. To speed things up, please include:
 
