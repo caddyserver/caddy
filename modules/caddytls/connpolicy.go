@@ -784,7 +784,7 @@ func (clientauth *ClientAuthentication) provision(ctx caddy.Context) error {
 		for _, fpath := range clientauth.TrustedCACertPEMFiles {
 			ders, err := convertPEMFilesToDER(fpath)
 			if err != nil {
-				return nil
+				return err
 			}
 			clientauth.TrustedCACerts = append(clientauth.TrustedCACerts, ders...)
 		}
@@ -797,7 +797,7 @@ func (clientauth *ClientAuthentication) provision(ctx caddy.Context) error {
 		}
 		err := caPool.Provision(ctx)
 		if err != nil {
-			return nil
+			return err
 		}
 		clientauth.ca = caPool
 	}
