@@ -140,6 +140,8 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 		}
 	}
 
+	ash.warnIfPolicyAllowsAll()
+
 	// get a reference to the configured CA
 	appModule, err := ctx.App("pki")
 	if err != nil {
@@ -212,6 +214,21 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 	ash.acmeEndpoints = r
 
 	return nil
+}
+
+func (ash *Handler) warnIfPolicyAllowsAll() {
+	allow := ash.Policy.normalizeAllowRules()
+	deny := ash.Policy.normalizeDenyRules()
+	if allow != nil || deny != nil {
+		return
+	}
+
+	allowWildcardNames := ash.Policy != nil && ash.Policy.AllowWildcardNames
+	ash.logger.Warn(
+		"acme_server policy has no allow/deny rules; order identifiers are unrestricted (allow-all)",
+		zap.String("ca", ash.CA),
+		zap.Bool("allow_wildcard_names", allowWildcardNames),
+	)
 }
 
 func (ash Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
