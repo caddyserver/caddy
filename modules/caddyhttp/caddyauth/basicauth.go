@@ -19,7 +19,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	weakrand "math/rand"
+	weakrand "math/rand/v2"
 	"net/http"
 	"strings"
 	"sync"
@@ -244,7 +244,7 @@ func (c *Cache) makeRoom() {
 		// strategy; generating random numbers is cheap and
 		// ensures a much better distribution.
 		//nolint:gosec
-		rnd := weakrand.Intn(len(c.cache))
+		rnd := weakrand.IntN(len(c.cache))
 		i := 0
 		for key := range c.cache {
 			if i == rnd {

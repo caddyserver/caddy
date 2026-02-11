@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	weakrand "math/rand"
+	weakrand "math/rand/v2"
 	"net"
 	"net/http"
 	"strconv"
@@ -107,7 +107,7 @@ func (su *SRVUpstreams) Provision(ctx caddy.Context) error {
 			PreferGo: true,
 			Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
 				//nolint:gosec
-				addr := su.Resolver.netAddrs[weakrand.Intn(len(su.Resolver.netAddrs))]
+				addr := su.Resolver.netAddrs[weakrand.IntN(len(su.Resolver.netAddrs))]
 				return d.DialContext(ctx, addr.Network, addr.JoinHostPort(0))
 			},
 		}
@@ -330,7 +330,7 @@ func (au *AUpstreams) Provision(ctx caddy.Context) error {
 			PreferGo: true,
 			Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
 				//nolint:gosec
-				addr := au.Resolver.netAddrs[weakrand.Intn(len(au.Resolver.netAddrs))]
+				addr := au.Resolver.netAddrs[weakrand.IntN(len(au.Resolver.netAddrs))]
 				return d.DialContext(ctx, addr.Network, addr.JoinHostPort(0))
 			},
 		}

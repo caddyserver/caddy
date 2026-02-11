@@ -17,7 +17,7 @@ package caddyhttp
 import (
 	"errors"
 	"fmt"
-	weakrand "math/rand"
+	weakrand "math/rand/v2"
 	"path"
 	"runtime"
 	"strings"
@@ -98,7 +98,7 @@ func randString(n int, sameCase bool) string {
 	b := make([]byte, n)
 	for i := range b {
 		//nolint:gosec
-		b[i] = dict[weakrand.Int63()%int64(len(dict))]
+		b[i] = dict[weakrand.IntN(len(dict))]
 	}
 	return string(b)
 }

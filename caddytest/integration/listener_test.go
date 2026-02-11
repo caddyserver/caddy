@@ -3,7 +3,7 @@ package integration
 import (
 	"bytes"
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"strings"
@@ -54,7 +54,7 @@ func TestHTTPRedirectWrapperWithLargeUpload(t *testing.T) {
 	const uploadSize = (1024 * 1024) + 1 // 1 MB + 1 byte
 	// 1 more than an MB
 	body := make([]byte, uploadSize)
-	rand.New(rand.NewSource(0)).Read(body)
+	rand.NewChaCha8([32]byte{}).Read(body)
 
 	tester := setupListenerWrapperTest(t, func(writer http.ResponseWriter, request *http.Request) {
 		buf := new(bytes.Buffer)
