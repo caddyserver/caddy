@@ -849,7 +849,9 @@ func (h adminHandler) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if h.enforceOrigin {
+	_, hasOriginHeader := r.Header["Origin"]
+	_, hasSecHeader := r.Header["Sec-Fetch-Mode"]
+	if h.enforceOrigin || hasOriginHeader || hasSecHeader {
 		// cross-site mitigation
 		origin, err := h.checkOrigin(r)
 		if err != nil {
