@@ -2,6 +2,7 @@ package integration
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -356,8 +357,28 @@ func TestReverseProxyHealthCheck(t *testing.T) {
 	}
 	`, "caddyfile")
 
-	time.Sleep(100 * time.Millisecond) // TODO: for some reason this test seems particularly flaky, getting 503 when it should be 200, unless we wait
-	tester.AssertGetResponse("http://localhost:9080/", 200, "Hello, World!")
+	// Poll until upstream is healthy (health checks may still be warming up).
+	// This replaces a fixed time.Sleep to make the test deterministic.
+	const pollInterval = 20 * time.Millisecond
+	const pollTimeout = 5 * time.Second
+	deadline := time.Now().Add(pollTimeout)
+	for time.Now().Before(deadline) {
+		req, err := http.NewRequest(http.MethodGet, "http://localhost:9080/", nil)
+		if err != nil {
+			t.Fatalf("failed to create request: %v", err)
+		}
+		resp, err := tester.Client.Do(req)
+		if err != nil {
+			t.Fatalf("request failed: %v", err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode == 200 && strings.TrimSpace(string(body)) == "Hello, World!" {
+			return
+		}
+		time.Sleep(pollInterval)
+	}
+	t.Fatalf("after %v: proxy did not return 200 with expected body (health check may not have marked upstream healthy)", pollTimeout)
 }
 
 func TestReverseProxyHealthCheckUnixSocket(t *testing.T) {
