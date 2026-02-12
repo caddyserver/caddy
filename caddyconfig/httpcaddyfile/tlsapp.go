@@ -92,25 +92,7 @@ func (st ServerType) buildTLSApp(
 		tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, catchAllAP)
 	}
 
-	var wildcardHosts []string                        // collect all hosts that have a wildcard in them, and aren't HTTP
 	forcedAutomatedNames := make(map[string]struct{}) // explicitly configured to be automated, even if covered by a wildcard
-
-	for _, p := range pairings {
-		var addresses []string
-		for _, addressWithProtocols := range p.addressesWithProtocols {
-			addresses = append(addresses, addressWithProtocols.address)
-		}
-		if !listenersUseAnyPortOtherThan(addresses, httpPort) {
-			continue
-		}
-		for _, sblock := range p.serverBlocks {
-			for _, addr := range sblock.parsedKeys {
-				if strings.HasPrefix(addr.Host, "*.") {
-					wildcardHosts = append(wildcardHosts, addr.Host[2:])
-				}
-			}
-		}
-	}
 
 	for _, p := range pairings {
 		// avoid setting up TLS automation policies for a server that is HTTP-only
@@ -131,12 +113,6 @@ func (st ServerType) buildTLSApp(
 
 			// get values that populate an automation policy for this block
 			ap, err := newBaseAutomationPolicy(options, warnings, true)
-			if err != nil {
-				return nil, warnings, err
-			}
-
-			// make a plain copy so we can compare whether we made any changes
-			apCopy, err := newBaseAutomationPolicy(options, warnings, true)
 			if err != nil {
 				return nil, warnings, err
 			}
@@ -252,16 +228,6 @@ func (st ServerType) buildTLSApp(
 
 			hostsNotHTTP := sblock.hostsFromKeysNotHTTP(httpPort)
 			sort.Strings(hostsNotHTTP) // solely for deterministic test results
-
-			// if the we prefer wildcards and the AP is unchanged,
-			// then we can skip this AP because it should be covered
-			// by an AP with a wildcard
-			if slices.Contains(autoHTTPS, "prefer_wildcard") {
-				if hostsCoveredByWildcard(hostsNotHTTP, wildcardHosts) &&
-					reflect.DeepEqual(ap, apCopy) {
-					continue
-				}
-			}
 
 			// associate our new automation policy with this server block's hosts
 			ap.SubjectsRaw = hostsNotHTTP
@@ -848,21 +814,4 @@ func automationPolicyHasAllPublicNames(ap *caddytls.AutomationPolicy) bool {
 
 func isTailscaleDomain(name string) bool {
 	return strings.HasSuffix(strings.ToLower(name), ".ts.net")
-}
-
-func hostsCoveredByWildcard(hosts []string, wildcards []string) bool {
-	if len(hosts) == 0 || len(wildcards) == 0 {
-		return false
-	}
-	for _, host := range hosts {
-		for _, wildcard := range wildcards {
-			if strings.HasPrefix(host, "*.") {
-				continue
-			}
-			if certmagic.MatchWildcard(host, "*."+wildcard) {
-				return true
-			}
-		}
-	}
-	return false
 }
