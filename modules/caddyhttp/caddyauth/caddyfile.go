@@ -28,7 +28,7 @@ func init() {
 
 // parseCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
-//	basic_auth [<matcher>] [<hash_algorithm> [<realm>]] {
+//	basic_auth [<matcher>] [proxy] [<hash_algorithm> [<realm>]] {
 //	    <username> <hashed_password>
 //	    ...
 //	}
@@ -47,6 +47,16 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 
 	var cmp Comparer
 	args := h.RemainingArgs()
+
+	var statusCode caddyhttp.WeakString
+	if len(args) > 0 && args[0] == "proxy" {
+		args = args[1:]
+
+		// https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Authentication#proxy_authentication
+		statusCode = "407" // http.StatusProxyAuthRequired
+		ba.AuthenticateHeader = "Proxy-Authenticate"
+		ba.AuthorizationHeader = "Proxy-Authorization"
+	}
 
 	var hashName string
 	switch len(args) {
@@ -92,6 +102,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	}
 
 	return Authentication{
+		StatusCode: statusCode,
 		ProvidersRaw: caddy.ModuleMap{
 			"http_basic": caddyconfig.JSON(ba, nil),
 		},
