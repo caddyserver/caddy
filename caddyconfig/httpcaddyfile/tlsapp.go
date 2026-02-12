@@ -607,7 +607,8 @@ func newBaseAutomationPolicy(
 	_, hasLocalCerts := options["local_certs"]
 	keyType, hasKeyType := options["key_type"]
 	ocspStapling, hasOCSPStapling := options["ocsp_stapling"]
-	hasGlobalAutomationOpts := hasIssuers || hasLocalCerts || hasKeyType || hasOCSPStapling
+	renewalWindowRatio, hasRenewalWindowRatio := options["renewal_window_ratio"]
+	hasGlobalAutomationOpts := hasIssuers || hasLocalCerts || hasKeyType || hasOCSPStapling || hasRenewalWindowRatio
 
 	globalACMECA := options["acme_ca"]
 	globalACMECARoot := options["acme_ca_root"]
@@ -652,6 +653,10 @@ func newBaseAutomationPolicy(
 		ocspConfig := ocspStapling.(certmagic.OCSPConfig)
 		ap.DisableOCSPStapling = ocspConfig.DisableStapling
 		ap.OCSPOverrides = ocspConfig.ResponderOverrides
+	}
+
+	if hasRenewalWindowRatio {
+		ap.RenewalWindowRatio = renewalWindowRatio.(float64)
 	}
 
 	return ap, nil

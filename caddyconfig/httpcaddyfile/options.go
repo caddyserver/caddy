@@ -65,6 +65,7 @@ func init() {
 	RegisterGlobalOption("persist_config", parseOptPersistConfig)
 	RegisterGlobalOption("dns", parseOptDNS)
 	RegisterGlobalOption("ech", parseOptECH)
+	RegisterGlobalOption("renewal_window_ratio", parseOptRenewalWindowRatio)
 }
 
 func parseOptTrue(d *caddyfile.Dispenser, _ any) (any, error) { return true, nil }
@@ -623,4 +624,23 @@ func parseOptECH(d *caddyfile.Dispenser, _ any) (any, error) {
 	}
 
 	return ech, nil
+}
+
+func parseOptRenewalWindowRatio(d *caddyfile.Dispenser, _ any) (any, error) {
+	d.Next() // consume option name
+	if !d.Next() {
+		return 0, d.ArgErr()
+	}
+	val := d.Val()
+	ratio, err := strconv.ParseFloat(val, 64)
+	if err != nil {
+		return 0, d.Errf("parsing renewal_window_ratio: %v", err)
+	}
+	if ratio <= 0 || ratio >= 1 {
+		return 0, d.Errf("renewal_window_ratio must be between 0 and 1 (exclusive)")
+	}
+	if d.Next() {
+		return 0, d.ArgErr()
+	}
+	return ratio, nil
 }
