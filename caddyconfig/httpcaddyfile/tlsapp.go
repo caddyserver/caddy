@@ -149,6 +149,68 @@ func (st ServerType) buildTLSApp(
 				ap.RenewalWindowRatio = globalRenewalWindowRatio.(float64)
 			}
 
+			// certificate issuers
+			if issuerVals, ok := sblock.pile["tls.cert_issuer"]; ok {
+				var issuers []certmagic.Issuer
+				for _, issuerVal := range issuerVals {
+					issuers = append(issuers, issuerVal.Value.(certmagic.Issuer))
+				}
+				if ap == catchAllAP && !reflect.DeepEqual(ap.Issuers, issuers) {
+					// this more correctly implements an error check that was removed
+					// below; try it with this config:
+					//
+					// :443 {
+					// 	bind 127.0.0.1
+					// }
+					//
+					// :443 {
+					// 	bind ::1
+					// 	tls {
+					// 		issuer acme
+					// 	}
+					// }
+					return nil, warnings, fmt.Errorf("automation policy from site block is also default/catch-all policy because of key without hostname, and the two are in conflict: %#v != %#v", ap.Issuers, issuers)
+				}
+				ap.Issuers = issuers
+			}
+
+			// certificate managers
+			if certManagerVals, ok := sblock.pile["tls.cert_manager"]; ok {
+				for _, certManager := range certManagerVals {
+					certGetterName := certManager.Value.(caddy.Module).CaddyModule().ID.Name()
+					ap.ManagersRaw = append(ap.ManagersRaw, caddyconfig.JSONModuleObject(certManager.Value, "via", certGetterName, &warnings))
+				}
+			}
+			// custom bind host
+			for _, cfgVal := range sblock.pile["bind"] {
+				for _, iss := range ap.Issuers {
+					// if an issuer was already configured and it is NOT an ACME issuer,
+					// skip, since we intend to adjust only ACME issuers; ensure we
+					// include any issuer that embeds/wraps an underlying ACME issuer
+					var acmeIssuer *caddytls.ACMEIssuer
+					if acmeWrapper, ok := iss.(acmeCapable); ok {
+						acmeIssuer = acmeWrapper.GetACMEIssuer()
+					}
+					if acmeIssuer == nil {
+						continue
+					}
+
+					// proceed to configure the ACME issuer's bind host, without
+					// overwriting any existing settings
+					if acmeIssuer.Challenges == nil {
+						acmeIssuer.Challenges = new(caddytls.ChallengesConfig)
+					}
+					if acmeIssuer.Challenges.BindHost == "" {
+						// only binding to one host is supported
+						var bindHost string
+						if asserted, ok := cfgVal.Value.(addressesWithProtocols); ok && len(asserted.addresses) > 0 {
+							bindHost = asserted.addresses[0]
+						}
+						acmeIssuer.Challenges.BindHost = bindHost
+					}
+				}
+			}
+
 			// we used to ensure this block is allowed to create an automation policy;
 			// doing so was forbidden if it has a key with no host (i.e. ":443")
 			// and if there is a different server block that also has a key with no
