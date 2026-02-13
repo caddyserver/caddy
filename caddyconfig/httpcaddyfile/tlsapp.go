@@ -143,6 +143,10 @@ func (st ServerType) buildTLSApp(
 				ap.KeyType = keyTypeVals[0].Value.(string)
 			}
 
+			if renewalWindowRatioVals, ok := sblock.pile["tls.renewal_window_ratio"]; ok {
+				ap.RenewalWindowRatio = renewalWindowRatioVals[0].Value.(float64)
+			}
+
 			// certificate issuers
 			if issuerVals, ok := sblock.pile["tls.cert_issuer"]; ok {
 				var issuers []certmagic.Issuer

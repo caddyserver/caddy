@@ -113,6 +113,7 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 //	    issuer                        <module_name> [...]
 //	    get_certificate               <module_name> [...]
 //	    insecure_secrets_log          <log_file>
+//	    renewal_window_ratio          <ratio>
 //	}
 func parseTLS(h Helper) ([]ConfigValue, error) {
 	h.Next() // consume directive name
@@ -129,6 +130,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	var onDemand bool
 	var reusePrivateKeys bool
 	var forceAutomate bool
+	var renewalWindowRatio float64
 
 	// Track which DNS challenge options are set
 	var dnsOptionsSet []string
@@ -473,6 +475,20 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			}
 			cp.InsecureSecretsLog = h.Val()
 
+		case "renewal_window_ratio":
+			arg := h.RemainingArgs()
+			if len(arg) != 1 {
+				return nil, h.ArgErr()
+			}
+			ratio, err := strconv.ParseFloat(arg[0], 64)
+			if err != nil {
+				return nil, h.Errf("parsing renewal_window_ratio: %v", err)
+			}
+			if ratio <= 0 || ratio >= 1 {
+				return nil, h.Errf("renewal_window_ratio must be between 0 and 1 (exclusive)")
+			}
+			renewalWindowRatio = ratio
+
 		default:
 			return nil, h.Errf("unknown subdirective: %s", h.Val())
 		}
@@ -594,6 +610,14 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 		configVals = append(configVals, ConfigValue{
 			Class: "tls.reuse_private_keys",
 			Value: true,
+		})
+	}
+
+	// renewal window ratio
+	if renewalWindowRatio > 0 {
+		configVals = append(configVals, ConfigValue{
+			Class: "tls.renewal_window_ratio",
+			Value: renewalWindowRatio,
 		})
 	}
 
