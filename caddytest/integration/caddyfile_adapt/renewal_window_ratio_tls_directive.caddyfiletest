@@ -54,9 +54,6 @@ b.example.com {
 						"renewal_window_ratio": 0.25
 					},
 					{
-						"subjects": [
-							"b.example.com"
-						],
 						"renewal_window_ratio": 0.1666
 					}
 				]
