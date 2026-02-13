@@ -143,6 +143,12 @@ func (st ServerType) buildTLSApp(
 				ap.KeyType = keyTypeVals[0].Value.(string)
 			}
 
+			if renewalWindowRatioVals, ok := sblock.pile["tls.renewal_window_ratio"]; ok {
+				ap.RenewalWindowRatio = renewalWindowRatioVals[0].Value.(float64)
+			} else if globalRenewalWindowRatio, ok := options["renewal_window_ratio"]; ok {
+				ap.RenewalWindowRatio = globalRenewalWindowRatio.(float64)
+			}
+
 			// certificate issuers
 			if issuerVals, ok := sblock.pile["tls.cert_issuer"]; ok {
 				var issuers []certmagic.Issuer
@@ -607,7 +613,8 @@ func newBaseAutomationPolicy(
 	_, hasLocalCerts := options["local_certs"]
 	keyType, hasKeyType := options["key_type"]
 	ocspStapling, hasOCSPStapling := options["ocsp_stapling"]
-	hasGlobalAutomationOpts := hasIssuers || hasLocalCerts || hasKeyType || hasOCSPStapling
+	renewalWindowRatio, hasRenewalWindowRatio := options["renewal_window_ratio"]
+	hasGlobalAutomationOpts := hasIssuers || hasLocalCerts || hasKeyType || hasOCSPStapling || hasRenewalWindowRatio
 
 	globalACMECA := options["acme_ca"]
 	globalACMECARoot := options["acme_ca_root"]
@@ -652,6 +659,10 @@ func newBaseAutomationPolicy(
 		ocspConfig := ocspStapling.(certmagic.OCSPConfig)
 		ap.DisableOCSPStapling = ocspConfig.DisableStapling
 		ap.OCSPOverrides = ocspConfig.ResponderOverrides
+	}
+
+	if hasRenewalWindowRatio {
+		ap.RenewalWindowRatio = renewalWindowRatio.(float64)
 	}
 
 	return ap, nil
