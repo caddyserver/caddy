@@ -109,8 +109,10 @@ func (p *PKI) Start() error {
 	// see if root/intermediates need renewal...
 	p.renewCerts()
 
-	// ...and keep them renewed
-	go p.maintenance()
+	// ...and keep them renewed (one goroutine per CA with its own interval)
+	for _, ca := range p.CAs {
+		go p.maintenanceForCA(ca)
+	}
 
 	return nil
 }
