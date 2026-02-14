@@ -24,20 +24,24 @@ import (
 	"go.uber.org/zap"
 )
 
-func (p *PKI) maintenance() {
+func (p *PKI) maintenanceForCA(ca *CA) {
 	defer func() {
 		if err := recover(); err != nil {
-			log.Printf("[PANIC] PKI maintenance: %v\n%s", err, debug.Stack())
+			log.Printf("[PANIC] PKI maintenance for CA %s: %v\n%s", ca.ID, err, debug.Stack())
 		}
 	}()
 
-	ticker := time.NewTicker(10 * time.Minute) // TODO: make configurable
+	interval := time.Duration(ca.MaintenanceInterval)
+	if interval <= 0 {
+		interval = defaultMaintenanceInterval
+	}
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
-			p.renewCerts()
+			_ = p.renewCertsForCA(ca)
 		case <-p.ctx.Done():
 			return
 		}
@@ -63,7 +67,7 @@ func (p *PKI) renewCertsForCA(ca *CA) error {
 
 	// only maintain the root if it's not manually provided in the config
 	if ca.Root == nil {
-		if needsRenewal(ca.root) {
+		if ca.needsRenewal(ca.root) {
 			// TODO: implement root renewal (use same key)
 			log.Warn("root certificate expiring soon (FIXME: ROOT RENEWAL NOT YET IMPLEMENTED)",
 				zap.Duration("time_remaining", time.Until(ca.interChain[0].NotAfter)),
@@ -73,7 +77,7 @@ func (p *PKI) renewCertsForCA(ca *CA) error {
 
 	// only maintain the intermediate if it's not manually provided in the config
 	if ca.Intermediate == nil {
-		if needsRenewal(ca.interChain[0]) {
+		if ca.needsRenewal(ca.interChain[0]) {
 			log.Info("intermediate expires soon; renewing",
 				zap.Duration("time_remaining", time.Until(ca.interChain[0].NotAfter)),
 			)
@@ -97,11 +101,15 @@ func (p *PKI) renewCertsForCA(ca *CA) error {
 	return nil
 }
 
-func needsRenewal(cert *x509.Certificate) bool {
+// needsRenewal reports whether the certificate is within its renewal window
+// (i.e. the fraction of lifetime remaining is less than or equal to RenewalWindowRatio).
+func (ca *CA) needsRenewal(cert *x509.Certificate) bool {
+	ratio := ca.RenewalWindowRatio
+	if ratio <= 0 {
+		ratio = defaultRenewalWindowRatio
+	}
 	lifetime := cert.NotAfter.Sub(cert.NotBefore)
-	renewalWindow := time.Duration(float64(lifetime) * renewalWindowRatio)
+	renewalWindow := time.Duration(float64(lifetime) * ratio)
 	renewalWindowStart := cert.NotAfter.Add(-renewalWindow)
 	return time.Now().After(renewalWindowStart)
 }
-
-const renewalWindowRatio = 0.2 // TODO: make configurable
