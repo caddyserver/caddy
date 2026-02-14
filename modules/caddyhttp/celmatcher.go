@@ -690,6 +690,19 @@ func CELValueToMapStrList(data ref.Val) (map[string][]string, error) {
 				convVals[i] = string(strVal)
 			}
 			mapStrListStr[k] = convVals
+		case []any:
+			convVals := make([]string, len(val))
+			for i, elem := range val {
+				switch e := elem.(type) {
+				case string:
+					convVals[i] = e
+				case types.String:
+					convVals[i] = string(e)
+				default:
+					return nil, fmt.Errorf("unsupported element type in list: %T", elem)
+				}
+			}
+			mapStrListStr[k] = convVals
 		default:
 			return nil, fmt.Errorf("unsupported value type in header match: %T", val)
 		}
