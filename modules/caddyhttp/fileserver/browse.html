@@ -305,7 +305,7 @@
 <!DOCTYPE html>
 <html>
 	<head>
-		<title>{{html .Name}}</title>
+		<title>{{.Name}}</title>
 		<link rel="canonical" href="{{.Path}}/"  />
 		<meta charset="utf-8">
 		<meta name="color-scheme" content="light dark">
@@ -787,7 +787,7 @@ footer {
 		<div class="wrapper">
 			<div class="breadcrumbs">Folder Path</div>
 				<h1>
-					{{range $i, $crumb := .Breadcrumbs}}<a href="{{html $crumb.Link}}">{{html $crumb.Text}}</a>{{if ne $i 0}}/{{end}}{{end}}
+					{{range $i, $crumb := .Breadcrumbs}}<a href="{{$crumb.Link | safeURL}}">{{$crumb.Text}}</a>{{if ne $i 0}}/{{end}}{{end}}
 				</h1>
 			</div>
 		</header>
@@ -923,9 +923,9 @@ footer {
 				{{- if eq .Layout "grid"}}
 				{{- range .Items}}
 				<div class="entry">
-					<a href="{{html .URL}}" title='{{html (.HumanModTime "January 2, 2006 at 15:04:05")}}'>
+					<a href="{{.URL | safeURL}}" title='{{.HumanModTime "January 2, 2006 at 15:04:05"}}'>
 						{{template "icon" .}}
-						<div class="name">{{html .Name}}</div>
+						<div class="name">{{.Name}}</div>
 						<div class="size">{{.HumanSize}}</div>
 					</a>
 				</div>
@@ -1061,16 +1061,16 @@ footer {
 					<tr class="file">
 						<td></td>
 						<td>
-							<a href="{{html .URL}}">
+							<a href="{{.URL | safeURL}}">
 								{{template "icon" .}}
 								{{- if not .SymlinkPath}}
-								<span class="name">{{html .Name}}</span>
+								<span class="name">{{.Name}}</span>
 								{{- else}}
-								<span class="name">{{html .Name}} <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-arrow-narrow-right" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+								<span class="name">{{.Name}} <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-arrow-narrow-right" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
 									<path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M5 12l14 0" />
 									<path d="M15 16l4 -4" />
 									<path d="M15 8l4 4" />
-								</svg> {{html .SymlinkPath}}</span>
+								</svg> {{.SymlinkPath}}</span>
 								{{- end}}
 							</a>
 						</td>

@@ -17,19 +17,21 @@ package fileserver
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
+	htmltemplate "html/template"
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"strings"
 	"sync"
 	"text/tabwriter"
-	"text/template"
 	"time"
 
 	"go.uber.org/zap"
@@ -299,18 +301,32 @@ func (fsrv *FileServer) browseApplyQueryParams(w http.ResponseWriter, r *http.Re
 }
 
 // makeBrowseTemplate creates the template to be used for directory listings.
-func (fsrv *FileServer) makeBrowseTemplate(tplCtx *templateContext) (*template.Template, error) {
-	var tpl *template.Template
+// It uses html/template for context-aware, automatic HTML escaping, which
+// protects against XSS in file names and paths without relying on manual
+// {{html}} calls in the template source.
+func (fsrv *FileServer) makeBrowseTemplate(tplCtx *templateContext) (*htmltemplate.Template, error) {
+	var tpl *htmltemplate.Template
 	var err error
 
+	// browsFuncMap contains only the functions actually needed by the browse
+	// template. pathEscape returns htmltemplate.URL so that html/template
+	// trusts the already-encoded value in URL attribute contexts and does not
+	// double-encode it. safeURL does the same for pre-encoded .URL values.
+	browseFuncMap := htmltemplate.FuncMap{
+		"uuidv4":     browseUUIDv4,
+		"quote":      browseQuote,
+		"pathEscape": func(s string) htmltemplate.URL { return htmltemplate.URL(url.PathEscape(s)) },
+		"safeURL":    func(s string) htmltemplate.URL { return htmltemplate.URL(s) },
+	}
+
 	if fsrv.Browse.TemplateFile != "" {
-		tpl = tplCtx.NewTemplate(path.Base(fsrv.Browse.TemplateFile))
+		tpl = htmltemplate.New(path.Base(fsrv.Browse.TemplateFile)).Funcs(browseFuncMap)
 		tpl, err = tpl.ParseFiles(fsrv.Browse.TemplateFile)
 		if err != nil {
 			return nil, fmt.Errorf("parsing browse template file: %v", err)
 		}
 	} else {
-		tpl = tplCtx.NewTemplate("default_listing")
+		tpl = htmltemplate.New("default_listing").Funcs(browseFuncMap)
 		tpl, err = tpl.Parse(BrowseTemplate)
 		if err != nil {
 			return nil, fmt.Errorf("parsing default browse template: %v", err)
@@ -318,6 +334,24 @@ func (fsrv *FileServer) makeBrowseTemplate(tplCtx *templateContext) (*template.T
 	}
 
 	return tpl, nil
+}
+
+// browseUUIDv4 generates a random UUID v4, used by the default browse
+// template to create a per-request CSP nonce.
+func browseUUIDv4() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	b[6] = (b[6] & 0x0f) | 0x40 // version 4
+	b[8] = (b[8] & 0x3f) | 0x80 // variant RFC 4122
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:]), nil
+}
+
+// browseQuote wraps s in double quotes, escaping any contained double quotes.
+// Used by the default browse template (replaces the sprig "quote" function).
+func browseQuote(s string) string {
+	return `"` + strings.ReplaceAll(s, `"`, `\"`) + `"`
 }
 
 // isSymlinkTargetDir returns true if f's symbolic link target
