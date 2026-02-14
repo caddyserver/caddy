@@ -222,7 +222,7 @@ func (admin *AdminConfig) newAdminHandler(addr NetworkAddress, remote bool, _ Co
 		muxWrap.remoteControl = admin.Remote
 	} else {
 		// see comment in allowedOrigins() as to why we disable the host check for unix/fd networks
-		muxWrap.enforceHost = !addr.isWildcardInterface() && !addr.IsUnixNetwork() && !addr.IsFdNetwork()
+		muxWrap.enforceHost = !addr.isWildcardInterface() && !addr.IsUnixNetwork() && !addr.IsFDNetwork()
 		muxWrap.allowedOrigins = admin.allowedOrigins(addr)
 		muxWrap.enforceOrigin = admin.EnforceOrigin
 	}
@@ -342,7 +342,7 @@ func (admin AdminConfig) allowedOrigins(addr NetworkAddress) []*url.URL {
 	// and a false sense of security.
 	//
 	// See also the discussion in #6832.
-	if admin.Origins == nil && !addr.IsUnixNetwork() && !addr.IsFdNetwork() {
+	if admin.Origins == nil && !addr.IsUnixNetwork() && !addr.IsFDNetwork() {
 		if addr.isLoopback() {
 			uniqueOrigins[net.JoinHostPort("localhost", addr.port())] = struct{}{}
 			uniqueOrigins[net.JoinHostPort("::1", addr.port())] = struct{}{}
