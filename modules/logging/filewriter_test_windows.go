@@ -23,9 +23,9 @@ import (
 )
 
 // Windows relies on ACLs instead of unix permissions model.
-// Go allows to open files with a particular mode put it is limited to read or write.
+// Go allows to open files with a particular mode but it is limited to read or write.
 // See https://cs.opensource.google/go/go/+/refs/tags/go1.22.3:src/syscall/syscall_windows.go;l=708.
-// This is pretty restrictive and has few interest for log files and thus we just test that log files are
+// This is pretty restrictive and has little interest for log files and thus we just test that log files are
 // opened with R/W permissions by default on Windows too.
 func TestFileCreationMode(t *testing.T) {
 	dir, err := os.MkdirTemp("", "caddytest")

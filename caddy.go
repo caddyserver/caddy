@@ -147,8 +147,8 @@ func Load(cfgJSON []byte, forceReload bool) error {
 // the new value (if applicable; i.e. "DELETE" doesn't have an input).
 // If the resulting config is the same as the previous, no reload will
 // occur unless forceReload is true. If the config is unchanged and not
-// forcefully reloaded, then errConfigUnchanged This function is safe for
-// concurrent use.
+// forcefully reloaded, then errConfigUnchanged is returned. This function
+// is safe for concurrent use.
 // The ifMatchHeader can optionally be given a string of the format:
 //
 //	"<path> <hash>"
@@ -1092,7 +1092,7 @@ type Event struct {
 }
 
 // NewEvent creates a new event, but does not emit the event. To emit an
-// event, call Emit() on the current instance of the caddyevents app insteaad.
+// event, call Emit() on the current instance of the caddyevents app instead.
 //
 // EXPERIMENTAL: Subject to change.
 func NewEvent(ctx Context, name string, data map[string]any) (Event, error) {
@@ -1250,10 +1250,10 @@ func getLastConfig() (file, adapter string, fn reloadFromSourceFunc) {
 
 // lastConfigMatches returns true if the provided source file and/or adapter
 // matches the recorded last-config. Matching rules (in priority order):
-//  1. If srcAdapter is provided and differs from the recorded adapter, no match.
-//  2. If srcFile exactly equals the recorded file, match.
-//  3. If both sides can be made absolute and equal, match.
-//  4. If basenames are equal, match.
+// 1. If srcAdapter is provided and differs from the recorded adapter, no match.
+// 2. If srcFile exactly equals the recorded file, match.
+// 3. If both sides can be made absolute and equal, match.
+// 4. If basenames are equal, match.
 func lastConfigMatches(srcFile, srcAdapter string) bool {
 	lf, la, _ := getLastConfig()
 
