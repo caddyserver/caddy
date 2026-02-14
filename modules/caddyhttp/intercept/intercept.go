@@ -97,6 +97,19 @@ var bufPool = sync.Pool{
 	},
 }
 
+// putBuf returns a buffer to the pool if its capacity
+// does not exceed maxBufferSize, otherwise it is discarded
+// so memory can be reclaimed after load subsides.
+func putBuf(buf *bytes.Buffer) {
+	if buf.Cap() > maxBufferSize {
+		return
+	}
+	buf.Reset()
+	bufPool.Put(buf)
+}
+
+const maxBufferSize = 64 * 1024
+
 // TODO: handle status code replacement
 //
 // EXPERIMENTAL: Subject to change or removal.
@@ -128,7 +141,7 @@ func (irh interceptedResponseHandler) Unwrap() http.ResponseWriter {
 func (ir Intercept) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
-	defer bufPool.Put(buf)
+	defer putBuf(buf)
 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	rec := interceptedResponseHandler{replacer: repl}

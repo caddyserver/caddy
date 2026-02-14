@@ -991,6 +991,19 @@ var bufferPool = sync.Pool{
 	},
 }
 
+// putBuf returns a buffer to the pool if its capacity
+// does not exceed maxBufferSize, otherwise it is discarded
+// so memory can be reclaimed after load subsides.
+func putBuf(pool *sync.Pool, buf *bytes.Buffer) {
+	if buf.Cap() > maxBufferSize {
+		return
+	}
+	buf.Reset()
+	pool.Put(buf)
+}
+
+const maxBufferSize = 64 * 1024
+
 func handleConfig(w http.ResponseWriter, r *http.Request) error {
 	switch r.Method {
 	case http.MethodGet:
@@ -1002,7 +1015,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 		// not the trailer.
 		buf := bufferPool.Get().(*bytes.Buffer)
 		buf.Reset()
-		defer bufferPool.Put(buf)
+		defer putBuf(&bufferPool, buf)
 
 		configWriter := io.MultiWriter(buf, hash)
 		err := readConfig(r.URL.Path, configWriter)
@@ -1037,7 +1050,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 
 			buf := bufPool.Get().(*bytes.Buffer)
 			buf.Reset()
-			defer bufPool.Put(buf)
+			defer putBuf(&bufPool, buf)
 
 			_, err := io.Copy(buf, r.Body)
 			if err != nil {

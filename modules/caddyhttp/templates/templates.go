@@ -410,7 +410,7 @@ func (t *Templates) Validate() error {
 func (t *Templates) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
-	defer bufPool.Put(buf)
+	defer putBuf(buf)
 
 	// shouldBuf determines whether to execute templates on this response,
 	// since generally we will not want to execute for images or CSS, etc.

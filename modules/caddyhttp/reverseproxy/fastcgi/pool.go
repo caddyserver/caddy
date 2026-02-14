@@ -24,3 +24,16 @@ var bufPool = sync.Pool{
 		return new(bytes.Buffer)
 	},
 }
+
+// putBuf returns a buffer to the pool if its capacity
+// does not exceed maxBufferSize, otherwise it is discarded
+// so memory can be reclaimed after load subsides.
+func putBuf(buf *bytes.Buffer) {
+	if buf.Cap() > maxBufferSize {
+		return
+	}
+	buf.Reset()
+	bufPool.Put(buf)
+}
+
+const maxBufferSize = 64 * 1024

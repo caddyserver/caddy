@@ -242,7 +242,7 @@ func TestNestedInclude(t *testing.T) {
 
 		buf = bufPool.Get().(*bytes.Buffer)
 		buf.Reset()
-		defer bufPool.Put(buf)
+		defer putBuf(buf)
 		buf.WriteString(test.child)
 		err = context.executeTemplateInBuffer(test.childFile, buf)
 

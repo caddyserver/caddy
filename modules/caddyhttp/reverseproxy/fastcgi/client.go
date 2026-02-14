@@ -150,7 +150,7 @@ func (c *client) Do(p map[string]string, req io.Reader) (r io.Reader, err error)
 	writer := &streamWriter{c: c}
 	writer.buf = bufPool.Get().(*bytes.Buffer)
 	writer.buf.Reset()
-	defer bufPool.Put(writer.buf)
+	defer putBuf(writer.buf)
 
 	err = writer.writeBeginRequest(uint16(Responder), 0)
 	if err != nil {
