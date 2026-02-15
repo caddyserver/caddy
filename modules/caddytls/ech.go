@@ -50,12 +50,6 @@ func init() {
 // applied will automatically upgrade the minimum TLS version to 1.3, even if
 // configured to a lower version.
 //
-// Note that, as of Caddy 2.10.0 (~March 2025), ECH keys are not automatically
-// rotated due to a limitation in the Go standard library (see
-// https://github.com/golang/go/issues/71920). This should be resolved when
-// Go 1.25 is released (~Aug. 2025), and Caddy will be updated to automatically
-// rotate ECH keys/configs at that point.
-//
 // EXPERIMENTAL: Subject to change.
 type ECH struct {
 	// The list of ECH configurations for which to automatically generate
