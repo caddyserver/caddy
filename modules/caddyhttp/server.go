@@ -253,6 +253,16 @@ type Server struct {
 	// A nil value or element indicates that Protocols will be used instead.
 	ListenProtocols [][]string `json:"listen_protocols,omitempty"`
 
+	// If set, overrides whether QUIC listeners allow 0-RTT (early data).
+	// If nil, the default behavior is used (currently allowed).
+	//
+	// One reason to disable 0-RTT is if a remote IP matcher is used,
+	// which introduces a dependency on the remote address being verified
+	// if routing happens before the TLS handshake completes. An HTTP 425
+	// response is written in that case, but some clients misbehave and
+	// don't perform a retry, so disabling 0-RTT can smooth it out.
+	Allow0RTT *bool `json:"allow_0rtt,omitempty"`
+
 	// If set, metrics observations will be enabled.
 	// This setting is EXPERIMENTAL and subject to change.
 	// DEPRECATED: Use the app-level `metrics` field.
@@ -650,7 +660,7 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
 	}
 	addr.Network = h3net
-	h3ln, err := addr.ListenQUIC(s.ctx, 0, net.ListenConfig{}, tlsCfg, s.packetConnWrappers)
+	h3ln, err := addr.ListenQUIC(s.ctx, 0, net.ListenConfig{}, tlsCfg, s.packetConnWrappers, s.Allow0RTT)
 	if err != nil {
 		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
 	}
