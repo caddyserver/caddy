@@ -472,5 +472,5 @@ const (
 	defaultRootLifetime         = 24 * time.Hour * 30 * 12 * 10
 	defaultIntermediateLifetime = 24 * time.Hour * 7
 	defaultMaintenanceInterval  = 10 * time.Minute
-	defaultRenewalWindowRatio  = 0.2
+	defaultRenewalWindowRatio   = 0.2
 )
