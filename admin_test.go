@@ -277,13 +277,12 @@ func TestAdminHandlerBuiltinRouteErrors(t *testing.T) {
 		},
 	}
 
-	err := replaceLocalAdminServer(cfg, Context{})
+	// Build the admin handler directly (no listener active)
+	addr, err := ParseNetworkAddress("localhost:2019")
 	if err != nil {
-		t.Fatalf("setting up admin server: %v", err)
+		t.Fatalf("Failed to parse address: %v", err)
 	}
-	defer func() {
-		stopAdminServer(localAdminServer)
-	}()
+	handler := cfg.Admin.newAdminHandler(addr, false, Context{})
 
 	tests := []struct {
 		name           string
@@ -316,7 +315,7 @@ func TestAdminHandlerBuiltinRouteErrors(t *testing.T) {
 			req := httptest.NewRequest(test.method, fmt.Sprintf("http://localhost:2019%s", test.path), nil)
 			rr := httptest.NewRecorder()
 
-			localAdminServer.Handler.ServeHTTP(rr, req)
+			handler.ServeHTTP(rr, req)
 
 			if rr.Code != test.expectedStatus {
 				t.Errorf("expected status %d but got %d", test.expectedStatus, rr.Code)
