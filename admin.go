@@ -47,6 +47,12 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+// testCertMagicStorageOverride is a package-level test hook. Tests may set
+// this variable to provide a temporary certmagic.Storage so that cert
+// management in tests does not hit the real default storage on disk.
+// This must NOT be set in production code.
+var testCertMagicStorageOverride certmagic.Storage
+
 func init() {
 	// The hard-coded default `DefaultAdminListen` can be overridden
 	// by setting the `CADDY_ADMIN` environment variable.
@@ -633,8 +639,19 @@ func (ident *IdentityConfig) certmagicConfig(logger *zap.Logger, makeCache bool)
 		// certmagic config, although it'll be mostly useless for remote management
 		ident = new(IdentityConfig)
 	}
+	// Choose storage: prefer the package-level test override when present,
+	// otherwise use the configured DefaultStorage. Tests may set an override
+	// to divert storage into a temporary location. Otherwise, in production
+	// we use the DefaultStorage since we don't want to act as part of a
+	// cluster; this storage is for the server's local identity only.
+	var storage certmagic.Storage
+	if testCertMagicStorageOverride != nil {
+		storage = testCertMagicStorageOverride
+	} else {
+		storage = DefaultStorage
+	}
 	template := certmagic.Config{
-		Storage: DefaultStorage, // do not act as part of a cluster (this is for the server's local identity)
+		Storage: storage,
 		Logger:  logger,
 		Issuers: ident.issuers,
 	}
