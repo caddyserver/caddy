@@ -63,6 +63,15 @@ type CA struct {
 	// The intermediate (signing) certificate; if null, one will be generated.
 	Intermediate *KeyPair `json:"intermediate,omitempty"`
 
+	// How often to check if intermediate (and root, when applicable) certificates need renewal.
+	// Default: 10m.
+	MaintenanceInterval caddy.Duration `json:"maintenance_interval,omitempty"`
+
+	// The fraction of certificate lifetime (0.0–1.0) after which renewal is attempted.
+	// For example, 0.2 means renew when 20% of the lifetime remains (e.g. ~73 days for a 1-year cert).
+	// Default: 0.2.
+	RenewalWindowRatio float64 `json:"renewal_window_ratio,omitempty"`
+
 	// Optionally configure a separate storage module associated with this
 	// issuer, instead of using Caddy's global/default-configured storage.
 	// This can be useful if you want to keep your signing keys in a
@@ -125,6 +134,12 @@ func (ca *CA) Provision(ctx caddy.Context, id string, log *zap.Logger) error {
 	}
 	if ca.IntermediateLifetime == 0 {
 		ca.IntermediateLifetime = caddy.Duration(defaultIntermediateLifetime)
+	}
+	if ca.MaintenanceInterval == 0 {
+		ca.MaintenanceInterval = caddy.Duration(defaultMaintenanceInterval)
+	}
+	if ca.RenewalWindowRatio <= 0 || ca.RenewalWindowRatio > 1 {
+		ca.RenewalWindowRatio = defaultRenewalWindowRatio
 	}
 
 	// load the certs and key that will be used for signing
@@ -456,4 +471,6 @@ const (
 
 	defaultRootLifetime         = 24 * time.Hour * 30 * 12 * 10
 	defaultIntermediateLifetime = 24 * time.Hour * 7
+	defaultMaintenanceInterval  = 10 * time.Minute
+	defaultRenewalWindowRatio   = 0.2
 )
