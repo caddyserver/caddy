@@ -22,9 +22,11 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/caddyserver/certmagic"
 	"github.com/prometheus/client_golang/prometheus"
@@ -799,8 +801,24 @@ MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDRS0LmTwUT0iwP
 ...
 -----END PRIVATE KEY-----`)
 
-	testStorage := certmagic.FileStorage{Path: t.TempDir()}
-	err := testStorage.Store(context.Background(), "localhost/localhost.crt", certPEM)
+	tmpDir, err := os.MkdirTemp("", "TestManageIdentity-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	testStorage := certmagic.FileStorage{Path: tmpDir}
+	// Clean up the temp dir after the test finishes. Ensure any background
+	// certificate maintenance is stopped first to avoid RemoveAll races.
+	t.Cleanup(func() {
+		if identityCertCache != nil {
+			identityCertCache.Stop()
+			identityCertCache = nil
+		}
+		// Give goroutines a moment to exit and release file handles.
+		time.Sleep(50 * time.Millisecond)
+		_ = os.RemoveAll(tmpDir)
+	})
+
+	err = testStorage.Store(context.Background(), "localhost/localhost.crt", certPEM)
 	if err != nil {
 		t.Fatal(err)
 	}
