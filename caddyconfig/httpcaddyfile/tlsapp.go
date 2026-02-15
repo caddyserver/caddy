@@ -548,9 +548,8 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]any) e
 		if acmeIssuer.Challenges.DNS == nil {
 			acmeIssuer.Challenges.DNS = new(caddytls.DNSChallengeConfig)
 		}
-		// If global `dns` is set, do NOT set provider in issuer, just set empty dns config
-		if globalDNS == nil && acmeIssuer.Challenges.DNS.ProviderRaw == nil {
-			// Set a global DNS provider if `acme_dns` is set and `dns` is NOT set
+		if globalACMEDNS != nil && acmeIssuer.Challenges.DNS.ProviderRaw == nil {
+			// Set a global DNS provider if `acme_dns` is set
 			acmeIssuer.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(globalACMEDNS, "name", globalACMEDNS.(caddy.Module).CaddyModule().ID.Name(), nil)
 		}
 	}
