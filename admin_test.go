@@ -19,12 +19,9 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
-	"io"
 	"maps"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"reflect"
 	"sync"
 	"testing"
@@ -51,36 +48,6 @@ var testCfg = []byte(`{
 			}
 		}
 		`)
-
-// copyDir copies the contents of src directory into dst, preserving file mode.
-func copyDir(src, dst string) error {
-	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
-		}
-		target := filepath.Join(dst, rel)
-		if info.IsDir() {
-			return os.MkdirAll(target, info.Mode())
-		}
-		// copy file
-		in, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer in.Close()
-		out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, info.Mode())
-		if err != nil {
-			return err
-		}
-		defer out.Close()
-		_, err = io.Copy(out, in)
-		return err
-	})
-}
 
 func TestUnsyncedConfigAccess(t *testing.T) {
 	// each test is performed in sequence, so
@@ -895,7 +862,7 @@ MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDRS0LmTwUT0iwP
 						},
 					},
 				},
-				storage: &certmagic.FileStorage{Path: "testdata"},
+				storage: &testStorage,
 			},
 			checkState: func(t *testing.T, cfg *Config) {
 				if len(cfg.Admin.Identity.issuers) != 1 {
@@ -940,20 +907,6 @@ MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDRS0LmTwUT0iwP
 					identityCertCache = nil
 				}
 			}()
-
-			// If the test opts to use the repo's `testdata` as storage, copy it
-			// into a temporary directory so tests do not mutate repository files.
-			if test.cfg != nil && test.cfg.storage != nil {
-				if fs, ok := test.cfg.storage.(*certmagic.FileStorage); ok {
-					if fs.Path == "testdata" {
-						tmp := t.TempDir()
-						if err := copyDir("testdata", tmp); err != nil {
-							t.Fatalf("failed to copy testdata into temp dir: %v", err)
-						}
-						test.cfg.storage = &certmagic.FileStorage{Path: tmp}
-					}
-				}
-			}
 
 			ctx := Context{
 				Context:         context.Background(),
