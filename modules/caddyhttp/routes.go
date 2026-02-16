@@ -112,11 +112,12 @@ func (r Route) Empty() bool {
 
 func (r Route) String() string {
 	var handlersRaw strings.Builder
-	handlersRaw.WriteString("[")
+	handlersRaw.WriteByte('[')
 	for _, hr := range r.HandlersRaw {
-		handlersRaw.WriteString(" " + string(hr))
+		handlersRaw.WriteByte(' ')
+		handlersRaw.WriteString(string(hr))
 	}
-	handlersRaw.WriteString("]")
+	handlersRaw.WriteByte(']')
 
 	return fmt.Sprintf(`{Group:"%s" MatcherSetsRaw:%s HandlersRaw:%s Terminal:%t}`,
 		r.Group, r.MatcherSetsRaw, handlersRaw.String(), r.Terminal)
@@ -443,13 +444,14 @@ func (ms *MatcherSets) FromInterface(matcherSets any) error {
 // TODO: Is this used?
 func (ms MatcherSets) String() string {
 	var result strings.Builder
-	result.WriteString("[")
+	result.WriteByte('[')
 	for _, matcherSet := range ms {
 		for _, matcher := range matcherSet {
 			result.WriteString(fmt.Sprintf(" %#v", matcher))
 		}
 	}
-	return result.String() + " ]"
+	result.WriteByte(']')
+	return result.String()
 }
 
 var routeGroupCtxKey = caddy.CtxKey("route_group")
