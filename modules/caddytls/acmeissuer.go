@@ -178,6 +178,7 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 				PropagationTimeout: time.Duration(iss.Challenges.DNS.PropagationTimeout),
 				Resolvers:          iss.Challenges.DNS.Resolvers,
 				OverrideDomain:     iss.Challenges.DNS.OverrideDomain,
+				Logger:             iss.logger.Named("dns_manager"),
 			},
 		}
 	}
