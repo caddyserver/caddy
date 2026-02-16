@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/caddyserver/caddy/v2"
 )
@@ -110,14 +111,16 @@ func (r Route) Empty() bool {
 }
 
 func (r Route) String() string {
-	handlersRaw := "["
+	var handlersRaw strings.Builder
+	handlersRaw.WriteByte('[')
 	for _, hr := range r.HandlersRaw {
-		handlersRaw += " " + string(hr)
+		handlersRaw.WriteByte(' ')
+		handlersRaw.WriteString(string(hr))
 	}
-	handlersRaw += "]"
+	handlersRaw.WriteByte(']')
 
 	return fmt.Sprintf(`{Group:"%s" MatcherSetsRaw:%s HandlersRaw:%s Terminal:%t}`,
-		r.Group, r.MatcherSetsRaw, handlersRaw, r.Terminal)
+		r.Group, r.MatcherSetsRaw, handlersRaw.String(), r.Terminal)
 }
 
 // Provision sets up both the matchers and handlers in the route.
@@ -440,13 +443,15 @@ func (ms *MatcherSets) FromInterface(matcherSets any) error {
 
 // TODO: Is this used?
 func (ms MatcherSets) String() string {
-	result := "["
+	var result strings.Builder
+	result.WriteByte('[')
 	for _, matcherSet := range ms {
 		for _, matcher := range matcherSet {
-			result += fmt.Sprintf(" %#v", matcher)
+			result.WriteString(fmt.Sprintf(" %#v", matcher))
 		}
 	}
-	return result + " ]"
+	result.WriteByte(']')
+	return result.String()
 }
 
 var routeGroupCtxKey = caddy.CtxKey("route_group")
