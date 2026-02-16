@@ -10,7 +10,7 @@ require (
 	github.com/alecthomas/chroma/v2 v2.21.1
 	github.com/aryann/difflib v0.0.0-20210328193216-ff5ff6dc229b
 	github.com/caddyserver/certmagic v0.25.1
-	github.com/caddyserver/zerossl v0.1.4
+	github.com/caddyserver/zerossl v0.1.5
 	github.com/cloudflare/circl v1.6.2
 	github.com/dustin/go-humanize v1.0.1
 	github.com/go-chi/chi/v5 v5.2.4
