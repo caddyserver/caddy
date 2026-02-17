@@ -97,10 +97,10 @@ type Route struct {
 	MatcherSets MatcherSets         `json:"-"`
 	Handlers    []MiddlewareHandler `json:"-"`
 
-	middleware    []Middleware
-	metrics       *Metrics
-	metricsCtx    caddy.Context
-	handlerName   string
+	middleware  []Middleware
+	metrics     *Metrics
+	metricsCtx  caddy.Context
+	handlerName string
 }
 
 // Empty returns true if the route has all zero/default values.
@@ -176,10 +176,9 @@ func (r *Route) ProvisionHandlers(ctx caddy.Context, metrics *Metrics) error {
 	// Make ProvisionHandlers idempotent by clearing the middleware field
 	r.middleware = []Middleware{}
 
-	// pre-compile the middleware handler chain; metrics are no longer
-	// applied per-handler to avoid redundant instrumentation overhead
+	// pre-compile the middleware handler chain
 	for _, midhandler := range r.Handlers {
-		r.middleware = append(r.middleware, wrapMiddleware(ctx, midhandler, nil))
+		r.middleware = append(r.middleware, wrapMiddleware(ctx, midhandler))
 	}
 	return nil
 }
@@ -328,20 +327,14 @@ func wrapRoute(route Route) Middleware {
 // wrapMiddleware wraps mh such that it can be correctly
 // appended to a list of middleware in preparation for
 // compiling into a handler chain.
-func wrapMiddleware(ctx caddy.Context, mh MiddlewareHandler, metrics *Metrics) Middleware {
-	handlerToUse := mh
-	if metrics != nil {
-		// wrap the middleware with metrics instrumentation
-		handlerToUse = newMetricsInstrumentedHandler(ctx, caddy.GetModuleName(mh), mh, metrics)
-	}
-
+func wrapMiddleware(ctx caddy.Context, mh MiddlewareHandler) Middleware {
 	return func(next Handler) Handler {
 		return HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 			// EXPERIMENTAL: Trace each module that gets invoked
 			if server, ok := r.Context().Value(ServerCtxKey).(*Server); ok && server != nil {
-				server.logTrace(handlerToUse)
+				server.logTrace(mh)
 			}
-			return handlerToUse.ServeHTTP(w, r, next)
+			return mh.ServeHTTP(w, r, next)
 		})
 	}
 }

@@ -214,93 +214,6 @@ func serverNameFromContext(ctx context.Context) string {
 	return srv.name
 }
 
-type metricsInstrumentedHandler struct {
-	handler string
-	mh      MiddlewareHandler
-	metrics *Metrics
-}
-
-func newMetricsInstrumentedHandler(ctx caddy.Context, handler string, mh MiddlewareHandler, metrics *Metrics) *metricsInstrumentedHandler {
-	metrics.init.Do(func() {
-		initHTTPMetrics(ctx, metrics)
-	})
-
-	return &metricsInstrumentedHandler{handler, mh, metrics}
-}
-
-func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, next Handler) error {
-	server := serverNameFromContext(r.Context())
-	labels := prometheus.Labels{"server": server, "handler": h.handler}
-	method := metrics.SanitizeMethod(r.Method)
-	// the "code" value is set later, but initialized here to eliminate the possibility
-	// of a panic
-	statusLabels := prometheus.Labels{"server": server, "handler": h.handler, "method": method, "code": ""}
-
-	// Determine if this is an HTTPS request
-	isHTTPS := r.TLS != nil
-
-	if h.metrics.PerHost {
-		// Apply cardinality protection for host metrics
-		if h.metrics.shouldAllowHostMetrics(r.Host, isHTTPS) {
-			labels["host"] = strings.ToLower(r.Host)
-			statusLabels["host"] = strings.ToLower(r.Host)
-		} else {
-			// Use a catch-all label for unallowed hosts to prevent cardinality explosion
-			labels["host"] = "_other"
-			statusLabels["host"] = "_other"
-		}
-	}
-
-	inFlight := h.metrics.httpMetrics.requestInFlight.With(labels)
-	inFlight.Inc()
-	defer inFlight.Dec()
-
-	start := time.Now()
-
-	// This is a _bit_ of a hack - it depends on the ShouldBufferFunc always
-	// being called when the headers are written.
-	// Effectively the same behaviour as promhttp.InstrumentHandlerTimeToWriteHeader.
-	writeHeaderRecorder := ShouldBufferFunc(func(status int, header http.Header) bool {
-		statusLabels["code"] = metrics.SanitizeCode(status)
-		ttfb := time.Since(start).Seconds()
-		h.metrics.httpMetrics.responseDuration.With(statusLabels).Observe(ttfb)
-		return false
-	})
-	wrec := NewResponseRecorder(w, nil, writeHeaderRecorder)
-	err := h.mh.ServeHTTP(wrec, r, next)
-	dur := time.Since(start).Seconds()
-	h.metrics.httpMetrics.requestCount.With(labels).Inc()
-
-	observeRequest := func(status int) {
-		// If the code hasn't been set yet, and we didn't encounter an error, we're
-		// probably falling through with an empty handler.
-		if statusLabels["code"] == "" {
-			// we still sanitize it, even though it's likely to be 0. A 200 is
-			// returned on fallthrough so we want to reflect that.
-			statusLabels["code"] = metrics.SanitizeCode(status)
-		}
-
-		h.metrics.httpMetrics.requestDuration.With(statusLabels).Observe(dur)
-		h.metrics.httpMetrics.requestSize.With(statusLabels).Observe(float64(computeApproximateRequestSize(r)))
-		h.metrics.httpMetrics.responseSize.With(statusLabels).Observe(float64(wrec.Size()))
-	}
-
-	if err != nil {
-		var handlerErr HandlerError
-		if errors.As(err, &handlerErr) {
-			observeRequest(handlerErr.StatusCode)
-		}
-
-		h.metrics.httpMetrics.requestErrors.With(labels).Inc()
-
-		return err
-	}
-
-	observeRequest(wrec.Status())
-
-	return nil
-}
-
 // taken from https://github.com/prometheus/client_golang/blob/6007b2b5cae01203111de55f753e76d8dac1f529/prometheus/promhttp/instrument_server.go#L298
 func computeApproximateRequestSize(r *http.Request) int {
 	s := 0
@@ -327,10 +240,8 @@ func computeApproximateRequestSize(r *http.Request) int {
 }
 
 // metricsInstrumentedRoute wraps a compiled route Handler with metrics
-// instrumentation. Unlike metricsInstrumentedHandler which wraps each
-// individual middleware handler (causing redundant metrics collection),
-// this wraps the entire compiled route chain once, collecting metrics
-// only once per route match.
+// instrumentation. It wraps the entire compiled route chain once,
+// collecting metrics only once per route match.
 type metricsInstrumentedRoute struct {
 	handler string
 	next    Handler

@@ -47,16 +47,12 @@ func TestMetricsInstrumentedHandler(t *testing.T) {
 		return handlerErr
 	})
 
-	mh := middlewareHandlerFunc(func(w http.ResponseWriter, r *http.Request, h Handler) error {
-		return h.ServeHTTP(w, r)
-	})
-
-	ih := newMetricsInstrumentedHandler(ctx, "bar", mh, metrics)
+	ih := newMetricsInstrumentedRoute(ctx, "bar", h, metrics)
 
 	r := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 
-	if actual := ih.ServeHTTP(w, r, h); actual != handlerErr {
+	if actual := ih.ServeHTTP(w, r); actual != handlerErr {
 		t.Errorf("Not same: expected %#v, but got %#v", handlerErr, actual)
 	}
 	if actual := testutil.ToFloat64(metrics.httpMetrics.requestInFlight); actual != 0.0 {
@@ -64,19 +60,19 @@ func TestMetricsInstrumentedHandler(t *testing.T) {
 	}
 
 	handlerErr = nil
-	if err := ih.ServeHTTP(w, r, h); err != nil {
+	if err := ih.ServeHTTP(w, r); err != nil {
 		t.Errorf("Received unexpected error: %v", err)
 	}
 
 	// an empty handler - no errors, no header written
-	mh = middlewareHandlerFunc(func(w http.ResponseWriter, r *http.Request, h Handler) error {
+	emptyHandler := HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	})
-	ih = newMetricsInstrumentedHandler(ctx, "empty", mh, metrics)
+	ih = newMetricsInstrumentedRoute(ctx, "empty", emptyHandler, metrics)
 	r = httptest.NewRequest("GET", "/", nil)
 	w = httptest.NewRecorder()
 
-	if err := ih.ServeHTTP(w, r, h); err != nil {
+	if err := ih.ServeHTTP(w, r); err != nil {
 		t.Errorf("Received unexpected error: %v", err)
 	}
 	if actual := w.Result().StatusCode; actual != 200 {
@@ -87,16 +83,16 @@ func TestMetricsInstrumentedHandler(t *testing.T) {
 	}
 
 	// handler returning an error with an HTTP status
-	mh = middlewareHandlerFunc(func(w http.ResponseWriter, r *http.Request, h Handler) error {
+	errHandler := HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 		return Error(http.StatusTooManyRequests, nil)
 	})
 
-	ih = newMetricsInstrumentedHandler(ctx, "foo", mh, metrics)
+	ih = newMetricsInstrumentedRoute(ctx, "foo", errHandler, metrics)
 
 	r = httptest.NewRequest("GET", "/", nil)
 	w = httptest.NewRecorder()
 
-	if err := ih.ServeHTTP(w, r, nil); err == nil {
+	if err := ih.ServeHTTP(w, r); err == nil {
 		t.Errorf("expected error to be propagated")
 	}
 
@@ -225,16 +221,12 @@ func TestMetricsInstrumentedHandlerPerHost(t *testing.T) {
 		return handlerErr
 	})
 
-	mh := middlewareHandlerFunc(func(w http.ResponseWriter, r *http.Request, h Handler) error {
-		return h.ServeHTTP(w, r)
-	})
-
-	ih := newMetricsInstrumentedHandler(ctx, "bar", mh, metrics)
+	ih := newMetricsInstrumentedRoute(ctx, "bar", h, metrics)
 
 	r := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 
-	if actual := ih.ServeHTTP(w, r, h); actual != handlerErr {
+	if actual := ih.ServeHTTP(w, r); actual != handlerErr {
 		t.Errorf("Not same: expected %#v, but got %#v", handlerErr, actual)
 	}
 	if actual := testutil.ToFloat64(metrics.httpMetrics.requestInFlight); actual != 0.0 {
@@ -242,19 +234,19 @@ func TestMetricsInstrumentedHandlerPerHost(t *testing.T) {
 	}
 
 	handlerErr = nil
-	if err := ih.ServeHTTP(w, r, h); err != nil {
+	if err := ih.ServeHTTP(w, r); err != nil {
 		t.Errorf("Received unexpected error: %v", err)
 	}
 
 	// an empty handler - no errors, no header written
-	mh = middlewareHandlerFunc(func(w http.ResponseWriter, r *http.Request, h Handler) error {
+	emptyHandler := HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	})
-	ih = newMetricsInstrumentedHandler(ctx, "empty", mh, metrics)
+	ih = newMetricsInstrumentedRoute(ctx, "empty", emptyHandler, metrics)
 	r = httptest.NewRequest("GET", "/", nil)
 	w = httptest.NewRecorder()
 
-	if err := ih.ServeHTTP(w, r, h); err != nil {
+	if err := ih.ServeHTTP(w, r); err != nil {
 		t.Errorf("Received unexpected error: %v", err)
 	}
 	if actual := w.Result().StatusCode; actual != 200 {
@@ -265,16 +257,16 @@ func TestMetricsInstrumentedHandlerPerHost(t *testing.T) {
 	}
 
 	// handler returning an error with an HTTP status
-	mh = middlewareHandlerFunc(func(w http.ResponseWriter, r *http.Request, h Handler) error {
+	errHandler := HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 		return Error(http.StatusTooManyRequests, nil)
 	})
 
-	ih = newMetricsInstrumentedHandler(ctx, "foo", mh, metrics)
+	ih = newMetricsInstrumentedRoute(ctx, "foo", errHandler, metrics)
 
 	r = httptest.NewRequest("GET", "/", nil)
 	w = httptest.NewRecorder()
 
-	if err := ih.ServeHTTP(w, r, nil); err == nil {
+	if err := ih.ServeHTTP(w, r); err == nil {
 		t.Errorf("expected error to be propagated")
 	}
 
@@ -397,30 +389,30 @@ func TestMetricsCardinalityProtection(t *testing.T) {
 	// Add one allowed host
 	metrics.allowedHosts["allowed.com"] = struct{}{}
 
-	mh := middlewareHandlerFunc(func(w http.ResponseWriter, r *http.Request, h Handler) error {
+	h := HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 		w.Write([]byte("hello"))
 		return nil
 	})
 
-	ih := newMetricsInstrumentedHandler(ctx, "test", mh, metrics)
+	ih := newMetricsInstrumentedRoute(ctx, "test", h, metrics)
 
 	// Test request to allowed host
 	r1 := httptest.NewRequest("GET", "http://allowed.com/", nil)
 	r1.Host = "allowed.com"
 	w1 := httptest.NewRecorder()
-	ih.ServeHTTP(w1, r1, HandlerFunc(func(w http.ResponseWriter, r *http.Request) error { return nil }))
+	ih.ServeHTTP(w1, r1)
 
 	// Test request to unknown host (should be mapped to "_other")
 	r2 := httptest.NewRequest("GET", "http://attacker.com/", nil)
 	r2.Host = "attacker.com"
 	w2 := httptest.NewRecorder()
-	ih.ServeHTTP(w2, r2, HandlerFunc(func(w http.ResponseWriter, r *http.Request) error { return nil }))
+	ih.ServeHTTP(w2, r2)
 
 	// Test request to another unknown host (should also be mapped to "_other")
 	r3 := httptest.NewRequest("GET", "http://evil.com/", nil)
 	r3.Host = "evil.com"
 	w3 := httptest.NewRecorder()
-	ih.ServeHTTP(w3, r3, HandlerFunc(func(w http.ResponseWriter, r *http.Request) error { return nil }))
+	ih.ServeHTTP(w3, r3)
 
 	// Check that metrics contain:
 	// - One entry for "allowed.com"
@@ -452,26 +444,26 @@ func TestMetricsHTTPSCatchAll(t *testing.T) {
 		allowedHosts:         make(map[string]struct{}), // Empty - no explicitly allowed hosts
 	}
 
-	mh := middlewareHandlerFunc(func(w http.ResponseWriter, r *http.Request, h Handler) error {
+	h := HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 		w.Write([]byte("hello"))
 		return nil
 	})
 
-	ih := newMetricsInstrumentedHandler(ctx, "test", mh, metrics)
+	ih := newMetricsInstrumentedRoute(ctx, "test", h, metrics)
 
 	// Test HTTPS request (should be allowed even though not in allowedHosts)
 	r1 := httptest.NewRequest("GET", "https://unknown.com/", nil)
 	r1.Host = "unknown.com"
 	r1.TLS = &tls.ConnectionState{} // Mark as TLS/HTTPS
 	w1 := httptest.NewRecorder()
-	ih.ServeHTTP(w1, r1, HandlerFunc(func(w http.ResponseWriter, r *http.Request) error { return nil }))
+	ih.ServeHTTP(w1, r1)
 
 	// Test HTTP request (should be mapped to "_other")
 	r2 := httptest.NewRequest("GET", "http://unknown.com/", nil)
 	r2.Host = "unknown.com"
 	// No TLS field = HTTP request
 	w2 := httptest.NewRecorder()
-	ih.ServeHTTP(w2, r2, HandlerFunc(func(w http.ResponseWriter, r *http.Request) error { return nil }))
+	ih.ServeHTTP(w2, r2)
 
 	// Check that HTTPS request gets real host, HTTP gets "_other"
 	expected := `
@@ -486,12 +478,6 @@ func TestMetricsHTTPSCatchAll(t *testing.T) {
 	); err != nil {
 		t.Errorf("HTTPS catch-all test failed: %s", err)
 	}
-}
-
-type middlewareHandlerFunc func(http.ResponseWriter, *http.Request, Handler) error
-
-func (f middlewareHandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request, h Handler) error {
-	return f(w, r, h)
 }
 
 func TestMetricsInstrumentedRoute(t *testing.T) {
@@ -558,74 +544,6 @@ func BenchmarkMetricsInstrumentedRoute(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		ih.ServeHTTP(w, r)
-	}
-}
-
-func BenchmarkMetricsInstrumentedHandler(b *testing.B) {
-	ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
-	m := &Metrics{
-		init:        sync.Once{},
-		httpMetrics: &httpMetrics{},
-	}
-
-	mh := middlewareHandlerFunc(func(w http.ResponseWriter, r *http.Request, h Handler) error {
-		w.Write([]byte("ok"))
-		return h.ServeHTTP(w, r)
-	})
-
-	noopNext := HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
-		return nil
-	})
-
-	ih := newMetricsInstrumentedHandler(ctx, "bench_handler", mh, m)
-
-	r := httptest.NewRequest("GET", "/", nil)
-	w := httptest.NewRecorder()
-
-	b.ResetTimer()
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		ih.ServeHTTP(w, r, noopNext)
-	}
-}
-
-// BenchmarkMultipleHandlersWithMetrics simulates the old behavior where
-// each handler in a route gets its own metrics instrumentation wrapper.
-func BenchmarkMultipleHandlersWithMetrics(b *testing.B) {
-	ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
-	m := &Metrics{
-		init:        sync.Once{},
-		httpMetrics: &httpMetrics{},
-	}
-
-	mh := middlewareHandlerFunc(func(w http.ResponseWriter, r *http.Request, h Handler) error {
-		return h.ServeHTTP(w, r)
-	})
-
-	// Simulate 5 handlers each wrapped with metrics (old behavior)
-	handlers := make([]*metricsInstrumentedHandler, 5)
-	for i := 0; i < 5; i++ {
-		handlers[i] = newMetricsInstrumentedHandler(ctx, "handler", mh, m)
-	}
-
-	r := httptest.NewRequest("GET", "/", nil)
-	w := httptest.NewRecorder()
-
-	b.ResetTimer()
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		// chain them together like the middleware chain does
-		var next Handler = HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
-			return nil
-		})
-		for j := len(handlers) - 1; j >= 0; j-- {
-			capturedNext := next
-			capturedJ := j
-			next = HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
-				return handlers[capturedJ].ServeHTTP(w, r, capturedNext)
-			})
-		}
-		next.ServeHTTP(w, r)
 	}
 }
 
