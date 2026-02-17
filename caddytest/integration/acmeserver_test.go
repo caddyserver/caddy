@@ -127,7 +127,7 @@ func TestACMEServerAllowPolicy(t *testing.T) {
 		_, err := client.ObtainCertificateForSANs(ctx, account, certPrivateKey, []string{"not-matching.localhost"})
 		if err == nil {
 			t.Errorf("obtaining certificate for 'not-matching.localhost' domain")
-		} else if err != nil && !strings.Contains(err.Error(), "urn:ietf:params:acme:error:rejectedIdentifier") {
+		} else if !strings.Contains(err.Error(), "urn:ietf:params:acme:error:rejectedIdentifier") {
 			t.Logf("unexpected error: %v", err)
 		}
 	}
@@ -200,7 +200,7 @@ func TestACMEServerDenyPolicy(t *testing.T) {
 		_, err := client.ObtainCertificateForSANs(ctx, account, certPrivateKey, []string{"deny.localhost"})
 		if err == nil {
 			t.Errorf("obtaining certificate for 'deny.localhost' domain")
-		} else if err != nil && !strings.Contains(err.Error(), "urn:ietf:params:acme:error:rejectedIdentifier") {
+		} else if !strings.Contains(err.Error(), "urn:ietf:params:acme:error:rejectedIdentifier") {
 			t.Logf("unexpected error: %v", err)
 		}
 	}
