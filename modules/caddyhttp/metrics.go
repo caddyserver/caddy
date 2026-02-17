@@ -325,3 +325,83 @@ func computeApproximateRequestSize(r *http.Request) int {
 	}
 	return s
 }
+
+// metricsInstrumentedRoute wraps a compiled route Handler with metrics
+// instrumentation. Unlike metricsInstrumentedHandler which wraps each
+// individual middleware handler (causing redundant metrics collection),
+// this wraps the entire compiled route chain once, collecting metrics
+// only once per route match.
+type metricsInstrumentedRoute struct {
+	handler string
+	next    Handler
+	metrics *Metrics
+}
+
+func newMetricsInstrumentedRoute(ctx caddy.Context, handler string, next Handler, m *Metrics) *metricsInstrumentedRoute {
+	m.init.Do(func() {
+		initHTTPMetrics(ctx, m)
+	})
+
+	return &metricsInstrumentedRoute{handler: handler, next: next, metrics: m}
+}
+
+func (h *metricsInstrumentedRoute) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
+	server := serverNameFromContext(r.Context())
+	labels := prometheus.Labels{"server": server, "handler": h.handler}
+	method := metrics.SanitizeMethod(r.Method)
+	statusLabels := prometheus.Labels{"server": server, "handler": h.handler, "method": method, "code": ""}
+
+	isHTTPS := r.TLS != nil
+
+	if h.metrics.PerHost {
+		if h.metrics.shouldAllowHostMetrics(r.Host, isHTTPS) {
+			labels["host"] = strings.ToLower(r.Host)
+			statusLabels["host"] = strings.ToLower(r.Host)
+		} else {
+			labels["host"] = "_other"
+			statusLabels["host"] = "_other"
+		}
+	}
+
+	inFlight := h.metrics.httpMetrics.requestInFlight.With(labels)
+	inFlight.Inc()
+	defer inFlight.Dec()
+
+	start := time.Now()
+
+	writeHeaderRecorder := ShouldBufferFunc(func(status int, header http.Header) bool {
+		statusLabels["code"] = metrics.SanitizeCode(status)
+		ttfb := time.Since(start).Seconds()
+		h.metrics.httpMetrics.responseDuration.With(statusLabels).Observe(ttfb)
+		return false
+	})
+	wrec := NewResponseRecorder(w, nil, writeHeaderRecorder)
+	err := h.next.ServeHTTP(wrec, r)
+	dur := time.Since(start).Seconds()
+	h.metrics.httpMetrics.requestCount.With(labels).Inc()
+
+	observeRequest := func(status int) {
+		if statusLabels["code"] == "" {
+			statusLabels["code"] = metrics.SanitizeCode(status)
+		}
+
+		h.metrics.httpMetrics.requestDuration.With(statusLabels).Observe(dur)
+		h.metrics.httpMetrics.requestSize.With(statusLabels).Observe(float64(computeApproximateRequestSize(r)))
+		h.metrics.httpMetrics.responseSize.With(statusLabels).Observe(float64(wrec.Size()))
+	}
+
+	if err != nil {
+		var handlerErr HandlerError
+		if errors.As(err, &handlerErr) {
+			observeRequest(handlerErr.StatusCode)
+		}
+
+		h.metrics.httpMetrics.requestErrors.With(labels).Inc()
+
+		return err
+	}
+
+	observeRequest(wrec.Status())
+
+	return nil
+}

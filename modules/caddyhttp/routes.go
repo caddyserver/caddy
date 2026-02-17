@@ -97,7 +97,10 @@ type Route struct {
 	MatcherSets MatcherSets         `json:"-"`
 	Handlers    []MiddlewareHandler `json:"-"`
 
-	middleware []Middleware
+	middleware    []Middleware
+	metrics       *Metrics
+	metricsCtx    caddy.Context
+	handlerName   string
 }
 
 // Empty returns true if the route has all zero/default values.
@@ -162,12 +165,21 @@ func (r *Route) ProvisionHandlers(ctx caddy.Context, metrics *Metrics) error {
 		r.Handlers = append(r.Handlers, handler.(MiddlewareHandler))
 	}
 
+	// Store metrics info for route-level instrumentation (applied once
+	// per route in wrapRoute, instead of per-handler which was redundant).
+	r.metrics = metrics
+	r.metricsCtx = ctx
+	if len(r.Handlers) > 0 {
+		r.handlerName = caddy.GetModuleName(r.Handlers[0])
+	}
+
 	// Make ProvisionHandlers idempotent by clearing the middleware field
 	r.middleware = []Middleware{}
 
-	// pre-compile the middleware handler chain
+	// pre-compile the middleware handler chain; metrics are no longer
+	// applied per-handler to avoid redundant instrumentation overhead
 	for _, midhandler := range r.Handlers {
-		r.middleware = append(r.middleware, wrapMiddleware(ctx, midhandler, metrics))
+		r.middleware = append(r.middleware, wrapMiddleware(ctx, midhandler, nil))
 	}
 	return nil
 }
@@ -296,6 +308,16 @@ func wrapRoute(route Route) Middleware {
 			// compile this route's handler stack
 			for i := len(route.middleware) - 1; i >= 0; i-- {
 				nextCopy = route.middleware[i](nextCopy)
+			}
+
+			// Apply metrics instrumentation once for the entire route,
+			// rather than wrapping each individual handler. This avoids
+			// redundant metrics collection that caused significant CPU
+			// overhead (see issue #4644).
+			if route.metrics != nil {
+				nextCopy = newMetricsInstrumentedRoute(
+					route.metricsCtx, route.handlerName, nextCopy, route.metrics,
+				)
 			}
 
 			return nextCopy.ServeHTTP(rw, req)

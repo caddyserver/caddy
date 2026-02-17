@@ -493,3 +493,171 @@ type middlewareHandlerFunc func(http.ResponseWriter, *http.Request, Handler) err
 func (f middlewareHandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request, h Handler) error {
 	return f(w, r, h)
 }
+
+func TestMetricsInstrumentedRoute(t *testing.T) {
+	ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+	m := &Metrics{
+		init:        sync.Once{},
+		httpMetrics: &httpMetrics{},
+	}
+
+	handlerErr := errors.New("oh noes")
+	response := []byte("hello world!")
+	innerHandler := HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+		if actual := testutil.ToFloat64(m.httpMetrics.requestInFlight); actual != 1.0 {
+			t.Errorf("Expected requestInFlight to be 1.0, got %v", actual)
+		}
+		if handlerErr == nil {
+			w.Write(response)
+		}
+		return handlerErr
+	})
+
+	ih := newMetricsInstrumentedRoute(ctx, "test_handler", innerHandler, m)
+
+	r := httptest.NewRequest("GET", "/", nil)
+	w := httptest.NewRecorder()
+
+	// Test with error
+	if actual := ih.ServeHTTP(w, r); actual != handlerErr {
+		t.Errorf("Expected error %v, got %v", handlerErr, actual)
+	}
+	if actual := testutil.ToFloat64(m.httpMetrics.requestInFlight); actual != 0.0 {
+		t.Errorf("Expected requestInFlight to be 0.0 after request, got %v", actual)
+	}
+	if actual := testutil.ToFloat64(m.httpMetrics.requestErrors); actual != 1.0 {
+		t.Errorf("Expected requestErrors to be 1.0, got %v", actual)
+	}
+
+	// Test without error
+	handlerErr = nil
+	w = httptest.NewRecorder()
+	if err := ih.ServeHTTP(w, r); err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+}
+
+func BenchmarkMetricsInstrumentedRoute(b *testing.B) {
+	ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+	m := &Metrics{
+		init:        sync.Once{},
+		httpMetrics: &httpMetrics{},
+	}
+
+	noopHandler := HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+		w.Write([]byte("ok"))
+		return nil
+	})
+
+	ih := newMetricsInstrumentedRoute(ctx, "bench_handler", noopHandler, m)
+
+	r := httptest.NewRequest("GET", "/", nil)
+	w := httptest.NewRecorder()
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		ih.ServeHTTP(w, r)
+	}
+}
+
+func BenchmarkMetricsInstrumentedHandler(b *testing.B) {
+	ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+	m := &Metrics{
+		init:        sync.Once{},
+		httpMetrics: &httpMetrics{},
+	}
+
+	mh := middlewareHandlerFunc(func(w http.ResponseWriter, r *http.Request, h Handler) error {
+		w.Write([]byte("ok"))
+		return h.ServeHTTP(w, r)
+	})
+
+	noopNext := HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+		return nil
+	})
+
+	ih := newMetricsInstrumentedHandler(ctx, "bench_handler", mh, m)
+
+	r := httptest.NewRequest("GET", "/", nil)
+	w := httptest.NewRecorder()
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		ih.ServeHTTP(w, r, noopNext)
+	}
+}
+
+// BenchmarkMultipleHandlersWithMetrics simulates the old behavior where
+// each handler in a route gets its own metrics instrumentation wrapper.
+func BenchmarkMultipleHandlersWithMetrics(b *testing.B) {
+	ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+	m := &Metrics{
+		init:        sync.Once{},
+		httpMetrics: &httpMetrics{},
+	}
+
+	mh := middlewareHandlerFunc(func(w http.ResponseWriter, r *http.Request, h Handler) error {
+		return h.ServeHTTP(w, r)
+	})
+
+	// Simulate 5 handlers each wrapped with metrics (old behavior)
+	handlers := make([]*metricsInstrumentedHandler, 5)
+	for i := 0; i < 5; i++ {
+		handlers[i] = newMetricsInstrumentedHandler(ctx, "handler", mh, m)
+	}
+
+	r := httptest.NewRequest("GET", "/", nil)
+	w := httptest.NewRecorder()
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		// chain them together like the middleware chain does
+		var next Handler = HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			return nil
+		})
+		for j := len(handlers) - 1; j >= 0; j-- {
+			capturedNext := next
+			capturedJ := j
+			next = HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+				return handlers[capturedJ].ServeHTTP(w, r, capturedNext)
+			})
+		}
+		next.ServeHTTP(w, r)
+	}
+}
+
+// BenchmarkSingleRouteMetrics simulates the new behavior where metrics
+// are collected once for the entire route.
+func BenchmarkSingleRouteMetrics(b *testing.B) {
+	ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+	m := &Metrics{
+		init:        sync.Once{},
+		httpMetrics: &httpMetrics{},
+	}
+
+	// Build a chain of 5 plain middleware handlers (no per-handler metrics)
+	var next Handler = HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+		return nil
+	})
+	for i := 0; i < 5; i++ {
+		capturedNext := next
+		next = HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			return capturedNext.ServeHTTP(w, r)
+		})
+	}
+
+	// Wrap the entire chain with a single route-level metrics handler
+	ih := newMetricsInstrumentedRoute(ctx, "handler", next, m)
+
+	r := httptest.NewRequest("GET", "/", nil)
+	w := httptest.NewRecorder()
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		ih.ServeHTTP(w, r)
+	}
+}
