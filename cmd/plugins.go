@@ -22,7 +22,7 @@ func init() {
 
 func loadPlugins() {
 	pluginFs := pflag.NewFlagSet("plugins", pflag.ContinueOnError)
-	pluginFs.ParseErrorsWhitelist.UnknownFlags = true
+	pluginFs.ParseErrorsAllowlist.UnknownFlags = true
 	var pluginDir string
 	pluginFs.StringVar(&pluginDir, "plugin-dir", "", "")
 	_ = pluginFs.Parse(os.Args[1:])
@@ -46,18 +46,13 @@ func loadPlugins() {
 		return
 	}
 
-	var pluginsToLoad []string
 	for _, file := range files {
 		if !file.IsDir() && strings.HasSuffix(file.Name(), ".so") {
-			pluginsToLoad = append(pluginsToLoad, filepath.Join(pluginDir, file.Name()))
-		}
-	}
-
-	for _, pluginPath := range pluginsToLoad {
-		_, err := plugin.Open(pluginPath)
-		if err != nil {
-			log.Printf("[ERROR] Loading plugin %s: %v", pluginPath, err)
-			os.Exit(caddy.ExitCodeFailedStartup)
+            _, err := plugin.Open(pluginPath)
+            if err != nil {
+                log.Printf("[ERROR] Loading plugin %s: %v", pluginPath, err)
+                os.Exit(caddy.ExitCodeFailedStartup)
+            }
 		}
 	}
 }
