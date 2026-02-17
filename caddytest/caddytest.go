@@ -279,7 +279,7 @@ func validateTestPrerequisites(tc *Tester) error {
 			return err
 		}
 		tc.t.Cleanup(func() {
-			os.Remove(f.Name())
+			os.Remove(f.Name()) //nolint:gosec // false positive, filename comes from std lib, no path traversal
 		})
 		if _, err := fmt.Fprintf(f, initConfig, tc.config.AdminPort); err != nil {
 			return err

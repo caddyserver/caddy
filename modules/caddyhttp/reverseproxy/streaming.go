@@ -529,7 +529,7 @@ func maskBytes(key [4]byte, pos int, b []byte) int {
 	// Create aligned word size key.
 	var k [wordSize]byte
 	for i := range k {
-		k[i] = key[(pos+i)&3]
+		k[i] = key[(pos+i)&3] // nolint:gosec // false positive, impossible to be out of bounds; see: https://github.com/securego/gosec/issues/1525
 	}
 	kw := *(*uintptr)(unsafe.Pointer(&k))
 

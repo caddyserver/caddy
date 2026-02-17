@@ -106,7 +106,7 @@ func (adminLoad) handleLoad(w http.ResponseWriter, r *http.Request) error {
 			if err != nil {
 				caddy.Log().Named("admin.api.load").Error(err.Error())
 			}
-			_, _ = w.Write(respBody)
+			_, _ = w.Write(respBody) //nolint:gosec // false positive: no XSS here
 		}
 		body = result
 	}

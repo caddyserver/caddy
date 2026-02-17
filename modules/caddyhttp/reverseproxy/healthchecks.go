@@ -500,7 +500,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 	}
 
 	// do the request, being careful to tame the response body
-	resp, err := h.HealthChecks.Active.httpClient.Do(req)
+	resp, err := h.HealthChecks.Active.httpClient.Do(req) //nolint:gosec // no SSRF
 	if err != nil {
 		if c := h.HealthChecks.Active.logger.Check(zapcore.InfoLevel, "HTTP request failed"); c != nil {
 			c.Write(
