@@ -588,7 +588,7 @@ func (hcp *HTTPCertPool) Provision(ctx caddy.Context) error {
 		if err != nil {
 			return err
 		}
-		res, err := httpClient.Do(req)
+		res, err := httpClient.Do(req) //nolint:gosec // SSRF false positive... uri comes from config
 		if err != nil {
 			return err
 		}

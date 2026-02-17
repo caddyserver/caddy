@@ -287,7 +287,7 @@ type Account struct {
 
 	// The user's hashed password, in Modular Crypt Format (with `$` prefix)
 	// or base64-encoded.
-	Password string `json:"password"`
+	Password string `json:"password"` //nolint:gosec // false positive, this is a hashed password
 
 	password []byte
 }

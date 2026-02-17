@@ -77,7 +77,7 @@ type KeyPair struct {
 
 	// The private key. By default, this should be the path to
 	// a PEM file unless format is something else.
-	PrivateKey string `json:"private_key,omitempty"`
+	PrivateKey string `json:"private_key,omitempty"` //nolint:gosec // false positive: yes it's exported, since it needs to encode/decode as JSON; and is often just a filepath
 
 	// The format in which the certificate and private
 	// key are provided. Default: pem_file

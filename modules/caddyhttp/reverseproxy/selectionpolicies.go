@@ -617,7 +617,7 @@ type CookieHashSelection struct {
 	// The HTTP cookie name whose value is to be hashed and used for upstream selection.
 	Name string `json:"name,omitempty"`
 	// Secret to hash (Hmac256) chosen upstream in cookie
-	Secret string `json:"secret,omitempty"`
+	Secret string `json:"secret,omitempty"` //nolint:gosec // yes it's exported because it needs to encode to JSON
 	// The cookie's Max-Age before it expires. Default is no expiry.
 	MaxAge caddy.Duration `json:"max_age,omitempty"`
 

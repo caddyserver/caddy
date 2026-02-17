@@ -163,9 +163,9 @@ func (a *adminAPI) handleCACerts(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	w.Header().Set("Content-Type", "application/pem-certificate-chain")
-	_, err = w.Write(interCert)
+	_, err = w.Write(interCert) //nolint:gosec // false positive... no XSS in a PEM for cryin' out loud
 	if err == nil {
-		_, _ = w.Write(rootCert)
+		_, _ = w.Write(rootCert) //nolint:gosec // false positive... no XSS in a PEM for cryin' out loud
 	}
 
 	return nil

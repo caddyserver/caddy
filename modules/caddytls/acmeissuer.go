@@ -337,7 +337,7 @@ func (iss *ACMEIssuer) generateZeroSSLEABCredentials(ctx context.Context, acct a
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("User-Agent", certmagic.UserAgent)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec // no SSRF since URL is from trusted config
 	if err != nil {
 		return nil, acct, fmt.Errorf("performing EAB credentials request: %v", err)
 	}
