@@ -60,6 +60,9 @@ func init() {
 //		bind <addresses...> [{
 //	   protocols [h1|h2|h2c|h3] [...]
 //	 }]
+//
+// Addresses can be network addresses (host:port) or network interface names (e.g., eth0:80).
+// Interface names will be resolved to their IP addresses at bind time.
 func parseBind(h Helper) ([]ConfigValue, error) {
 	h.Next() // consume directive name
 	var addresses, protocols []string
