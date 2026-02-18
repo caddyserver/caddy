@@ -262,13 +262,11 @@ func (m MatchHost) Provision(_ caddy.Context) error {
 		if err != nil {
 			return fmt.Errorf("converting hostname '%s' to ASCII: %v", host, err)
 		}
-		if asciiHost != host {
-			m[i] = asciiHost
-		}
 		normalizedHost := strings.ToLower(asciiHost)
 		if firstI, ok := seen[normalizedHost]; ok {
 			return fmt.Errorf("host at index %d is repeated at index %d: %s", firstI, i, host)
 		}
+		m[i] = normalizedHost // normalize for all comparisons while matching
 		seen[normalizedHost] = i
 	}
 
