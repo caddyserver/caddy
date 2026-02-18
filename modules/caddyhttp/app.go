@@ -606,7 +606,7 @@ func (app *App) Start() error {
 
 					// if binding to port 0, the OS chooses a port for us;
 					// but the user won't know the port unless we print it
-					if !listenAddr.IsUnixNetwork() && !listenAddr.IsFdNetwork() && listenAddr.StartPort == 0 && listenAddr.EndPort == 0 {
+					if !listenAddr.IsUnixNetwork() && !listenAddr.IsFDNetwork() && listenAddr.StartPort == 0 && listenAddr.EndPort == 0 {
 						app.logger.Info("port 0 listener",
 							zap.String("input_address", lnAddr),
 							zap.String("actual_address", ln.Addr().String()))

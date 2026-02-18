@@ -57,12 +57,16 @@ func init() {
 
 // parseBind parses the bind directive. Syntax:
 //
-//		bind <addresses...> [{
-//	   protocols [h1|h2|h2c|h3] [...]
-//	 }]
+//	bind <addresses...> [{
+//		interfaces <devices...>
+//		protocols [h1|h2|h2c|h3] [...]
+//	}]
 func parseBind(h Helper) ([]ConfigValue, error) {
 	h.Next() // consume directive name
-	var addresses, protocols []string
+	var (
+		addresses, protocols []string
+		toDevice             bool
+	)
 	addresses = h.RemainingArgs()
 
 	for h.NextBlock(0) {
@@ -72,14 +76,17 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 			if len(protocols) == 0 {
 				return nil, h.Errf("protocols requires one or more arguments")
 			}
+		case "to_device":
+			toDevice = true
 		default:
 			return nil, h.Errf("unknown subdirective: %s", h.Val())
 		}
 	}
 
-	return []ConfigValue{{Class: "bind", Value: addressesWithProtocols{
+	return []ConfigValue{{Class: "bind", Value: bindOptions{
 		addresses: addresses,
 		protocols: protocols,
+		toDevice:  toDevice,
 	}}}, nil
 }
 
