@@ -720,6 +720,7 @@ var globSafeRepl = strings.NewReplacer(
 	"*", "\\*",
 	"[", "\\[",
 	"?", "\\?",
+	"\\", "\\\\",
 )
 
 const (

@@ -115,6 +115,12 @@ func TestFileMatcher(t *testing.T) {
 			expectedType: "file",
 			matched:      !isWindows,
 		},
+		{
+			path:         "/foodir/secr%5Cet.txt",
+			expectedPath: "/foodir/secr\\et.txt",
+			expectedType: "file",
+			matched:      true,
+		},
 	} {
 		m := &MatchFile{
 			fsmap:    &filesystems.FileSystemMap{},
