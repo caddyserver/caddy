@@ -22,9 +22,11 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/caddyserver/certmagic"
 	"github.com/prometheus/client_golang/prometheus"
@@ -275,13 +277,12 @@ func TestAdminHandlerBuiltinRouteErrors(t *testing.T) {
 		},
 	}
 
-	err := replaceLocalAdminServer(cfg, Context{})
+	// Build the admin handler directly (no listener active)
+	addr, err := ParseNetworkAddress("localhost:2019")
 	if err != nil {
-		t.Fatalf("setting up admin server: %v", err)
+		t.Fatalf("Failed to parse address: %v", err)
 	}
-	defer func() {
-		stopAdminServer(localAdminServer)
-	}()
+	handler := cfg.Admin.newAdminHandler(addr, false, Context{})
 
 	tests := []struct {
 		name           string
@@ -314,7 +315,7 @@ func TestAdminHandlerBuiltinRouteErrors(t *testing.T) {
 			req := httptest.NewRequest(test.method, fmt.Sprintf("http://localhost:2019%s", test.path), nil)
 			rr := httptest.NewRecorder()
 
-			localAdminServer.Handler.ServeHTTP(rr, req)
+			handler.ServeHTTP(rr, req)
 
 			if rr.Code != test.expectedStatus {
 				t.Errorf("expected status %d but got %d", test.expectedStatus, rr.Code)
@@ -799,8 +800,24 @@ MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDRS0LmTwUT0iwP
 ...
 -----END PRIVATE KEY-----`)
 
-	testStorage := certmagic.FileStorage{Path: t.TempDir()}
-	err := testStorage.Store(context.Background(), "localhost/localhost.crt", certPEM)
+	tmpDir, err := os.MkdirTemp("", "TestManageIdentity-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	testStorage := certmagic.FileStorage{Path: tmpDir}
+	// Clean up the temp dir after the test finishes. Ensure any background
+	// certificate maintenance is stopped first to avoid RemoveAll races.
+	t.Cleanup(func() {
+		if identityCertCache != nil {
+			identityCertCache.Stop()
+			identityCertCache = nil
+		}
+		// Give goroutines a moment to exit and release file handles.
+		time.Sleep(50 * time.Millisecond)
+		_ = os.RemoveAll(tmpDir)
+	})
+
+	err = testStorage.Store(context.Background(), "localhost/localhost.crt", certPEM)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -862,7 +879,7 @@ MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDRS0LmTwUT0iwP
 						},
 					},
 				},
-				storage: &certmagic.FileStorage{Path: "testdata"},
+				storage: &testStorage,
 			},
 			checkState: func(t *testing.T, cfg *Config) {
 				if len(cfg.Admin.Identity.issuers) != 1 {
@@ -900,11 +917,25 @@ MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDRS0LmTwUT0iwP
 				identityCertCache.Stop()
 				identityCertCache = nil
 			}
+			// Ensure any cache started by manageIdentity is stopped at the end
+			defer func() {
+				if identityCertCache != nil {
+					identityCertCache.Stop()
+					identityCertCache = nil
+				}
+			}()
 
 			ctx := Context{
 				Context:         context.Background(),
 				cfg:             test.cfg,
 				moduleInstances: make(map[string][]Module),
+			}
+
+			// If this test provided a FileStorage, set the package-level
+			// testCertMagicStorageOverride so certmagicConfig will use it.
+			if test.cfg != nil && test.cfg.storage != nil {
+				testCertMagicStorageOverride = test.cfg.storage
+				defer func() { testCertMagicStorageOverride = nil }()
 			}
 
 			err := manageIdentity(ctx, test.cfg)

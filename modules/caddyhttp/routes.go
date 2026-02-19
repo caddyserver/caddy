@@ -462,7 +462,7 @@ func (ms MatcherSets) String() string {
 	result.WriteByte('[')
 	for _, matcherSet := range ms {
 		for _, matcher := range matcherSet {
-			result.WriteString(fmt.Sprintf(" %#v", matcher))
+			fmt.Fprintf(&result, " %#v", matcher)
 		}
 	}
 	result.WriteByte(']')

@@ -8,7 +8,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/caddyserver/caddy/v2/caddytest"
 )
@@ -327,6 +326,41 @@ func TestReverseProxyWithPlaceholderTCPDialAddress(t *testing.T) {
 }
 
 func TestReverseProxyHealthCheck(t *testing.T) {
+	// Start lightweight backend servers so they're ready before Caddy's
+	// active health checker runs; this avoids a startup race where the
+	// health checker probes backends that haven't yet begun accepting
+	// connections and marks them unhealthy.
+	//
+	// This mirrors how health checks are typically used in practice (to a separate
+	// backend service) and avoids probing the same Caddy instance while it's still
+	// provisioning and not ready to accept connections.
+
+	// backend server that responds to proxied requests
+	helloSrv := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			_, _ = w.Write([]byte("Hello, World!"))
+		}),
+	}
+	ln0, err := net.Listen("tcp", "127.0.0.1:2020")
+	if err != nil {
+		t.Fatalf("failed to listen on 127.0.0.1:2020: %v", err)
+	}
+	go helloSrv.Serve(ln0)
+	t.Cleanup(func() { helloSrv.Close(); ln0.Close() })
+
+	// backend server that serves health checks
+	healthSrv := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			_, _ = w.Write([]byte("ok"))
+		}),
+	}
+	ln1, err := net.Listen("tcp", "127.0.0.1:2021")
+	if err != nil {
+		t.Fatalf("failed to listen on 127.0.0.1:2021: %v", err)
+	}
+	go healthSrv.Serve(ln1)
+	t.Cleanup(func() { healthSrv.Close(); ln1.Close() })
+
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`
 	{
@@ -335,12 +369,6 @@ func TestReverseProxyHealthCheck(t *testing.T) {
 		http_port     9080
 		https_port    9443
 		grace_period 1ns
-	}
-	http://localhost:2020 {
-		respond "Hello, World!"
-	}
-	http://localhost:2021 {
-		respond "ok"
 	}
 	http://localhost:9080 {
 		reverse_proxy {
@@ -355,8 +383,6 @@ func TestReverseProxyHealthCheck(t *testing.T) {
 		}
 	}
 	`, "caddyfile")
-
-	time.Sleep(100 * time.Millisecond) // TODO: for some reason this test seems particularly flaky, getting 503 when it should be 200, unless we wait
 	tester.AssertGetResponse("http://localhost:9080/", 200, "Hello, World!")
 }
 

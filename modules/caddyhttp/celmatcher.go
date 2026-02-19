@@ -412,10 +412,12 @@ func CELMatcherImpl(macroName, funcName string, matcherDataTypes []*cel.Type, fa
 			return nil, fmt.Errorf("unsupported matcher data type: %s, %s", matcherDataTypes[0], matcherDataTypes[1])
 		}
 	case 3:
+		// nolint:gosec // false positive, impossible to be out of bounds; see: https://github.com/securego/gosec/issues/1525
 		if matcherDataTypes[0] == cel.StringType && matcherDataTypes[1] == cel.StringType && matcherDataTypes[2] == cel.StringType {
 			macro = parser.NewGlobalMacro(macroName, 3, celMatcherStringListMacroExpander(funcName))
 			matcherDataTypes = []*cel.Type{cel.ListType(cel.StringType)}
 		} else {
+			// nolint:gosec // false positive, impossible to be out of bounds; see: https://github.com/securego/gosec/issues/1525
 			return nil, fmt.Errorf("unsupported matcher data type: %s, %s, %s", matcherDataTypes[0], matcherDataTypes[1], matcherDataTypes[2])
 		}
 	}

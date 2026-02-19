@@ -74,7 +74,7 @@ func cmdStart(fl Flags) (int, error) {
 	// ensure it's the process we're expecting - we can be
 	// sure by giving it some random bytes and having it echo
 	// them back to us)
-	cmd := exec.Command(os.Args[0], "run", "--pingback", ln.Addr().String())
+	cmd := exec.Command(os.Args[0], "run", "--pingback", ln.Addr().String()) //nolint:gosec // no command injection that I can determine...
 	// we should be able to run caddy in relative paths
 	if errors.Is(cmd.Err, exec.ErrDot) {
 		cmd.Err = nil
@@ -820,7 +820,7 @@ func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io
 		},
 	}
 
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // the only SSRF here would be self-sabatoge I think
 	if err != nil {
 		return nil, fmt.Errorf("performing request: %v", err)
 	}
