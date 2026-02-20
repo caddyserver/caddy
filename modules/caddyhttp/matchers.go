@@ -262,12 +262,16 @@ func (m MatchHost) Provision(_ caddy.Context) error {
 		if err != nil {
 			return fmt.Errorf("converting hostname '%s' to ASCII: %v", host, err)
 		}
-		if asciiHost != host {
-			m[i] = asciiHost
-		}
 		normalizedHost := strings.ToLower(asciiHost)
 		if firstI, ok := seen[normalizedHost]; ok {
 			return fmt.Errorf("host at index %d is repeated at index %d: %s", firstI, i, host)
+		}
+		// Normalize exact hosts for standardized comparison in large-list fastpath later on.
+		// Keep wildcards/placeholders untouched.
+		if m.fuzzy(asciiHost) {
+			m[i] = asciiHost
+		} else {
+			m[i] = normalizedHost
 		}
 		seen[normalizedHost] = i
 	}
@@ -312,14 +316,15 @@ func (m MatchHost) MatchWithError(r *http.Request) (bool, error) {
 	}
 
 	if m.large() {
+		reqHostLower := strings.ToLower(reqHost)
 		// fast path: locate exact match using binary search (about 100-1000x faster for large lists)
 		pos := sort.Search(len(m), func(i int) bool {
 			if m.fuzzy(m[i]) {
 				return false
 			}
-			return m[i] >= reqHost
+			return m[i] >= reqHostLower
 		})
-		if pos < len(m) && strings.EqualFold(m[pos], reqHost) {
+		if pos < len(m) && m[pos] == reqHostLower {
 			return true, nil
 		}
 	}
