@@ -538,6 +538,7 @@ func (m MatchPath) MatchWithError(r *http.Request) (bool, error) {
 }
 
 func (MatchPath) matchPatternWithEscapeSequence(escapedPath, matchPath string) bool {
+	escapedPath = strings.ToLower(escapedPath)
 	// We would just compare the pattern against r.URL.Path,
 	// but the pattern contains %, indicating that we should
 	// compare at least some part of the path in raw/escaped
