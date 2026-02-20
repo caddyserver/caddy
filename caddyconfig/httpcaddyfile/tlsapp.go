@@ -334,6 +334,11 @@ func (st ServerType) buildTLSApp(
 		tlsApp.DNSRaw = caddyconfig.JSONModuleObject(globalDNS, "name", globalDNS.(caddy.Module).CaddyModule().ID.Name(), nil)
 	}
 
+	// set up "global" (to the TLS app) DNS resolvers config
+	if globalResolvers, ok := options["tls_resolvers"]; ok && globalResolvers != nil {
+		tlsApp.Resolvers = globalResolvers.([]string)
+	}
+
 	// set up ECH from Caddyfile options
 	if ech, ok := options["ech"].(*caddytls.ECH); ok {
 		tlsApp.EncryptedClientHello = ech
@@ -594,6 +599,15 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]any) e
 	}
 	if globalCertLifetime != nil && acmeIssuer.CertificateLifetime == 0 {
 		acmeIssuer.CertificateLifetime = globalCertLifetime.(caddy.Duration)
+	}
+	// apply global resolvers if DNS challenge is configured and resolvers are not already set
+	globalResolvers := options["tls_resolvers"]
+	if globalResolvers != nil && acmeIssuer.Challenges != nil && acmeIssuer.Challenges.DNS != nil {
+		// Check if DNS challenge is actually configured
+		hasDNSChallenge := globalACMEDNSok || acmeIssuer.Challenges.DNS.ProviderRaw != nil
+		if hasDNSChallenge && len(acmeIssuer.Challenges.DNS.Resolvers) == 0 {
+			acmeIssuer.Challenges.DNS.Resolvers = globalResolvers.([]string)
+		}
 	}
 	return nil
 }

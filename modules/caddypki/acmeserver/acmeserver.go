@@ -40,6 +40,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddypki"
+	"github.com/caddyserver/caddy/v2/modules/caddytls"
 )
 
 func init() {
@@ -304,7 +305,19 @@ func (ash Handler) openDatabase() (*db.AuthDB, error) {
 // makeClient creates an ACME client which will use a custom
 // resolver instead of net.DefaultResolver.
 func (ash Handler) makeClient() (acme.Client, error) {
-	for _, v := range ash.Resolvers {
+	// If no local resolvers are configured, check for global resolvers from TLS app
+	resolversToUse := ash.Resolvers
+	if len(resolversToUse) == 0 {
+		tlsAppIface, err := ash.ctx.App("tls")
+		if err == nil {
+			tlsApp := tlsAppIface.(*caddytls.TLS)
+			if len(tlsApp.Resolvers) > 0 {
+				resolversToUse = tlsApp.Resolvers
+			}
+		}
+	}
+
+	for _, v := range resolversToUse {
 		addr, err := caddy.ParseNetworkAddressWithDefaults(v, "udp", 53)
 		if err != nil {
 			return nil, err
