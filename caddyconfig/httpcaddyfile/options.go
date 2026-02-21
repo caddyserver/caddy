@@ -55,6 +55,7 @@ func init() {
 	RegisterGlobalOption("on_demand_tls", parseOptOnDemand)
 	RegisterGlobalOption("local_certs", parseOptTrue)
 	RegisterGlobalOption("key_type", parseOptSingleString)
+	RegisterGlobalOption("key_file", parseOptSingleString)
 	RegisterGlobalOption("auto_https", parseOptAutoHTTPS)
 	RegisterGlobalOption("metrics", parseMetricsOptions)
 	RegisterGlobalOption("servers", parseServerOptions)

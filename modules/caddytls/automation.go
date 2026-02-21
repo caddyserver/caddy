@@ -132,6 +132,10 @@ type AutomationPolicy struct {
 	// Supported values: `ed25519`, `p256`, `p384`, `rsa2048`, `rsa4096`.
 	KeyType string `json:"key_type,omitempty"`
 
+	// Path to a custom private key file to use for TLS management.
+	// If specified, Caddy will not generate a new key but will use this one.
+	KeyFile string `json:"key_file,omitempty"`
+
 	// Optionally configure a separate storage module associated with this
 	// manager, instead of using Caddy's global/default-configured storage.
 	StorageRaw json.RawMessage `json:"storage,omitempty" caddy:"namespace=caddy.storage inline_key=module"`
@@ -243,19 +247,32 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 		}
 	}
 
-	keyType := ap.KeyType
-	if keyType != "" {
-		var err error
-		keyType, err = caddy.NewReplacer().ReplaceOrErr(ap.KeyType, true, true)
+	var keySource certmagic.KeyGenerator
+
+	if ap.KeyFile != "" {
+		keyFilePath, err := caddy.NewReplacer().ReplaceOrErr(ap.KeyFile, true, true)
 		if err != nil {
-			return fmt.Errorf("invalid key type %s: %s", ap.KeyType, err)
+			return fmt.Errorf("invalid key file path %s: %v", ap.KeyFile, err)
 		}
-		if _, ok := supportedCertKeyTypes[keyType]; !ok {
-			return fmt.Errorf("unrecognized key type: %s", keyType)
+
+		keySource = certmagic.FileKeyGenerator{
+			KeyFilename: keyFilePath,
 		}
-	}
-	keySource := certmagic.StandardKeyGenerator{
-		KeyType: supportedCertKeyTypes[keyType],
+	} else {
+		keyType := ap.KeyType
+		if keyType != "" {
+			var err error
+			keyType, err = caddy.NewReplacer().ReplaceOrErr(ap.KeyType, true, true)
+			if err != nil {
+				return fmt.Errorf("invalid key type %s: %s", ap.KeyType, err)
+			}
+			if _, ok := supportedCertKeyTypes[keyType]; !ok {
+				return fmt.Errorf("unrecognized key type: %s", keyType)
+			}
+		}
+		keySource = certmagic.StandardKeyGenerator{
+			KeyType: supportedCertKeyTypes[keyType],
+		}
 	}
 
 	storage := ap.storage

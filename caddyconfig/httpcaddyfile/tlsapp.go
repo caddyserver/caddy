@@ -143,6 +143,10 @@ func (st ServerType) buildTLSApp(
 				ap.KeyType = keyTypeVals[0].Value.(string)
 			}
 
+			if keyFileVals, ok := sblock.pile["tls.key_file"]; ok {
+				ap.KeyFile = keyFileVals[0].Value.(string)
+			}
+
 			if renewalWindowRatioVals, ok := sblock.pile["tls.renewal_window_ratio"]; ok {
 				ap.RenewalWindowRatio = renewalWindowRatioVals[0].Value.(float64)
 			} else if globalRenewalWindowRatio, ok := options["renewal_window_ratio"]; ok {
@@ -611,9 +615,10 @@ func newBaseAutomationPolicy(
 	issuers, hasIssuers := options["cert_issuer"]
 	_, hasLocalCerts := options["local_certs"]
 	keyType, hasKeyType := options["key_type"]
+	keyFile, hasKeyFile := options["key_file"]
 	ocspStapling, hasOCSPStapling := options["ocsp_stapling"]
 	renewalWindowRatio, hasRenewalWindowRatio := options["renewal_window_ratio"]
-	hasGlobalAutomationOpts := hasIssuers || hasLocalCerts || hasKeyType || hasOCSPStapling || hasRenewalWindowRatio
+	hasGlobalAutomationOpts := hasIssuers || hasLocalCerts || hasKeyType || hasKeyFile || hasOCSPStapling || hasRenewalWindowRatio
 
 	globalACMECA := options["acme_ca"]
 	globalACMECARoot := options["acme_ca_root"]
@@ -634,6 +639,10 @@ func newBaseAutomationPolicy(
 	ap := new(caddytls.AutomationPolicy)
 	if hasKeyType {
 		ap.KeyType = keyType.(string)
+	}
+
+	if hasKeyFile {
+		ap.KeyFile = keyFile.(string)
 	}
 
 	if hasIssuers && hasLocalCerts {
@@ -727,6 +736,7 @@ outer:
 				bytes.Equal(aps[i].StorageRaw, aps[j].StorageRaw) &&
 				aps[i].MustStaple == aps[j].MustStaple &&
 				aps[i].KeyType == aps[j].KeyType &&
+				aps[i].KeyFile == aps[j].KeyFile &&
 				aps[i].OnDemand == aps[j].OnDemand &&
 				aps[i].ReusePrivateKeys == aps[j].ReusePrivateKeys &&
 				aps[i].RenewalWindowRatio == aps[j].RenewalWindowRatio {
