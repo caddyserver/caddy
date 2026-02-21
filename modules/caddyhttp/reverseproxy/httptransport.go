@@ -412,8 +412,13 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 			return nil, fmt.Errorf("making TLS client config: %v", err)
 		}
 
-		// servername has a placeholder, so we need to replace it
-		if strings.Contains(h.TLS.ServerName, "{") {
+		serverNameHasPlaceholder := strings.Contains(h.TLS.ServerName, "{")
+
+		// We need to use custom DialTLSContext if:
+		// 1. ServerName has a placeholder that needs to be replaced at request-time, OR
+		// 2. ProxyProtocol is enabled, because req.URL.Host is modified to include
+		//    client address info with "->" separator which breaks Go's address parsing
+		if serverNameHasPlaceholder || h.ProxyProtocol != "" {
 			rt.DialTLSContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 				// reuses the dialer from above to establish a plaintext connection
 				conn, err := dialContext(ctx, network, addr)
@@ -422,9 +427,11 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 				}
 
 				// but add our own handshake logic
-				repl := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 				tlsConfig := rt.TLSClientConfig.Clone()
-				tlsConfig.ServerName = repl.ReplaceAll(tlsConfig.ServerName, "")
+				if serverNameHasPlaceholder {
+					repl := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+					tlsConfig.ServerName = repl.ReplaceAll(tlsConfig.ServerName, "")
+				}
 
 				// h1 only
 				if caddyhttp.GetVar(ctx, tlsH1OnlyVarKey) == true {
