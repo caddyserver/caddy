@@ -269,9 +269,9 @@ func (admin *AdminConfig) newAdminHandler(addr NetworkAddress, remote bool, _ Co
 	// register debugging endpoints
 	addRouteWithMetrics("/debug/pprof/", handlerLabel, http.HandlerFunc(pprof.Index))
 	addRouteWithMetrics("/debug/pprof/cmdline", handlerLabel, http.HandlerFunc(pprof.Cmdline))
-	addRouteWithMetrics("/debug/pprof/profile", handlerLabel, http.HandlerFunc(pprof.Profile))
+	addRouteWithMetrics("/debug/pprof/profile", handlerLabel, pprofRateLimited(http.HandlerFunc(pprof.Profile)))
 	addRouteWithMetrics("/debug/pprof/symbol", handlerLabel, http.HandlerFunc(pprof.Symbol))
-	addRouteWithMetrics("/debug/pprof/trace", handlerLabel, http.HandlerFunc(pprof.Trace))
+	addRouteWithMetrics("/debug/pprof/trace", handlerLabel, pprofRateLimited(http.HandlerFunc(pprof.Trace)))
 	addRouteWithMetrics("/debug/vars", handlerLabel, expvar.Handler())
 
 	// register third-party module endpoints
@@ -1371,6 +1371,24 @@ func (e APIError) Error() string {
 		return e.Err.Error()
 	}
 	return e.Message
+}
+
+// pprofSem limits concurrent CPU-intensive pprof operations (profile, trace)
+// to prevent a DoS via repeated 30-second profiling sessions.
+var pprofSem = make(chan struct{}, 1)
+
+// pprofRateLimited wraps an http.Handler so that at most one request is
+// served at a time. Additional concurrent callers receive 429.
+func pprofRateLimited(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case pprofSem <- struct{}{}:
+			defer func() { <-pprofSem }()
+			h.ServeHTTP(w, r)
+		default:
+			http.Error(w, "too many profiling requests; try again later", http.StatusTooManyRequests)
+		}
+	})
 }
 
 // parseAdminListenAddr extracts a singular listen address from either addr
