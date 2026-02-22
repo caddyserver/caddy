@@ -18,8 +18,12 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestParseVariadic(t *testing.T) {
@@ -910,6 +914,129 @@ func TestRejectAnonymousImportBlock(t *testing.T) {
 	}
 }
 
+func TestAcceptImportWithinInvoke(t *testing.T) {
+	p := testParser(`
+		(proxy) {
+			reverse_proxy {args[:]}
+		}
+		
+		&(named) {
+			import proxy 192.168.1.1:80
+		}
+
+		site {
+			invoke named
+		}
+	`)
+
+	blocks, err := p.parseAll()
+	if err != nil {
+		t.Errorf("Expected error to be nil but got '%v'", err)
+	}
+
+	keys := make([]string, 0)
+	var namedBlock TestServerBlock
+
+	for _, block := range blocks {
+		blockKeys := block.GetKeysText()
+
+		if slices.Contains(blockKeys, "named") {
+			namedBlock = testServerBlock(block)
+		}
+
+		keys = slices.Concat(keys, blockKeys)
+	}
+
+	assert.Equal(t, keys, []string{"named", "site"})
+	assert.True(t, namedBlock.HasBraces)
+
+	snippet := p.definedSnippets["proxy"]
+	blockTokens := namedBlock.InnerTokens
+	assert.Equalf(
+		t, len(snippet), len(blockTokens),
+		"Token mismatch, snippet has %d tokens while the named route ends up with %d",
+		len(snippet), len(blockTokens),
+	)
+
+	placeholderRegexp := regexp.MustCompile("\\{.+}")
+	for idx, tok := range blockTokens {
+		assert.Equal(t, tok.snippetName, "proxy")
+
+		isPlaceholder := placeholderRegexp.MatchString(snippet[idx].Text)
+		if !isPlaceholder {
+			assert.Equal(t, tok.Text, snippet[idx].Text)
+		} else {
+			assert.NotRegexpf(
+				t, placeholderRegexp, tok.Text,
+				"Imported tokens still include a placeholder: %s", tok.Text,
+			)
+		}
+	}
+}
+
+func TestComplexImportInvokeConfig(t *testing.T) {
+	p := testParser(`
+		(nesting_further) {
+			do something
+		}
+
+		(nesting) {
+			directive again with more {
+				interesting = content
+				import nesting_further
+			}
+		}
+
+		(proxy) {
+			reverse_proxy {args[:]}
+			import nesting
+		}
+
+		&(named) {
+			import proxy 192.168.1.1:80
+			
+			handle_error {
+				import nesting_further
+				respond 404
+			}
+		}
+	`)
+
+	blocks, err := p.parseAll()
+	if err != nil {
+		t.Errorf("Expected error to be nil but got '%v'", err)
+	}
+
+	assert.Len(t, blocks, 1, "Expected only the named route to be in blocks")
+	assert.Equalf(
+		t, blocks[0].GetKeysText(), []string{"named"},
+		"Block in result is not the named route, expected name 'named' got: %s",
+		strings.Join(blocks[0].GetKeysText(), ", "),
+	)
+
+	namedBlock := testServerBlock(blocks[0])
+	blockText := stringifyTokens(namedBlock.InnerTokens)
+	deeplyNestedImport := stringifyTokens(p.definedSnippets["nesting_further"])
+	nestedImport := slices.Concat(
+		[]string{"directive", "again", "with", "more", "{", "interesting", "=", "content"},
+		deeplyNestedImport,
+		[]string{"}"},
+	)
+	proxyImport := slices.Concat(
+		[]string{"reverse_proxy", "192.168.1.1:80"},
+		nestedImport,
+	)
+
+	expectedText := slices.Concat(
+		proxyImport,
+		[]string{"handle_error", "{"},
+		deeplyNestedImport,
+		[]string{"respond", "404", "}"},
+	)
+
+	assert.ElementsMatch(t, blockText, expectedText)
+}
+
 func TestAcceptSiteImportWithBraces(t *testing.T) {
 	p := testParser(`
 		(site) {
@@ -932,4 +1059,40 @@ func TestAcceptSiteImportWithBraces(t *testing.T) {
 
 func testParser(input string) parser {
 	return parser{Dispenser: NewTestDispenser(input)}
+}
+
+type TestServerBlock struct {
+	ServerBlock
+
+	InnerTokens []Token
+}
+
+func stringifyTokens(tokens []Token) []string {
+	return slices.Collect(func(yield func(string) bool) {
+		for _, tok := range tokens {
+			if !yield(tok.Text) {
+				return
+			}
+		}
+	})
+}
+
+func testServerBlock(block ServerBlock) TestServerBlock {
+	innerTokens := slices.Collect(func(yield func(Token) bool) {
+		for _, segment := range block.Segments {
+			tokens := []Token(segment)
+			for _, token := range tokens {
+				if !yield(token) {
+					return
+				}
+			}
+		}
+	})
+
+	keyLength := len(block.Keys)
+	return TestServerBlock{
+		ServerBlock: block,
+		// Exclude keys, opening brace and closing brace
+		InnerTokens: innerTokens[keyLength+1 : len(innerTokens)-1],
+	}
 }
