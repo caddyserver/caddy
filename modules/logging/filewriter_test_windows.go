@@ -53,3 +53,41 @@ func TestFileCreationMode(t *testing.T) {
 		t.Fatalf("file mode is %v, want rw for user", st.Mode().Perm())
 	}
 }
+
+func TestDirMode_Windows_CreateSucceeds(t *testing.T) {
+	dir, err := os.MkdirTemp("", "caddytest")
+	if err != nil {
+		t.Fatalf("failed to create tempdir: %v", err)
+	}
+	defer os.RemoveAll(dir)
+
+	tests := []struct {
+		name    string
+		dirMode string
+	}{
+		{"inherit", "inherit"},
+		{"from_file", "from_file"},
+		{"octal", "0755"},
+		{"default", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			subdir := path.Join(dir, "logs-"+tt.name)
+			fw := &FileWriter{
+				Filename: path.Join(subdir, "test.log"),
+				DirMode:  tt.dirMode,
+				Mode:     0o600,
+			}
+			w, err := fw.OpenWriter()
+			if err != nil {
+				t.Fatalf("failed to open writer: %v", err)
+			}
+			defer w.Close()
+
+			if _, err := os.Stat(fw.Filename); err != nil {
+				t.Fatalf("expected file to exist: %v", err)
+			}
+		})
+	}
+}
