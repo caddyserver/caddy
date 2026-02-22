@@ -616,16 +616,26 @@ func (ctx Context) Slogger() *slog.Logger {
 		}
 
 		core = l.Core()
-		handler = zapslog.NewHandler(core)
+		handler = zapslog.NewHandler(
+			core,
+			zapslog.AddStacktraceAt(slog.Level(127)),
+		)
 	} else {
 		mod := ctx.Module()
 		if mod == nil {
 			core = Log().Core()
-			handler = zapslog.NewHandler(core)
+			handler = zapslog.NewHandler(
+				core,
+				zapslog.AddStacktraceAt(slog.Level(127)),
+			)
 		} else {
 			moduleID = string(mod.CaddyModule().ID)
 			core = ctx.cfg.Logging.Logger(mod).Core()
-			handler = zapslog.NewHandler(core, zapslog.WithName(moduleID))
+			handler = zapslog.NewHandler(
+				core,
+				zapslog.WithName(moduleID),
+				zapslog.AddStacktraceAt(slog.Level(127)),
+			)
 		}
 	}
 

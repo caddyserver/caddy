@@ -484,7 +484,11 @@ func setResourceLimits(logger *zap.Logger) func() {
 	// See https://pkg.go.dev/runtime/debug#SetMemoryLimit
 	_, _ = memlimit.SetGoMemLimitWithOpts(
 		memlimit.WithLogger(
-			slog.New(zapslog.NewHandler(logger.Core())),
+			slog.New(zapslog.NewHandler(
+				logger.Core(),
+				zapslog.WithName("memlimit"),
+				zapslog.AddStacktraceAt(slog.Level(127)),
+			)),
 		),
 		memlimit.WithProvider(
 			memlimit.ApplyFallback(
