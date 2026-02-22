@@ -929,6 +929,34 @@ func InstanceID() (uuid.UUID, error) {
 // for example.
 var CustomVersion string
 
+// CustomBinaryName is an optional string that overrides the root
+// command name from the default of "caddy". This is useful for
+// downstream projects that embed Caddy but use a different binary
+// name. Shell completions and help text will use this name instead
+// of "caddy".
+//
+// Set this variable during `go build` with `-ldflags`:
+//
+//	-ldflags '-X github.com/caddyserver/caddy/v2.CustomBinaryName=my_custom_caddy'
+//
+// for example.
+var CustomBinaryName string
+
+// CustomLongDescription is an optional string that overrides the
+// long description of the root Cobra command. This is useful for
+// downstream projects that embed Caddy but want different help
+// output.
+//
+// Set this variable in an init() function of a package that is
+// imported by your main:
+//
+//	func init() {
+//	    caddy.CustomLongDescription = "My custom server based on Caddy..."
+//	}
+//
+// for example.
+var CustomLongDescription string
+
 // Version returns the Caddy version in a simple/short form, and
 // a full version string. The short form will not have spaces and
 // is intended for User-Agent strings and similar, but may be
