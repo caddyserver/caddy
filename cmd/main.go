@@ -69,7 +69,9 @@ func Main() {
 		os.Exit(caddy.ExitCodeFailedStartup)
 	}
 
-	if err := defaultFactory.Build().Execute(); err != nil {
+	rootCmd := defaultFactory.Build()
+	loadPlugins()
+	if err := rootCmd.Execute(); err != nil {
 		var exitError *exitError
 		if errors.As(err, &exitError) {
 			os.Exit(exitError.ExitCode)
