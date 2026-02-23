@@ -456,31 +456,48 @@ func (fw *FileWriter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			fw.RollInterval = duration
 
 		case "roll_minutes":
-			var minutesArrayStr string
-			if !d.AllArgs(&minutesArrayStr) {
+			// Accept either a single comma-separated argument or
+			// multiple space-separated arguments. Collect all
+			// remaining args on the line and split on commas.
+			args := d.RemainingArgs()
+			if len(args) == 0 {
 				return d.ArgErr()
 			}
-			minutesStr := strings.Split(minutesArrayStr, ",")
-			minutes := make([]int, len(minutesStr))
-			for i := range minutesStr {
-				ms := strings.Trim(minutesStr[i], " ")
-				m, err := strconv.Atoi(ms)
-				if err != nil {
-					return d.Errf("parsing roll_minutes number: %v", err)
+			var minutes []int
+			for _, arg := range args {
+				parts := strings.SplitSeq(arg, ",")
+				for p := range parts {
+					ms := strings.TrimSpace(p)
+					if ms == "" {
+						return d.Errf("parsing roll_minutes: empty value")
+					}
+					m, err := strconv.Atoi(ms)
+					if err != nil {
+						return d.Errf("parsing roll_minutes number: %v", err)
+					}
+					minutes = append(minutes, m)
 				}
-				minutes[i] = m
 			}
 			fw.RollAtMinutes = minutes
 
 		case "roll_at":
-			var timeArrayStr string
-			if !d.AllArgs(&timeArrayStr) {
+			// Accept either a single comma-separated argument or
+			// multiple space-separated arguments. Collect all
+			// remaining args on the line and split on commas.
+			args := d.RemainingArgs()
+			if len(args) == 0 {
 				return d.ArgErr()
 			}
-			timeStr := strings.Split(timeArrayStr, ",")
-			times := make([]string, len(timeStr))
-			for i := range timeStr {
-				times[i] = strings.Trim(timeStr[i], " ")
+			var times []string
+			for _, arg := range args {
+				parts := strings.SplitSeq(arg, ",")
+				for p := range parts {
+					ts := strings.TrimSpace(p)
+					if ts == "" {
+						return d.Errf("parsing roll_at: empty value")
+					}
+					times = append(times, ts)
+				}
 			}
 			fw.RollAt = times
 
