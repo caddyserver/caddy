@@ -6,6 +6,7 @@ log one {
 		dir_mode 0755
 		roll_size 1gb
 		roll_uncompressed
+		roll_compression none
 		roll_local_time
 		roll_keep 5
 		roll_keep_for 90d
@@ -16,6 +17,7 @@ log two {
 		mode 0777
 		dir_mode from_file
 		roll_size 1gib
+		roll_compression zstd
 		roll_interval 12h
 		roll_at 00:00 06:00 12:00,18:00
 		roll_minutes 10 40 45,46
@@ -39,6 +41,7 @@ log two {
 					"filename": "/var/log/access.log",
 					"mode": "0644",
 					"output": "file",
+					"roll_compression": "none",
 					"roll_gzip": false,
 					"roll_keep": 5,
 					"roll_keep_days": 90,
@@ -61,6 +64,7 @@ log two {
 						"12:00",
 						"18:00"
 					],
+					"roll_compression": "zstd",
 					"roll_interval": 43200000000000,
 					"roll_keep": 10,
 					"roll_keep_days": 90,
