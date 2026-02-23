@@ -1,11 +1,25 @@
 :80
 
-log {
+log one {
 	output file /var/log/access.log {
+		mode 0644
+		dir_mode 0755
 		roll_size 1gb
 		roll_uncompressed
 		roll_local_time
 		roll_keep 5
+		roll_keep_for 90d
+	}
+}
+log two {
+	output file /var/log/access-2.log {
+		mode 0777
+		dir_mode from_file
+		roll_size 1gib
+		roll_interval 12h
+		roll_at 00:00 06:00 12:00,18:00
+		roll_minutes 10 40 45,46
+		roll_keep 10
 		roll_keep_for 90d
 	}
 }
@@ -15,12 +29,15 @@ log {
 		"logs": {
 			"default": {
 				"exclude": [
-					"http.log.access.log0"
+					"http.log.access.one",
+					"http.log.access.two"
 				]
 			},
-			"log0": {
+			"one": {
 				"writer": {
+					"dir_mode": "0755",
 					"filename": "/var/log/access.log",
+					"mode": "0644",
 					"output": "file",
 					"roll_gzip": false,
 					"roll_keep": 5,
@@ -29,7 +46,34 @@ log {
 					"roll_size_mb": 954
 				},
 				"include": [
-					"http.log.access.log0"
+					"http.log.access.one"
+				]
+			},
+			"two": {
+				"writer": {
+					"dir_mode": "from_file",
+					"filename": "/var/log/access-2.log",
+					"mode": "0777",
+					"output": "file",
+					"roll_at": [
+						"00:00",
+						"06:00",
+						"12:00",
+						"18:00"
+					],
+					"roll_interval": 43200000000000,
+					"roll_keep": 10,
+					"roll_keep_days": 90,
+					"roll_minutes": [
+						10,
+						40,
+						45,
+						46
+					],
+					"roll_size_mb": 1024
+				},
+				"include": [
+					"http.log.access.two"
 				]
 			}
 		}
@@ -42,7 +86,7 @@ log {
 						":80"
 					],
 					"logs": {
-						"default_logger_name": "log0"
+						"default_logger_name": "two"
 					}
 				}
 			}
