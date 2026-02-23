@@ -122,8 +122,15 @@ type FileWriter struct {
 	// See https://github.com/DeRuina/timberjack#%EF%B8%8F-rotation-notes--warnings for caveats
 	RollAt []string `json:"roll_at,omitempty"`
 
-	// Whether to compress rolled files. Default: true
+	// Whether to compress rolled files.
+	// Default: true.
+	// Deprecated: Use RollCompression instead, setting it to "none".
 	RollCompress *bool `json:"roll_gzip,omitempty"`
+
+	// RollCompression selects the compression algorithm for rolled files.
+	// Accepted values: "none", "gzip", "zstd".
+	// Default: gzip
+	RollCompression string `json:"roll_compression,omitempty"`
 
 	// Whether to use local timestamps in rolled filenames.
 	// Default: false
@@ -254,13 +261,32 @@ func (fw FileWriter) OpenWriter() (io.WriteCloser, error) {
 	if fw.RollKeepDays == 0 {
 		fw.RollKeepDays = 90
 	}
+
+	// Determine compression algorithm to use. Priority:
+	// 1) explicit RollCompression (none|gzip|zstd)
+	// 2) if RollCompress is unset or true -> gzip
+	// 3) if RollCompress is false -> none
+	var compression string
+	if fw.RollCompression != "" {
+		compression = strings.ToLower(strings.TrimSpace(fw.RollCompression))
+		if compression != "none" && compression != "gzip" && compression != "zstd" {
+			return nil, fmt.Errorf("invalid roll_compression: %s", fw.RollCompression)
+		}
+	} else {
+		if fw.RollCompress == nil || *fw.RollCompress {
+			compression = "gzip"
+		} else {
+			compression = "none"
+		}
+	}
+
 	return &timberjack.Logger{
 		Filename:         fw.Filename,
 		MaxSize:          fw.RollSizeMB,
 		MaxAge:           fw.RollKeepDays,
 		MaxBackups:       fw.RollKeep,
 		LocalTime:        fw.RollLocalTime,
-		Compress:         *fw.RollCompress,
+		Compression:      compression,
 		RotationInterval: fw.RollInterval,
 		RotateAtMinutes:  fw.RollAtMinutes,
 		RotateAt:         fw.RollAt,
@@ -332,6 +358,7 @@ func mkdirAllFromFile(dir string, fileMode os.FileMode) error {
 //	    roll_disabled
 //	    roll_size     <size>
 //	    roll_uncompressed
+//	    roll_compression <none|gzip|zstd>
 //	    roll_local_time
 //	    roll_keep     <num>
 //	    roll_keep_for <days>
@@ -411,6 +438,19 @@ func (fw *FileWriter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			fw.RollCompress = &f
 			if d.NextArg() {
 				return d.ArgErr()
+			}
+
+		case "roll_compression":
+			var comp string
+			if !d.AllArgs(&comp) {
+				return d.ArgErr()
+			}
+			comp = strings.ToLower(strings.TrimSpace(comp))
+			switch comp {
+			case "none", "gzip", "zstd":
+				fw.RollCompression = comp
+			default:
+				return d.Errf("parsing roll_compression: must be 'none', 'gzip' or 'zstd'")
 			}
 
 		case "roll_local_time":
