@@ -270,7 +270,7 @@ func (d *Dispenser) File() string {
 // targets are left unchanged. If all the targets are filled,
 // then true is returned.
 func (d *Dispenser) Args(targets ...*string) bool {
-	for i := 0; i < len(targets); i++ {
+	for i := range targets {
 		if !d.NextArg() {
 			return false
 		}

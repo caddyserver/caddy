@@ -151,7 +151,7 @@ func doHttpCallWithRetries(ctx caddy.Context, client *http.Client, request *http
 	var err error
 	const maxAttempts = 10
 
-	for i := 0; i < maxAttempts; i++ {
+	for i := range maxAttempts {
 		resp, err = attemptHttpCall(client, request)
 		if err != nil && i < maxAttempts-1 {
 			select {
