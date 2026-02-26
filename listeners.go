@@ -229,7 +229,7 @@ func (na NetworkAddress) JoinHostPort(offset uint) string {
 func (na NetworkAddress) Expand() []NetworkAddress {
 	size := na.PortRangeSize()
 	addrs := make([]NetworkAddress, size)
-	for portOffset := uint(0); portOffset < size; portOffset++ {
+	for portOffset := range size {
 		addrs[portOffset] = na.At(portOffset)
 	}
 	return addrs

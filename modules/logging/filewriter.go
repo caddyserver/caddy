@@ -63,7 +63,7 @@ func (m *fileMode) UnmarshalJSON(b []byte) error {
 
 // MarshalJSON satisfies json.Marshaler.
 func (m *fileMode) MarshalJSON() ([]byte, error) {
-	return []byte(fmt.Sprintf("\"%04o\"", *m)), nil
+	return fmt.Appendf(nil, "\"%04o\"", *m), nil
 }
 
 // parseFileMode parses a file mode string,

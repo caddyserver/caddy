@@ -442,7 +442,7 @@ func (t Transport) splitPos(path string) int {
 	for _, split := range t.SplitPath {
 		splitLen := len(split)
 
-		for i := 0; i < pathLen; i++ {
+		for i := range pathLen {
 			if path[i] >= utf8.RuneSelf {
 				if _, end := splitSearchNonASCII.IndexString(path, split); end > -1 {
 					return end
@@ -456,7 +456,7 @@ func (t Transport) splitPos(path string) int {
 			}
 
 			match := true
-			for j := 0; j < splitLen; j++ {
+			for j := range splitLen {
 				c := path[i+j]
 
 				if c >= utf8.RuneSelf {

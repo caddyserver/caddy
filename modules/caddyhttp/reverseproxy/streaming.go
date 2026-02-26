@@ -536,7 +536,7 @@ func maskBytes(key [4]byte, pos int, b []byte) int {
 	// Mask one word at a time.
 	n := (len(b) / wordSize) * wordSize
 	for i := 0; i < n; i += wordSize {
-		*(*uintptr)(unsafe.Pointer(uintptr(unsafe.Pointer(&b[0])) + uintptr(i))) ^= kw
+		*(*uintptr)(unsafe.Add(unsafe.Pointer(&b[0]), i)) ^= kw
 	}
 
 	// Mask one byte at a time for remaining bytes.

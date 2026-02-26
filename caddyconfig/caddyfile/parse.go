@@ -616,7 +616,7 @@ func (p *parser) doSingleImport(importFile string) ([]Token, error) {
 	if err != nil {
 		return nil, p.Errf("Failed to get absolute path of file: %s: %v", importFile, err)
 	}
-	for i := 0; i < len(importedTokens); i++ {
+	for i := range importedTokens {
 		importedTokens[i].File = filename
 	}
 
