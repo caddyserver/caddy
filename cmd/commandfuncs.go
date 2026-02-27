@@ -372,7 +372,7 @@ func cmdReload(fl Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("no config file to load")
 	}
 
-	adminAddr, err := DetermineAdminAPIAddress(addressFlag, config, configFlag, configAdapterFlag)
+	adminAddr, err := DetermineAdminAPIAddress(addressFlag, config, configFile, configAdapterFlag)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("couldn't determine admin API address: %v", err)
 	}
@@ -757,6 +757,7 @@ func handleEnvFileFlag(fl Flags) error {
 // need to interact with a running instance of Caddy via the admin API.
 func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io.Reader) (*http.Response, error) {
 	parsedAddr, err := caddy.ParseNetworkAddress(adminAddr)
+	log.Println("ADMIN ADDR:", adminAddr, parsedAddr)
 	if err != nil || parsedAddr.PortRangeSize() > 1 {
 		return nil, fmt.Errorf("invalid admin address %s: %v", adminAddr, err)
 	}
