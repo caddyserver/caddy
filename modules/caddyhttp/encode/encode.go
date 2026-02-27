@@ -307,14 +307,6 @@ func (rw *responseWriter) FlushError() error {
 	return http.NewResponseController(rw.ResponseWriter).Flush()
 }
 
-// Flush calls FlushError() and simply discards any error. It is only implemented for backwards
-// compatibility with legacy code that does not use FlushError; we know at least one sponsor
-// needs this. It should not be relied upon as a stable part of the exported API, as it may be
-// removed in the future.
-func (rw *responseWriter) Flush() {
-	_ = rw.FlushError()
-}
-
 // Write writes to the response. If the response qualifies,
 // it is encoded using the encoder, which is initialized
 // if not done so already.
