@@ -757,7 +757,6 @@ func handleEnvFileFlag(fl Flags) error {
 // need to interact with a running instance of Caddy via the admin API.
 func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io.Reader) (*http.Response, error) {
 	parsedAddr, err := caddy.ParseNetworkAddress(adminAddr)
-	log.Println("ADMIN ADDR:", adminAddr, parsedAddr)
 	if err != nil || parsedAddr.PortRangeSize() > 1 {
 		return nil, fmt.Errorf("invalid admin address %s: %v", adminAddr, err)
 	}
