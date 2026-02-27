@@ -486,7 +486,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) error {
 	// code to any HTTP/1.1 request message that lacks a Host header field and to any
 	// request message that contains more than one Host header field line or a Host
 	// header field with an invalid field value."
-	if r.Host == "" {
+	if r.ProtoMajor == 1 && r.ProtoMinor == 1 && r.Host == "" {
 		return HandlerError{
 			Err:        errors.New("rfc9112 forbids empty Host"),
 			StatusCode: http.StatusBadRequest,
