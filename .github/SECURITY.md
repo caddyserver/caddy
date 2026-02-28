@@ -1,4 +1,6 @@
 # Security Policy
+# google policy 
+# microsoft security 
 
 The Caddy project would like to make sure that it stays on top of all practically-exploitable vulnerabilities.
 
