@@ -418,7 +418,8 @@ func getReqTLSReplacement(req *http.Request, key string) (any, bool) {
 	field := strings.ToLower(key[len(reqTLSReplPrefix):])
 
 	if strings.HasPrefix(field, "client.") {
-		cert := getTLSPeerCert(req.TLS)
+		tlsConnectionState := req.TLS
+		cert := getTLSPeerCert(tlsConnectionState)
 		if cert == nil {
 			// Instead of returning (nil, false) here, we set it to a dummy
 			// value to fix #7530. This way, even if there is no client cert,
@@ -516,6 +517,12 @@ func getReqTLSReplacement(req *http.Request, key string) (any, bool) {
 			return pem.EncodeToMemory(&block), true
 		case "client.certificate_der_base64":
 			return base64.StdEncoding.EncodeToString(cert.Raw), true
+		case "client.certificate_chain_der_base64":
+			var chain []string
+			for _, cert := range tlsConnectionState.PeerCertificates {
+				chain = append(chain, base64.StdEncoding.EncodeToString(cert.Raw))
+			}
+			return base64.StdEncoding.EncodeToString([]byte(strings.Join(chain, "\n"))), true
 		default:
 			return nil, false
 		}
