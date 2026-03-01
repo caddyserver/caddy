@@ -1,0 +1,51 @@
+https://example.com
+basic_auth
+
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "authentication",
+													"providers": {
+														"http_basic": {
+															"hash": {
+																"algorithm": "bcrypt"
+															},
+															"hash_cache": {}
+														}
+													}
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		}
+	}
+}

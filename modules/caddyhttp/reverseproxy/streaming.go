@@ -35,6 +35,7 @@ import (
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/net/http/httpguts"
 
+	"github.com/caddyserver/caddy/v2/internal/ascii"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
@@ -63,13 +64,13 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 
 	// Taken from https://github.com/golang/go/commit/5c489514bc5e61ad9b5b07bd7d8ec65d66a0512a
 	// We know reqUpType is ASCII, it's checked by the caller.
-	if !asciiIsPrint(resUpType) {
+	if !ascii.IsPrint(resUpType) {
 		if c := logger.Check(zapcore.DebugLevel, "backend tried to switch to invalid protocol"); c != nil {
 			c.Write(zap.String("backend_upgrade", resUpType))
 		}
 		return
 	}
-	if !asciiEqualFold(reqUpType, resUpType) {
+	if !ascii.EqualFold(reqUpType, resUpType) {
 		if c := logger.Check(zapcore.DebugLevel, "backend tried to switch to unexpected protocol via Upgrade header"); c != nil {
 			c.Write(
 				zap.String("backend_upgrade", resUpType),

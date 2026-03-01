@@ -1,0 +1,59 @@
+https://example.com
+basic_auth bcrypt {
+	Aladdin $2a$14$U5nG2p.Ac09gzn9oo5aRe.YnsXn30UdXA6pRUn45KFqADG636dRHa
+}
+
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "authentication",
+													"providers": {
+														"http_basic": {
+															"accounts": [
+																{
+																	"password": "$2a$14$U5nG2p.Ac09gzn9oo5aRe.YnsXn30UdXA6pRUn45KFqADG636dRHa",
+																	"username": "Aladdin"
+																}
+															],
+															"hash": {
+																"algorithm": "bcrypt"
+															},
+															"hash_cache": {}
+														}
+													}
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		}
+	}
+}
