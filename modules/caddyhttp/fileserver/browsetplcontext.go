@@ -329,7 +329,7 @@ func (l byName) Len() int      { return len(l.Items) }
 func (l byName) Swap(i, j int) { l.Items[i], l.Items[j] = l.Items[j], l.Items[i] }
 
 func (l byName) Less(i, j int) bool {
-	return strings.ToLower(l.Items[i].Name) < strings.ToLower(l.Items[j].Name)
+	return naturalLess(strings.ToLower(l.Items[i].Name), strings.ToLower(l.Items[j].Name))
 }
 
 func (l byNameDirFirst) Len() int      { return len(l.Items) }
@@ -338,7 +338,7 @@ func (l byNameDirFirst) Swap(i, j int) { l.Items[i], l.Items[j] = l.Items[j], l.
 func (l byNameDirFirst) Less(i, j int) bool {
 	// sort by name if both are dir or file
 	if l.Items[i].IsDir == l.Items[j].IsDir {
-		return strings.ToLower(l.Items[i].Name) < strings.ToLower(l.Items[j].Name)
+		return naturalLess(strings.ToLower(l.Items[i].Name), strings.ToLower(l.Items[j].Name))
 	}
 	// sort dir ahead of file
 	return l.Items[i].IsDir
