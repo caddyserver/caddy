@@ -34,6 +34,7 @@ import (
 	"os"
 	"path"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -265,6 +266,7 @@ func (admin *AdminConfig) newAdminHandler(addr NetworkAddress, remote bool, _ Co
 	addRoute("/"+rawConfigKey+"/", handlerLabel, AdminHandlerFunc(handleConfig))
 	addRoute("/id/", handlerLabel, AdminHandlerFunc(handleConfigID))
 	addRoute("/stop", handlerLabel, AdminHandlerFunc(handleStop))
+	addRoute("/status", handlerLabel, AdminHandlerFunc(handleStatus))
 
 	// register debugging endpoints
 	addRouteWithMetrics("/debug/pprof/", handlerLabel, http.HandlerFunc(pprof.Index))
@@ -1470,3 +1472,57 @@ var (
 	localAdminServer, remoteAdminServer *http.Server
 	identityCertCache                   *certmagic.Cache
 )
+
+// handleStatus returns a snapshot of the current state of the Caddy instance.
+func handleStatus(w http.ResponseWriter, r *http.Request) error {
+	if r.Method != http.MethodGet {
+		return APIError{
+			HTTPStatus: http.StatusMethodNotAllowed,
+			Err:        fmt.Errorf("method not allowed"),
+		}
+	}
+
+	ctx := ActiveContext()
+	_, fullVer := Version()
+
+	var mem runtime.MemStats
+	runtime.ReadMemStats(&mem)
+
+	// Build the base status structure
+	statusObj := map[string]any{
+		"version":     fullVer,
+		"uptime_secs": time.Since(ProcessStartTime).Seconds(),
+		"memory": map[string]any{
+			"allocated_bytes": mem.Alloc,
+			"system_bytes":    mem.Sys,
+		},
+		"goroutines": runtime.NumGoroutine(),
+		"apps":       map[string]any{},
+	}
+
+	// Iterate through running apps if a config is active
+	if ctx.cfg != nil {
+		for appName := range ctx.cfg.AppsRaw {
+			appIntf, err := ctx.App(appName)
+			if err != nil {
+				continue // Ignore if the app instance cannot be retrieved
+			}
+
+			// Dynamically check if the App implements the StatusReporter interface
+			if reporter, ok := appIntf.(StatusReporter); ok {
+				appStatus, err := reporter.Status()
+				if err == nil {
+					statusObj["apps"].(map[string]any)[appName] = appStatus
+				} else {
+					statusObj["apps"].(map[string]any)[appName] = map[string]any{"error": err.Error()}
+				}
+			} else {
+				// The app exists but does not support advanced status reporting yet
+				statusObj["apps"].(map[string]any)[appName] = map[string]any{"status": "running"}
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	return json.NewEncoder(w).Encode(statusObj)
+}
