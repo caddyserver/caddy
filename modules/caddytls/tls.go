@@ -29,6 +29,7 @@ import (
 
 	"github.com/caddyserver/certmagic"
 	"github.com/libdns/libdns"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
@@ -40,11 +41,32 @@ import (
 func init() {
 	caddy.RegisterModule(TLS{})
 	caddy.RegisterModule(AutomateLoader{})
+
+	// Initialize metrics definitions.
+	// Note: We do not register them here. They are registered in Provision()
+	// to ensure they are attached to the correct Caddy metrics registry.
+	certificatesObtained = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "caddy",
+		Subsystem: "tls",
+		Name:      "obtain_total",
+		Help:      "Total number of certificates obtained or renewed",
+	}, []string{"issuer", "result"})
+
+	onDemandAskTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "caddy",
+		Subsystem: "tls",
+		Name:      "on_demand_ask_total",
+		Help:      "Total number of on-demand TLS ask requests",
+	}, []string{"result"})
 }
 
 var (
 	certCache   *certmagic.Cache
 	certCacheMu sync.RWMutex
+
+	// Metrics for TLS certificate management.
+	certificatesObtained *prometheus.CounterVec
+	onDemandAskTotal     *prometheus.CounterVec
 )
 
 // TLS provides TLS facilities including certificate
@@ -152,6 +174,21 @@ func (TLS) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up the configuration for the TLS app.
 func (t *TLS) Provision(ctx caddy.Context) error {
+	// Register metrics with Caddy's internal registry.
+	// We handle AlreadyRegisteredError to support graceful reloads without panics.
+	if registry := ctx.GetMetricsRegistry(); registry != nil {
+		if err := registry.Register(certificatesObtained); err != nil {
+			if are, ok := err.(prometheus.AlreadyRegisteredError); ok {
+				certificatesObtained = are.ExistingCollector.(*prometheus.CounterVec)
+			}
+		}
+		if err := registry.Register(onDemandAskTotal); err != nil {
+			if are, ok := err.(prometheus.AlreadyRegisteredError); ok {
+				onDemandAskTotal = are.ExistingCollector.(*prometheus.CounterVec)
+			}
+		}
+	}
+
 	eventsAppIface, err := ctx.App("events")
 	if err != nil {
 		return fmt.Errorf("getting events app: %v", err)
@@ -904,6 +941,10 @@ func (t *TLS) storageCleanInterval() time.Duration {
 
 // onEvent translates CertMagic events into Caddy events then dispatches them.
 func (t *TLS) onEvent(ctx context.Context, eventName string, data map[string]any) error {
+	if eventName == "cert_obtained" {
+		certificatesObtained.WithLabelValues("local", "success").Inc()
+	}
+
 	evt := t.events.Emit(t.ctx, eventName, data)
 	return evt.Aborted
 }
