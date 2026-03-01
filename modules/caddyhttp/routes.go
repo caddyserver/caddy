@@ -97,7 +97,10 @@ type Route struct {
 	MatcherSets MatcherSets         `json:"-"`
 	Handlers    []MiddlewareHandler `json:"-"`
 
-	middleware []Middleware
+	middleware  []Middleware
+	metrics     *Metrics
+	metricsCtx  caddy.Context
+	handlerName string
 }
 
 // Empty returns true if the route has all zero/default values.
@@ -162,12 +165,20 @@ func (r *Route) ProvisionHandlers(ctx caddy.Context, metrics *Metrics) error {
 		r.Handlers = append(r.Handlers, handler.(MiddlewareHandler))
 	}
 
+	// Store metrics info for route-level instrumentation (applied once
+	// per route in wrapRoute, instead of per-handler which was redundant).
+	r.metrics = metrics
+	r.metricsCtx = ctx
+	if len(r.Handlers) > 0 {
+		r.handlerName = caddy.GetModuleName(r.Handlers[0])
+	}
+
 	// Make ProvisionHandlers idempotent by clearing the middleware field
 	r.middleware = []Middleware{}
 
 	// pre-compile the middleware handler chain
 	for _, midhandler := range r.Handlers {
-		r.middleware = append(r.middleware, wrapMiddleware(ctx, midhandler, metrics))
+		r.middleware = append(r.middleware, wrapMiddleware(ctx, midhandler))
 	}
 	return nil
 }
@@ -298,6 +309,16 @@ func wrapRoute(route Route) Middleware {
 				nextCopy = route.middleware[i](nextCopy)
 			}
 
+			// Apply metrics instrumentation once for the entire route,
+			// rather than wrapping each individual handler. This avoids
+			// redundant metrics collection that caused significant CPU
+			// overhead (see issue #4644).
+			if route.metrics != nil {
+				nextCopy = newMetricsInstrumentedRoute(
+					route.metricsCtx, route.handlerName, nextCopy, route.metrics,
+				)
+			}
+
 			return nextCopy.ServeHTTP(rw, req)
 		})
 	}
@@ -306,20 +327,14 @@ func wrapRoute(route Route) Middleware {
 // wrapMiddleware wraps mh such that it can be correctly
 // appended to a list of middleware in preparation for
 // compiling into a handler chain.
-func wrapMiddleware(ctx caddy.Context, mh MiddlewareHandler, metrics *Metrics) Middleware {
-	handlerToUse := mh
-	if metrics != nil {
-		// wrap the middleware with metrics instrumentation
-		handlerToUse = newMetricsInstrumentedHandler(ctx, caddy.GetModuleName(mh), mh, metrics)
-	}
-
+func wrapMiddleware(ctx caddy.Context, mh MiddlewareHandler) Middleware {
 	return func(next Handler) Handler {
 		return HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 			// EXPERIMENTAL: Trace each module that gets invoked
 			if server, ok := r.Context().Value(ServerCtxKey).(*Server); ok && server != nil {
-				server.logTrace(handlerToUse)
+				server.logTrace(mh)
 			}
-			return handlerToUse.ServeHTTP(w, r, next)
+			return mh.ServeHTTP(w, r, next)
 		})
 	}
 }

@@ -214,21 +214,24 @@ func serverNameFromContext(ctx context.Context) string {
 	return srv.name
 }
 
-type metricsInstrumentedHandler struct {
+// metricsInstrumentedRoute wraps a compiled route Handler with metrics
+// instrumentation. It wraps the entire compiled route chain once,
+// collecting metrics only once per route match.
+type metricsInstrumentedRoute struct {
 	handler string
-	mh      MiddlewareHandler
+	next    Handler
 	metrics *Metrics
 }
 
-func newMetricsInstrumentedHandler(ctx caddy.Context, handler string, mh MiddlewareHandler, metrics *Metrics) *metricsInstrumentedHandler {
-	metrics.init.Do(func() {
-		initHTTPMetrics(ctx, metrics)
+func newMetricsInstrumentedRoute(ctx caddy.Context, handler string, next Handler, m *Metrics) *metricsInstrumentedRoute {
+	m.init.Do(func() {
+		initHTTPMetrics(ctx, m)
 	})
 
-	return &metricsInstrumentedHandler{handler, mh, metrics}
+	return &metricsInstrumentedRoute{handler: handler, next: next, metrics: m}
 }
 
-func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, next Handler) error {
+func (h *metricsInstrumentedRoute) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
 	server := serverNameFromContext(r.Context())
 	labels := prometheus.Labels{"server": server, "handler": h.handler}
 	method := metrics.SanitizeMethod(r.Method)
@@ -267,7 +270,7 @@ func (h *metricsInstrumentedHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 		return false
 	})
 	wrec := NewResponseRecorder(w, nil, writeHeaderRecorder)
-	err := h.mh.ServeHTTP(wrec, r, next)
+	err := h.next.ServeHTTP(wrec, r)
 	dur := time.Since(start).Seconds()
 	h.metrics.httpMetrics.requestCount.With(labels).Inc()
 
