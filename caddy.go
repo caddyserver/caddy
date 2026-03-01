@@ -227,12 +227,18 @@ func changeConfig(method, path string, input []byte, ifMatchHeader string, force
 	idx := make(map[string]string)
 	err = indexConfigObjects(rawCfg[rawConfigKey], "/"+rawConfigKey, idx)
 	if err != nil {
-		err2 := rollbackRawCfg()
-		if err2 != nil {
-			err = errors.Join(err, err2)
+		if len(rawCfgJSON) > 0 {
+			var oldCfg any
+			err2 := json.Unmarshal(rawCfgJSON, &oldCfg)
+			if err2 != nil {
+				err = fmt.Errorf("%v; additionally, restoring old config: %v", err, err2)
+			}
+			rawCfg[rawConfigKey] = oldCfg
+		} else {
+			rawCfg[rawConfigKey] = nil
 		}
 		return APIError{
-			HTTPStatus: http.StatusInternalServerError,
+			HTTPStatus: http.StatusBadRequest,
 			Err:        fmt.Errorf("indexing config: %v", err),
 		}
 	}
@@ -246,10 +252,14 @@ func changeConfig(method, path string, input []byte, ifMatchHeader string, force
 			// with what caddy is still running; we need to
 			// unmarshal it again because it's likely that
 			// pointers deep in our rawCfg map were modified
-			err2 := rollbackRawCfg()
+			var oldCfg any
+			err2 := json.Unmarshal(rawCfgJSON, &oldCfg)
 			if err2 != nil {
 				err = fmt.Errorf("%v; additionally, restoring old config: %v", err, err2)
 			}
+			rawCfg[rawConfigKey] = oldCfg
+		} else {
+			rawCfg[rawConfigKey] = nil
 		}
 
 		return fmt.Errorf("loading new config: %v", err)
@@ -266,34 +276,12 @@ func changeConfig(method, path string, input []byte, ifMatchHeader string, force
 	return nil
 }
 
-func rollbackRawCfg() error {
-	var oldCfg any
-	if len(rawCfgJSON) != 0 {
-		err := json.Unmarshal(rawCfgJSON, &oldCfg)
-		if err != nil {
-			return err
-		}
-		rawCfg[rawConfigKey] = oldCfg
-	} else {
-		rawCfg[rawConfigKey] = nil
-	}
-	return nil
-}
-
 // readConfig traverses the current config to path
 // and writes its JSON encoding to out.
 func readConfig(path string, out io.Writer) error {
 	rawCfgMu.RLock()
 	defer rawCfgMu.RUnlock()
 	return unsyncedConfigAccess(http.MethodGet, path, nil, out)
-}
-func writeToIdIndex(index map[string]string, key, val string) error {
-	_, found := index[key]
-	if found {
-		return errors.New("multiple keys found: " + key)
-	}
-	index[key] = val
-	return nil
 }
 
 // indexConfigObjects recursively searches ptr for object fields named
@@ -305,20 +293,19 @@ func indexConfigObjects(ptr any, configPath string, index map[string]string) err
 	case map[string]any:
 		for k, v := range val {
 			if k == idKey {
+				var idStr string
 				switch idVal := v.(type) {
 				case string:
-					err := writeToIdIndex(index, idVal, configPath)
-					if err != nil {
-						return err
-					}
+					idStr = idVal
 				case float64: // all JSON numbers decode as float64
-					err := writeToIdIndex(index, fmt.Sprintf("%v", idVal), configPath)
-					if err != nil {
-						return err
-					}
+					idStr = fmt.Sprintf("%v", idVal)
 				default:
 					return fmt.Errorf("%s: %s field must be a string or number", configPath, idKey)
 				}
+				if existingPath, ok := index[idStr]; ok {
+					return fmt.Errorf("duplicate ID '%s' found at %s and %s", idStr, existingPath, configPath)
+				}
+				index[idStr] = configPath
 				continue
 			}
 			// traverse this object property recursively
