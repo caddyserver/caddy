@@ -1,9 +1,11 @@
 package caddy
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/prometheus/client_golang/prometheus"
+	io_prometheus_client "github.com/prometheus/client_model/go"
 
 	"github.com/caddyserver/caddy/v2/internal/metrics"
 )
@@ -82,3 +84,64 @@ func (d *delegator) WriteHeader(code int) {
 func (d *delegator) Unwrap() http.ResponseWriter {
 	return d.ResponseWriter
 }
+
+type MetricsRegistererGatherer interface {
+	prometheus.Registerer
+	prometheus.Gatherer
+}
+type registryGatherer struct {
+	registry prometheus.Registerer
+	gatherer prometheus.Gatherer
+}
+
+// Gather implements prometheus.Gatherer.
+func (r *registryGatherer) Gather() ([]*io_prometheus_client.MetricFamily, error) {
+	return r.gatherer.Gather()
+}
+
+// MustRegister calls `MustRegister` on the backing registry one collector
+// at a time to capture the module at which the call may have panicked. Panics
+// of duplicate registration are ignored.
+func (r *registryGatherer) MustRegister(cs ...prometheus.Collector) {
+	var current prometheus.Collector
+	defer func() {
+		if r := recover(); r != nil {
+			err, ok := r.(error)
+			if !ok {
+				panic(r)
+			}
+			if !errors.Is(err, prometheus.AlreadyRegisteredError{
+				ExistingCollector: current,
+				NewCollector:      current,
+			}) {
+				panic(err)
+			}
+		}
+	}()
+	for _, current = range cs {
+		r.registry.MustRegister(current)
+	}
+}
+
+// Register implements prometheus.Registerer. Errors of duplicate registration
+// are ignored.
+func (r *registryGatherer) Register(c prometheus.Collector) error {
+	if err := r.registry.Register(c); err != nil &&
+		!errors.Is(err, prometheus.AlreadyRegisteredError{
+			ExistingCollector: c,
+			NewCollector:      c,
+		}) {
+		return err
+	}
+	return nil
+}
+
+// Unregister implements prometheus.Registerer.
+func (r *registryGatherer) Unregister(c prometheus.Collector) bool {
+	return r.registry.Unregister(c)
+}
+
+var (
+	_ prometheus.Registerer = (*registryGatherer)(nil)
+	_ prometheus.Gatherer   = (*registryGatherer)(nil)
+)

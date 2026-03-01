@@ -18,8 +18,6 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/prometheus/client_golang/prometheus"
-
 	"github.com/caddyserver/caddy/v2"
 )
 
@@ -33,7 +31,7 @@ func init() {
 // See the Metrics module for a configurable endpoint that is usable if the
 // Admin API is disabled.
 type AdminMetrics struct {
-	registry *prometheus.Registry
+	registry caddy.MetricsRegistererGatherer
 
 	metricsHandler http.Handler
 }
