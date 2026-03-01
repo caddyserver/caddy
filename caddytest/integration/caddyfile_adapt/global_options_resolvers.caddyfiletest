@@ -1,0 +1,77 @@
+{
+	email test@example.com
+	dns mock
+	tls_resolvers 1.1.1.1 8.8.8.8
+	acme_dns
+}
+
+example.com {
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"issuers": [
+							{
+								"challenges": {
+									"dns": {
+										"resolvers": [
+											"1.1.1.1",
+											"8.8.8.8"
+										]
+									}
+								},
+								"email": "test@example.com",
+								"module": "acme"
+							},
+							{
+								"ca": "https://acme.zerossl.com/v2/DV90",
+								"challenges": {
+									"dns": {
+										"resolvers": [
+											"1.1.1.1",
+											"8.8.8.8"
+										]
+									}
+								},
+								"email": "test@example.com",
+								"module": "acme"
+							}
+						]
+					}
+				]
+			},
+			"dns": {
+				"name": "mock"
+			},
+			"resolvers": [
+				"1.1.1.1",
+				"8.8.8.8"
+			]
+		}
+	}
+}
