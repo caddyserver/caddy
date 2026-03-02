@@ -366,7 +366,7 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 
 	// set up upstreams
 	for _, u := range h.Upstreams {
-		h.provisionUpstream(u)
+		h.provisionUpstream(u, false)
 	}
 
 	if h.HealthChecks != nil {
@@ -537,18 +537,11 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 		} else {
 			upstreams = dUpstreams
 			for _, dUp := range dUpstreams {
-				h.provisionUpstream(dUp)
+				h.provisionUpstream(dUp, true)
 			}
 			if c := h.logger.Check(zapcore.DebugLevel, "provisioned dynamic upstreams"); c != nil {
 				c.Write(zap.Int("count", len(dUpstreams)))
 			}
-			defer func() {
-				// these upstreams are dynamic, so they are only used for this iteration
-				// of the proxy loop; be sure to let them go away when we're done with them
-				for _, upstream := range dUpstreams {
-					_, _ = hosts.Delete(upstream.String())
-				}
-			}()
 		}
 	}
 
@@ -1290,9 +1283,16 @@ func (h *Handler) directRequest(req *http.Request, di DialInfo) {
 	req.URL.Host = reqHost
 }
 
-func (h Handler) provisionUpstream(upstream *Upstream) {
-	// create or get the host representation for this upstream
-	upstream.fillHost()
+func (h Handler) provisionUpstream(upstream *Upstream, dynamic bool) {
+	// create or get the host representation for this upstream;
+	// dynamic upstreams are tracked in a separate map with last-seen
+	// timestamps so their health state persists across requests without
+	// being reference-counted (and thus discarded between requests).
+	if dynamic {
+		upstream.fillDynamicHost()
+	} else {
+		upstream.fillHost()
+	}
 
 	// give it the circuit breaker, if any
 	upstream.cb = h.CB

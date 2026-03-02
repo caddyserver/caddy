@@ -19,7 +19,9 @@ import (
 	"fmt"
 	"net/netip"
 	"strconv"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -130,6 +132,43 @@ func (u *Upstream) fillHost() {
 		host = existingHost.(*Host)
 	}
 	u.Host = host
+}
+
+// fillDynamicHost is like fillHost, but stores the host in the separate
+// dynamicHosts map rather than the reference-counted UsagePool. Dynamic
+// hosts are not reference-counted; instead, they are retained as long as
+// they are actively seen and are evicted by a background cleanup goroutine
+// after dynamicHostIdleExpiry of inactivity. This preserves health state
+// (e.g. passive fail counts) across sequential requests.
+func (u *Upstream) fillDynamicHost() {
+	dynamicHostsMu.Lock()
+	entry, ok := dynamicHosts[u.String()]
+	if ok {
+		entry.lastSeen = time.Now()
+		dynamicHosts[u.String()] = entry
+		u.Host = entry.host
+	} else {
+		h := new(Host)
+		dynamicHosts[u.String()] = dynamicHostEntry{host: h, lastSeen: time.Now()}
+		u.Host = h
+	}
+	dynamicHostsMu.Unlock()
+
+	// ensure the cleanup goroutine is running
+	dynamicHostsCleanerOnce.Do(func() {
+		go func() {
+			for {
+				time.Sleep(dynamicHostCleanupInterval)
+				dynamicHostsMu.Lock()
+				for addr, entry := range dynamicHosts {
+					if time.Since(entry.lastSeen) > dynamicHostIdleExpiry {
+						delete(dynamicHosts, addr)
+					}
+				}
+				dynamicHostsMu.Unlock()
+			}
+		}()
+	})
 }
 
 // Host is the basic, in-memory representation of the state of a remote host.
@@ -267,6 +306,28 @@ func GetDialInfo(ctx context.Context) (DialInfo, bool) {
 // allows the state of remote hosts to be preserved
 // through config reloads.
 var hosts = caddy.NewUsagePool()
+
+// dynamicHosts tracks hosts that were provisioned from dynamic upstream
+// sources. Unlike static upstreams which are reference-counted via the
+// UsagePool, dynamic upstream hosts are not reference-counted. Instead,
+// their last-seen time is updated on each request, and a background
+// goroutine evicts entries that have been idle for dynamicHostIdleExpiry.
+// This preserves health state (e.g. passive fail counts) across requests
+// to the same dynamic backend.
+var (
+	dynamicHosts               = make(map[string]dynamicHostEntry)
+	dynamicHostsMu             sync.RWMutex
+	dynamicHostsCleanerOnce    sync.Once
+	dynamicHostCleanupInterval = 5 * time.Minute
+	dynamicHostIdleExpiry      = time.Hour
+)
+
+// dynamicHostEntry holds a Host and the last time it was seen
+// in a set of dynamic upstreams returned for a request.
+type dynamicHostEntry struct {
+	host     *Host
+	lastSeen time.Time
+}
 
 // dialInfoVarKey is the key used for the variable that holds
 // the dial info for the upstream connection.
