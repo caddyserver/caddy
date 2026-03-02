@@ -386,6 +386,68 @@ func TestReverseProxyHealthCheck(t *testing.T) {
 	tester.AssertGetResponse("http://localhost:9080/", 200, "Hello, World!")
 }
 
+// TestReverseProxyHealthCheckPortUsed verifies that health_port is actually
+// used for active health checks and not the upstream's main port. This is a
+// regression test for https://github.com/caddyserver/caddy/issues/7524.
+func TestReverseProxyHealthCheckPortUsed(t *testing.T) {
+	// upstream server: serves proxied requests normally, but returns 503 for
+	// /health so that if health checks mistakenly hit this port the upstream
+	// gets marked unhealthy and the proxy returns 503.
+	upstreamSrv := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if req.URL.Path == "/health" {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			_, _ = w.Write([]byte("Hello, World!"))
+		}),
+	}
+	ln0, err := net.Listen("tcp", "127.0.0.1:2022")
+	if err != nil {
+		t.Fatalf("failed to listen on 127.0.0.1:2022: %v", err)
+	}
+	go upstreamSrv.Serve(ln0)
+	t.Cleanup(func() { upstreamSrv.Close(); ln0.Close() })
+
+	// separate health check server on the configured health_port: returns 200
+	// so the upstream is marked healthy only if health checks go to this port.
+	healthSrv := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			_, _ = w.Write([]byte("ok"))
+		}),
+	}
+	ln1, err := net.Listen("tcp", "127.0.0.1:2023")
+	if err != nil {
+		t.Fatalf("failed to listen on 127.0.0.1:2023: %v", err)
+	}
+	go healthSrv.Serve(ln1)
+	t.Cleanup(func() { healthSrv.Close(); ln1.Close() })
+
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`
+	{
+		skip_install_trust
+		admin localhost:2999
+		http_port     9080
+		https_port    9443
+		grace_period 1ns
+	}
+	http://localhost:9080 {
+		reverse_proxy {
+			to localhost:2022
+
+			health_uri /health
+			health_port 2023
+			health_interval 10ms
+			health_timeout 100ms
+			health_passes 1
+			health_fails 1
+		}
+	}
+	`, "caddyfile")
+	tester.AssertGetResponse("http://localhost:9080/", 200, "Hello, World!")
+}
+
 func TestReverseProxyHealthCheckUnixSocket(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.SkipNow()
