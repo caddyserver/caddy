@@ -88,7 +88,7 @@ type Config struct {
 	storage      certmagic.Storage
 	eventEmitter eventEmitter
 
-	cancelFunc context.CancelFunc
+	cancelFunc context.CancelCauseFunc
 
 	// fileSystems is a dict of fileSystems that will later be loaded from and added to.
 	fileSystems FileSystems
@@ -416,7 +416,7 @@ func run(newCfg *Config, start bool) (Context, error) {
 		// partially copied from provisionContext
 		if err != nil {
 			globalMetrics.configSuccess.Set(0)
-			ctx.cfg.cancelFunc()
+			ctx.cfg.cancelFunc(fmt.Errorf("configuration start error: %w", err))
 
 			if currentCtx.cfg != nil {
 				certmagic.Default.Storage = currentCtx.cfg.storage
@@ -492,7 +492,7 @@ func provisionContext(newCfg *Config, replaceAdminServer bool) (Context, error) 
 	// cleanup occurs when we return if there
 	// was an error; if no error, it will get
 	// cleaned up on next config cycle
-	ctx, cancel := NewContext(Context{Context: context.Background(), cfg: newCfg})
+	ctx, cancelCause := NewContextWithCause(Context{Context: context.Background(), cfg: newCfg})
 	defer func() {
 		if err != nil {
 			globalMetrics.configSuccess.Set(0)
@@ -501,7 +501,7 @@ func provisionContext(newCfg *Config, replaceAdminServer bool) (Context, error) 
 			// since the associated config won't be used;
 			// this will cause all modules that were newly
 			// provisioned to clean themselves up
-			cancel()
+			cancelCause(fmt.Errorf("configuration error: %w", err))
 
 			// also undo any other state changes we made
 			if currentCtx.cfg != nil {
@@ -509,7 +509,7 @@ func provisionContext(newCfg *Config, replaceAdminServer bool) (Context, error) 
 			}
 		}
 	}()
-	newCfg.cancelFunc = cancel // clean up later
+	newCfg.cancelFunc = cancelCause // clean up later
 
 	// set up logging before anything bad happens
 	if newCfg.Logging == nil {
@@ -729,7 +729,7 @@ func unsyncedStop(ctx Context) {
 	}
 
 	// clean up all modules
-	ctx.cfg.cancelFunc()
+	ctx.cfg.cancelFunc(fmt.Errorf("stopping apps"))
 }
 
 // Validate loads, provisions, and validates
@@ -737,7 +737,7 @@ func unsyncedStop(ctx Context) {
 func Validate(cfg *Config) error {
 	_, err := run(cfg, false)
 	if err == nil {
-		cfg.cancelFunc() // call Cleanup on all modules
+		cfg.cancelFunc(fmt.Errorf("validation complete")) // call Cleanup on all modules
 	}
 	return err
 }

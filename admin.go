@@ -749,10 +749,14 @@ func stopAdminServer(srv *http.Server) error {
 	if srv == nil {
 		return fmt.Errorf("no admin server")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	timeout := 10 * time.Second
+	ctx, cancel := context.WithTimeoutCause(context.Background(), timeout, fmt.Errorf("stopping admin server: %ds timeout", int(timeout.Seconds())))
 	defer cancel()
 	err := srv.Shutdown(ctx)
 	if err != nil {
+		if cause := context.Cause(ctx); cause != nil && errors.Is(err, context.DeadlineExceeded) {
+			err = cause
+		}
 		return fmt.Errorf("shutting down admin server: %v", err)
 	}
 	Log().Named("admin").Info("stopped previous server", zap.String("address", srv.Addr))

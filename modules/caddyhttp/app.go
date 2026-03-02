@@ -18,6 +18,7 @@ import (
 	"cmp"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"maps"
 	"net"
@@ -711,9 +712,10 @@ func (app *App) Stop() error {
 	// enforce grace period if configured
 	if app.GracePeriod > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(app.GracePeriod))
+		timeout := time.Duration(app.GracePeriod)
+		ctx, cancel = context.WithTimeoutCause(ctx, timeout, fmt.Errorf("server graceful shutdown %ds timeout", int(timeout.Seconds())))
 		defer cancel()
-		app.logger.Info("servers shutting down; grace period initiated", zap.Duration("duration", time.Duration(app.GracePeriod)))
+		app.logger.Info("servers shutting down; grace period initiated", zap.Duration("duration", timeout))
 	} else {
 		app.logger.Info("servers shutting down with eternal grace period")
 	}
@@ -739,6 +741,9 @@ func (app *App) Stop() error {
 		}
 
 		if err := server.server.Shutdown(ctx); err != nil {
+			if cause := context.Cause(ctx); cause != nil && errors.Is(err, context.DeadlineExceeded) {
+				err = cause
+			}
 			app.logger.Error("server shutdown",
 				zap.Error(err),
 				zap.Strings("addresses", server.Listen))
@@ -762,6 +767,9 @@ func (app *App) Stop() error {
 		}
 
 		if err := server.h3server.Shutdown(ctx); err != nil {
+			if cause := context.Cause(ctx); cause != nil && errors.Is(err, context.DeadlineExceeded) {
+				err = cause
+			}
 			app.logger.Error("HTTP/3 server shutdown",
 				zap.Error(err),
 				zap.Strings("addresses", server.Listen))

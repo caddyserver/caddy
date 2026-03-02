@@ -512,7 +512,7 @@ func ListenerUsage(network, addr string) int {
 // contextAndCancelFunc groups context and its cancelFunc
 type contextAndCancelFunc struct {
 	context.Context
-	context.CancelFunc
+	context.CancelCauseFunc
 }
 
 // sharedQUICState manages GetConfigForClient
@@ -542,17 +542,17 @@ func (sqs *sharedQUICState) getConfigForClient(ch *tls.ClientHelloInfo) (*tls.Co
 
 // addState adds tls.Config and activeRequests to the map if not present and returns the corresponding context and its cancelFunc
 // so that when cancelled, the active tls.Config will change
-func (sqs *sharedQUICState) addState(tlsConfig *tls.Config) (context.Context, context.CancelFunc) {
+func (sqs *sharedQUICState) addState(tlsConfig *tls.Config) (context.Context, context.CancelCauseFunc) {
 	sqs.rmu.Lock()
 	defer sqs.rmu.Unlock()
 
 	if cacc, ok := sqs.tlsConfs[tlsConfig]; ok {
-		return cacc.Context, cacc.CancelFunc
+		return cacc.Context, cacc.CancelCauseFunc
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	wrappedCancel := func() {
-		cancel()
+	ctx, cancel := context.WithCancelCause(context.Background())
+	wrappedCancel := func(cause error) {
+		cancel(cause)
 
 		sqs.rmu.Lock()
 		defer sqs.rmu.Unlock()
@@ -608,13 +608,13 @@ func fakeClosedErr(l interface{ Addr() net.Addr }) error {
 // indicating that it is pretending to be closed so that the
 // server using it can terminate, while the underlying
 // socket is actually left open.
-var errFakeClosed = fmt.Errorf("listener 'closed' 😉")
+var errFakeClosed = fmt.Errorf("QUIC listener 'closed' 😉")
 
 type fakeCloseQuicListener struct {
 	closed              int32 // accessed atomically; belongs to this struct only
 	*sharedQuicListener       // embedded, so we also become a quic.EarlyListener
 	context             context.Context
-	contextCancel       context.CancelFunc
+	contextCancel       context.CancelCauseFunc
 }
 
 // Currently Accept ignores the passed context, however a situation where
@@ -637,7 +637,7 @@ func (fcql *fakeCloseQuicListener) Accept(_ context.Context) (*quic.Conn, error)
 
 func (fcql *fakeCloseQuicListener) Close() error {
 	if atomic.CompareAndSwapInt32(&fcql.closed, 0, 1) {
-		fcql.contextCancel()
+		fcql.contextCancel(errFakeClosed)
 	} else if atomic.CompareAndSwapInt32(&fcql.closed, 1, 2) {
 		_, _ = listenerPool.Delete(fcql.sharedQuicListener.key)
 	}
