@@ -1278,7 +1278,12 @@ func (h *Handler) directRequest(req *http.Request, di DialInfo) {
 	// add client address to the host to let transport differentiate requests from different clients
 	if ppt, ok := h.Transport.(ProxyProtocolTransport); ok && ppt.ProxyProtocolEnabled() {
 		if proxyProtocolInfo, ok := caddyhttp.GetVar(req.Context(), proxyProtocolInfoVarKey).(ProxyProtocolInfo); ok {
-			reqHost = proxyProtocolInfo.AddrPort.String() + "->" + reqHost
+			// encode the request so it plays well with h2 transport, it's unnecessary for h1 but anyway
+			// The issue is that h2 transport will use the address to determine if new connections are needed
+			// to roundtrip requests but the without escaping, new connections are constantly created and closed until
+			// file descriptors are exhausted.
+			// see: https://github.com/caddyserver/caddy/issues/7529
+			reqHost = url.QueryEscape(proxyProtocolInfo.AddrPort.String() + "->" + reqHost)
 		}
 	}
 
