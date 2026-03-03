@@ -243,22 +243,49 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 		}
 	}
 
+	// build certmagic.Config and attach it to the policy
+	storage := ap.storage
+	if storage == nil {
+		storage = tlsApp.ctx.Storage()
+	}
+	cfg, err := ap.makeCertMagicConfig(tlsApp, issuers, storage)
+	if err != nil {
+		return err
+	}
+	certCacheMu.RLock()
+	ap.magic = certmagic.New(certCache, cfg)
+	certCacheMu.RUnlock()
+
+	// give issuers a chance to see the config pointer
+	for _, issuer := range ap.magic.Issuers {
+		if annoying, ok := issuer.(ConfigSetter); ok {
+			annoying.SetConfig(ap.magic)
+		}
+	}
+
+	return nil
+}
+
+// makeCertMagicConfig constructs a certmagic.Config for this policy using the
+// provided issuers and storage. It encapsulates common logic shared between
+// Provision and RebuildCertMagic so we don't duplicate code.
+func (ap *AutomationPolicy) makeCertMagicConfig(tlsApp *TLS, issuers []certmagic.Issuer, storage certmagic.Storage) (certmagic.Config, error) {
+	// key source
 	keyType := ap.KeyType
 	if keyType != "" {
 		var err error
 		keyType, err = caddy.NewReplacer().ReplaceOrErr(ap.KeyType, true, true)
 		if err != nil {
-			return fmt.Errorf("invalid key type %s: %s", ap.KeyType, err)
+			return certmagic.Config{}, fmt.Errorf("invalid key type %s: %s", ap.KeyType, err)
 		}
 		if _, ok := supportedCertKeyTypes[keyType]; !ok {
-			return fmt.Errorf("unrecognized key type: %s", keyType)
+			return certmagic.Config{}, fmt.Errorf("unrecognized key type: %s", keyType)
 		}
 	}
 	keySource := certmagic.StandardKeyGenerator{
 		KeyType: supportedCertKeyTypes[keyType],
 	}
 
-	storage := ap.storage
 	if storage == nil {
 		storage = tlsApp.ctx.Storage()
 	}
@@ -277,7 +304,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 		if noProtections {
 			if !ap.hadExplicitManagers {
 				// no managers, no explicitly-configured permission module, this is a config error
-				return fmt.Errorf("on-demand TLS cannot be enabled without a permission module to prevent abuse; please refer to documentation for details")
+				return certmagic.Config{}, fmt.Errorf("on-demand TLS cannot be enabled without a permission module to prevent abuse; please refer to documentation for details")
 			}
 			// allow on-demand to be enabled but only for the purpose of the Managers; issuance won't be allowed from Issuers
 			tlsApp.logger.Warn("on-demand TLS can only get certificates from the configured external manager(s) because no ask endpoint / permission module is specified")
@@ -334,7 +361,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 		}
 	}
 
-	template := certmagic.Config{
+	cfg := certmagic.Config{
 		MustStaple:         ap.MustStaple,
 		RenewalWindowRatio: ap.RenewalWindowRatio,
 		KeySource:          keySource,
@@ -349,8 +376,31 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 		Issuers: issuers,
 		Logger:  tlsApp.logger,
 	}
+
+	return cfg, nil
+}
+
+// IsProvisioned reports whether the automation policy has been
+// provisioned. A provisioned policy has an initialized CertMagic
+// instance (i.e. ap.magic != nil).
+func (ap *AutomationPolicy) IsProvisioned() bool { return ap.magic != nil }
+
+// RebuildCertMagic rebuilds the policy's CertMagic configuration from the
+// policy's already-populated fields (Issuers, Managers, storage, etc.) and
+// replaces the internal CertMagic instance. This is a lightweight
+// alternative to calling Provision because it does not re-provision
+// modules or re-run module Provision; instead, it constructs a new
+// certmagic.Config and calls SetConfig on issuers so they receive updated
+// templates (for example, alternate HTTP/TLS ports supplied by the HTTP
+// app). RebuildCertMagic should only be called when the policy's required
+// fields are already populated.
+func (ap *AutomationPolicy) RebuildCertMagic(tlsApp *TLS) error {
+	cfg, err := ap.makeCertMagicConfig(tlsApp, ap.Issuers, ap.storage)
+	if err != nil {
+		return err
+	}
 	certCacheMu.RLock()
-	ap.magic = certmagic.New(certCache, template)
+	ap.magic = certmagic.New(certCache, cfg)
 	certCacheMu.RUnlock()
 
 	// sometimes issuers may need the parent certmagic.Config in

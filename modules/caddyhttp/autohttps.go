@@ -614,6 +614,27 @@ func (app *App) createAutomationPolicies(ctx caddy.Context, internalNames, tails
 		}
 	}
 
+	// Ensure automation policies' CertMagic configs are rebuilt when
+	// ACME issuer templates may have been modified above (for example,
+	// alternate ports filled in by the HTTP app). If a policy is already
+	// provisioned, perform a lightweight rebuild of the CertMagic config
+	// so issuers receive SetConfig with the updated templates; otherwise
+	// run a normal Provision to initialize the policy.
+	for i, ap := range app.tlsApp.Automation.Policies {
+		// If the policy is already provisioned, rebuild only the CertMagic
+		// config so issuers get SetConfig with updated templates. Otherwise
+		// provision the policy normally (which may load modules).
+		if ap.IsProvisioned() {
+			if err := ap.RebuildCertMagic(app.tlsApp); err != nil {
+				return fmt.Errorf("rebuilding certmagic config for automation policy %d: %v", i, err)
+			}
+		} else {
+			if err := ap.Provision(app.tlsApp); err != nil {
+				return fmt.Errorf("provisioning automation policy %d after auto-HTTPS defaults: %v", i, err)
+			}
+		}
+	}
+
 	if basePolicy == nil {
 		// no base policy found; we will make one
 		basePolicy = new(caddytls.AutomationPolicy)
