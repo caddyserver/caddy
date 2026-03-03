@@ -484,7 +484,13 @@ func setResourceLimits(logger *zap.Logger) func() {
 	// See https://pkg.go.dev/runtime/debug#SetMemoryLimit
 	_, _ = memlimit.SetGoMemLimitWithOpts(
 		memlimit.WithLogger(
-			slog.New(zapslog.NewHandler(logger.Core())),
+			slog.New(zapslog.NewHandler(
+				logger.Core(),
+				zapslog.WithName("memlimit"),
+				// the default enables traces at ERROR level, this disables
+				// them by setting it to a level higher than any other level
+				zapslog.AddStacktraceAt(slog.Level(127)),
+			)),
 		),
 		memlimit.WithProvider(
 			memlimit.ApplyFallback(

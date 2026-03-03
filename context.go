@@ -608,6 +608,11 @@ func (ctx Context) Slogger() *slog.Logger {
 		core     zapcore.Core
 		moduleID string
 	)
+
+	// the default enables traces at ERROR level, this disables
+	// them by setting it to a level higher than any other level
+	tracesOpt := zapslog.AddStacktraceAt(slog.Level(127))
+
 	if ctx.cfg == nil {
 		// often the case in tests; just use a dev logger
 		l, err := zap.NewDevelopment()
@@ -616,16 +621,16 @@ func (ctx Context) Slogger() *slog.Logger {
 		}
 
 		core = l.Core()
-		handler = zapslog.NewHandler(core)
+		handler = zapslog.NewHandler(core, tracesOpt)
 	} else {
 		mod := ctx.Module()
 		if mod == nil {
 			core = Log().Core()
-			handler = zapslog.NewHandler(core)
+			handler = zapslog.NewHandler(core, tracesOpt)
 		} else {
 			moduleID = string(mod.CaddyModule().ID)
 			core = ctx.cfg.Logging.Logger(mod).Core()
-			handler = zapslog.NewHandler(core, zapslog.WithName(moduleID))
+			handler = zapslog.NewHandler(core, zapslog.WithName(moduleID), tracesOpt)
 		}
 	}
 
