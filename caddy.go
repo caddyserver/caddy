@@ -227,8 +227,18 @@ func changeConfig(method, path string, input []byte, ifMatchHeader string, force
 	idx := make(map[string]string)
 	err = indexConfigObjects(rawCfg[rawConfigKey], "/"+rawConfigKey, idx)
 	if err != nil {
+		if len(rawCfgJSON) > 0 {
+			var oldCfg any
+			err2 := json.Unmarshal(rawCfgJSON, &oldCfg)
+			if err2 != nil {
+				err = fmt.Errorf("%v; additionally, restoring old config: %v", err, err2)
+			}
+			rawCfg[rawConfigKey] = oldCfg
+		} else {
+			rawCfg[rawConfigKey] = nil
+		}
 		return APIError{
-			HTTPStatus: http.StatusInternalServerError,
+			HTTPStatus: http.StatusBadRequest,
 			Err:        fmt.Errorf("indexing config: %v", err),
 		}
 	}
@@ -248,6 +258,8 @@ func changeConfig(method, path string, input []byte, ifMatchHeader string, force
 				err = fmt.Errorf("%v; additionally, restoring old config: %v", err, err2)
 			}
 			rawCfg[rawConfigKey] = oldCfg
+		} else {
+			rawCfg[rawConfigKey] = nil
 		}
 
 		return fmt.Errorf("loading new config: %v", err)
@@ -281,14 +293,19 @@ func indexConfigObjects(ptr any, configPath string, index map[string]string) err
 	case map[string]any:
 		for k, v := range val {
 			if k == idKey {
+				var idStr string
 				switch idVal := v.(type) {
 				case string:
-					index[idVal] = configPath
+					idStr = idVal
 				case float64: // all JSON numbers decode as float64
-					index[fmt.Sprintf("%v", idVal)] = configPath
+					idStr = fmt.Sprintf("%v", idVal)
 				default:
 					return fmt.Errorf("%s: %s field must be a string or number", configPath, idKey)
 				}
+				if existingPath, ok := index[idStr]; ok {
+					return fmt.Errorf("duplicate ID '%s' found at %s and %s", idStr, existingPath, configPath)
+				}
+				index[idStr] = configPath
 				continue
 			}
 			// traverse this object property recursively
