@@ -73,6 +73,7 @@ func (adminUpstreams) handleUpstreams(w http.ResponseWriter, r *http.Request) er
 
 	// Collect the results to respond with
 	results := []upstreamStatus{}
+	knownHosts := make(map[string]struct{})
 
 	// Iterate over the upstream pool (needs to be fast)
 	var rangeErr error
@@ -95,6 +96,8 @@ func (adminUpstreams) handleUpstreams(w http.ResponseWriter, r *http.Request) er
 			return false
 		}
 
+		knownHosts[address] = struct{}{}
+
 		results = append(results, upstreamStatus{
 			Address:     address,
 			NumRequests: upstream.NumRequests(),
@@ -103,7 +106,17 @@ func (adminUpstreams) handleUpstreams(w http.ResponseWriter, r *http.Request) er
 		return true
 	})
 
-	// If an error happened during the range, return it
+	currentInFlight := getInFlightRequests()
+	for address, count := range currentInFlight {
+		if _, exists := knownHosts[address]; !exists && count > 0 {
+			results = append(results, upstreamStatus{
+				Address:     address,
+				NumRequests: int(count),
+				Fails:       0,
+			})
+		}
+	}
+
 	if rangeErr != nil {
 		return rangeErr
 	}
