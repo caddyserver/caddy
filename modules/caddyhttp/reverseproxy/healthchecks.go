@@ -359,6 +359,12 @@ func (h *Handler) doActiveHealthCheckForAllHosts() {
 				dialInfoUpstream = &Upstream{
 					Dial: h.HealthChecks.Active.Upstream,
 				}
+			} else if upstream.activeHealthCheckPort != 0 {
+				// health_port overrides the port; addr has already been updated
+				// with the health port, so use its address for dialing
+				dialInfoUpstream = &Upstream{
+					Dial: addr.JoinHostPort(0),
+				}
 			}
 			dialInfo, _ := dialInfoUpstream.fillDialInfo(repl)
 
