@@ -40,6 +40,18 @@ forward_auth localhost:9000 {
 														{
 															"handler": "headers",
 															"request": {
+																"delete": [
+																	"1"
+																]
+															}
+														}
+													]
+												},
+												{
+													"handle": [
+														{
+															"handler": "headers",
+															"request": {
 																"set": {
 																	"1": [
 																		"{http.reverse_proxy.header.A}"
@@ -59,6 +71,18 @@ forward_auth localhost:9000 {
 																	}
 																}
 															]
+														}
+													]
+												},
+												{
+													"handle": [
+														{
+															"handler": "headers",
+															"request": {
+																"delete": [
+																	"B"
+																]
+															}
 														}
 													]
 												},
@@ -94,6 +118,18 @@ forward_auth localhost:9000 {
 														{
 															"handler": "headers",
 															"request": {
+																"delete": [
+																	"3"
+																]
+															}
+														}
+													]
+												},
+												{
+													"handle": [
+														{
+															"handler": "headers",
+															"request": {
 																"set": {
 																	"3": [
 																		"{http.reverse_proxy.header.C}"
@@ -121,6 +157,18 @@ forward_auth localhost:9000 {
 														{
 															"handler": "headers",
 															"request": {
+																"delete": [
+																	"D"
+																]
+															}
+														}
+													]
+												},
+												{
+													"handle": [
+														{
+															"handler": "headers",
+															"request": {
 																"set": {
 																	"D": [
 																		"{http.reverse_proxy.header.D}"
@@ -140,6 +188,18 @@ forward_auth localhost:9000 {
 																	}
 																}
 															]
+														}
+													]
+												},
+												{
+													"handle": [
+														{
+															"handler": "headers",
+															"request": {
+																"delete": [
+																	"5"
+																]
+															}
 														}
 													]
 												},
