@@ -1,15 +1,14 @@
 # Security Policy
 
-The Caddy project would like to make sure that it stays on top of all practically-exploitable vulnerabilities.
+The Caddy project would like to make sure that it stays on top of all relevant and practically-exploitable vulnerabilities.
 
 
 ## Supported Versions
 
-| Version  | Supported |
-| -------- | ----------|
-| 2.latest | ✔️        |
-| 1.x      | :x:       |
-| < 1.x    | :x:       |
+| Version     | Supported |
+| ----------- | ----------|
+| 2.latest    | ✔️        |
+| <= 2.latest | :x:       |
 
 
 ## Acceptable Scope
@@ -26,6 +25,8 @@ Client-side exploits are out of scope. In other words, it is not a bug in Caddy 
 
 Security bugs in code dependencies (including Go's standard library) are out of scope. Instead, if a dependency has patched a relevant security bug, please feel free to open a public issue or pull request to update that dependency in our code.
 
+We accept security reports and patches, but do not assign CVEs, for code that has not been released with a non-prerelease tag.
+
 
 ## Reporting a Vulnerability
 
@@ -33,7 +34,7 @@ We get a lot of difficult reports that turn out to be invalid. Clear, obvious re
 
 First please ensure your report falls within the accepted scope of security bugs (above).
 
-**YOU MUST DISCLOSE THE USE OF LLMs ("AI") INVOLVED IN ANY WAY.** Whether you are using AI for discovery, as part of writing the report or its replies, and/or testing or validating proofs and changes, we require you to mention the extent of it. **FAILURE TO INCLUDE A DISCLOSURE MAY LEAD TO IMMEDIATE DISMISSAL OF YOUR REPORT AND POTENTIAL BLOCKLISTING.**
+:warning: **YOU MUST DISCLOSE WHETHER YOU USED LLMs ("AI") IN ANY WAY.** Whether you are using AI for discovery, as part of writing the report or its replies, and/or testing or validating proofs and changes, we require you to mention the extent of it. **FAILURE TO INCLUDE A DISCLOSURE EVEN IF YOU DO NOT USE AI MAY LEAD TO IMMEDIATE DISMISSAL OF YOUR REPORT AND POTENTIAL BLOCKLISTING.** We will not waste our time chatting with bots. But if you're a human, pull up a chair and we'll drink some chocolate milk.
 
 We'll need enough information to verify the bug and make a patch. To speed things up, please include:
 
