@@ -312,10 +312,12 @@ func (m MatchVarsRE) MatchWithError(r *http.Request) (bool, error) {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	for key, val := range m {
 		var varValue any
+		var fromPlaceholder bool
 		if strings.HasPrefix(key, "{") &&
 			strings.HasSuffix(key, "}") &&
 			strings.Count(key, "{") == 1 {
 			varValue, _ = repl.Get(strings.Trim(key, "{}"))
+			fromPlaceholder = true
 		} else {
 			varValue = vars[key]
 		}
@@ -334,7 +336,14 @@ func (m MatchVarsRE) MatchWithError(r *http.Request) (bool, error) {
 			varStr = fmt.Sprintf("%v", vv)
 		}
 
-		valExpanded := repl.ReplaceAll(varStr, "")
+		// Only expand placeholders in values from literal variable names
+		// (e.g. map outputs). Values resolved from placeholder keys are
+		// already final and must not be re-expanded, as that would allow
+		// user input like {env.SECRET} to be evaluated.
+		valExpanded := varStr
+		if !fromPlaceholder {
+			valExpanded = repl.ReplaceAll(varStr, "")
+		}
 		if match := val.Match(valExpanded, repl); match {
 			return match, nil
 		}

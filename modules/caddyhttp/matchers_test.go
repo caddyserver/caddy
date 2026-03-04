@@ -967,6 +967,7 @@ func TestVarREMatcher(t *testing.T) {
 		desc       string
 		match      MatchVarsRE
 		input      VarsMiddleware
+		headers    http.Header
 		expect     bool
 		expectRepl map[string]string
 	}{
@@ -1001,6 +1002,14 @@ func TestVarREMatcher(t *testing.T) {
 			input:  VarsMiddleware{"Var1": "var1Value"},
 			expect: true,
 		},
+		{
+			desc:       "placeholder key value containing braces is not double-expanded",
+			match:      MatchVarsRE{"{http.request.header.X-Input}": &MatchRegexp{Pattern: ".+", Name: "val"}},
+			input:      VarsMiddleware{},
+			headers:    http.Header{"X-Input": []string{"{env.HOME}"}},
+			expect:     true,
+			expectRepl: map[string]string{"val.0": "{env.HOME}"},
+		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
@@ -1017,7 +1026,7 @@ func TestVarREMatcher(t *testing.T) {
 			}
 
 			// set up the fake request and its Replacer
-			req := &http.Request{URL: new(url.URL), Method: http.MethodGet}
+			req := &http.Request{URL: new(url.URL), Method: http.MethodGet, Header: tc.headers}
 			repl := caddy.NewReplacer()
 			ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
 			ctx = context.WithValue(ctx, VarsCtxKey, make(map[string]any))
