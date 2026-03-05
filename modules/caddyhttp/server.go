@@ -1230,7 +1230,8 @@ func validHostHeader(host string) bool {
 		}
 
 		// Must parse as a valid IPv6 address
-		if net.ParseIP(ipLiteral) == nil {
+		addr, err := netip.ParseAddr(ipLiteral)
+		if err != nil || !addr.Is6() {
 			return false
 		}
 

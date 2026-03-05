@@ -517,6 +517,7 @@ func TestServeHTTP_InvalidHostHeader(t *testing.T) {
 		{"double colon host", "example.com::80", http.StatusBadRequest},
 		{"non-numeric port", "example.com:80a", http.StatusBadRequest},
 		{"port out of range", "example.com:99999", http.StatusBadRequest},
+		{"bracketed IPv4", "[127.0.0.1]", http.StatusBadRequest},
 	}
 
 	for _, tt := range tests {
