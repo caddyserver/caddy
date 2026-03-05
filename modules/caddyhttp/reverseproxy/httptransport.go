@@ -448,7 +448,7 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 				// complete the handshake before returning the connection
 				if rt.TLSHandshakeTimeout != 0 {
 					var cancel context.CancelFunc
-					ctx, cancel = context.WithTimeout(ctx, rt.TLSHandshakeTimeout)
+					ctx, cancel = context.WithTimeoutCause(ctx, rt.TLSHandshakeTimeout, fmt.Errorf("HTTP transport TLS handshake %ds timeout", int(rt.TLSHandshakeTimeout.Seconds())))
 					defer cancel()
 				}
 				err = tlsConn.HandshakeContext(ctx)

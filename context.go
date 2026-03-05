@@ -63,10 +63,17 @@ type Context struct {
 // modules which are loaded will be properly unloaded.
 // See standard library context package's documentation.
 func NewContext(ctx Context) (Context, context.CancelFunc) {
+	newCtx, cancelCause := NewContextWithCause(ctx)
+	return newCtx, func() { cancelCause(nil) }
+}
+
+// NewContextWithCause is like NewContext but returns a context.CancelCauseFunc.
+// EXPERIMENTAL: This API is subject to change.
+func NewContextWithCause(ctx Context) (Context, context.CancelCauseFunc) {
 	newCtx := Context{moduleInstances: make(map[string][]Module), cfg: ctx.cfg, metricsRegistry: prometheus.NewPedanticRegistry()}
-	c, cancel := context.WithCancel(ctx.Context)
-	wrappedCancel := func() {
-		cancel()
+	c, cancel := context.WithCancelCause(ctx.Context)
+	wrappedCancel := func(cause error) {
+		cancel(cause)
 
 		for _, f := range ctx.cleanupFuncs {
 			f()
