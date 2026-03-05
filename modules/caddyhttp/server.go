@@ -493,6 +493,14 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
+	// RFC 3986 §3.2.2: validate Host header syntax for IP-literals and port values
+	if !validHostHeader(r.Host) {
+		return HandlerError{
+			Err:        fmt.Errorf("invalid Host header: %q", r.Host),
+			StatusCode: http.StatusBadRequest,
+		}
+	}
+
 	// execute the primary handler chain
 	return s.primaryHandlerChain.ServeHTTP(w, r)
 }
@@ -1194,4 +1202,81 @@ func getHTTP3Network(originalNetwork string) (string, error) {
 		return "", fmt.Errorf("network '%s' cannot handle HTTP/3 connections", originalNetwork)
 	}
 	return h3Network, nil
+}
+
+// validHostHeader returns true if the Host header value is syntactically
+// valid per RFC 3986 §3.2.2. It rejects malformed IP-literals (e.g. [],
+// [123g::1], unclosed brackets) and invalid port values.
+func validHostHeader(host string) bool {
+	if host == "" {
+		return true // empty host is handled separately per HTTP version
+	}
+
+	if strings.HasPrefix(host, "[") {
+		// IP-literal: find closing bracket
+		closeBracket := strings.LastIndex(host, "]")
+		if closeBracket < 0 {
+			return false // unclosed bracket: e.g. [::1
+		}
+
+		ipLiteral := host[1:closeBracket]
+		if len(ipLiteral) == 0 {
+			return false // empty: []
+		}
+
+		// IPvFuture (starts with 'v') — reject; not a valid IPv6 address
+		if len(ipLiteral) > 0 && (ipLiteral[0] == 'v' || ipLiteral[0] == 'V') {
+			return false
+		}
+
+		// Must parse as a valid IPv6 address
+		if net.ParseIP(ipLiteral) == nil {
+			return false
+		}
+
+		// Optional port after the closing bracket
+		rest := host[closeBracket+1:]
+		if rest == "" {
+			return true
+		}
+		if !strings.HasPrefix(rest, ":") {
+			return false
+		}
+		return validPort(rest[1:])
+	}
+
+	// Non-IP-literal: must have at most one colon (for port)
+	colonCount := strings.Count(host, ":")
+	if colonCount > 1 {
+		return false // e.g. example.com::80
+	}
+	if colonCount == 1 {
+		_, portStr, err := net.SplitHostPort(host)
+		if err != nil {
+			return false
+		}
+		return validPort(portStr)
+	}
+
+	return true
+}
+
+// validPort returns true if the string is a valid numeric port (0–65535).
+func validPort(port string) bool {
+	if port == "" {
+		return false
+	}
+	for _, c := range port {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	n := 0
+	for _, c := range port {
+		n = n*10 + int(c-'0')
+		if n > 65535 {
+			return false
+		}
+	}
+	return true
 }

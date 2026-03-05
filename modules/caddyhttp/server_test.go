@@ -499,3 +499,55 @@ func TestServer_DetermineTrustedProxy_MatchRightMostUntrustedFirst(t *testing.T)
 	assert.True(t, trusted)
 	assert.Equal(t, clientIP, "90.100.110.120")
 }
+
+func TestServeHTTP_InvalidHostHeader(t *testing.T) {
+	tests := []struct {
+		name       string
+		host       string
+		wantStatus int
+	}{
+		{"valid host", "example.com", http.StatusOK},
+		{"valid IPv6", "[::1]", http.StatusOK},
+		{"valid with port", "example.com:80", http.StatusOK},
+
+		{"empty IP-literal", "[]", http.StatusBadRequest},
+		{"unclosed bracket", "[::1", http.StatusBadRequest},
+		{"invalid IPv6", "[12345]", http.StatusBadRequest},
+		{"invalid hex char", "[123g::1]", http.StatusBadRequest},
+		{"double colon host", "example.com::80", http.StatusBadRequest},
+		{"non-numeric port", "example.com:80a", http.StatusBadRequest},
+		{"port out of range", "example.com:99999", http.StatusBadRequest},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &Server{}
+
+			// minimal handler that always returns 200
+			s.primaryHandlerChain = HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+				w.WriteHeader(http.StatusOK)
+				return nil
+			})
+
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.Host = tt.host
+			req.Proto = "HTTP/1.1"
+			req.ProtoMajor = 1
+			req.ProtoMinor = 1
+
+			rr := httptest.NewRecorder()
+			err := s.serveHTTP(rr, req)
+
+			gotStatus := rr.Code
+			if err != nil {
+				if he, ok := err.(HandlerError); ok {
+					gotStatus = he.StatusCode
+				}
+			}
+
+			if gotStatus != tt.wantStatus {
+				t.Errorf("host %q: got status %d, want %d", tt.host, gotStatus, tt.wantStatus)
+			}
+		})
+	}
+}
