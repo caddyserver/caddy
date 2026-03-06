@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -27,12 +28,20 @@ func init() {
 	caddy.RegisterModule(PKIIntermediateCAPool{})
 	caddy.RegisterModule(StoragePool{})
 	caddy.RegisterModule(HTTPCertPool{})
+	caddy.RegisterModule(SystemCAPool{})
+	caddy.RegisterModule(CombinedCAPool{})
 }
 
 // The interface to be implemented by all guest modules part of
 // the namespace 'tls.ca_pool.source.'
 type CA interface {
 	CertPool() *x509.CertPool
+}
+
+// CertificateProvider is an optional interface that CA pool sources
+// can implement to expose their underlying certificates for combining.
+type CertificateProvider interface {
+	Certificates() []*x509.Certificate
 }
 
 // InlineCAPool is a certificate authority pool provider coming from
@@ -44,7 +53,8 @@ type InlineCAPool struct {
 	// these CAs will be rejected.
 	TrustedCACerts []string `json:"trusted_ca_certs,omitempty"`
 
-	pool *x509.CertPool
+	pool  *x509.CertPool
+	certs []*x509.Certificate
 }
 
 // CaddyModule implements caddy.Module.
@@ -60,14 +70,17 @@ func (icp InlineCAPool) CaddyModule() caddy.ModuleInfo {
 // Provision implements caddy.Provisioner.
 func (icp *InlineCAPool) Provision(ctx caddy.Context) error {
 	caPool := x509.NewCertPool()
+	var certs []*x509.Certificate
 	for i, clientCAString := range icp.TrustedCACerts {
 		clientCA, err := decodeBase64DERCert(clientCAString)
 		if err != nil {
 			return fmt.Errorf("parsing certificate at index %d: %v", i, err)
 		}
 		caPool.AddCert(clientCA)
+		certs = append(certs, clientCA)
 	}
 	icp.pool = caPool
+	icp.certs = certs
 
 	return nil
 }
@@ -103,6 +116,11 @@ func (icp InlineCAPool) CertPool() *x509.CertPool {
 	return icp.pool
 }
 
+// Certificates implements CertificateProvider.
+func (icp InlineCAPool) Certificates() []*x509.Certificate {
+	return icp.certs
+}
+
 // FileCAPool generates trusted root certificates pool from the designated DER and PEM file
 type FileCAPool struct {
 	// TrustedCACertPEMFiles is a list of PEM file names
@@ -111,7 +129,8 @@ type FileCAPool struct {
 	// these CA certificates will be rejected.
 	TrustedCACertPEMFiles []string `json:"pem_files,omitempty"`
 
-	pool *x509.CertPool
+	pool  *x509.CertPool
+	certs []*x509.Certificate
 }
 
 // CaddyModule implements caddy.Module.
@@ -127,14 +146,31 @@ func (FileCAPool) CaddyModule() caddy.ModuleInfo {
 // Loads and decodes the DER and pem files to generate the certificate pool
 func (f *FileCAPool) Provision(ctx caddy.Context) error {
 	caPool := x509.NewCertPool()
+	var certs []*x509.Certificate
 	for _, pemFile := range f.TrustedCACertPEMFiles {
 		pemContents, err := os.ReadFile(pemFile)
 		if err != nil {
 			return fmt.Errorf("reading %s: %v", pemFile, err)
 		}
 		caPool.AppendCertsFromPEM(pemContents)
+		// Parse PEM to extract certificates
+		for len(pemContents) > 0 {
+			var block *pem.Block
+			block, pemContents = pem.Decode(pemContents)
+			if block == nil {
+				break
+			}
+			if block.Type != "CERTIFICATE" {
+				continue
+			}
+			cert, err := x509.ParseCertificate(block.Bytes)
+			if err == nil {
+				certs = append(certs, cert)
+			}
+		}
 	}
 	f.pool = caPool
+	f.certs = certs
 	return nil
 }
 
@@ -166,13 +202,19 @@ func (f FileCAPool) CertPool() *x509.CertPool {
 	return f.pool
 }
 
+// Certificates implements CertificateProvider.
+func (f FileCAPool) Certificates() []*x509.Certificate {
+	return f.certs
+}
+
 // PKIRootCAPool extracts the trusted root certificates from Caddy's native 'pki' app
 type PKIRootCAPool struct {
 	// List of the Authority names that are configured in the `pki` app whose root certificates are trusted
 	Authority []string `json:"authority,omitempty"`
 
-	ca   []*caddypki.CA
-	pool *x509.CertPool
+	ca    []*caddypki.CA
+	pool  *x509.CertPool
+	certs []*x509.Certificate
 }
 
 // CaddyModule implements caddy.Module.
@@ -201,10 +243,14 @@ func (p *PKIRootCAPool) Provision(ctx caddy.Context) error {
 	}
 
 	caPool := x509.NewCertPool()
+	var certs []*x509.Certificate
 	for _, ca := range p.ca {
-		caPool.AddCert(ca.RootCertificate())
+		rootCert := ca.RootCertificate()
+		caPool.AddCert(rootCert)
+		certs = append(certs, rootCert)
 	}
 	p.pool = caPool
+	p.certs = certs
 
 	return nil
 }
@@ -238,13 +284,19 @@ func (p PKIRootCAPool) CertPool() *x509.CertPool {
 	return p.pool
 }
 
+// Certificates implements CertificateProvider.
+func (p PKIRootCAPool) Certificates() []*x509.Certificate {
+	return p.certs
+}
+
 // PKIIntermediateCAPool extracts the trusted intermediate certificates from Caddy's native 'pki' app
 type PKIIntermediateCAPool struct {
 	// List of the Authority names that are configured in the `pki` app whose intermediate certificates are trusted
 	Authority []string `json:"authority,omitempty"`
 
-	ca   []*caddypki.CA
-	pool *x509.CertPool
+	ca    []*caddypki.CA
+	pool  *x509.CertPool
+	certs []*x509.Certificate
 }
 
 // CaddyModule implements caddy.Module.
@@ -273,12 +325,15 @@ func (p *PKIIntermediateCAPool) Provision(ctx caddy.Context) error {
 	}
 
 	caPool := x509.NewCertPool()
+	var certs []*x509.Certificate
 	for _, ca := range p.ca {
 		for _, c := range ca.IntermediateCertificateChain() {
 			caPool.AddCert(c)
+			certs = append(certs, c)
 		}
 	}
 	p.pool = caPool
+	p.certs = certs
 	return nil
 }
 
@@ -311,6 +366,11 @@ func (p PKIIntermediateCAPool) CertPool() *x509.CertPool {
 	return p.pool
 }
 
+// Certificates implements CertificateProvider.
+func (p PKIIntermediateCAPool) Certificates() []*x509.Certificate {
+	return p.certs
+}
+
 // StoragePool extracts the trusted certificates root from Caddy storage
 type StoragePool struct {
 	// The storage module where the trusted root certificates are stored. Absent
@@ -322,6 +382,7 @@ type StoragePool struct {
 
 	storage certmagic.Storage
 	pool    *x509.CertPool
+	certs   []*x509.Certificate
 }
 
 // CaddyModule implements caddy.Module.
@@ -354,6 +415,7 @@ func (ca *StoragePool) Provision(ctx caddy.Context) error {
 		return fmt.Errorf("no PEM keys specified")
 	}
 	caPool := x509.NewCertPool()
+	var certs []*x509.Certificate
 	for _, caID := range ca.PEMKeys {
 		bs, err := ca.storage.Load(ctx, caID)
 		if err != nil {
@@ -362,8 +424,25 @@ func (ca *StoragePool) Provision(ctx caddy.Context) error {
 		if !caPool.AppendCertsFromPEM(bs) {
 			return fmt.Errorf("failed to add certificate '%s' to pool", caID)
 		}
+		// Parse PEM to extract certificates
+		pemData := bs
+		for len(pemData) > 0 {
+			var block *pem.Block
+			block, pemData = pem.Decode(pemData)
+			if block == nil {
+				break
+			}
+			if block.Type != "CERTIFICATE" {
+				continue
+			}
+			cert, err := x509.ParseCertificate(block.Bytes)
+			if err == nil {
+				certs = append(certs, cert)
+			}
+		}
 	}
 	ca.pool = caPool
+	ca.certs = certs
 
 	return nil
 }
@@ -413,9 +492,13 @@ func (p StoragePool) CertPool() *x509.CertPool {
 	return p.pool
 }
 
+// Certificates implements CertificateProvider.
+func (p StoragePool) Certificates() []*x509.Certificate {
+	return p.certs
+}
+
 // TLSConfig holds configuration related to the TLS configuration for the
 // transport/client.
-// copied from with minor modifications: modules/caddyhttp/reverseproxy/httptransport.go
 type TLSConfig struct {
 	// Provides the guest module that provides the trusted certificate authority (CA) certificates
 	CARaw json.RawMessage `json:"ca,omitempty" caddy:"namespace=tls.ca_pool.source inline_key=provider"`
@@ -500,7 +583,6 @@ func (t *TLSConfig) unmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // MakeTLSClientConfig returns a tls.Config usable by a client to a backend.
 // If there is no custom TLS configuration, a nil config may be returned.
-// copied from with minor modifications: modules/caddyhttp/reverseproxy/httptransport.go
 func (t *TLSConfig) makeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 	repl, ok := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	if !ok || repl == nil {
@@ -554,7 +636,8 @@ type HTTPCertPool struct {
 	// Customize the TLS connection knobs to used during the HTTP call
 	TLS *TLSConfig `json:"tls,omitempty"`
 
-	pool *x509.CertPool
+	pool  *x509.CertPool
+	certs []*x509.Certificate
 }
 
 // CaddyModule implements caddy.Module.
@@ -570,6 +653,7 @@ func (HTTPCertPool) CaddyModule() caddy.ModuleInfo {
 // Provision implements caddy.Provisioner.
 func (hcp *HTTPCertPool) Provision(ctx caddy.Context) error {
 	caPool := x509.NewCertPool()
+	var certs []*x509.Certificate
 
 	customTransport := http.DefaultTransport.(*http.Transport).Clone()
 	if hcp.TLS != nil {
@@ -600,8 +684,25 @@ func (hcp *HTTPCertPool) Provision(ctx caddy.Context) error {
 		if !caPool.AppendCertsFromPEM(pembs) {
 			return fmt.Errorf("failed to add certs from URL: %s", uri)
 		}
+		// Parse PEM to extract certificates
+		pemData := pembs
+		for len(pemData) > 0 {
+			var block *pem.Block
+			block, pemData = pem.Decode(pemData)
+			if block == nil {
+				break
+			}
+			if block.Type != "CERTIFICATE" {
+				continue
+			}
+			cert, err := x509.ParseCertificate(block.Bytes)
+			if err == nil {
+				certs = append(certs, cert)
+			}
+		}
 	}
 	hcp.pool = caPool
+	hcp.certs = certs
 	return nil
 }
 
@@ -621,7 +722,6 @@ func (hcp *HTTPCertPool) Provision(ctx caddy.Context) error {
 //		renegotiation <never|once|freely>
 //
 //	<ca_module> is the name of the CA module to source the trust
-//
 // certificate pool and follows the syntax of the named CA module.
 func (hcp *HTTPCertPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	d.Next() // consume module name
@@ -665,6 +765,175 @@ func (hcp HTTPCertPool) CertPool() *x509.CertPool {
 	return hcp.pool
 }
 
+// Certificates implements CertificateProvider.
+func (hcp HTTPCertPool) Certificates() []*x509.Certificate {
+	return hcp.certs
+}
+
+// SystemCAPool obtains the trusted root certificates from the system's
+// certificate pool using x509.SystemCertPool()
+type SystemCAPool struct {
+	pool *x509.CertPool
+}
+
+// CaddyModule implements caddy.Module.
+func (SystemCAPool) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID: "tls.ca_pool.source.system",
+		New: func() caddy.Module {
+			return new(SystemCAPool)
+		},
+	}
+}
+
+// Provision implements caddy.Provisioner.
+func (scp *SystemCAPool) Provision(ctx caddy.Context) error {
+	pool, err := x509.SystemCertPool()
+	if err != nil {
+		return fmt.Errorf("failed to load system cert pool: %v", err)
+	}
+	scp.pool = pool
+	return nil
+}
+
+func (scp *SystemCAPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	d.Next() // consume module name
+	if d.CountRemainingArgs() > 0 {
+		return d.ArgErr()
+	}
+	if d.NextBlock(0) {
+		return d.Err("system trust pool does not support any configuration")
+	}
+	return nil
+}
+
+// CertPool implements CA.
+func (scp SystemCAPool) CertPool() *x509.CertPool {
+	return scp.pool
+}
+
+// Note: SystemCAPool does not implement CertificateProvider because
+// x509.SystemCertPool() doesn't expose its certificates, so it cannot
+// be used as a source in CombinedCAPool.
+
+type CombinedCAPool struct {
+	// The CA pool sources to combine. Each source is a CA pool provider module.
+	SourcesRaw []json.RawMessage `json:"sources,omitempty" caddy:"namespace=tls.ca_pool.source inline_key=provider"`
+
+	sources []CA
+	pool    *x509.CertPool
+	certs   []*x509.Certificate
+}
+
+// CaddyModule implements caddy.Module.
+func (CombinedCAPool) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID: "tls.ca_pool.source.combined",
+		New: func() caddy.Module {
+			return new(CombinedCAPool)
+		},
+	}
+}
+
+// Provision implements caddy.Provisioner.
+func (ccp *CombinedCAPool) Provision(ctx caddy.Context) error {
+	if len(ccp.SourcesRaw) == 0 {
+		return fmt.Errorf("no sources specified for combined CA pool")
+	}
+
+	// Load all source modules
+	sources, err := ctx.LoadModule(ccp, "SourcesRaw")
+	if err != nil {
+		return fmt.Errorf("loading CA pool sources: %v", err)
+	}
+
+	caPool := x509.NewCertPool()
+	var allCerts []*x509.Certificate
+
+	for _, src := range sources.([]any) {
+		ca, ok := src.(CA)
+		if !ok {
+			return fmt.Errorf("source module is not a CA pool provider")
+		}
+		ccp.sources = append(ccp.sources, ca)
+
+		certProvider, ok := ca.(CertificateProvider)
+		if !ok {
+			return fmt.Errorf("source %T does not implement CertificateProvider (required for combining)", ca)
+		}
+
+		certs := certProvider.Certificates()
+		if certs == nil {
+			return fmt.Errorf("source %T returned nil certificates", ca)
+		}
+
+		for _, cert := range certs {
+			caPool.AddCert(cert)
+			allCerts = append(allCerts, cert)
+		}
+	}
+
+	ccp.pool = caPool
+	ccp.certs = allCerts
+
+	return nil
+}
+
+// Syntax:
+//
+//	trust_pool combined {
+//		source <module_name> {
+//			<module_config>
+//		}
+//	}
+//
+// The 'source' directive can be specified multiple times. Sources that
+// don't implement CertificateProvider (like 'system') cannot be combined.
+func (ccp *CombinedCAPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	d.Next() // consume module name
+	if d.CountRemainingArgs() > 0 {
+		return d.ArgErr()
+	}
+
+	for nesting := d.Nesting(); d.NextBlock(nesting); {
+		switch d.Val() {
+		case "source":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			modStem := d.Val()
+			modID := "tls.ca_pool.source." + modStem
+			unm, err := caddyfile.UnmarshalModule(d, modID)
+			if err != nil {
+				return err
+			}
+			ca, ok := unm.(CA)
+			if !ok {
+				return d.Errf("module %s is not a CA pool provider", modID)
+			}
+			ccp.SourcesRaw = append(ccp.SourcesRaw, caddyconfig.JSONModuleObject(ca, "provider", modStem, nil))
+		default:
+			return d.Errf("unrecognized directive: %s", d.Val())
+		}
+	}
+
+	if len(ccp.SourcesRaw) == 0 {
+		return d.Err("no sources specified")
+	}
+
+	return nil
+}
+
+// CertPool implements CA.
+func (ccp CombinedCAPool) CertPool() *x509.CertPool {
+	return ccp.pool
+}
+
+// Certificates implements CertificateProvider.
+func (ccp CombinedCAPool) Certificates() []*x509.Certificate {
+	return ccp.certs
+}
+
 var (
 	_ caddy.Module          = (*InlineCAPool)(nil)
 	_ caddy.Provisioner     = (*InlineCAPool)(nil)
@@ -696,4 +965,14 @@ var (
 	_ caddy.Validator       = (*HTTPCertPool)(nil)
 	_ CA                    = (*HTTPCertPool)(nil)
 	_ caddyfile.Unmarshaler = (*HTTPCertPool)(nil)
+
+	_ caddy.Module          = (*SystemCAPool)(nil)
+	_ caddy.Provisioner     = (*SystemCAPool)(nil)
+	_ CA                    = (*SystemCAPool)(nil)
+	_ caddyfile.Unmarshaler = (*SystemCAPool)(nil)
+
+	_ caddy.Module          = (*CombinedCAPool)(nil)
+	_ caddy.Provisioner     = (*CombinedCAPool)(nil)
+	_ CA                    = (*CombinedCAPool)(nil)
+	_ caddyfile.Unmarshaler = (*CombinedCAPool)(nil)
 )
