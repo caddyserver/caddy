@@ -45,6 +45,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+
+	"github.com/caddyserver/caddy/v2/caddyconfig/warning"
 )
 
 // testCertMagicStorageOverride is a package-level test hook. Tests may set
@@ -1365,9 +1367,10 @@ func (f AdminHandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) erro
 // and client responses. If Message is unset, then
 // Err.Error() will be serialized in its place.
 type APIError struct {
-	HTTPStatus int    `json:"-"`
-	Err        error  `json:"-"`
-	Message    string `json:"error"`
+	HTTPStatus int               `json:"-"`
+	Err        error             `json:"-"`
+	Message    string            `json:"error"`
+	Warnings   []warning.Warning `json:"warnings,omitempty"`
 }
 
 func (e APIError) Error() string {
