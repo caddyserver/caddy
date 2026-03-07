@@ -62,6 +62,12 @@ func (m *AdminMetrics) Routes() []caddy.AdminRoute {
 }
 
 func (m *AdminMetrics) serveHTTP(w http.ResponseWriter, r *http.Request) error {
+	if m.metricsHandler == nil {
+		return caddy.APIError{
+			HTTPStatus: http.StatusInternalServerError,
+			Err:        errors.New("metrics handler not provisioned"),
+		}
+	}
 	m.metricsHandler.ServeHTTP(w, r)
 	return nil
 }
