@@ -140,6 +140,33 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 		iss.Email = email
 	}
 
+	// expand CA endpoint, if non-empty
+	if iss.CA != "" {
+		ca, err := repl.ReplaceOrErr(iss.CA, true, true)
+		if err != nil {
+			return fmt.Errorf("expanding CA endpoint '%s': %v", iss.CA, err)
+		}
+		iss.CA = ca
+	}
+
+	// expand EAB credentials, if non-empty
+	if iss.ExternalAccount != nil {
+		if iss.ExternalAccount.KeyID != "" {
+			keyID, err := repl.ReplaceOrErr(iss.ExternalAccount.KeyID, true, true)
+			if err != nil {
+				return fmt.Errorf("expanding EAB key ID '%s': %v", iss.ExternalAccount.KeyID, err)
+			}
+			iss.ExternalAccount.KeyID = keyID
+		}
+		if iss.ExternalAccount.MACKey != "" {
+			macKey, err := repl.ReplaceOrErr(iss.ExternalAccount.MACKey, true, true)
+			if err != nil {
+				return fmt.Errorf("expanding EAB MAC key '%s': %v", iss.ExternalAccount.MACKey, err)
+			}
+			iss.ExternalAccount.MACKey = macKey
+		}
+	}
+
 	// expand account key, if non-empty
 	if iss.AccountKey != "" {
 		accountKey, err := repl.ReplaceOrErr(iss.AccountKey, true, true)
