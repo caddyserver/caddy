@@ -437,7 +437,7 @@ func (rw *responseWriter) init() {
 
 	hdr := rw.Header()
 
-	if hdr.Get("Content-Encoding") == "" && isEncodeAllowed(hdr) &&
+	if hdr.Get("Content-Encoding") == "" &&
 		rw.config.Match(rw) {
 		rw.w = rw.config.writerPools[rw.encodingName].Get().(Encoder)
 		rw.w.Reset(rw.ResponseWriter)
