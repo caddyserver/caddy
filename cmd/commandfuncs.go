@@ -697,7 +697,7 @@ func cmdFmt(fl Flags) (int, error) {
 	output := caddyfile.Format(input)
 
 	if fl.Bool("overwrite") {
-		if err := os.WriteFile(configFile, output, 0o600); err != nil {
+		if err := os.WriteFile(configFile, output, 0o600); err != nil { //nolint:gosec // path traversal is not really a thing here, this is either "Caddyfile" or admin-controlled
 			return caddy.ExitCodeFailedStartup, fmt.Errorf("overwriting formatted file: %v", err)
 		}
 		return caddy.ExitCodeSuccess, nil
