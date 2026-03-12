@@ -19,6 +19,7 @@ import (
 	"crypto/tls"
 	"encoding/pem"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -62,18 +63,27 @@ func (fl FolderLoader) Provision(ctx caddy.Context) error {
 func (fl FolderLoader) LoadCertificates() ([]Certificate, error) {
 	var certs []Certificate
 	for _, dir := range fl {
-		err := filepath.Walk(dir, func(fpath string, info os.FileInfo, err error) error {
+		root, err := os.OpenRoot(dir)
+		if err != nil {
+			return nil, fmt.Errorf("unable to open root directory %s: %w", dir, err)
+		}
+		err = filepath.WalkDir(dir, func(fpath string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return fmt.Errorf("unable to traverse into path: %s", fpath)
 			}
-			if info.IsDir() {
+			if d.IsDir() {
 				return nil
 			}
-			if !strings.HasSuffix(strings.ToLower(info.Name()), ".pem") {
+			if !strings.HasSuffix(strings.ToLower(d.Name()), ".pem") {
 				return nil
 			}
 
-			bundle, err := os.ReadFile(fpath)
+			rel, err := filepath.Rel(dir, fpath)
+			if err != nil {
+				return fmt.Errorf("unable to get relative path for %s: %w", fpath, err)
+			}
+
+			bundle, err := root.ReadFile(rel)
 			if err != nil {
 				return err
 			}
@@ -83,11 +93,11 @@ func (fl FolderLoader) LoadCertificates() ([]Certificate, error) {
 			}
 
 			certs = append(certs, Certificate{Certificate: cert})
-
 			return nil
 		})
+		_ = root.Close()
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("walking certificates directory %s: %w", dir, err)
 		}
 	}
 	return certs, nil
