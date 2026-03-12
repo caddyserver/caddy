@@ -703,9 +703,11 @@ func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) []*caddytls
 		emptyAP.SubjectsRaw = aps[i].SubjectsRaw
 		if reflect.DeepEqual(aps[i], emptyAP) {
 			emptyAPCount++
-			if !automationPolicyHasAllPublicNames(aps[i]) {
-				// if this automation policy has internal names, we might as well remove it
-				// so auto-https can implicitly use the internal issuer
+			if !automationPolicyHasAllPublicNames(aps[i]) ||
+				automationPolicyCoveredByWildcard(aps[i], aps[i+1:]) {
+				// remove this empty policy if it has internal names (so auto-https
+				// can implicitly use the internal issuer), or if every subject is
+				// covered by a later wildcard policy with managers (#7559)
 				aps = slices.Delete(aps, i, i+1)
 				i--
 			}
@@ -834,6 +836,36 @@ func automationPolicyHasAllPublicNames(ap *caddytls.AutomationPolicy) bool {
 	return !slices.ContainsFunc(ap.SubjectsRaw, func(i string) bool {
 		return !subjectQualifiesForPublicCert(ap, i) || isTailscaleDomain(i)
 	})
+}
+
+// automationPolicyCoveredByWildcard returns true if every subject in ap is
+// covered by a wildcard subject in one of the later policies that has
+// managers (get_certificate).
+func automationPolicyCoveredByWildcard(ap *caddytls.AutomationPolicy, laterPolicies []*caddytls.AutomationPolicy) bool {
+	if len(ap.SubjectsRaw) == 0 {
+		return false
+	}
+	for _, subj := range ap.SubjectsRaw {
+		covered := false
+		for _, other := range laterPolicies {
+			if len(other.ManagersRaw) == 0 {
+				continue
+			}
+			for _, otherSubj := range other.SubjectsRaw {
+				if certmagic.MatchWildcard(subj, otherSubj) {
+					covered = true
+					break
+				}
+			}
+			if covered {
+				break
+			}
+		}
+		if !covered {
+			return false
+		}
+	}
+	return true
 }
 
 func isTailscaleDomain(name string) bool {
