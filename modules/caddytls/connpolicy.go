@@ -167,12 +167,6 @@ func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) *tls.Config {
 				}
 				tlsApp.RegisterServerNames(echNames)
 			}
-
-			tlsCfg.GetEncryptedClientHelloKeys = func(chi *tls.ClientHelloInfo) ([]tls.EncryptedClientHelloKey, error) {
-				tlsApp.EncryptedClientHello.configsMu.RLock()
-				defer tlsApp.EncryptedClientHello.configsMu.RUnlock()
-				return tlsApp.EncryptedClientHello.stdlibReady, nil
-			}
 		}
 	}
 
@@ -374,6 +368,19 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 	}
 	if p.ProtocolMax != "" {
 		cfg.MaxVersion = SupportedProtocols[p.ProtocolMax]
+	}
+
+	// enable ECH (Encrypted ClientHello) if configured
+	if tlsApp.EncryptedClientHello != nil {
+		cfg.GetEncryptedClientHelloKeys = func(_ *tls.ClientHelloInfo) ([]tls.EncryptedClientHelloKey, error) {
+			tlsApp.EncryptedClientHello.configsMu.RLock()
+			defer tlsApp.EncryptedClientHello.configsMu.RUnlock()
+			return tlsApp.EncryptedClientHello.stdlibReady, nil
+		}
+		// TLS 1.3 is the first version that supports ECH
+		if cfg.MinVersion < tls.VersionTLS13 {
+			cfg.MaxVersion = tls.VersionTLS13
+		}
 	}
 
 	// client authentication
