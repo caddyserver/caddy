@@ -1,0 +1,100 @@
+# example from https://github.com/caddyserver/caddy/issues/7559
+*.test.local {
+	tls {
+		get_certificate http http://cert-server:9000/certs
+	}
+	respond "wildcard"
+}
+
+subdomain.test.local {
+	respond "subdomain"
+}
+
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"subdomain.test.local"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "subdomain",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						},
+						{
+							"match": [
+								{
+									"host": [
+										"*.test.local"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "wildcard",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"subjects": [
+							"subdomain.test.local"
+						]
+					},
+					{
+						"subjects": [
+							"*.test.local"
+						],
+						"get_certificate": [
+							{
+								"url": "http://cert-server:9000/certs",
+								"via": "http"
+							}
+						]
+					}
+				]
+			}
+		}
+	}
+}

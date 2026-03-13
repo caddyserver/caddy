@@ -698,14 +698,26 @@ func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) []*caddytls
 	emptyAPCount := 0
 	origLenAPs := len(aps)
 	// compute the number of empty policies (disregarding subjects) - see #4128
+	// while we're at it,
 	emptyAP := new(caddytls.AutomationPolicy)
 	for i := 0; i < len(aps); i++ {
 		emptyAP.SubjectsRaw = aps[i].SubjectsRaw
 		if reflect.DeepEqual(aps[i], emptyAP) {
+			// AP is empty
 			emptyAPCount++
-			if !automationPolicyHasAllPublicNames(aps[i]) {
-				// if this automation policy has internal names, we might as well remove it
-				// so auto-https can implicitly use the internal issuer
+
+			// see if this AP shadows something later
+			shadowIdx := automationPolicyShadows(i, aps)
+			emptyAP.SubjectsRaw = nil
+			if shadowIdx >= 0 {
+				emptyAP.SubjectsRaw = aps[shadowIdx].SubjectsRaw
+			}
+
+			// if this is the last AP, we can delete it, since auto-https should
+			// pick it up; if it shadows something later that is also empty, we
+			// can similarly delete this; but if it shadows something that is NOT
+			// empty, we must not delete it since the shadowing has a purpose
+			if i == len(aps)-1 || (shadowIdx >= 0 && reflect.DeepEqual(aps[shadowIdx], emptyAP)) {
 				aps = slices.Delete(aps, i, i+1)
 				i--
 			}
