@@ -181,9 +181,10 @@ func (m VarsMatcher) MatchWithError(r *http.Request) (bool, error) {
 	vars := r.Context().Value(VarsCtxKey).(map[string]any)
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
+	var fromPlaceholder bool
+	var matcherValExpanded, valExpanded, varStr, v string
+	var varValue any
 	for key, vals := range m {
-		var varValue any
-		var fromPlaceholder bool
 		if strings.HasPrefix(key, "{") &&
 			strings.HasSuffix(key, "}") &&
 			strings.Count(key, "{") == 1 {
@@ -191,9 +192,9 @@ func (m VarsMatcher) MatchWithError(r *http.Request) (bool, error) {
 			fromPlaceholder = true
 		} else {
 			varValue = vars[key]
+			fromPlaceholder = false
 		}
 
-		var varStr string
 		switch vv := varValue.(type) {
 		case string:
 			varStr = vv
@@ -211,14 +212,14 @@ func (m VarsMatcher) MatchWithError(r *http.Request) (bool, error) {
 		// (e.g. map outputs). Values resolved from placeholder keys are
 		// already final and must not be re-expanded, as that would allow
 		// user input like {env.SECRET} to be evaluated.
-		valExpanded := varStr
+		valExpanded = varStr
 		if !fromPlaceholder {
 			valExpanded = repl.ReplaceAll(varStr, "")
 		}
 
 		// see if any of the values given in the matcher match the actual value
-		for _, v := range vals {
-			matcherValExpanded := repl.ReplaceAll(v, "")
+		for _, v = range vals {
+			matcherValExpanded = repl.ReplaceAll(v, "")
 			if valExpanded == matcherValExpanded {
 				return true, nil
 			}
@@ -322,9 +323,11 @@ func (m MatchVarsRE) Match(r *http.Request) bool {
 func (m MatchVarsRE) MatchWithError(r *http.Request) (bool, error) {
 	vars := r.Context().Value(VarsCtxKey).(map[string]any)
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+
+	var fromPlaceholder, match bool
+	var valExpanded, varStr string
+	var varValue any
 	for key, val := range m {
-		var varValue any
-		var fromPlaceholder bool
 		if strings.HasPrefix(key, "{") &&
 			strings.HasSuffix(key, "}") &&
 			strings.Count(key, "{") == 1 {
@@ -332,9 +335,9 @@ func (m MatchVarsRE) MatchWithError(r *http.Request) (bool, error) {
 			fromPlaceholder = true
 		} else {
 			varValue = vars[key]
+			fromPlaceholder = false
 		}
 
-		var varStr string
 		switch vv := varValue.(type) {
 		case string:
 			varStr = vv
@@ -352,11 +355,11 @@ func (m MatchVarsRE) MatchWithError(r *http.Request) (bool, error) {
 		// (e.g. map outputs). Values resolved from placeholder keys are
 		// already final and must not be re-expanded, as that would allow
 		// user input like {env.SECRET} to be evaluated.
-		valExpanded := varStr
+		valExpanded = varStr
 		if !fromPlaceholder {
 			valExpanded = repl.ReplaceAll(varStr, "")
 		}
-		if match := val.Match(valExpanded, repl); match {
+		if match = val.Match(valExpanded, repl); match {
 			return match, nil
 		}
 	}
