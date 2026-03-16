@@ -183,31 +183,43 @@ func (m VarsMatcher) MatchWithError(r *http.Request) (bool, error) {
 
 	for key, vals := range m {
 		var varValue any
+		var fromPlaceholder bool
 		if strings.HasPrefix(key, "{") &&
 			strings.HasSuffix(key, "}") &&
 			strings.Count(key, "{") == 1 {
 			varValue, _ = repl.Get(strings.Trim(key, "{}"))
+			fromPlaceholder = true
 		} else {
 			varValue = vars[key]
+		}
+
+		var varStr string
+		switch vv := varValue.(type) {
+		case string:
+			varStr = vv
+		case fmt.Stringer:
+			varStr = vv.String()
+		case error:
+			varStr = vv.Error()
+		case nil:
+			varStr = ""
+		default:
+			varStr = fmt.Sprintf("%v", vv)
+		}
+
+		// Only expand placeholders in values from literal variable names
+		// (e.g. map outputs). Values resolved from placeholder keys are
+		// already final and must not be re-expanded, as that would allow
+		// user input like {env.SECRET} to be evaluated.
+		valExpanded := varStr
+		if !fromPlaceholder {
+			valExpanded = repl.ReplaceAll(varStr, "")
 		}
 
 		// see if any of the values given in the matcher match the actual value
 		for _, v := range vals {
 			matcherValExpanded := repl.ReplaceAll(v, "")
-			var varStr string
-			switch vv := varValue.(type) {
-			case string:
-				varStr = vv
-			case fmt.Stringer:
-				varStr = vv.String()
-			case error:
-				varStr = vv.Error()
-			case nil:
-				varStr = ""
-			default:
-				varStr = fmt.Sprintf("%v", vv)
-			}
-			if varStr == matcherValExpanded {
+			if valExpanded == matcherValExpanded {
 				return true, nil
 			}
 		}
