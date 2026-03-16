@@ -132,7 +132,10 @@ func (ech *ECH) Provision(ctx caddy.Context) ([]string, error) {
 		}
 	}
 
-	// ensure old keys are rotated out
+	// convert the configs into a structure ready for the std lib to use
+	ech.updateKeyList()
+
+	// ensure any old keys are rotated out
 	if err = ech.rotateECHKeys(ctx, logger, true); err != nil {
 		return nil, fmt.Errorf("rotating ECH configs: %w", err)
 	}
@@ -179,9 +182,11 @@ func (ech *ECH) setConfigsFromStorage(ctx caddy.Context, logger *zap.Logger) ([]
 	return outerNames, nil
 }
 
-// rotateECHKeys updates the ECH keys/configs that are outdated. It should be called
-// in a write lock on ech.configsMu. If a lock is already obtained in storage, then
-// pass true for storageSynced.
+// rotateECHKeys updates the ECH keys/configs that are outdated if rotation is needed.
+// It should be called in a write lock on ech.configsMu. If a lock is already obtained
+// in storage, then pass true for storageSynced.
+//
+// This function sets/updates the stdlib-ready key list only if a rotation occurs.
 func (ech *ECH) rotateECHKeys(ctx caddy.Context, logger *zap.Logger, storageSynced bool) error {
 	storage := ctx.Storage()
 
