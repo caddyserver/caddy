@@ -119,9 +119,6 @@ type AdminConfig struct {
 	// EXPERIMENTAL: This feature is subject to change.
 	Remote *RemoteAdmin `json:"remote,omitempty"`
 
-	// Holds onto the routers so that we can later provision them
-	// if they require provisioning.
-	routers []AdminRouter
 }
 
 // ConfigSettings configures the management of configuration.
@@ -220,7 +217,7 @@ type AdminPermissions struct {
 
 // newAdminHandler reads admin's config and returns an http.Handler suitable
 // for use in an admin endpoint server, which will be listening on listenAddr.
-func (admin *AdminConfig) newAdminHandler(addr NetworkAddress, remote bool, _ Context) adminHandler {
+func (admin *AdminConfig) newAdminHandler(addr NetworkAddress, remote bool, ctx Context) (adminHandler, error) {
 	muxWrap := adminHandler{mux: http.NewServeMux()}
 
 	// secure the local or remote endpoint respectively
@@ -277,34 +274,21 @@ func (admin *AdminConfig) newAdminHandler(addr NetworkAddress, remote bool, _ Co
 	// register third-party module endpoints
 	for _, m := range GetModules("admin.api") {
 		router := m.New().(AdminRouter)
+
+		// provision the router before registering its routes, so
+		// handlers have access to all provisioned state
+		if provisioner, ok := router.(Provisioner); ok {
+			if err := provisioner.Provision(ctx); err != nil {
+				return adminHandler{}, fmt.Errorf("provisioning admin router module %s: %v", m.ID, err)
+			}
+		}
+
 		for _, route := range router.Routes() {
 			addRoute(route.Pattern, handlerLabel, route.Handler)
 		}
-		admin.routers = append(admin.routers, router)
 	}
 
-	return muxWrap
-}
-
-// provisionAdminRouters provisions all the router modules
-// in the admin.api namespace that need provisioning.
-func (admin *AdminConfig) provisionAdminRouters(ctx Context) error {
-	for _, router := range admin.routers {
-		provisioner, ok := router.(Provisioner)
-		if !ok {
-			continue
-		}
-
-		err := provisioner.Provision(ctx)
-		if err != nil {
-			return err
-		}
-	}
-
-	// We no longer need the routers once provisioned, allow for GC
-	admin.routers = nil
-
-	return nil
+	return muxWrap, nil
 }
 
 // allowedOrigins returns a list of origins that are allowed.
@@ -428,11 +412,7 @@ func replaceLocalAdminServer(cfg *Config, ctx Context) error {
 		return err
 	}
 
-	handler := cfg.Admin.newAdminHandler(addr, false, ctx)
-
-	// run the provisioners for loaded modules to make sure local
-	// state is properly re-initialized in the new admin server
-	err = cfg.Admin.provisionAdminRouters(ctx)
+	handler, err := cfg.Admin.newAdminHandler(addr, false, ctx)
 	if err != nil {
 		return err
 	}
@@ -556,11 +536,7 @@ func replaceRemoteAdminServer(ctx Context, cfg *Config) error {
 
 	// make the HTTP handler but disable Host/Origin enforcement
 	// because we are using TLS authentication instead
-	handler := cfg.Admin.newAdminHandler(addr, true, ctx)
-
-	// run the provisioners for loaded modules to make sure local
-	// state is properly re-initialized in the new admin server
-	err = cfg.Admin.provisionAdminRouters(ctx)
+	handler, err := cfg.Admin.newAdminHandler(addr, true, ctx)
 	if err != nil {
 		return err
 	}

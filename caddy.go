@@ -441,13 +441,6 @@ func run(newCfg *Config, start bool) (Context, error) {
 		}
 	}()
 
-	// Provision any admin routers which may need to access
-	// some of the other apps at runtime
-	err = ctx.cfg.Admin.provisionAdminRouters(ctx)
-	if err != nil {
-		return ctx, err
-	}
-
 	// Start
 	err = func() error {
 		started := make([]string, 0, len(ctx.cfg.apps))
