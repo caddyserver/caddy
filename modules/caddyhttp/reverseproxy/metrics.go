@@ -40,14 +40,14 @@ func initReverseProxyMetrics(handler *Handler, registry *prometheus.Registry) {
 			Namespace: ns,
 			Subsystem: sub,
 			Name:      "upstream_requests_total",
-			Help:      "Counter of requests made to upstreams.",
+			Help:      "Counter of requests made to reverse proxy upstreams.",
 		}, upstreamRequestLabels)
 
 		reverseProxyMetrics.upstreamDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: ns,
 			Subsystem: sub,
 			Name:      "upstream_request_duration_seconds",
-			Help:      "Histogram of request durations to upstreams.",
+			Help:      "Histogram of request durations to reverse proxy upstreams.",
 			Buckets:   prometheus.DefBuckets,
 		}, upstreamRequestLabels)
 	})
