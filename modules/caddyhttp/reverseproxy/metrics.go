@@ -49,7 +49,7 @@ func initReverseProxyMetrics(handler *Handler, registry *prometheus.Registry) {
 			Name:      "upstream_request_duration_seconds",
 			Help:      "Histogram of request durations to upstreams.",
 			Buckets:   prometheus.DefBuckets,
-		}, upstreamsLabels)
+		}, upstreamRequestLabels)
 	})
 
 	// duplicate registration could happen if multiple sites with reverse proxy are configured; so ignore the error because
@@ -140,16 +140,12 @@ func recordUpstreamMetrics(upstream string, method string, statusCode int, durat
 		return
 	}
 
-	code := metrics.SanitizeCode(statusCode)
-	method = metrics.SanitizeMethod(method)
-
-	reverseProxyMetrics.upstreamRequests.With(prometheus.Labels{
+	labels := prometheus.Labels{
 		"upstream": upstream,
-		"code":     code,
-		"method":   method,
-	}).Inc()
+		"method":   metrics.SanitizeMethod(method),
+		"code":     metrics.SanitizeCode(statusCode),
+	}
 
-	reverseProxyMetrics.upstreamDuration.With(prometheus.Labels{
-		"upstream": upstream,
-	}).Observe(duration.Seconds())
+	reverseProxyMetrics.upstreamRequests.With(labels).Inc()
+	reverseProxyMetrics.upstreamDuration.With(labels).Observe(duration.Seconds())
 }
