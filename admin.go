@@ -118,7 +118,6 @@ type AdminConfig struct {
 	//
 	// EXPERIMENTAL: This feature is subject to change.
 	Remote *RemoteAdmin `json:"remote,omitempty"`
-
 }
 
 // ConfigSettings configures the management of configuration.
