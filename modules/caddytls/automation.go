@@ -235,7 +235,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 	}
 
 	issuers := ap.Issuers
-	if len(issuers) == 0 {
+	if len(issuers) == 0 && !ap.implicitTailscaleManagersOnly() {
 		var err error
 		issuers, err = DefaultIssuersProvisioned(tlsApp.ctx)
 		if err != nil {
@@ -427,6 +427,29 @@ func (ap *AutomationPolicy) AllInternalSubjects() bool {
 	return !slices.ContainsFunc(ap.subjects, func(s string) bool {
 		return !certmagic.SubjectIsInternal(s)
 	})
+}
+
+// implicitTailscaleManagersOnly returns true if this policy is configured to
+// serve only Tailscale names from the Tailscale manager at handshake-time.
+func (ap *AutomationPolicy) implicitTailscaleManagersOnly() bool {
+	if len(ap.subjects) == 0 {
+		return false
+	}
+
+	for _, subject := range ap.subjects {
+		if !strings.HasSuffix(strings.ToLower(subject), tailscaleDomainAliasEnding) {
+			return false
+		}
+	}
+
+	for _, manager := range ap.Managers {
+		switch manager.(type) {
+		case Tailscale, *Tailscale:
+			return true
+		}
+	}
+
+	return false
 }
 
 func (ap *AutomationPolicy) onlyInternalIssuer() bool {
