@@ -178,6 +178,7 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 				PropagationTimeout: time.Duration(iss.Challenges.DNS.PropagationTimeout),
 				Resolvers:          iss.Challenges.DNS.Resolvers,
 				OverrideDomain:     iss.Challenges.DNS.OverrideDomain,
+				Logger:             iss.logger.Named("dns_manager"),
 			},
 		}
 	}
@@ -336,7 +337,7 @@ func (iss *ACMEIssuer) generateZeroSSLEABCredentials(ctx context.Context, acct a
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("User-Agent", certmagic.UserAgent)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec // no SSRF since URL is from trusted config
 	if err != nil {
 		return nil, acct, fmt.Errorf("performing EAB credentials request: %v", err)
 	}
@@ -671,7 +672,7 @@ func ParseCaddyfilePreferredChainsOptions(d *caddyfile.Dispenser) (*ChainPrefere
 		switch d.Val() {
 		case "root_common_name":
 			rootCommonNameOpt := d.RemainingArgs()
-			chainPref.RootCommonName = rootCommonNameOpt
+			chainPref.RootCommonName = append(chainPref.RootCommonName, rootCommonNameOpt...)
 			if rootCommonNameOpt == nil {
 				return nil, d.ArgErr()
 			}
@@ -681,7 +682,7 @@ func ParseCaddyfilePreferredChainsOptions(d *caddyfile.Dispenser) (*ChainPrefere
 
 		case "any_common_name":
 			anyCommonNameOpt := d.RemainingArgs()
-			chainPref.AnyCommonName = anyCommonNameOpt
+			chainPref.AnyCommonName = append(chainPref.AnyCommonName, anyCommonNameOpt...)
 			if anyCommonNameOpt == nil {
 				return nil, d.ArgErr()
 			}

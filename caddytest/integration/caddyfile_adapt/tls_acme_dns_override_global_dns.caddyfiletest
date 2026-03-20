@@ -1,0 +1,83 @@
+{
+	dns mock foo
+	acme_dns mock bar
+}
+
+localhost {
+	tls {
+		resolvers 8.8.8.8 8.8.4.4
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"localhost"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"subjects": [
+							"localhost"
+						],
+						"issuers": [
+							{
+								"challenges": {
+									"dns": {
+										"provider": {
+											"argument": "bar",
+											"name": "mock"
+										},
+										"resolvers": [
+											"8.8.8.8",
+											"8.8.4.4"
+										]
+									}
+								},
+								"module": "acme"
+							}
+						]
+					},
+					{
+						"issuers": [
+							{
+								"challenges": {
+									"dns": {
+										"provider": {
+											"argument": "bar",
+											"name": "mock"
+										}
+									}
+								},
+								"module": "acme"
+							}
+						]
+					}
+				]
+			},
+			"dns": {
+				"argument": "foo",
+				"name": "mock"
+			}
+		}
+	}
+}

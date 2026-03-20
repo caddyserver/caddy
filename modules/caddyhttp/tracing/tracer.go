@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"net/http"
 
+	"go.opentelemetry.io/contrib/exporters/autoexport"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/contrib/propagators/autoprop"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -37,20 +38,23 @@ type openTelemetryWrapper struct {
 
 	handler http.Handler
 
-	spanName string
+	spanName       string
+	spanAttributes map[string]string
 }
 
 // newOpenTelemetryWrapper is responsible for the openTelemetryWrapper initialization using provided configuration.
 func newOpenTelemetryWrapper(
 	ctx context.Context,
 	spanName string,
+	spanAttributes map[string]string,
 ) (openTelemetryWrapper, error) {
 	if spanName == "" {
 		spanName = defaultSpanName
 	}
 
 	ot := openTelemetryWrapper{
-		spanName: spanName,
+		spanName:       spanName,
+		spanAttributes: spanAttributes,
 	}
 
 	version, _ := caddy.Version()
@@ -59,7 +63,7 @@ func newOpenTelemetryWrapper(
 		return ot, fmt.Errorf("creating resource error: %w", err)
 	}
 
-	traceExporter, err := otlptracegrpc.New(ctx)
+	traceExporter, err := autoexport.NewSpanExporter(ctx)
 	if err != nil {
 		return ot, fmt.Errorf("creating trace exporter error: %w", err)
 	}
@@ -99,8 +103,22 @@ func (ot *openTelemetryWrapper) serveHTTP(w http.ResponseWriter, r *http.Request
 			extra.Add(zap.String("spanID", spanID))
 		}
 	}
+
 	next := ctx.Value(nextCallCtxKey).(*nextCall)
 	next.err = next.next.ServeHTTP(w, r)
+
+	// Add custom span attributes to the current span
+	span := trace.SpanFromContext(ctx)
+	if span.IsRecording() && len(ot.spanAttributes) > 0 {
+		replacer := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+		attributes := make([]attribute.KeyValue, 0, len(ot.spanAttributes))
+		for key, value := range ot.spanAttributes {
+			// Allow placeholder replacement in attribute values
+			replacedValue := replacer.ReplaceAll(value, "")
+			attributes = append(attributes, attribute.String(key, replacedValue))
+		}
+		span.SetAttributes(attributes...)
+	}
 }
 
 // ServeHTTP propagates call to the by wrapped by `otelhttp` next handler.

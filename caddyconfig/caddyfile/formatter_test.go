@@ -445,6 +445,11 @@ block2 {
 			expect:      "block {respond \"All braces should remain: {{now | date `2006`}}\"}",
 		},
 		{
+			description: "Preserve quoted backticks and backticked quotes",
+			input:       "block { respond \"`\" } block { respond `\"`}",
+			expect:      "block {\n\trespond \"`\"\n}\n\nblock {\n\trespond `\"`\n}",
+		},
+		{
 			description: "No trailing space on line before env variable",
 			input: `{
 	a
@@ -458,6 +463,17 @@ block2 {
 	{$ENV_VAR}
 }
 `,
+		},
+		{
+			description: "issue #7425: multiline backticked string indentation",
+			input: `https://localhost:8953 {
+    respond ` + "`" + `Here are some random numbers:
+
+{{randNumeric 16}}
+
+Hope this helps.` + "`" + `
+}`,
+			expect: "https://localhost:8953 {\n\trespond `Here are some random numbers:\n\n{{randNumeric 16}}\n\nHope this helps.`\n}",
 		},
 	} {
 		// the formatter should output a trailing newline,

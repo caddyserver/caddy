@@ -257,7 +257,7 @@ func (PKIIntermediateCAPool) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-// Loads the PKI app and load the intermediate certificates into the certificate pool
+// Loads the PKI app and loads the intermediate certificates into the certificate pool
 func (p *PKIIntermediateCAPool) Provision(ctx caddy.Context) error {
 	pkiApp, err := ctx.AppIfConfigured("pki")
 	if err != nil {
@@ -274,7 +274,9 @@ func (p *PKIIntermediateCAPool) Provision(ctx caddy.Context) error {
 
 	caPool := x509.NewCertPool()
 	for _, ca := range p.ca {
-		caPool.AddCert(ca.IntermediateCertificate())
+		for _, c := range ca.IntermediateCertificateChain() {
+			caPool.AddCert(c)
+		}
 	}
 	p.pool = caPool
 	return nil
@@ -500,8 +502,8 @@ func (t *TLSConfig) unmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // If there is no custom TLS configuration, a nil config may be returned.
 // copied from with minor modifications: modules/caddyhttp/reverseproxy/httptransport.go
 func (t *TLSConfig) makeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
-	repl := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-	if repl == nil {
+	repl, ok := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	if !ok || repl == nil {
 		repl = caddy.NewReplacer()
 	}
 	cfg := new(tls.Config)
@@ -586,7 +588,7 @@ func (hcp *HTTPCertPool) Provision(ctx caddy.Context) error {
 		if err != nil {
 			return err
 		}
-		res, err := httpClient.Do(req)
+		res, err := httpClient.Do(req) //nolint:gosec // SSRF false positive... uri comes from config
 		if err != nil {
 			return err
 		}

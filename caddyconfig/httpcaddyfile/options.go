@@ -64,7 +64,9 @@ func init() {
 	RegisterGlobalOption("preferred_chains", parseOptPreferredChains)
 	RegisterGlobalOption("persist_config", parseOptPersistConfig)
 	RegisterGlobalOption("dns", parseOptDNS)
+	RegisterGlobalOption("tls_resolvers", parseOptTLSResolvers)
 	RegisterGlobalOption("ech", parseOptECH)
+	RegisterGlobalOption("renewal_window_ratio", parseOptRenewalWindowRatio)
 }
 
 func parseOptTrue(d *caddyfile.Dispenser, _ any) (any, error) { return true, nil }
@@ -305,6 +307,15 @@ func parseOptSingleString(d *caddyfile.Dispenser, _ any) (any, error) {
 	return val, nil
 }
 
+func parseOptTLSResolvers(d *caddyfile.Dispenser, _ any) (any, error) {
+	d.Next() // consume option name
+	resolvers := d.RemainingArgs()
+	if len(resolvers) == 0 {
+		return nil, d.ArgErr()
+	}
+	return resolvers, nil
+}
+
 func parseOptDefaultBind(d *caddyfile.Dispenser, _ any) (any, error) {
 	d.Next() // consume option name
 
@@ -457,9 +468,8 @@ func parseOptAutoHTTPS(d *caddyfile.Dispenser, _ any) (any, error) {
 		case "disable_redirects":
 		case "disable_certs":
 		case "ignore_loaded_certs":
-		case "prefer_wildcard":
 		default:
-			return "", d.Errf("auto_https must be one of 'off', 'disable_redirects', 'disable_certs', 'ignore_loaded_certs', or 'prefer_wildcard'")
+			return "", d.Errf("auto_https must be one of 'off', 'disable_redirects', 'disable_certs', or 'ignore_loaded_certs'")
 		}
 	}
 	return val, nil
@@ -472,6 +482,8 @@ func unmarshalCaddyfileMetricsOptions(d *caddyfile.Dispenser) (any, error) {
 		switch d.Val() {
 		case "per_host":
 			metrics.PerHost = true
+		case "observe_catchall_hosts":
+			metrics.ObserveCatchallHosts = true
 		default:
 			return nil, d.Errf("unrecognized servers option '%s'", d.Val())
 		}
@@ -622,4 +634,23 @@ func parseOptECH(d *caddyfile.Dispenser, _ any) (any, error) {
 	}
 
 	return ech, nil
+}
+
+func parseOptRenewalWindowRatio(d *caddyfile.Dispenser, _ any) (any, error) {
+	d.Next() // consume option name
+	if !d.Next() {
+		return 0, d.ArgErr()
+	}
+	val := d.Val()
+	ratio, err := strconv.ParseFloat(val, 64)
+	if err != nil {
+		return 0, d.Errf("parsing renewal_window_ratio: %v", err)
+	}
+	if ratio <= 0 || ratio >= 1 {
+		return 0, d.Errf("renewal_window_ratio must be between 0 and 1 (exclusive)")
+	}
+	if d.Next() {
+		return 0, d.ArgErr()
+	}
+	return ratio, nil
 }

@@ -21,6 +21,7 @@
 		keepalive_interval 20s
 		keepalive_idle 20s
 		keepalive_count 10
+		0rtt off
 	}
 }
 
@@ -90,7 +91,8 @@ foo.com {
 						"h2",
 						"h2c",
 						"h3"
-					]
+					],
+					"allow_0rtt": false
 				}
 			}
 		}

@@ -169,6 +169,7 @@ func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w ht
 
 		// Actual files
 		for _, item := range listing.Items {
+			//nolint:gosec // not sure how this could be XSS unless you lose control of the file system (like aren't sanitizing) and client ignores Content-Type of text/plain
 			if _, err := fmt.Fprintf(writer, "%s\t%s\t%s\n",
 				item.Name, item.HumanSize(), item.HumanModTime("January 2, 2006 at 15:04:05"),
 			); err != nil {

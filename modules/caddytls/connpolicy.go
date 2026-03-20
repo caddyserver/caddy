@@ -168,21 +168,11 @@ func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) *tls.Config {
 				tlsApp.RegisterServerNames(echNames)
 			}
 
-			// TODO: Ideally, ECH keys should be rotated. However, as of Go 1.24, the std lib implementation
-			// does not support safely modifying the tls.Config's EncryptedClientHelloKeys field.
-			// So, we implement static ECH keys temporarily. See https://github.com/golang/go/issues/71920.
-			// Revisit this after Go 1.25 is released and implement key rotation.
-			var stdECHKeys []tls.EncryptedClientHelloKey
-			for _, echConfigs := range tlsApp.EncryptedClientHello.configs {
-				for _, c := range echConfigs {
-					stdECHKeys = append(stdECHKeys, tls.EncryptedClientHelloKey{
-						Config:      c.configBin,
-						PrivateKey:  c.privKeyBin,
-						SendAsRetry: c.sendAsRetry,
-					})
-				}
+			tlsCfg.GetEncryptedClientHelloKeys = func(chi *tls.ClientHelloInfo) ([]tls.EncryptedClientHelloKey, error) {
+				tlsApp.EncryptedClientHello.configsMu.RLock()
+				defer tlsApp.EncryptedClientHello.configsMu.RUnlock()
+				return tlsApp.EncryptedClientHello.stdlibReady, nil
 			}
-			tlsCfg.EncryptedClientHelloKeys = stdECHKeys
 		}
 	}
 
@@ -794,7 +784,7 @@ func (clientauth *ClientAuthentication) provision(ctx caddy.Context) error {
 		for _, fpath := range clientauth.TrustedCACertPEMFiles {
 			ders, err := convertPEMFilesToDER(fpath)
 			if err != nil {
-				return nil
+				return err
 			}
 			clientauth.TrustedCACerts = append(clientauth.TrustedCACerts, ders...)
 		}
@@ -807,7 +797,7 @@ func (clientauth *ClientAuthentication) provision(ctx caddy.Context) error {
 		}
 		err := caPool.Provision(ctx)
 		if err != nil {
-			return nil
+			return err
 		}
 		clientauth.ca = caPool
 	}
@@ -895,24 +885,29 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 
 	// if a custom verification function already exists, wrap it
 	clientauth.existingVerifyPeerCert = cfg.VerifyPeerCertificate
-	cfg.VerifyPeerCertificate = clientauth.verifyPeerCertificate
+	cfg.VerifyConnection = clientauth.verifyConnection
 	return nil
 }
 
-// verifyPeerCertificate is for use as a tls.Config.VerifyPeerCertificate
-// callback to do custom client certificate verification. It is intended
-// for installation only by clientauth.ConfigureTLSConfig().
-func (clientauth *ClientAuthentication) verifyPeerCertificate(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+// verifyConnection is for use as a tls.Config.VerifyConnection callback
+// to do custom client certificate verification. It is intended for
+// installation only by clientauth.ConfigureTLSConfig().
+//
+// Unlike VerifyPeerCertificate, VerifyConnection is called on every
+// connection including resumed sessions, preventing session-resumption bypass.
+func (clientauth *ClientAuthentication) verifyConnection(cs tls.ConnectionState) error {
 	// first use any pre-existing custom verification function
 	if clientauth.existingVerifyPeerCert != nil {
-		err := clientauth.existingVerifyPeerCert(rawCerts, verifiedChains)
-		if err != nil {
+		rawCerts := make([][]byte, len(cs.PeerCertificates))
+		for i, cert := range cs.PeerCertificates {
+			rawCerts[i] = cert.Raw
+		}
+		if err := clientauth.existingVerifyPeerCert(rawCerts, cs.VerifiedChains); err != nil {
 			return err
 		}
 	}
 	for _, verifier := range clientauth.verifiers {
-		err := verifier.VerifyClientCertificate(rawCerts, verifiedChains)
-		if err != nil {
+		if err := verifier.VerifyClientCertificate(nil, cs.VerifiedChains); err != nil {
 			return err
 		}
 	}

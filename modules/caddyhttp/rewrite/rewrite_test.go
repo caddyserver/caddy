@@ -224,6 +224,11 @@ func TestRewrite(t *testing.T) {
 			input:  newRequest(t, "GET", "/foo#fragFirst?c=d"),
 			expect: newRequest(t, "GET", "/bar#fragFirst?c=d"),
 		},
+		{
+			rule:   Rewrite{URI: "/api/admin/panel"},
+			input:  newRequest(t, "GET", "/api/admin%2Fpanel"),
+			expect: newRequest(t, "GET", "/api/admin/panel"),
+		},
 
 		{
 			rule:   Rewrite{StripPathPrefix: "/prefix"},

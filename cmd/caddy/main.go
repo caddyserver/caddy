@@ -29,6 +29,8 @@
 package main
 
 import (
+	_ "time/tzdata"
+
 	caddycmd "github.com/caddyserver/caddy/v2/cmd"
 
 	// plug in Caddy modules here

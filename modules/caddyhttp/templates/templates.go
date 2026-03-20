@@ -306,6 +306,13 @@ func init() {
 // find the documentation on time layouts [in Go's docs](https://pkg.go.dev/time#pkg-constants).
 // The default time layout is `RFC1123Z`, i.e. `Mon, 02 Jan 2006 15:04:05 -0700`.
 //
+// ```
+// {{humanize "size" "2048000"}}
+// {{placeholder "http.response.header.Content-Length" | humanize "size"}}
+// {{humanize "time" "Fri, 05 May 2022 15:04:05 +0200"}}
+// {{humanize "time:2006-Jan-02" "2022-May-05"}}
+// ```
+//
 // ##### `pathEscape`
 //
 // Passes a string through `url.PathEscape`, replacing characters that have
@@ -318,11 +325,22 @@ func init() {
 // {{pathEscape "50%_valid_filename?.jpg"}}
 // ```
 //
+// ##### `maybe`
+//
+// Invokes a custom template function only if it is registered (plugged-in)
+// in the `http.handlers.templates.functions.*` namespace.
+//
+// The first argument is the function name, and any subsequent arguments
+// are forwarded to that function. If the named function is not available,
+// the invocation is ignored and a log message is emitted.
+//
+// This is useful for templates that optionally use components which may
+// not be present in every build or environment.
+//
+// NOTE: This function is EXPERIMENTAL and subject to change or removal.
+//
 // ```
-// {{humanize "size" "2048000"}}
-// {{placeholder "http.response.header.Content-Length" | humanize "size"}}
-// {{humanize "time" "Fri, 05 May 2022 15:04:05 +0200"}}
-// {{humanize "time:2006-Jan-02" "2022-May-05"}}
+// {{ maybe "myOptionalFunc" "arg1" 2 }}
 // ```
 type Templates struct {
 	// The root path from which to load files. Required if template functions

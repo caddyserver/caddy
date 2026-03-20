@@ -24,7 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	weakrand "math/rand"
+	weakrand "math/rand/v2"
 	"mime"
 	"net/http"
 	"sync"
@@ -214,7 +214,10 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 		timeoutc = timer.C
 	}
 
-	errc := make(chan error, 1)
+	// when a stream timeout is encountered, no error will be read from errc
+	// a buffer size of 2 will allow both the read and write goroutines to send the error and exit
+	// see: https://github.com/caddyserver/caddy/issues/7418
+	errc := make(chan error, 2)
 	wg.Add(2)
 	go spc.copyToBackend(errc)
 	go spc.copyFromBackend(errc)
@@ -526,14 +529,14 @@ func maskBytes(key [4]byte, pos int, b []byte) int {
 	// Create aligned word size key.
 	var k [wordSize]byte
 	for i := range k {
-		k[i] = key[(pos+i)&3]
+		k[i] = key[(pos+i)&3] // nolint:gosec // false positive, impossible to be out of bounds; see: https://github.com/securego/gosec/issues/1525
 	}
 	kw := *(*uintptr)(unsafe.Pointer(&k))
 
 	// Mask one word at a time.
 	n := (len(b) / wordSize) * wordSize
 	for i := 0; i < n; i += wordSize {
-		*(*uintptr)(unsafe.Pointer(uintptr(unsafe.Pointer(&b[0])) + uintptr(i))) ^= kw
+		*(*uintptr)(unsafe.Add(unsafe.Pointer(&b[0]), i)) ^= kw
 	}
 
 	// Mask one byte at a time for remaining bytes.
