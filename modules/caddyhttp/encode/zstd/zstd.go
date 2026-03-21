@@ -16,7 +16,6 @@ package caddyzstd
 
 import (
 	"fmt"
-	"strconv"
 
 	"github.com/klauspost/compress/zstd"
 
@@ -80,23 +79,15 @@ func (z *Zstd) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 			z.Level = args[0]
 
-		case "checksum":
-			args := d.RemainingArgs()
-			if len(args) > 1 {
+		case "disable_checksum":
+			if d.NextArg() {
 				return d.ArgErr()
 			}
 			if z.Checksum != nil {
 				return d.Err("checksum already specified")
 			}
-			enabled := true
-			if len(args) == 1 {
-				parsed, err := strconv.ParseBool(args[0])
-				if err != nil {
-					return d.Errf("parsing checksum: invalid boolean value %q", args[0])
-				}
-				enabled = parsed
-			}
-			z.Checksum = &enabled
+			disabled := false
+			z.Checksum = &disabled
 
 		default:
 			return d.Errf("unknown subdirective '%s'", d.Val())

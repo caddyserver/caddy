@@ -19,7 +19,7 @@ encode gzip zstd {
 # Long way with a block for each encoding
 encode {
 	zstd {
-		checksum false
+		disable_checksum
 	}
 	gzip 5
 }

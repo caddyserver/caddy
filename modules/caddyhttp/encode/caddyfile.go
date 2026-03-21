@@ -43,7 +43,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //	    gzip           [<level>]
 //	    zstd           [<level>] {
 //	        level           <level>
-//	        checksum        [<true|false>]
+//	        disable_checksum
 //	    }
 //	    minimum_length <length>
 //	    # response matcher block
