@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -1204,80 +1205,134 @@ func getHTTP3Network(originalNetwork string) (string, error) {
 	return h3Network, nil
 }
 
-// validHostHeader returns true if the Host header value is syntactically
-// valid per RFC 3986 §3.2.2. It rejects malformed IP-literals (e.g. [],
-// [123g::1], unclosed brackets) and invalid port values.
+// validHostHeader reports whether a Host header value is valid per RFC 3986 §3.2.2.
 func validHostHeader(host string) bool {
-	if host == "" {
-		return true // empty host is handled separately per HTTP version
-	}
-
 	if strings.HasPrefix(host, "[") {
-		// IP-literal: find closing bracket
 		closeBracket := strings.LastIndex(host, "]")
 		if closeBracket < 0 {
-			return false // unclosed bracket: e.g. [::1
+			return false // no closing bracket
 		}
 
-		ipLiteral := host[1:closeBracket]
-		if len(ipLiteral) == 0 {
-			return false // empty: []
+		inner := host[1:closeBracket]
+		if inner == "" {
+			return false // [] is not valid
 		}
 
-		// IPvFuture (starts with 'v') — reject; not a valid IPv6 address
-		if len(ipLiteral) > 0 && (ipLiteral[0] == 'v' || ipLiteral[0] == 'V') {
-			return false
+		// IPvFuture starts with 'v' and is allowed by RFC 3986
+		if inner[0] == 'v' || inner[0] == 'V' {
+			if !validIPvFuture(inner) {
+				return false
+			}
+		} else {
+			// strip Zone IDs before parsing
+			ipStr := inner
+			if i := strings.Index(ipStr, "%25"); i >= 0 {
+				ipStr = ipStr[:i]
+			}
+
+			addr, err := netip.ParseAddr(ipStr)
+			if err != nil || !addr.Is6() {
+				return false
+			}
 		}
 
-		// Must parse as a valid IPv6 address
-		addr, err := netip.ParseAddr(ipLiteral)
-		if err != nil || !addr.Is6() {
-			return false
-		}
-
-		// Optional port after the closing bracket
 		rest := host[closeBracket+1:]
+
+		// No port mentioned
 		if rest == "" {
 			return true
 		}
-		if !strings.HasPrefix(rest, ":") {
+
+		// check if the rest of the part doesn't start with ":", host:port
+		if rest[0] != ':' {
 			return false
 		}
+
 		return validPort(rest[1:])
 	}
 
-	// Non-IP-literal: must have at most one colon (for port)
-	colonCount := strings.Count(host, ":")
-	if colonCount > 1 {
-		return false // e.g. example.com::80
+	// More than one colon means IPv6 without brackets, always reject
+	if strings.Count(host, ":") > 1 {
+		return false
 	}
-	if colonCount == 1 {
-		_, portStr, err := net.SplitHostPort(host)
-		if err != nil {
-			return false
-		}
+
+	// Single colon means host:port
+	_, portStr, hasPort := strings.Cut(host, ":")
+	if hasPort {
 		return validPort(portStr)
 	}
 
 	return true
 }
 
-// validPort returns true if the string is a valid numeric port (0–65535).
+// validIPvFuture checks the format: "v" + hex digits + "." + allowed chars.
+// RFC 3986: "v" 1*HEXDIG "." 1*( unreserved / sub-delims / ":" )
+func validIPvFuture(inner string) bool {
+	// need at least "vF.x"
+	if len(inner) < 4 || (inner[0] != 'v' && inner[0] != 'V') {
+		return false
+	}
+
+	// drop the leading 'v'
+	inner = inner[1:]
+
+	// count hex digits
+	i := 0
+	for i < len(inner) && isHexDigit(inner[i]) {
+		i++
+	}
+
+	// check if there are no hex digits
+	if i == 0 {
+		return false
+	}
+
+	// check for one dot after the hex digits
+	if i >= len(inner) || inner[i] != '.' {
+		return false
+	}
+	i++
+
+	// at least one character must follow the dot
+	if i >= len(inner) {
+		return false
+	}
+
+	// every remaining character must be in the allowed set
+	for ; i < len(inner); i++ {
+		if !isIPvFutureChar(inner[i]) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func isHexDigit(c byte) bool {
+	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+}
+
+// isIPvFutureChar allows: letters, digits, "-._~" (unreserved), "!$&'()*+,;=" (sub-delims), ":"
+func isIPvFutureChar(c byte) bool {
+	if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') {
+		return true
+	}
+
+	switch c {
+	case '-', '.', '_', '~', '!', '$', '&', '\'', '(', ')', '*', '+', ',', ';', '=', ':':
+		return true
+	}
+
+	return false
+}
+
+// validPort checks the port is a number between 0 and 65535.
 func validPort(port string) bool {
+	//  Empty string is rejected since "host:" with no port is not valid.
 	if port == "" {
 		return false
 	}
-	for _, c := range port {
-		if c < '0' || c > '9' {
-			return false
-		}
-	}
-	n := 0
-	for _, c := range port {
-		n = n*10 + int(c-'0')
-		if n > 65535 {
-			return false
-		}
-	}
-	return true
+
+	n, err := strconv.Atoi(port)
+	return err == nil && n >= 0 && n <= 65535
 }
