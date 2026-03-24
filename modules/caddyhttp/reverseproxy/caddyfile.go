@@ -725,9 +725,6 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				err = headers.CaddyfileHeaderOp(h.Headers.Request, args[0], "", nil)
 			case 2:
 				// some lint checks, I guess
-				if commonScheme == "https" && strings.EqualFold(args[0], "host") && (args[1] == "{upstream_hostport}" || args[1] == "{http.reverse_proxy.upstream.hostport}") {
-					caddy.Log().Named("caddyfile").Warn("Unnecessary header_up Host: the reverse proxy's default behavior is to pass the configured upstream address to the upstream when proxying to HTTPS")
-				}
 				if strings.EqualFold(args[0], "x-forwarded-for") && (args[1] == "{remote}" || args[1] == "{http.request.remote}" || args[1] == "{remote_host}" || args[1] == "{http.request.remote.host}") {
 					caddy.Log().Named("caddyfile").Warn("Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream")
 				}
@@ -883,6 +880,14 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				err := te.EnableTLS(new(TLSConfig))
 				if err != nil {
 					return err
+				}
+			}
+			// check if the user set 'header_up host upstream_hostport' when proxying to HTTPS
+			// this is unnecessary because it's the default behavior already
+			if te.TLSEnabled() && h.Headers != nil && h.Headers.Request != nil {
+				hostVal := h.Headers.Request.Set.Get("Host")
+				if hostVal == "{upstream_hostport}" || hostVal == "{http.reverse_proxy.upstream.hostport}" {
+					caddy.Log().Named("caddyfile").Warn("Unnecessary header_up Host: the reverse proxy's default behavior is to pass the configured upstream address to the upstream when proxying to HTTPS")
 				}
 			}
 			if commonScheme == "http" && te.TLSEnabled() {
