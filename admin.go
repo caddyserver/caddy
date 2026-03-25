@@ -859,6 +859,7 @@ func (h adminHandler) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			Err:        errors.New("invalid origin 'null'"),
 			Message:    "Buggy browser is sending null Origin header.",
 		})
+		return
 	}
 
 	if h.enforceHost {
