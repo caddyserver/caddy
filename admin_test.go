@@ -958,15 +958,36 @@ MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDRS0LmTwUT0iwP
 	}
 }
 
-func TestUnsyncedConfigAccessRejectsNonCanonicalArrayIndices(t *testing.T) {
+func TestUnsyncedConfigAccessCanonicalArrayIndices(t *testing.T) {
 	rawCfg = map[string]any{
 		rawConfigKey: map[string]any{
-			"list": []any{"zero", "one"},
+			"list": []any{"zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"},
 		},
 	}
 
-	err := unsyncedConfigAccess(http.MethodGet, "/"+rawConfigKey+"/list/01", nil, io.Discard)
-	if err == nil {
-		t.Fatal("expected non-canonical array index to be rejected")
+	tests := []struct {
+		name    string
+		path    string
+		wantErr bool
+	}{
+		{name: "allow zero", path: "/" + rawConfigKey + "/list/0"},
+		{name: "allow one", path: "/" + rawConfigKey + "/list/1"},
+		{name: "allow ten", path: "/" + rawConfigKey + "/list/10"},
+		{name: "reject leading zero", path: "/" + rawConfigKey + "/list/01", wantErr: true},
+		{name: "reject multiple leading zeros", path: "/" + rawConfigKey + "/list/002", wantErr: true},
+		{name: "reject plus sign", path: "/" + rawConfigKey + "/list/+1", wantErr: true},
+		{name: "reject negative zero", path: "/" + rawConfigKey + "/list/-0", wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := unsyncedConfigAccess(http.MethodGet, tc.path, nil, io.Discard)
+			if tc.wantErr && err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+		})
 	}
 }
