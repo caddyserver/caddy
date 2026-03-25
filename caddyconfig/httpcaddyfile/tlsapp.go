@@ -702,6 +702,7 @@ func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) []*caddytls
 	emptyAP := new(caddytls.AutomationPolicy)
 	for i := 0; i < len(aps); i++ {
 		emptyAP.SubjectsRaw = aps[i].SubjectsRaw
+		emptyAP.ManagersRaw = nil
 		if reflect.DeepEqual(aps[i], emptyAP) {
 			// AP is empty
 			emptyAPCount++
@@ -711,6 +712,10 @@ func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) []*caddytls
 			emptyAP.SubjectsRaw = nil
 			if shadowIdx >= 0 {
 				emptyAP.SubjectsRaw = aps[shadowIdx].SubjectsRaw
+				// allow the later policy, which is likely for a wildcard, to have cert
+				// managers ("get_certificate"), since wildcards now cover specific
+				// subdomains by default, when configured (see discussion in #7559)
+				emptyAP.ManagersRaw = aps[shadowIdx].ManagersRaw
 			}
 
 			// if this is the last AP, we can delete it, since auto-https should

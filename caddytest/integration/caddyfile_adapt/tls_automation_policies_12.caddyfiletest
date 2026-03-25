@@ -6,6 +6,7 @@
 	respond "wildcard"
 }
 
+# certificate for this subdomain is covered by wildcard above
 subdomain.test.local {
 	respond "subdomain"
 }
@@ -77,11 +78,6 @@ subdomain.test.local {
 		"tls": {
 			"automation": {
 				"policies": [
-					{
-						"subjects": [
-							"subdomain.test.local"
-						]
-					},
 					{
 						"subjects": [
 							"*.test.local"
