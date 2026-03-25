@@ -19,6 +19,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"io"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -954,5 +955,18 @@ MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDRS0LmTwUT0iwP
 				test.checkState(t, test.cfg)
 			}
 		})
+	}
+}
+
+func TestUnsyncedConfigAccessRejectsNonCanonicalArrayIndices(t *testing.T) {
+	rawCfg = map[string]any{
+		rawConfigKey: map[string]any{
+			"list": []any{"zero", "one"},
+		},
+	}
+
+	err := unsyncedConfigAccess(http.MethodGet, "/"+rawConfigKey+"/list/01", nil, io.Discard)
+	if err == nil {
+		t.Fatal("expected non-canonical array index to be rejected")
 	}
 }
