@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
+	"sync"
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types/ref"
@@ -443,11 +444,12 @@ func (m MatchVarsRE) Validate() error {
 // GetVar gets a value out of the context's variable table by key.
 // If the key does not exist, the return value will be nil.
 func GetVar(ctx context.Context, key string) any {
-	varMap, ok := ctx.Value(VarsCtxKey).(map[string]any)
+	varMap, ok := ctx.Value(VarsCtxKey).(*sync.Map)
 	if !ok {
 		return nil
 	}
-	return varMap[key]
+	val, _ := varMap.Load(key)
+	return val
 }
 
 // SetVar sets a value in the context's variable table with
@@ -458,17 +460,15 @@ func GetVar(ctx context.Context, key string) any {
 // underlying value does not count) and the key exists in
 // the table, the key+value will be deleted from the table.
 func SetVar(ctx context.Context, key string, value any) {
-	varMap, ok := ctx.Value(VarsCtxKey).(map[string]any)
+	varMap, ok := ctx.Value(VarsCtxKey).(*sync.Map)
 	if !ok {
 		return
 	}
 	if value == nil {
-		if _, ok := varMap[key]; ok {
-			delete(varMap, key)
-			return
-		}
+		varMap.Delete(key)
+		return
 	}
-	varMap[key] = value
+	varMap.Store(key, value)
 }
 
 // Interface guards
