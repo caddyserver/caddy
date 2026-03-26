@@ -385,6 +385,11 @@ func parseSegmentAsConfig(h Helper) ([]ConfigValue, error) {
 			}
 		}
 
+		// clone State once for the entire block so sibling directives
+		// can share state, but changes don't leak to the parent scope
+		blockState := make(map[string]any, len(h.State))
+		maps.Copy(blockState, h.State)
+
 		// with matchers ready to go, evaluate each directive's segment
 		for _, seg := range segments {
 			dir := seg.Directive()
@@ -396,6 +401,7 @@ func parseSegmentAsConfig(h Helper) ([]ConfigValue, error) {
 			subHelper := h
 			subHelper.Dispenser = caddyfile.NewDispenser(seg)
 			subHelper.matcherDefs = matcherDefs
+			subHelper.State = blockState
 
 			results, err := dirFunc(subHelper)
 			if err != nil {
