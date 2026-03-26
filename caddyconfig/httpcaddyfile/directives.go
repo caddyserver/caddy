@@ -415,6 +415,9 @@ func parseSegmentAsConfig(h Helper) ([]ConfigValue, error) {
 				allResults = append(allResults, result)
 			}
 		}
+
+		// propagate named routes back to parent (invoke can be nested)
+		h.State[namedRouteKey] = blockState[namedRouteKey]
 	}
 
 	return allResults, nil
