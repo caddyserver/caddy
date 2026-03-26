@@ -62,7 +62,7 @@ type Upstream struct {
 	activeHealthCheckUpstream string
 	healthCheckPolicy         *PassiveHealthChecks
 	cb                        CircuitBreaker
-	unhealthy                 int32 // accessed atomically; status from active health checker
+	unhealthy                 atomic.Int32 // status from active health checker
 }
 
 // (pointer receiver necessary to avoid a race condition, since
@@ -174,36 +174,36 @@ func (u *Upstream) fillDynamicHost() {
 // Host is the basic, in-memory representation of the state of a remote host.
 // Its fields are accessed atomically and Host values must not be copied.
 type Host struct {
-	numRequests  int64 // must be 64-bit aligned on 32-bit systems (see https://golang.org/pkg/sync/atomic/#pkg-note-BUG)
-	fails        int64
-	activePasses int64
-	activeFails  int64
+	numRequests  atomic.Int64 // atomic.Int64 is automatically aligned for us (see https://golang.org/pkg/sync/atomic/#pkg-note-BUG)
+	fails        atomic.Int64
+	activePasses atomic.Int64
+	activeFails  atomic.Int64
 }
 
 // NumRequests returns the number of active requests to the upstream.
 func (h *Host) NumRequests() int {
-	return int(atomic.LoadInt64(&h.numRequests))
+	return int(h.numRequests.Load())
 }
 
 // Fails returns the number of recent failures with the upstream.
 func (h *Host) Fails() int {
-	return int(atomic.LoadInt64(&h.fails))
+	return int(h.fails.Load())
 }
 
 // activeHealthPasses returns the number of consecutive active health check passes with the upstream.
 func (h *Host) activeHealthPasses() int {
-	return int(atomic.LoadInt64(&h.activePasses))
+	return int(h.activePasses.Load())
 }
 
 // activeHealthFails returns the number of consecutive active health check failures with the upstream.
 func (h *Host) activeHealthFails() int {
-	return int(atomic.LoadInt64(&h.activeFails))
+	return int(h.activeFails.Load())
 }
 
 // countRequest mutates the active request count by
 // delta. It returns an error if the adjustment fails.
 func (h *Host) countRequest(delta int) error {
-	result := atomic.AddInt64(&h.numRequests, int64(delta))
+	result := h.numRequests.Add(int64(delta))
 	if result < 0 {
 		return fmt.Errorf("count below 0: %d", result)
 	}
@@ -213,7 +213,7 @@ func (h *Host) countRequest(delta int) error {
 // countFail mutates the recent failures count by
 // delta. It returns an error if the adjustment fails.
 func (h *Host) countFail(delta int) error {
-	result := atomic.AddInt64(&h.fails, int64(delta))
+	result := h.fails.Add(int64(delta))
 	if result < 0 {
 		return fmt.Errorf("count below 0: %d", result)
 	}
@@ -223,7 +223,7 @@ func (h *Host) countFail(delta int) error {
 // countHealthPass mutates the recent passes count by
 // delta. It returns an error if the adjustment fails.
 func (h *Host) countHealthPass(delta int) error {
-	result := atomic.AddInt64(&h.activePasses, int64(delta))
+	result := h.activePasses.Add(int64(delta))
 	if result < 0 {
 		return fmt.Errorf("count below 0: %d", result)
 	}
@@ -233,7 +233,7 @@ func (h *Host) countHealthPass(delta int) error {
 // countHealthFail mutates the recent failures count by
 // delta. It returns an error if the adjustment fails.
 func (h *Host) countHealthFail(delta int) error {
-	result := atomic.AddInt64(&h.activeFails, int64(delta))
+	result := h.activeFails.Add(int64(delta))
 	if result < 0 {
 		return fmt.Errorf("count below 0: %d", result)
 	}
@@ -242,14 +242,15 @@ func (h *Host) countHealthFail(delta int) error {
 
 // resetHealth resets the health check counters.
 func (h *Host) resetHealth() {
-	atomic.StoreInt64(&h.activePasses, 0)
-	atomic.StoreInt64(&h.activeFails, 0)
+	h.activePasses.Store(0)
+	h.activeFails.Store(0)
 }
 
 // healthy returns true if the upstream is not actively marked as unhealthy.
 // (This returns the status only from the "active" health checks.)
 func (u *Upstream) healthy() bool {
-	return atomic.LoadInt32(&u.unhealthy) == 0
+	return u.unhealthy.Load() == 0
+	// return atomic.LoadInt32(&u.unhealthy) == 0
 }
 
 // SetHealthy sets the upstream has healthy or unhealthy
@@ -260,7 +261,7 @@ func (u *Upstream) setHealthy(healthy bool) bool {
 	if healthy {
 		unhealthy, compare = 0, 1
 	}
-	return atomic.CompareAndSwapInt32(&u.unhealthy, compare, unhealthy)
+	return u.unhealthy.CompareAndSwap(compare, unhealthy)
 }
 
 // DialInfo contains information needed to dial a
