@@ -668,6 +668,8 @@ func parseRoot(h Helper) ([]ConfigValue, error) {
 		if !h.NextArg() {
 			return nil, h.ArgErr()
 		}
+		// store the unmatched root in state so other directives can access it
+		h.State["root"] = h.Val()
 		return h.NewRoute(nil, caddyhttp.VarsMiddleware{"root": h.Val()}), nil
 	}
 
@@ -681,6 +683,10 @@ func parseRoot(h Helper) ([]ConfigValue, error) {
 	// advance to the root path
 	if !h.NextArg() {
 		return nil, h.ArgErr()
+	}
+	// store the unmatched root in state so other directives can access it
+	if userMatcherSet == nil {
+		h.State["root"] = h.Val()
 	}
 	// make the route with the matcher
 	return h.NewRoute(userMatcherSet, caddyhttp.VarsMiddleware{"root": h.Val()}), nil
