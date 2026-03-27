@@ -664,8 +664,12 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 		return true, succ.error
 	}
 
-	// remember this failure (if enabled)
-	h.countFailure(upstream)
+	// remember this failure (if enabled); response-based retries
+	// are not counted as failures since the upstream did respond
+	// successfully - only the response content triggered a retry
+	if _, isRetryableResponse := proxyErr.(retryableResponseError); !isRetryableResponse {
+		h.countFailure(upstream)
+	}
 
 	// if we've tried long enough, break
 	if !h.LoadBalancing.tryAgain(h.ctx, start, retries, proxyErr, r, h.logger) {
@@ -1049,6 +1053,54 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 		res.Body, _ = h.bufferedBody(res.Body, h.ResponseBuffers)
 	}
 
+	// set response placeholders so they can be used in retry match
+	// expressions and handle_response routes; clear stale header
+	// placeholders from a previous attempt first so they don't
+	// leak into the next retry evaluation
+	if prev, ok := repl.Get("http.reverse_proxy.header_keys"); ok {
+		if keys, ok := prev.([]string); ok {
+			for _, k := range keys {
+				repl.Delete("http.reverse_proxy.header." + k)
+			}
+		}
+	}
+	headerKeys := make([]string, 0, len(res.Header))
+	for field, value := range res.Header {
+		repl.Set("http.reverse_proxy.header."+field, strings.Join(value, ","))
+		headerKeys = append(headerKeys, field)
+	}
+	repl.Set("http.reverse_proxy.header_keys", headerKeys)
+	repl.Set("http.reverse_proxy.status_code", res.StatusCode)
+	repl.Set("http.reverse_proxy.status_text", res.Status)
+
+	// check if the response matches a retry match entry; if so,
+	// close the body and return a retryable error so the request
+	// is retried with the next upstream. Only evaluate matcher sets
+	// that contain at least one expression matcher, since those are
+	// the ones that can reference response data ({rp.status_code},
+	// {rp.header.*}). Pure request-only matchers (method, path, etc.)
+	// are skipped to avoid retrying every response that matches a
+	// request condition
+	if h.LoadBalancing != nil && len(h.LoadBalancing.RetryMatch) > 0 {
+		for _, matcherSet := range h.LoadBalancing.RetryMatch {
+			if !matcherSetHasResponseMatcher(matcherSet) {
+				continue
+			}
+			match, err := matcherSet.MatchWithError(req)
+			if err != nil {
+				h.logger.Error("error matching request for retry", zap.Error(err))
+				break
+			}
+			if match {
+				res.Body.Close()
+				return retryableResponseError{
+					error:      fmt.Errorf("upstream response matched retry_match (status %d)", res.StatusCode),
+					statusCode: res.StatusCode,
+				}
+			}
+		}
+	}
+
 	// see if any response handler is configured for this response from the backend
 	for i, rh := range h.HandleResponse {
 		if rh.Match != nil && !rh.Match.Match(res.StatusCode, res.Header) {
@@ -1067,14 +1119,6 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 			}
 			break
 		}
-
-		// set up the replacer so that parts of the original response can be
-		// used for routing decisions
-		for field, value := range res.Header {
-			repl.Set("http.reverse_proxy.header."+field, strings.Join(value, ","))
-		}
-		repl.Set("http.reverse_proxy.status_code", res.StatusCode)
-		repl.Set("http.reverse_proxy.status_text", res.Status)
 
 		if c := logger.Check(zapcore.DebugLevel, "handling response"); c != nil {
 			c.Write(zap.Int("handler", i))
@@ -1260,16 +1304,27 @@ func (lb LoadBalancing) tryAgain(ctx caddy.Context, start time.Time, retries int
 	// specifically a dialer error, we need to be careful
 	if proxyErr != nil {
 		_, isDialError := proxyErr.(DialError)
+		_, isRetryableResponse := proxyErr.(retryableResponseError)
 		herr, isHandlerError := proxyErr.(caddyhttp.HandlerError)
 
 		// if the error occurred after a connection was established,
 		// we have to assume the upstream received the request, and
 		// retries need to be carefully decided, because some requests
-		// are not idempotent
-		if !isDialError && (!isHandlerError || !errors.Is(herr, errNoUpstream)) {
+		// are not idempotent; retryableResponseError is excluded here
+		// because its retry decision was already made in reverseProxy()
+		// when the response matchers were evaluated
+		if !isDialError && !isRetryableResponse && (!isHandlerError || !errors.Is(herr, errNoUpstream)) {
 			if lb.RetryMatch == nil && req.Method != "GET" {
 				// by default, don't retry requests if they aren't GET
 				return false
+			}
+
+			// set transport error flag so CEL expressions can use
+			// isTransportError() to decide whether to retry
+			repl, _ := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+			if repl != nil {
+				repl.Set("http.reverse_proxy.is_transport_error", true)
+				defer repl.Set("http.reverse_proxy.is_transport_error", false)
 			}
 
 			match, err := lb.RetryMatch.AnyMatchWithError(req)
@@ -1501,6 +1556,12 @@ func removeConnectionHeaders(h http.Header) {
 
 // statusError returns an error value that has a status code.
 func statusError(err error) error {
+	// if a response-based retry was exhausted, use the actual upstream
+	// status code instead of a generic 502
+	if rre, ok := err.(retryableResponseError); ok {
+		return caddyhttp.Error(rre.statusCode, err)
+	}
+
 	// errors proxying usually mean there is a problem with the upstream(s)
 	statusCode := http.StatusBadGateway
 
@@ -1552,13 +1613,15 @@ type LoadBalancing struct {
 	// to spin if all backends are down and latency is very low.
 	TryInterval caddy.Duration `json:"try_interval,omitempty"`
 
-	// A list of matcher sets that restricts with which requests retries are
-	// allowed. A request must match any of the given matcher sets in order
-	// to be retried if the connection to the upstream succeeded but the
-	// subsequent round-trip failed. If the connection to the upstream failed,
-	// a retry is always allowed. If unspecified, only GET requests will be
-	// allowed to be retried. Note that a retry is done with the next available
-	// host according to the load balancing policy.
+	// A list of matcher sets that controls retry behavior. Matcher sets
+	// without expression matchers (e.g. method, path) restrict which
+	// requests are retried on transport errors - if unspecified, only
+	// GET requests will be retried. Matcher sets with CEL expression
+	// matchers are evaluated against upstream responses and can
+	// reference {rp.status_code}, {rp.header.*}, and
+	// isTransportError(). Dial errors are always retried regardless
+	// of this setting. Retries use the next available upstream per
+	// the load balancing policy
 	RetryMatchRaw caddyhttp.RawMatcherSets `json:"retry_match,omitempty" caddy:"namespace=http.matchers"`
 
 	SelectionPolicy Selector              `json:"-"`
@@ -1656,9 +1719,39 @@ type RequestHeaderOpsTransport interface {
 	RequestHeaderOps() *headers.HeaderOps
 }
 
+// canMatchResponse is implemented by matchers that may reference
+// response data via placeholders (e.g. CEL expression matchers
+// using {rp.status_code} or {rp.header.*})
+type canMatchResponse interface {
+	CanMatchResponse()
+}
+
+// matcherSetHasResponseMatcher reports whether a matcher set contains
+// at least one matcher that can reference response data. Matcher sets
+// without such matchers only test request properties and should not
+// be evaluated for response-based retry decisions
+func matcherSetHasResponseMatcher(matcherSet caddyhttp.MatcherSet) bool {
+	for _, m := range matcherSet {
+		if _, ok := m.(canMatchResponse); ok {
+			return true
+		}
+	}
+	return false
+}
+
 // roundtripSucceededError is an error type that is returned if the
 // roundtrip succeeded, but an error occurred after-the-fact.
 type roundtripSucceededError struct{ error }
+
+// retryableResponseError is returned when the upstream response matched
+// a retry_match entry, indicating the request should be retried with the
+// next upstream. It preserves the original status code so that if retries
+// are exhausted, the actual upstream status is reported instead of a
+// generic 502
+type retryableResponseError struct {
+	error
+	statusCode int
+}
 
 // bodyReadCloser is a reader that, upon closing, will return
 // its buffer to the pool and close the underlying body reader.

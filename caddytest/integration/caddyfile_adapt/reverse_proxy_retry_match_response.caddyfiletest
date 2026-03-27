@@ -1,0 +1,147 @@
+:8884
+
+reverse_proxy 127.0.0.1:65535 {
+	lb_retries 5
+
+	# request matchers (backward-compatible, non-expression)
+	lb_retry_match {
+		method POST PUT
+	}
+	lb_retry_match {
+		path /foo*
+	}
+	lb_retry_match {
+		header X-Idempotency-Key *
+	}
+
+	# response status code via expression
+	lb_retry_match {
+		expression `{rp.status_code} in [502, 503, 504]`
+	}
+
+	# response header via expression
+	lb_retry_match {
+		expression `{rp.header.X-Retry} == "true"`
+	}
+
+	# CEL request functions combined with response placeholders
+	lb_retry_match {
+		expression `method('POST') && {rp.status_code} >= 500`
+	}
+	lb_retry_match {
+		expression `path('/api*') && {rp.status_code} in [502, 503]`
+	}
+	lb_retry_match {
+		expression `host('example.com') && {rp.status_code} == 503`
+	}
+	lb_retry_match {
+		expression `query({'retry': 'true'}) && {rp.status_code} >= 500`
+	}
+	lb_retry_match {
+		expression `header({'X-Idempotency-Key': '*'}) && {rp.status_code} in [502, 503]`
+	}
+	lb_retry_match {
+		expression `protocol('https') && {rp.status_code} == 502`
+	}
+	lb_retry_match {
+		expression `path_regexp('^/api/v[0-9]+/') && {rp.status_code} >= 500`
+	}
+	lb_retry_match {
+		expression `header_regexp('Content-Type', '^application/json') && {rp.status_code} == 502`
+	}
+
+	# isTransportError() for transport error handling
+	lb_retry_match {
+		expression `isTransportError() || {rp.status_code} in [502, 503]`
+	}
+	lb_retry_match {
+		expression `isTransportError() && method('POST')`
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8884"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "reverse_proxy",
+									"load_balancing": {
+										"retries": 5,
+										"retry_match": [
+											{
+												"method": [
+													"POST",
+													"PUT"
+												]
+											},
+											{
+												"path": [
+													"/foo*"
+												]
+											},
+											{
+												"header": {
+													"X-Idempotency-Key": [
+														"*"
+													]
+												}
+											},
+											{
+												"expression": "{http.reverse_proxy.status_code} in [502, 503, 504]"
+											},
+											{
+												"expression": "{http.reverse_proxy.header.X-Retry} == \"true\""
+											},
+											{
+												"expression": "method('POST') \u0026\u0026 {http.reverse_proxy.status_code} \u003e= 500"
+											},
+											{
+												"expression": "path('/api*') \u0026\u0026 {http.reverse_proxy.status_code} in [502, 503]"
+											},
+											{
+												"expression": "host('example.com') \u0026\u0026 {http.reverse_proxy.status_code} == 503"
+											},
+											{
+												"expression": "query({'retry': 'true'}) \u0026\u0026 {http.reverse_proxy.status_code} \u003e= 500"
+											},
+											{
+												"expression": "header({'X-Idempotency-Key': '*'}) \u0026\u0026 {http.reverse_proxy.status_code} in [502, 503]"
+											},
+											{
+												"expression": "protocol('https') \u0026\u0026 {http.reverse_proxy.status_code} == 502"
+											},
+											{
+												"expression": "path_regexp('^/api/v[0-9]+/') \u0026\u0026 {http.reverse_proxy.status_code} \u003e= 500"
+											},
+											{
+												"expression": "header_regexp('Content-Type', '^application/json') \u0026\u0026 {http.reverse_proxy.status_code} == 502"
+											},
+											{
+												"expression": "isTransportError() || {http.reverse_proxy.status_code} in [502, 503]"
+											},
+											{
+												"expression": "isTransportError() \u0026\u0026 method('POST')"
+											}
+										]
+									},
+									"upstreams": [
+										{
+											"dial": "127.0.0.1:65535"
+										}
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

@@ -1,0 +1,50 @@
+:8884
+
+reverse_proxy 127.0.0.1:65535 {
+	lb_retries 3
+	lb_retry_match expression `{rp.status_code} in [502, 503]`
+	lb_retry_match expression `isTransportError() || {rp.status_code} == 502`
+	lb_retry_match expression `method('POST') && {rp.status_code} == 503`
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8884"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "reverse_proxy",
+									"load_balancing": {
+										"retries": 3,
+										"retry_match": [
+											{
+												"expression": "{http.reverse_proxy.status_code} in [502, 503]"
+											},
+											{
+												"expression": "isTransportError() || {http.reverse_proxy.status_code} == 502"
+											},
+											{
+												"expression": "method('POST') \u0026\u0026 {http.reverse_proxy.status_code} == 503"
+											}
+										]
+									},
+									"upstreams": [
+										{
+											"dial": "127.0.0.1:65535"
+										}
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

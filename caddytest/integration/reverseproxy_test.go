@@ -7,6 +7,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2/caddytest"
@@ -561,4 +562,234 @@ func TestReverseProxyHealthCheckUnixSocketWithoutPort(t *testing.T) {
 	`, socketName), "caddyfile")
 
 	tester.AssertGetResponse("http://localhost:9080/", 200, "Hello, World!")
+}
+
+// TestReverseProxyRetryMatchStatusCode verifies that lb_retry_match with a
+// CEL expression matching on {rp.status_code} causes the request to be
+// retried on the next upstream when the first upstream returns a matching
+// status code
+func TestReverseProxyRetryMatchStatusCode(t *testing.T) {
+	// Bad upstream: returns 502
+	badSrv := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusBadGateway)
+		}),
+	}
+	badLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	go badSrv.Serve(badLn)
+	t.Cleanup(func() { badSrv.Close(); badLn.Close() })
+
+	// Good upstream: returns 200
+	goodSrv := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Write([]byte("ok"))
+		}),
+	}
+	goodLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	go goodSrv.Serve(goodLn)
+	t.Cleanup(func() { goodSrv.Close(); goodLn.Close() })
+
+	tester := caddytest.NewTester(t)
+	tester.InitServer(fmt.Sprintf(`
+	{
+		skip_install_trust
+		admin localhost:2999
+		http_port 9080
+		https_port 9443
+		grace_period 1ns
+	}
+	http://localhost:9080 {
+		reverse_proxy %s %s {
+			lb_policy round_robin
+			lb_retries 1
+			lb_retry_match {
+				expression `+"`{rp.status_code} in [502, 503]`"+`
+			}
+		}
+	}
+	`, goodLn.Addr().String(), badLn.Addr().String()), "caddyfile")
+
+	tester.AssertGetResponse("http://localhost:9080/", 200, "ok")
+}
+
+// TestReverseProxyRetryMatchHeader verifies that lb_retry_match with a CEL
+// expression matching on {rp.header.*} causes the request to be retried when
+// the upstream sets a matching response header
+func TestReverseProxyRetryMatchHeader(t *testing.T) {
+	var badHits atomic.Int32
+
+	// Bad upstream: returns 200 but signals retry via header
+	badSrv := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			badHits.Add(1)
+			w.Header().Set("X-Upstream-Retry", "true")
+			w.Write([]byte("bad"))
+		}),
+	}
+	badLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	go badSrv.Serve(badLn)
+	t.Cleanup(func() { badSrv.Close(); badLn.Close() })
+
+	// Good upstream: returns 200 without retry header
+	goodSrv := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Write([]byte("good"))
+		}),
+	}
+	goodLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	go goodSrv.Serve(goodLn)
+	t.Cleanup(func() { goodSrv.Close(); goodLn.Close() })
+
+	tester := caddytest.NewTester(t)
+	tester.InitServer(fmt.Sprintf(`
+	{
+		skip_install_trust
+		admin localhost:2999
+		http_port 9080
+		https_port 9443
+		grace_period 1ns
+	}
+	http://localhost:9080 {
+		reverse_proxy %s %s {
+			lb_policy round_robin
+			lb_retries 1
+			lb_retry_match {
+				expression `+"`{rp.header.X-Upstream-Retry} == \"true\"`"+`
+			}
+		}
+	}
+	`, goodLn.Addr().String(), badLn.Addr().String()), "caddyfile")
+
+	tester.AssertGetResponse("http://localhost:9080/", 200, "good")
+
+	if badHits.Load() != 1 {
+		t.Errorf("bad upstream hits: got %d, want 1", badHits.Load())
+	}
+}
+
+// TestReverseProxyRetryMatchCombined verifies that a CEL expression combining
+// request path matching with response status code matching works correctly -
+// only retrying when both conditions are met
+func TestReverseProxyRetryMatchCombined(t *testing.T) {
+	// Upstream: returns 502 for all requests
+	srv := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusBadGateway)
+		}),
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	go srv.Serve(ln)
+	t.Cleanup(func() { srv.Close(); ln.Close() })
+
+	// Good upstream
+	goodSrv := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Write([]byte("ok"))
+		}),
+	}
+	goodLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	go goodSrv.Serve(goodLn)
+	t.Cleanup(func() { goodSrv.Close(); goodLn.Close() })
+
+	tester := caddytest.NewTester(t)
+	tester.InitServer(fmt.Sprintf(`
+	{
+		skip_install_trust
+		admin localhost:2999
+		http_port 9080
+		https_port 9443
+		grace_period 1ns
+	}
+	http://localhost:9080 {
+		reverse_proxy %s %s {
+			lb_policy round_robin
+			lb_retries 1
+			lb_retry_match {
+				expression `+"`path('/retry*') && {rp.status_code} in [502, 503]`"+`
+			}
+		}
+	}
+	`, goodLn.Addr().String(), ln.Addr().String()), "caddyfile")
+
+	// /retry path matches the expression - should retry to good upstream
+	tester.AssertGetResponse("http://localhost:9080/retry", 200, "ok")
+
+	// /other path does NOT match - should return the 502
+	req, _ := http.NewRequest(http.MethodGet, "http://localhost:9080/other", nil)
+	tester.AssertResponse(req, 502, "")
+}
+
+// TestReverseProxyRetryMatchIsTransportError verifies that the
+// isTransportError() CEL function correctly identifies transport errors
+// and allows retrying them alongside response-based matching
+func TestReverseProxyRetryMatchIsTransportError(t *testing.T) {
+	// Good upstream: returns 200
+	goodSrv := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Write([]byte("ok"))
+		}),
+	}
+	goodLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	go goodSrv.Serve(goodLn)
+	t.Cleanup(func() { goodSrv.Close(); goodLn.Close() })
+
+	// Broken upstream: accepts connections but closes immediately
+	brokenLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	t.Cleanup(func() { brokenLn.Close() })
+	go func() {
+		for {
+			conn, err := brokenLn.Accept()
+			if err != nil {
+				return
+			}
+			conn.Close()
+		}
+	}()
+
+	tester := caddytest.NewTester(t)
+	tester.InitServer(fmt.Sprintf(`
+	{
+		skip_install_trust
+		admin localhost:2999
+		http_port 9080
+		https_port 9443
+		grace_period 1ns
+	}
+	http://localhost:9080 {
+		reverse_proxy %s %s {
+			lb_policy round_robin
+			lb_retries 1
+			lb_retry_match {
+				expression `+"`isTransportError() || {rp.status_code} in [502, 503]`"+`
+			}
+		}
+	}
+	`, goodLn.Addr().String(), brokenLn.Addr().String()), "caddyfile")
+
+	// Transport error on broken upstream should be retried to good upstream
+	tester.AssertGetResponse("http://localhost:9080/", 200, "ok")
 }
