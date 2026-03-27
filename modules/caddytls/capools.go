@@ -247,6 +247,9 @@ func (p *PKIRootCAPool) Provision(ctx caddy.Context) error {
 	var certs []*x509.Certificate
 	for _, ca := range p.ca {
 		rootCert := ca.RootCertificate()
+		if rootCert == nil {
+			return fmt.Errorf("CA %s has no root certificate", ca.ID)
+		}
 		caPool.AddCert(rootCert)
 		certs = append(certs, rootCert)
 	}
@@ -329,6 +332,9 @@ func (p *PKIIntermediateCAPool) Provision(ctx caddy.Context) error {
 	var certs []*x509.Certificate
 	for _, ca := range p.ca {
 		for _, c := range ca.IntermediateCertificateChain() {
+			if c == nil {
+				return fmt.Errorf("CA %s has a nil certificate in its intermediate chain", ca.ID)
+			}
 			caPool.AddCert(c)
 			certs = append(certs, c)
 		}
@@ -681,6 +687,9 @@ func (hcp *HTTPCertPool) Provision(ctx caddy.Context) error {
 		if err != nil {
 			return err
 		}
+		if res.StatusCode < 200 || res.StatusCode >= 300 {
+			return fmt.Errorf("HTTP %d fetching CA certificate bundle from %s", res.StatusCode, uri)
+		}
 		// Parse PEM to extract certificates
 		pemData := pembs
 		for len(pemData) > 0 {
@@ -866,8 +875,10 @@ func (ccp *CombinedCAPool) Provision(ctx caddy.Context) error {
 		if certs == nil {
 			return fmt.Errorf("source %T returned nil certificates", ca)
 		}
-
 		for _, cert := range certs {
+			if cert == nil {
+				return fmt.Errorf("source %T returned a nil certificate", ca)
+			}
 			caPool.AddCert(cert)
 			allCerts = append(allCerts, cert)
 		}
