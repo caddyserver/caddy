@@ -464,6 +464,17 @@ block2 {
 }
 `,
 		},
+		{
+			description: "issue #7425: multiline backticked string indentation",
+			input: `https://localhost:8953 {
+    respond ` + "`" + `Here are some random numbers:
+
+{{randNumeric 16}}
+
+Hope this helps.` + "`" + `
+}`,
+			expect: "https://localhost:8953 {\n\trespond `Here are some random numbers:\n\n{{randNumeric 16}}\n\nHope this helps.`\n}",
+		},
 	} {
 		// the formatter should output a trailing newline,
 		// even if the tests aren't written to expect that

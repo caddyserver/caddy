@@ -173,6 +173,7 @@ func parseCaddyfileURI(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, err
 			if hasArgs {
 				return nil, h.Err("Cannot specify uri query rewrites in both argument and block")
 			}
+			// nolint:prealloc
 			queryArgs := []string{h.Val()}
 			queryArgs = append(queryArgs, h.RemainingArgs()...)
 			err := applyQueryOps(h, rewr.Query, queryArgs)

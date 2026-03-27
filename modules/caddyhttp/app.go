@@ -18,6 +18,7 @@ import (
 	"cmp"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"maps"
 	"net"
@@ -51,6 +52,7 @@ func init() {
 // Placeholder | Description
 // ------------|---------------
 // `{http.request.body}` | The request body (⚠️ inefficient; use only for debugging)
+// `{http.request.body_base64}` | The request body, base64-encoded (⚠️ for debugging)
 // `{http.request.cookie.*}` | HTTP request cookie
 // `{http.request.duration}` | Time up to now spent handling the request (after decoding headers from client)
 // `{http.request.duration_ms}` | Same as 'duration', but in milliseconds.
@@ -82,6 +84,7 @@ func init() {
 // `{http.request.tls.proto}` | The negotiated next protocol
 // `{http.request.tls.proto_mutual}` | The negotiated next protocol was advertised by the server
 // `{http.request.tls.server_name}` | The server name requested by the client, if any
+// `{http.request.tls.ech}` | Whether ECH was offered by the client and accepted by the server
 // `{http.request.tls.client.fingerprint}` | The SHA256 checksum of the client certificate
 // `{http.request.tls.client.public_key}` | The public key of the client certificate.
 // `{http.request.tls.client.public_key_sha256}` | The SHA256 checksum of the client's public key.
@@ -346,6 +349,20 @@ func (app *App) Provision(ctx caddy.Context) error {
 				srv.listenerWrappers = append([]caddy.ListenerWrapper{new(tlsPlaceholderWrapper)}, srv.listenerWrappers...)
 			}
 		}
+
+		// set up each packet conn modifier
+		if srv.PacketConnWrappersRaw != nil {
+			vals, err := ctx.LoadModule(srv, "PacketConnWrappersRaw")
+			if err != nil {
+				return fmt.Errorf("loading packet conn wrapper modules: %v", err)
+			}
+			// if any wrappers were configured, they come before the QUIC handshake;
+			// unlike TLS above, there is no QUIC placeholder
+			for _, val := range vals.([]any) {
+				srv.packetConnWrappers = append(srv.packetConnWrappers, val.(caddy.PacketConnWrapper))
+			}
+		}
+
 		// pre-compile the primary handler chain, and be sure to wrap it in our
 		// route handler so that important security checks are done, etc.
 		primaryRoute := emptyHandler
@@ -695,9 +712,10 @@ func (app *App) Stop() error {
 	// enforce grace period if configured
 	if app.GracePeriod > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(app.GracePeriod))
+		timeout := time.Duration(app.GracePeriod)
+		ctx, cancel = context.WithTimeoutCause(ctx, timeout, fmt.Errorf("server graceful shutdown %ds timeout", int(timeout.Seconds())))
 		defer cancel()
-		app.logger.Info("servers shutting down; grace period initiated", zap.Duration("duration", time.Duration(app.GracePeriod)))
+		app.logger.Info("servers shutting down; grace period initiated", zap.Duration("duration", timeout))
 	} else {
 		app.logger.Info("servers shutting down with eternal grace period")
 	}
@@ -723,6 +741,9 @@ func (app *App) Stop() error {
 		}
 
 		if err := server.server.Shutdown(ctx); err != nil {
+			if cause := context.Cause(ctx); cause != nil && errors.Is(err, context.DeadlineExceeded) {
+				err = cause
+			}
 			app.logger.Error("server shutdown",
 				zap.Error(err),
 				zap.Strings("addresses", server.Listen))
@@ -746,6 +767,9 @@ func (app *App) Stop() error {
 		}
 
 		if err := server.h3server.Shutdown(ctx); err != nil {
+			if cause := context.Cause(ctx); cause != nil && errors.Is(err, context.DeadlineExceeded) {
+				err = cause
+			}
 			app.logger.Error("HTTP/3 server shutdown",
 				zap.Error(err),
 				zap.Strings("addresses", server.Listen))

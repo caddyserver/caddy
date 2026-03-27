@@ -255,7 +255,7 @@ func (m IPMaskFilter) Filter(in zapcore.Field) zapcore.Field {
 }
 
 func (m IPMaskFilter) mask(s string) string {
-	output := ""
+	parts := make([]string, 0)
 	for value := range strings.SplitSeq(s, ",") {
 		value = strings.TrimSpace(value)
 		host, port, err := net.SplitHostPort(value)
@@ -264,7 +264,7 @@ func (m IPMaskFilter) mask(s string) string {
 		}
 		ipAddr := net.ParseIP(host)
 		if ipAddr == nil {
-			output += value + ", "
+			parts = append(parts, value)
 			continue
 		}
 		mask := m.v4Mask
@@ -273,13 +273,13 @@ func (m IPMaskFilter) mask(s string) string {
 		}
 		masked := ipAddr.Mask(mask)
 		if port == "" {
-			output += masked.String() + ", "
+			parts = append(parts, masked.String())
 			continue
 		}
 
-		output += net.JoinHostPort(masked.String(), port) + ", "
+		parts = append(parts, net.JoinHostPort(masked.String(), port))
 	}
-	return strings.TrimSuffix(output, ", ")
+	return strings.Join(parts, ", ")
 }
 
 type filterAction string

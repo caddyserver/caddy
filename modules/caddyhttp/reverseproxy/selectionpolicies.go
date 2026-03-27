@@ -20,7 +20,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	weakrand "math/rand"
+	weakrand "math/rand/v2"
 	"net"
 	"net/http"
 	"strconv"
@@ -40,8 +40,8 @@ func init() {
 	caddy.RegisterModule(RandomSelection{})
 	caddy.RegisterModule(RandomChoiceSelection{})
 	caddy.RegisterModule(LeastConnSelection{})
-	caddy.RegisterModule(RoundRobinSelection{})
-	caddy.RegisterModule(WeightedRoundRobinSelection{})
+	caddy.RegisterModule(new(RoundRobinSelection))
+	caddy.RegisterModule(new(WeightedRoundRobinSelection))
 	caddy.RegisterModule(FirstSelection{})
 	caddy.RegisterModule(IPHashSelection{})
 	caddy.RegisterModule(ClientIPHashSelection{})
@@ -83,12 +83,12 @@ type WeightedRoundRobinSelection struct {
 	// The weight of each upstream in order,
 	// corresponding with the list of upstreams configured.
 	Weights     []int `json:"weights,omitempty"`
-	index       uint32
+	index       atomic.Uint32
 	totalWeight int
 }
 
 // CaddyModule returns the Caddy module information.
-func (WeightedRoundRobinSelection) CaddyModule() caddy.ModuleInfo {
+func (*WeightedRoundRobinSelection) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
 		ID: "http.reverse_proxy.selection_policies.weighted_round_robin",
 		New: func() caddy.Module {
@@ -143,7 +143,7 @@ func (r *WeightedRoundRobinSelection) Select(pool UpstreamPool, _ *http.Request,
 			weights = append(weights, w)
 		}
 	}
-	currentWeight := int(atomic.AddUint32(&r.index, 1)) % r.totalWeight
+	currentWeight := int(r.index.Add(1)) % r.totalWeight
 	for i, weight := range weights {
 		totalWeight += weight
 		if currentWeight < totalWeight {
@@ -225,7 +225,7 @@ func (r RandomChoiceSelection) Select(pool UpstreamPool, _ *http.Request, _ http
 		if !upstream.Available() {
 			continue
 		}
-		j := weakrand.Intn(i + 1) //nolint:gosec
+		j := weakrand.IntN(i + 1) //nolint:gosec
 		if j < k {
 			choices[j] = upstream
 		}
@@ -274,7 +274,7 @@ func (LeastConnSelection) Select(pool UpstreamPool, _ *http.Request, _ http.Resp
 		// sample: https://en.wikipedia.org/wiki/Reservoir_sampling
 		if numReqs == leastReqs {
 			count++
-			if count == 1 || (weakrand.Int()%count) == 0 { //nolint:gosec
+			if count == 1 || weakrand.IntN(count) == 0 { //nolint:gosec
 				bestHost = host
 			}
 		}
@@ -295,11 +295,11 @@ func (r *LeastConnSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // RoundRobinSelection is a policy that selects
 // a host based on round-robin ordering.
 type RoundRobinSelection struct {
-	robin uint32
+	robin atomic.Uint32
 }
 
 // CaddyModule returns the Caddy module information.
-func (RoundRobinSelection) CaddyModule() caddy.ModuleInfo {
+func (*RoundRobinSelection) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
 		ID:  "http.reverse_proxy.selection_policies.round_robin",
 		New: func() caddy.Module { return new(RoundRobinSelection) },
@@ -312,8 +312,8 @@ func (r *RoundRobinSelection) Select(pool UpstreamPool, _ *http.Request, _ http.
 	if n == 0 {
 		return nil
 	}
-	for i := uint32(0); i < n; i++ {
-		robin := atomic.AddUint32(&r.robin, 1)
+	for range n {
+		robin := r.robin.Add(1)
 		host := pool[robin%n]
 		if host.Available() {
 			return host
@@ -617,7 +617,7 @@ type CookieHashSelection struct {
 	// The HTTP cookie name whose value is to be hashed and used for upstream selection.
 	Name string `json:"name,omitempty"`
 	// Secret to hash (Hmac256) chosen upstream in cookie
-	Secret string `json:"secret,omitempty"`
+	Secret string `json:"secret,omitempty"` //nolint:gosec // yes it's exported because it needs to encode to JSON
 	// The cookie's Max-Age before it expires. Default is no expiry.
 	MaxAge caddy.Duration `json:"max_age,omitempty"`
 
@@ -788,7 +788,7 @@ func selectRandomHost(pool []*Upstream) *Upstream {
 		// upstream will always be chosen if there is at
 		// least one available
 		count++
-		if (weakrand.Int() % count) == 0 { //nolint:gosec
+		if weakrand.IntN(count) == 0 { //nolint:gosec
 			randomHost = upstream
 		}
 	}
@@ -827,7 +827,7 @@ func leastRequests(upstreams []*Upstream) *Upstream {
 	if len(best) == 1 {
 		return best[0]
 	}
-	return best[weakrand.Intn(len(best))] //nolint:gosec
+	return best[weakrand.IntN(len(best))] //nolint:gosec
 }
 
 // hostByHashing returns an available host from pool based on a hashable string s.

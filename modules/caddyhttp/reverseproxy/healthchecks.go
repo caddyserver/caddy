@@ -23,7 +23,6 @@ import (
 	"net/url"
 	"regexp"
 	"runtime/debug"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -360,6 +359,12 @@ func (h *Handler) doActiveHealthCheckForAllHosts() {
 				dialInfoUpstream = &Upstream{
 					Dial: h.HealthChecks.Active.Upstream,
 				}
+			} else if upstream.activeHealthCheckPort != 0 {
+				// health_port overrides the port; addr has already been updated
+				// with the health port, so use its address for dialing
+				dialInfoUpstream = &Upstream{
+					Dial: addr.JoinHostPort(0),
+				}
 			}
 			dialInfo, _ := dialInfoUpstream.fillDialInfo(repl)
 
@@ -405,14 +410,9 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 		u.Host = net.JoinHostPort(host, port)
 	}
 
-	// this is kind of a hacky way to know if we should use HTTPS, but whatever
-	if tt, ok := h.Transport.(TLSTransport); ok && tt.TLSEnabled() {
-		u.Scheme = "https"
-
-		// if the port is in the except list, flip back to HTTP
-		if ht, ok := h.Transport.(*HTTPTransport); ok && slices.Contains(ht.TLS.ExceptPorts, port) {
-			u.Scheme = "http"
-		}
+	// override health check schemes if applicable
+	if hcsot, ok := h.Transport.(HealthCheckSchemeOverriderTransport); ok {
+		hcsot.OverrideHealthCheckScheme(u, port)
 	}
 
 	// if we have a provisioned uri, use that, otherwise use
@@ -506,7 +506,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 	}
 
 	// do the request, being careful to tame the response body
-	resp, err := h.HealthChecks.Active.httpClient.Do(req)
+	resp, err := h.HealthChecks.Active.httpClient.Do(req) //nolint:gosec // no SSRF
 	if err != nil {
 		if c := h.HealthChecks.Active.logger.Check(zapcore.InfoLevel, "HTTP request failed"); c != nil {
 			c.Write(

@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	weakrand "math/rand"
+	weakrand "math/rand/v2"
 	"mime"
 	"net/http"
 	"os"
@@ -125,6 +125,11 @@ type FileServer struct {
 	// When possible, all paths are resolved to their absolute form before
 	// comparisons are made. For maximum clarity and explictness, use complete,
 	// absolute paths; or, for greater portability, use relative paths instead.
+	//
+	// Note that hide comparisons are case-sensitive. On case-insensitive
+	// filesystems, requests with different path casing may still resolve to the
+	// same file or directory on disk, so hide should not be treated as a
+	// security boundary for sensitive paths.
 	Hide []string `json:"hide,omitempty"`
 
 	// The names of files to try as index files if a folder is requested.
@@ -601,7 +606,7 @@ func (fsrv *FileServer) openFile(fileSystem fs.FS, filename string, w http.Respo
 		// maybe the server is under load and ran out of file descriptors?
 		// have client wait arbitrary seconds to help prevent a stampede
 		//nolint:gosec
-		backoff := weakrand.Intn(maxBackoff-minBackoff) + minBackoff
+		backoff := weakrand.IntN(maxBackoff-minBackoff) + minBackoff
 		w.Header().Set("Retry-After", strconv.Itoa(backoff))
 		if c := fsrv.logger.Check(zapcore.DebugLevel, "retry after backoff"); c != nil {
 			c.Write(zap.String("filename", filename), zap.Int("backoff", backoff), zap.Error(err))

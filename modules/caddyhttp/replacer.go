@@ -229,6 +229,21 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 				req.Body = io.NopCloser(buf)  // replace real body with buffered data
 				return buf.String(), true
 
+			case "http.request.body_base64":
+				if req.Body == nil {
+					return "", true
+				}
+				// normally net/http will close the body for us, but since we
+				// are replacing it with a fake one, we have to ensure we close
+				// the real body ourselves when we're done
+				defer req.Body.Close()
+				// read the request body into a buffer (can't pool because we
+				// don't know its lifetime and would have to make a copy anyway)
+				buf := new(bytes.Buffer)
+				_, _ = io.Copy(buf, req.Body) // can't handle error, so just ignore it
+				req.Body = io.NopCloser(buf)  // replace real body with buffered data
+				return base64.StdEncoding.EncodeToString(buf.Bytes()), true
+
 			// original request, before any internal changes
 			case "http.request.orig_method":
 				or, _ := req.Context().Value(OriginalRequestCtxKey).(http.Request)
@@ -405,7 +420,16 @@ func getReqTLSReplacement(req *http.Request, key string) (any, bool) {
 	if strings.HasPrefix(field, "client.") {
 		cert := getTLSPeerCert(req.TLS)
 		if cert == nil {
-			return nil, false
+			// Instead of returning (nil, false) here, we set it to a dummy
+			// value to fix #7530. This way, even if there is no client cert,
+			// evaluating placeholders with ReplaceKnown() will still remove
+			// the placeholder, which would be expected. It is not expected
+			// for the placeholder to sometimes get removed based on whether
+			// the client presented a cert. We also do not return true here
+			// because we probably should remain accurate about whether a
+			// placeholder is, in fact, known or not.
+			// (This allocation may be slightly inefficient.)
+			cert = new(x509.Certificate)
 		}
 
 		// subject alternate names (SANs)
@@ -511,6 +535,8 @@ func getReqTLSReplacement(req *http.Request, key string) (any, bool) {
 		return true, true
 	case "server_name":
 		return req.TLS.ServerName, true
+	case "ech":
+		return req.TLS.ECHAccepted, true
 	}
 	return nil, false
 }

@@ -247,6 +247,7 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 			} else {
 				r.URL.Path = path
 			}
+			r.URL.RawPath = "" // force recomputing when EscapedPath() is called
 		}
 		if qsStart >= 0 {
 			r.URL.RawQuery = newQuery

@@ -51,7 +51,7 @@ func TestACMEServerWithDefaults(t *testing.T) {
 		Client: &acme.Client{
 			Directory:  "https://acme.localhost:9443/acme/local/directory",
 			HTTPClient: tester.Client,
-			Logger:     slog.New(zapslog.NewHandler(logger.Core())),
+			Logger:     slog.New(zapslog.NewHandler(logger.Core(), zapslog.WithName("acmez"))),
 		},
 		ChallengeSolvers: map[string]acmez.Solver{
 			acme.ChallengeTypeHTTP01: &naiveHTTPSolver{logger: logger},
@@ -120,7 +120,7 @@ func TestACMEServerWithMismatchedChallenges(t *testing.T) {
 		Client: &acme.Client{
 			Directory:  "https://acme.localhost:9443/acme/local/directory",
 			HTTPClient: tester.Client,
-			Logger:     slog.New(zapslog.NewHandler(logger.Core())),
+			Logger:     slog.New(zapslog.NewHandler(logger.Core(), zapslog.WithName("acmez"))),
 		},
 		ChallengeSolvers: map[string]acmez.Solver{
 			acme.ChallengeTypeHTTP01: &naiveHTTPSolver{logger: logger},

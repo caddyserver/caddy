@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	weakrand "math/rand"
+	weakrand "math/rand/v2"
 	"net"
 	"net/http"
 	"strconv"
@@ -70,6 +70,11 @@ type SRVUpstreams struct {
 	// A negative value disables this.
 	FallbackDelay caddy.Duration `json:"dial_fallback_delay,omitempty"`
 
+	// Specific network to dial when connecting to the upstream(s)
+	// provided by SRV records upstream. See Go's net package for
+	// accepted values. For example, to restrict to IPv4, use "tcp4".
+	DialNetwork string `json:"dial_network,omitempty"`
+
 	resolver *net.Resolver
 
 	logger *zap.Logger
@@ -102,7 +107,7 @@ func (su *SRVUpstreams) Provision(ctx caddy.Context) error {
 			PreferGo: true,
 			Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
 				//nolint:gosec
-				addr := su.Resolver.netAddrs[weakrand.Intn(len(su.Resolver.netAddrs))]
+				addr := su.Resolver.netAddrs[weakrand.IntN(len(su.Resolver.netAddrs))]
 				return d.DialContext(ctx, addr.Network, addr.JoinHostPort(0))
 			},
 		}
@@ -177,6 +182,9 @@ func (su SRVUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 			)
 		}
 		addr := net.JoinHostPort(rec.Target, strconv.Itoa(int(rec.Port)))
+		if su.DialNetwork != "" {
+			addr = su.DialNetwork + "/" + addr
+		}
 		upstreams[i] = Upstream{Dial: addr}
 	}
 
@@ -322,7 +330,7 @@ func (au *AUpstreams) Provision(ctx caddy.Context) error {
 			PreferGo: true,
 			Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
 				//nolint:gosec
-				addr := au.Resolver.netAddrs[weakrand.Intn(len(au.Resolver.netAddrs))]
+				addr := au.Resolver.netAddrs[weakrand.IntN(len(au.Resolver.netAddrs))]
 				return d.DialContext(ctx, addr.Network, addr.JoinHostPort(0))
 			},
 		}

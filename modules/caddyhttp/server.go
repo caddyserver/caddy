@@ -18,6 +18,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -33,7 +34,7 @@ import (
 	"github.com/caddyserver/certmagic"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
-	"github.com/quic-go/quic-go/qlog"
+	h3qlog "github.com/quic-go/quic-go/http3/qlog"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
@@ -54,6 +55,10 @@ type Server struct {
 	// A list of listener wrapper modules, which can modify the behavior
 	// of the base listener. They are applied in the given order.
 	ListenerWrappersRaw []json.RawMessage `json:"listener_wrappers,omitempty" caddy:"namespace=caddy.listeners inline_key=wrapper"`
+
+	// A list of packet conn wrapper modules, which can modify the behavior
+	// of the base packet conn. They are applied in the given order.
+	PacketConnWrappersRaw []json.RawMessage `json:"packet_conn_wrappers,omitempty" caddy:"namespace=caddy.packetconns inline_key=wrapper"`
 
 	// How long to allow a read from a client's upload. Setting this
 	// to a short, non-zero value can mitigate slowloris attacks, but
@@ -248,6 +253,16 @@ type Server struct {
 	// A nil value or element indicates that Protocols will be used instead.
 	ListenProtocols [][]string `json:"listen_protocols,omitempty"`
 
+	// If set, overrides whether QUIC listeners allow 0-RTT (early data).
+	// If nil, the default behavior is used (currently allowed).
+	//
+	// One reason to disable 0-RTT is if a remote IP matcher is used,
+	// which introduces a dependency on the remote address being verified
+	// if routing happens before the TLS handshake completes. An HTTP 425
+	// response is written in that case, but some clients misbehave and
+	// don't perform a retry, so disabling 0-RTT can smooth it out.
+	Allow0RTT *bool `json:"allow_0rtt,omitempty"`
+
 	// If set, metrics observations will be enabled.
 	// This setting is EXPERIMENTAL and subject to change.
 	// DEPRECATED: Use the app-level `metrics` field.
@@ -258,7 +273,8 @@ type Server struct {
 	primaryHandlerChain Handler
 	errorHandlerChain   Handler
 	listenerWrappers    []caddy.ListenerWrapper
-	listeners           []net.Listener       // stdlib http.Server will close these
+	packetConnWrappers  []caddy.PacketConnWrapper
+	listeners           []net.Listener
 	quicListeners       []http3.QUICListener // http3 now leave the quic.Listener management to us
 
 	tlsApp       *caddytls.TLS
@@ -292,6 +308,8 @@ var (
 
 // ServeHTTP is the entry point for all HTTP requests.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+
 	// If there are listener wrappers that process tls connections but don't return a *tls.Conn, this field will be nil.
 	if r.TLS == nil {
 		if tlsConnStateFunc, ok := r.Context().Value(tlsConnectionStateFuncCtxKey).(func() *tls.ConnectionState); ok {
@@ -299,6 +317,17 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// enable full-duplex for HTTP/1, ensuring the entire
+	// request body gets consumed before writing the response
+	if s.EnableFullDuplex && r.ProtoMajor == 1 {
+		if err := http.NewResponseController(w).EnableFullDuplex(); err != nil { //nolint:bodyclose
+			if c := s.logger.Check(zapcore.WarnLevel, "failed to enable full duplex"); c != nil {
+				c.Write(zap.Error(err))
+			}
+		}
+	}
+
+	// set the Server header
 	h := w.Header()
 	h["Server"] = serverHeader
 
@@ -311,39 +340,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// reject very long methods; probably a mistake or an attack
-	if len(r.Method) > 32 {
-		if s.shouldLogRequest(r) {
-			if c := s.accessLogger.Check(zapcore.DebugLevel, "rejecting request with long method"); c != nil {
-				c.Write(
-					zap.String("method_trunc", r.Method[:32]),
-					zap.String("remote_addr", r.RemoteAddr),
-				)
-			}
-		}
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-
+	// prepare internals of the request for the handler pipeline
 	repl := caddy.NewReplacer()
 	r = PrepareRequest(r, repl, w, s)
 
-	// enable full-duplex for HTTP/1, ensuring the entire
-	// request body gets consumed before writing the response
-	if s.EnableFullDuplex && r.ProtoMajor == 1 {
-		if err := http.NewResponseController(w).EnableFullDuplex(); err != nil { //nolint:bodyclose
-			if c := s.logger.Check(zapcore.WarnLevel, "failed to enable full duplex"); c != nil {
-				c.Write(zap.Error(err))
-			}
-		}
-	}
-
-	// clone the request for logging purposes before
-	// it enters any handler chain; this is necessary
-	// to capture the original request in case it gets
-	// modified during handling
-	// cloning the request and using .WithLazy is considerably faster
-	// than using .With, which will JSON encode the request immediately
+	// clone the request for logging purposes before it enters any handler chain;
+	// this is necessary to capture the original request in case it gets modified
+	// during handling (cloning the request and using .WithLazy is considerably
+	// faster than using .With, which will JSON-encode the request immediately)
 	shouldLogCredentials := s.Logs != nil && s.Logs.ShouldLogCredentials
 	loggableReq := zap.Object("request", LoggableHTTPRequest{
 		Request:              r.Clone(r.Context()),
@@ -371,36 +375,33 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// capture the original version of the request
-		accLog := s.accessLogger.With(loggableReq)
+		accLog := s.accessLogger.WithLazy(loggableReq)
 
 		defer s.logRequest(accLog, r, wrec, &duration, repl, bodyReader, shouldLogCredentials)
 	}
 
-	start := time.Now()
-
-	// guarantee ACME HTTP challenges; handle them
-	// separately from any user-defined handlers
+	// guarantee ACME HTTP challenges; handle them separately from any user-defined handlers
 	if s.tlsApp.HandleHTTPChallenge(w, r) {
 		duration = time.Since(start)
 		return
 	}
 
-	// execute the primary handler chain
-	err := s.primaryHandlerChain.ServeHTTP(w, r)
+	err := s.serveHTTP(w, r)
 	duration = time.Since(start)
 
-	// if no errors, we're done!
 	if err == nil {
 		return
 	}
 
 	// restore original request before invoking error handler chain (issue #3717)
-	// TODO: this does not restore original headers, if modified (for efficiency)
-	origReq := r.Context().Value(OriginalRequestCtxKey).(http.Request)
-	r.Method = origReq.Method
-	r.RemoteAddr = origReq.RemoteAddr
-	r.RequestURI = origReq.RequestURI
-	cloneURL(origReq.URL, r.URL)
+	// NOTE: this does not restore original headers if modified (for efficiency)
+	origReq, ok := r.Context().Value(OriginalRequestCtxKey).(http.Request)
+	if ok {
+		r.Method = origReq.Method
+		r.RemoteAddr = origReq.RemoteAddr
+		r.RequestURI = origReq.RequestURI
+		cloneURL(origReq.URL, r.URL)
+	}
 
 	// prepare the error log
 	errLog = errLog.With(zap.Duration("duration", duration))
@@ -419,8 +420,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.Errors != nil && len(s.Errors.Routes) > 0 {
 		// execute user-defined error handling route
 		if err2 := s.errorHandlerChain.ServeHTTP(w, r); err2 == nil {
-			// user's error route handled the error response
-			// successfully, so now just log the error
+			// user's error route handled the error response successfully, so now just log the error
 			for _, logger := range errLoggers {
 				if c := logger.Check(zapcore.DebugLevel, errMsg); c != nil {
 					if fields == nil {
@@ -466,6 +466,35 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		w.WriteHeader(errStatus)
 	}
+}
+
+func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) error {
+	// reject very long methods; probably a mistake or an attack
+	if len(r.Method) > 32 {
+		if s.shouldLogRequest(r) {
+			if c := s.accessLogger.Check(zapcore.DebugLevel, "rejecting request with long method"); c != nil {
+				c.Write(
+					zap.String("method_trunc", r.Method[:32]),
+					zap.String("remote_addr", r.RemoteAddr),
+				)
+			}
+		}
+		return HandlerError{StatusCode: http.StatusMethodNotAllowed}
+	}
+
+	// RFC 9112 section 3.2: "A server MUST respond with a 400 (Bad Request) status
+	// code to any HTTP/1.1 request message that lacks a Host header field and to any
+	// request message that contains more than one Host header field line or a Host
+	// header field with an invalid field value."
+	if r.ProtoMajor == 1 && r.ProtoMinor == 1 && r.Host == "" {
+		return HandlerError{
+			Err:        errors.New("rfc9112 forbids empty Host"),
+			StatusCode: http.StatusBadRequest,
+		}
+	}
+
+	// execute the primary handler chain
+	return s.primaryHandlerChain.ServeHTTP(w, r)
 }
 
 // wrapPrimaryRoute wraps stack (a compiled middleware handler chain)
@@ -551,15 +580,21 @@ func (s *Server) hasListenerAddress(fullAddr string) bool {
 		// The second issue seems very similar to a discussion here:
 		// https://github.com/nodejs/node/issues/9390
 		//
-		// This is very easy to reproduce by creating an HTTP server
-		// that listens to both addresses or just one with a host
-		// interface; or for a more confusing reproduction, try
-		// listening on "127.0.0.1:80" and ":443" and you'll see
-		// the error, if you take away the GOOS condition below.
-		//
-		// So, an address is equivalent if the port is in the port
-		// range, and if not on Linux, the host is the same... sigh.
-		if (runtime.GOOS == "linux" || thisAddrs.Host == laddrs.Host) &&
+		// However, binding to *different specific* interfaces
+		// (e.g. 127.0.0.2:80 and 127.0.0.3:80) IS allowed on Linux.
+		// The conflict only happens when mixing specific IPs with
+		// wildcards (0.0.0.0 or ::).
+
+		// Hosts match exactly (e.g. 127.0.0.2 == 127.0.0.2) -> Conflict.
+		hostMatch := thisAddrs.Host == laddrs.Host
+
+		// On Linux, specific IP vs Wildcard fails to bind.
+		// So if we are on Linux AND either host is empty (wildcard), we treat
+		// it as a match (conflict). But if both are specific and different
+		// (127.0.0.2 vs 127.0.0.3), this remains false (no conflict).
+		linuxWildcardConflict := runtime.GOOS == "linux" && (thisAddrs.Host == "" || laddrs.Host == "")
+
+		if (hostMatch || linuxWildcardConflict) &&
 			(laddrs.StartPort <= thisAddrs.EndPort) &&
 			(laddrs.StartPort >= thisAddrs.StartPort) {
 			return true
@@ -625,7 +660,7 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
 	}
 	addr.Network = h3net
-	h3ln, err := addr.ListenQUIC(s.ctx, 0, net.ListenConfig{}, tlsCfg)
+	h3ln, err := addr.ListenQUIC(s.ctx, 0, net.ListenConfig{}, tlsCfg, s.packetConnWrappers, s.Allow0RTT)
 	if err != nil {
 		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
 	}
@@ -638,7 +673,7 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 			MaxHeaderBytes: s.MaxHeaderBytes,
 			QUICConfig: &quic.Config{
 				Versions: []quic.Version{quic.Version1, quic.Version2},
-				Tracer:   qlog.DefaultConnectionTracer,
+				Tracer:   h3qlog.DefaultConnectionTracer,
 			},
 			IdleTimeout: time.Duration(s.IdleTimeout),
 		}
@@ -763,9 +798,11 @@ func (s *Server) shouldLogRequest(r *http.Request) bool {
 		hostWithoutPort = r.Host
 	}
 
-	if _, ok := s.Logs.LoggerNames[hostWithoutPort]; ok {
-		// this host is mapped to a particular logger name
-		return true
+	for loggerName := range s.Logs.LoggerNames {
+		if certmagic.MatchWildcard(hostWithoutPort, loggerName) {
+			// this host is mapped to a particular logger name
+			return true
+		}
 	}
 	for _, dh := range s.Logs.SkipHosts {
 		// logging for this particular host is disabled
@@ -793,8 +830,10 @@ func (s *Server) logRequest(
 	accLog *zap.Logger, r *http.Request, wrec ResponseRecorder, duration *time.Duration,
 	repl *caddy.Replacer, bodyReader *lengthReader, shouldLogCredentials bool,
 ) {
+	ctx := r.Context()
+
 	// this request may be flagged as omitted from the logs
-	if skip, ok := GetVar(r.Context(), LogSkipVar).(bool); ok && skip {
+	if skip, ok := GetVar(ctx, LogSkipVar).(bool); ok && skip {
 		return
 	}
 
@@ -812,7 +851,7 @@ func (s *Server) logRequest(
 	}
 
 	message := "handled request"
-	if nop, ok := GetVar(r.Context(), "unhandled").(bool); ok && nop {
+	if nop, ok := GetVar(ctx, "unhandled").(bool); ok && nop {
 		message = "NOP"
 	}
 
@@ -836,7 +875,7 @@ func (s *Server) logRequest(
 				reqBodyLength = bodyReader.Length
 			}
 
-			extra := r.Context().Value(ExtraLogFieldsCtxKey).(*ExtraLogFields)
+			extra := ctx.Value(ExtraLogFieldsCtxKey).(*ExtraLogFields)
 
 			fieldCount := 6
 			fields = make([]zapcore.Field, 0, fieldCount+len(extra.fields))
@@ -1001,6 +1040,7 @@ func isTrustedClientIP(ipAddr netip.Addr, trusted []netip.Prefix) bool {
 // then the first value from those headers is used.
 func trustedRealClientIP(r *http.Request, headers []string, clientIP string) string {
 	// Read all the values of the configured client IP headers, in order
+	// nolint:prealloc
 	var values []string
 	for _, field := range headers {
 		values = append(values, r.Header.Values(field)...)

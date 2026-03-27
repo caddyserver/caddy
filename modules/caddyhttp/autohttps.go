@@ -90,7 +90,16 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 	// the log configuration for an HTTPS enabled server
 	var logCfg *ServerLogConfig
 
-	for srvName, srv := range app.Servers {
+	// Sort server names to ensure deterministic iteration.
+	// This prevents race conditions where the order of server processing
+	// could affect which server gets assigned the HTTP->HTTPS redirect listener.
+	srvNames := make([]string, 0, len(app.Servers))
+	for name := range app.Servers {
+		srvNames = append(srvNames, name)
+	}
+	slices.Sort(srvNames)
+	for _, srvName := range srvNames {
+		srv := app.Servers[srvName]
 		// as a prerequisite, provision route matchers; this is
 		// required for all routes on all servers, and must be
 		// done before we attempt to do phase 1 of auto HTTPS,
@@ -398,15 +407,60 @@ uniqueDomainsLoop:
 		return append(routes, app.makeRedirRoute(uint(app.httpsPort()), MatcherSet{MatchProtocol("http")}))
 	}
 
+	// Sort redirect addresses to ensure deterministic process
+	redirServerAddrsSorted := make([]string, 0, len(redirServers))
+	for addr := range redirServers {
+		redirServerAddrsSorted = append(redirServerAddrsSorted, addr)
+	}
+	slices.Sort(redirServerAddrsSorted)
+
 redirServersLoop:
-	for redirServerAddr, routes := range redirServers {
+	for _, redirServerAddr := range redirServerAddrsSorted {
+		routes := redirServers[redirServerAddr]
 		// for each redirect listener, see if there's already a
 		// server configured to listen on that exact address; if so,
 		// insert the redirect route to the end of its route list
 		// after any other routes with host matchers; otherwise,
 		// we'll create a new server for all the listener addresses
 		// that are unused and serve the remaining redirects from it
-		for _, srv := range app.Servers {
+
+		// Sort redirect routes by host specificity to ensure exact matches
+		// take precedence over wildcards, preventing ambiguous routing.
+		slices.SortFunc(routes, func(a, b Route) int {
+			hostA := getFirstHostFromRoute(a)
+			hostB := getFirstHostFromRoute(b)
+
+			// Catch-all routes (empty host) have the lowest priority
+			if hostA == "" && hostB != "" {
+				return 1
+			}
+			if hostB == "" && hostA != "" {
+				return -1
+			}
+
+			hasWildcardA := strings.Contains(hostA, "*")
+			hasWildcardB := strings.Contains(hostB, "*")
+
+			// Exact domains take precedence over wildcards
+			if !hasWildcardA && hasWildcardB {
+				return -1
+			}
+			if hasWildcardA && !hasWildcardB {
+				return 1
+			}
+
+			// If both are exact or both are wildcards, the longer one is more specific
+			if len(hostA) != len(hostB) {
+				return len(hostB) - len(hostA)
+			}
+
+			// Tie-breaker: alphabetical order to ensure determinism
+			return strings.Compare(hostA, hostB)
+		})
+
+		// Use the sorted srvNames to consistently find the target server
+		for _, srvName := range srvNames {
+			srv := app.Servers[srvName]
 			// only look at servers which listen on an address which
 			// we want to add redirects to
 			if !srv.hasListenerAddress(redirServerAddr) {
@@ -557,6 +611,27 @@ func (app *App) createAutomationPolicies(ctx caddy.Context, internalNames, tails
 		if !foundBasePolicy && len(ap.SubjectsRaw) == 0 {
 			basePolicy = ap
 			foundBasePolicy = true
+		}
+	}
+
+	// Ensure automation policies' CertMagic configs are rebuilt when
+	// ACME issuer templates may have been modified above (for example,
+	// alternate ports filled in by the HTTP app). If a policy is already
+	// provisioned, perform a lightweight rebuild of the CertMagic config
+	// so issuers receive SetConfig with the updated templates; otherwise
+	// run a normal Provision to initialize the policy.
+	for i, ap := range app.tlsApp.Automation.Policies {
+		// If the policy is already provisioned, rebuild only the CertMagic
+		// config so issuers get SetConfig with updated templates. Otherwise
+		// provision the policy normally (which may load modules).
+		if ap.IsProvisioned() {
+			if err := ap.RebuildCertMagic(app.tlsApp); err != nil {
+				return fmt.Errorf("rebuilding certmagic config for automation policy %d: %v", i, err)
+			}
+		} else {
+			if err := ap.Provision(app.tlsApp); err != nil {
+				return fmt.Errorf("provisioning automation policy %d after auto-HTTPS defaults: %v", i, err)
+			}
 		}
 	}
 
@@ -773,3 +848,26 @@ func isTailscaleDomain(name string) bool {
 }
 
 type acmeCapable interface{ GetACMEIssuer() *caddytls.ACMEIssuer }
+
+// getFirstHostFromRoute traverses a route's matchers to find the Host rule.
+// Since we are dealing with internally generated redirect routes, the host
+// is typically the first string within the MatchHost.
+func getFirstHostFromRoute(r Route) string {
+	for _, matcherSet := range r.MatcherSets {
+		for _, m := range matcherSet {
+			// Check if the matcher is of type MatchHost (value or pointer)
+			switch hm := m.(type) {
+			case MatchHost:
+				if len(hm) > 0 {
+					return hm[0]
+				}
+			case *MatchHost:
+				if len(*hm) > 0 {
+					return (*hm)[0]
+				}
+			}
+		}
+	}
+	// Return an empty string if it's a catch-all route (no specific host)
+	return ""
+}

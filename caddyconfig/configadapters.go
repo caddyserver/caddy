@@ -81,7 +81,11 @@ func JSONModuleObject(val any, fieldName, fieldVal string, warnings *[]Warning) 
 	err = json.Unmarshal(enc, &tmp)
 	if err != nil {
 		if warnings != nil {
-			*warnings = append(*warnings, Warning{Message: err.Error()})
+			message := err.Error()
+			if jsonErr, ok := err.(*json.SyntaxError); ok {
+				message = fmt.Sprintf("%v, at offset %d", jsonErr.Error(), jsonErr.Offset)
+			}
+			*warnings = append(*warnings, Warning{Message: message})
 		}
 		return nil
 	}
