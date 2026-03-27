@@ -152,7 +152,6 @@ func (f *FileCAPool) Provision(ctx caddy.Context) error {
 		if err != nil {
 			return fmt.Errorf("reading %s: %v", pemFile, err)
 		}
-		caPool.AppendCertsFromPEM(pemContents)
 		// Parse PEM to extract certificates
 		for len(pemContents) > 0 {
 			var block *pem.Block
@@ -164,9 +163,11 @@ func (f *FileCAPool) Provision(ctx caddy.Context) error {
 				continue
 			}
 			cert, err := x509.ParseCertificate(block.Bytes)
-			if err == nil {
-				certs = append(certs, cert)
+			if err != nil {
+				return fmt.Errorf("parsing certificate in %s: %v", pemFile, err)
 			}
+			caPool.AddCert(cert)
+			certs = append(certs, cert)
 		}
 	}
 	f.pool = caPool
@@ -421,9 +422,6 @@ func (ca *StoragePool) Provision(ctx caddy.Context) error {
 		if err != nil {
 			return fmt.Errorf("error loading cert '%s' from storage: %s", caID, err)
 		}
-		if !caPool.AppendCertsFromPEM(bs) {
-			return fmt.Errorf("failed to add certificate '%s' to pool", caID)
-		}
 		// Parse PEM to extract certificates
 		pemData := bs
 		for len(pemData) > 0 {
@@ -436,9 +434,11 @@ func (ca *StoragePool) Provision(ctx caddy.Context) error {
 				continue
 			}
 			cert, err := x509.ParseCertificate(block.Bytes)
-			if err == nil {
-				certs = append(certs, cert)
+			if err != nil {
+				return fmt.Errorf("parsing certificate '%s': %v", caID, err)
 			}
+			caPool.AddCert(cert)
+			certs = append(certs, cert)
 		}
 	}
 	ca.pool = caPool
@@ -681,9 +681,6 @@ func (hcp *HTTPCertPool) Provision(ctx caddy.Context) error {
 		if err != nil {
 			return err
 		}
-		if !caPool.AppendCertsFromPEM(pembs) {
-			return fmt.Errorf("failed to add certs from URL: %s", uri)
-		}
 		// Parse PEM to extract certificates
 		pemData := pembs
 		for len(pemData) > 0 {
@@ -696,9 +693,11 @@ func (hcp *HTTPCertPool) Provision(ctx caddy.Context) error {
 				continue
 			}
 			cert, err := x509.ParseCertificate(block.Bytes)
-			if err == nil {
-				certs = append(certs, cert)
+			if err != nil {
+				return fmt.Errorf("parsing certificate from URL %s: %v", uri, err)
 			}
+			caPool.AddCert(cert)
+			certs = append(certs, cert)
 		}
 	}
 	hcp.pool = caPool
@@ -722,6 +721,7 @@ func (hcp *HTTPCertPool) Provision(ctx caddy.Context) error {
 //		renegotiation <never|once|freely>
 //
 //	<ca_module> is the name of the CA module to source the trust
+//
 // certificate pool and follows the syntax of the named CA module.
 func (hcp *HTTPCertPool) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	d.Next() // consume module name
