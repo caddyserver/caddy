@@ -507,7 +507,7 @@ func (p *parser) doImport(nesting int) error {
 		// format, won't check for nesting correctness or any other error, that's what parser does.
 		if !maybeSnippet && nesting == 0 {
 			// first of the line
-			if i == 0 || isNextOnNewLine(tokensCopy[i-1], token) {
+			if i == 0 || isNextOnNewLine(tokensCopy[len(tokensCopy)-1], token) {
 				index = 0
 			} else {
 				index++
@@ -616,7 +616,7 @@ func (p *parser) doSingleImport(importFile string) ([]Token, error) {
 	if err != nil {
 		return nil, p.Errf("Failed to get absolute path of file: %s: %v", importFile, err)
 	}
-	for i := 0; i < len(importedTokens); i++ {
+	for i := range importedTokens {
 		importedTokens[i].File = filename
 	}
 

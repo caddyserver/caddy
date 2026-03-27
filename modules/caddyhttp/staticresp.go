@@ -246,7 +246,7 @@ func (s StaticResponse) ServeHTTP(w http.ResponseWriter, r *http.Request, next H
 
 	// write response body
 	if statusCode != http.StatusEarlyHints && body != "" {
-		fmt.Fprint(w, body)
+		fmt.Fprint(w, body) //nolint:gosec // no XSS unless you sabatoge your own config
 	}
 
 	// continue handling after Early Hints as they are not the final response

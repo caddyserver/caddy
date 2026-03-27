@@ -50,12 +50,6 @@ func init() {
 // applied will automatically upgrade the minimum TLS version to 1.3, even if
 // configured to a lower version.
 //
-// Note that, as of Caddy 2.10.0 (~March 2025), ECH keys are not automatically
-// rotated due to a limitation in the Go standard library (see
-// https://github.com/golang/go/issues/71920). This should be resolved when
-// Go 1.25 is released (~Aug. 2025), and Caddy will be updated to automatically
-// rotate ECH keys/configs at that point.
-//
 // EXPERIMENTAL: Subject to change.
 type ECH struct {
 	// The list of ECH configurations for which to automatically generate
@@ -138,7 +132,10 @@ func (ech *ECH) Provision(ctx caddy.Context) ([]string, error) {
 		}
 	}
 
-	// ensure old keys are rotated out
+	// convert the configs into a structure ready for the std lib to use
+	ech.updateKeyList()
+
+	// ensure any old keys are rotated out
 	if err = ech.rotateECHKeys(ctx, logger, true); err != nil {
 		return nil, fmt.Errorf("rotating ECH configs: %w", err)
 	}
@@ -185,9 +182,11 @@ func (ech *ECH) setConfigsFromStorage(ctx caddy.Context, logger *zap.Logger) ([]
 	return outerNames, nil
 }
 
-// rotateECHKeys updates the ECH keys/configs that are outdated. It should be called
-// in a write lock on ech.configsMu. If a lock is already obtained in storage, then
-// pass true for storageSynced.
+// rotateECHKeys updates the ECH keys/configs that are outdated if rotation is needed.
+// It should be called in a write lock on ech.configsMu. If a lock is already obtained
+// in storage, then pass true for storageSynced.
+//
+// This function sets/updates the stdlib-ready key list only if a rotation occurs.
 func (ech *ECH) rotateECHKeys(ctx caddy.Context, logger *zap.Logger, storageSynced bool) error {
 	storage := ctx.Storage()
 
@@ -392,6 +391,10 @@ func (t *TLS) publishECHConfigs(logger *zap.Logger) error {
 			if publication.Domains == nil {
 				serverNamesSet = make(map[string]struct{}, len(t.serverNames))
 				for name := range t.serverNames {
+					// skip Tailscale names, a special case we also handle differently in our auto-HTTPS
+					if strings.HasSuffix(name, ".ts.net") {
+						continue
+					}
 					serverNamesSet[name] = struct{}{}
 				}
 			} else {

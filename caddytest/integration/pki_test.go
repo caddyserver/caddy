@@ -53,7 +53,7 @@ func TestLeafCertLifetimeLessThanIntermediate(t *testing.T) {
         }
       }
     }
-	`, "json", "certificate lifetime (168h0m0s) should be less than intermediate certificate lifetime (168h0m0s)")
+  `, "json", "should be less than intermediate certificate lifetime")
 }
 
 func TestIntermediateLifetimeLessThanRoot(t *testing.T) {
@@ -103,5 +103,5 @@ func TestIntermediateLifetimeLessThanRoot(t *testing.T) {
         }
       }
     }
-	`, "json", "intermediate certificate lifetime must be less than root certificate lifetime (86400h0m0s)")
+  `, "json", "intermediate certificate lifetime must be less than actual root certificate lifetime")
 }

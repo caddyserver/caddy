@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/caddyserver/caddy/v2"
 )
@@ -96,7 +97,10 @@ type Route struct {
 	MatcherSets MatcherSets         `json:"-"`
 	Handlers    []MiddlewareHandler `json:"-"`
 
-	middleware []Middleware
+	middleware  []Middleware
+	metrics     *Metrics
+	metricsCtx  caddy.Context
+	handlerName string
 }
 
 // Empty returns true if the route has all zero/default values.
@@ -110,14 +114,16 @@ func (r Route) Empty() bool {
 }
 
 func (r Route) String() string {
-	handlersRaw := "["
+	var handlersRaw strings.Builder
+	handlersRaw.WriteByte('[')
 	for _, hr := range r.HandlersRaw {
-		handlersRaw += " " + string(hr)
+		handlersRaw.WriteByte(' ')
+		handlersRaw.WriteString(string(hr))
 	}
-	handlersRaw += "]"
+	handlersRaw.WriteByte(']')
 
 	return fmt.Sprintf(`{Group:"%s" MatcherSetsRaw:%s HandlersRaw:%s Terminal:%t}`,
-		r.Group, r.MatcherSetsRaw, handlersRaw, r.Terminal)
+		r.Group, r.MatcherSetsRaw, handlersRaw.String(), r.Terminal)
 }
 
 // Provision sets up both the matchers and handlers in the route.
@@ -159,12 +165,20 @@ func (r *Route) ProvisionHandlers(ctx caddy.Context, metrics *Metrics) error {
 		r.Handlers = append(r.Handlers, handler.(MiddlewareHandler))
 	}
 
+	// Store metrics info for route-level instrumentation (applied once
+	// per route in wrapRoute, instead of per-handler which was redundant).
+	r.metrics = metrics
+	r.metricsCtx = ctx
+	if len(r.Handlers) > 0 {
+		r.handlerName = caddy.GetModuleName(r.Handlers[0])
+	}
+
 	// Make ProvisionHandlers idempotent by clearing the middleware field
 	r.middleware = []Middleware{}
 
 	// pre-compile the middleware handler chain
 	for _, midhandler := range r.Handlers {
-		r.middleware = append(r.middleware, wrapMiddleware(ctx, midhandler, metrics))
+		r.middleware = append(r.middleware, wrapMiddleware(ctx, midhandler))
 	}
 	return nil
 }
@@ -295,6 +309,16 @@ func wrapRoute(route Route) Middleware {
 				nextCopy = route.middleware[i](nextCopy)
 			}
 
+			// Apply metrics instrumentation once for the entire route,
+			// rather than wrapping each individual handler. This avoids
+			// redundant metrics collection that caused significant CPU
+			// overhead (see issue #4644).
+			if route.metrics != nil {
+				nextCopy = newMetricsInstrumentedRoute(
+					route.metricsCtx, route.handlerName, nextCopy, route.metrics,
+				)
+			}
+
 			return nextCopy.ServeHTTP(rw, req)
 		})
 	}
@@ -303,20 +327,14 @@ func wrapRoute(route Route) Middleware {
 // wrapMiddleware wraps mh such that it can be correctly
 // appended to a list of middleware in preparation for
 // compiling into a handler chain.
-func wrapMiddleware(ctx caddy.Context, mh MiddlewareHandler, metrics *Metrics) Middleware {
-	handlerToUse := mh
-	if metrics != nil {
-		// wrap the middleware with metrics instrumentation
-		handlerToUse = newMetricsInstrumentedHandler(ctx, caddy.GetModuleName(mh), mh, metrics)
-	}
-
+func wrapMiddleware(ctx caddy.Context, mh MiddlewareHandler) Middleware {
 	return func(next Handler) Handler {
 		return HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 			// EXPERIMENTAL: Trace each module that gets invoked
 			if server, ok := r.Context().Value(ServerCtxKey).(*Server); ok && server != nil {
-				server.logTrace(handlerToUse)
+				server.logTrace(mh)
 			}
-			return handlerToUse.ServeHTTP(w, r, next)
+			return mh.ServeHTTP(w, r, next)
 		})
 	}
 }
@@ -440,13 +458,15 @@ func (ms *MatcherSets) FromInterface(matcherSets any) error {
 
 // TODO: Is this used?
 func (ms MatcherSets) String() string {
-	result := "["
+	var result strings.Builder
+	result.WriteByte('[')
 	for _, matcherSet := range ms {
 		for _, matcher := range matcherSet {
-			result += fmt.Sprintf(" %#v", matcher)
+			fmt.Fprintf(&result, " %#v", matcher)
 		}
 	}
-	return result + " ]"
+	result.WriteByte(']')
+	return result.String()
 }
 
 var routeGroupCtxKey = caddy.CtxKey("route_group")

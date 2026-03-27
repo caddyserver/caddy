@@ -74,7 +74,7 @@ func cmdStart(fl Flags) (int, error) {
 	// ensure it's the process we're expecting - we can be
 	// sure by giving it some random bytes and having it echo
 	// them back to us)
-	cmd := exec.Command(os.Args[0], "run", "--pingback", ln.Addr().String())
+	cmd := exec.Command(os.Args[0], "run", "--pingback", ln.Addr().String()) //nolint:gosec // no command injection that I can determine...
 	// we should be able to run caddy in relative paths
 	if errors.Is(cmd.Err, exec.ErrDot) {
 		cmd.Err = nil
@@ -372,7 +372,7 @@ func cmdReload(fl Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("no config file to load")
 	}
 
-	adminAddr, err := DetermineAdminAPIAddress(addressFlag, config, configFlag, configAdapterFlag)
+	adminAddr, err := DetermineAdminAPIAddress(addressFlag, config, configFile, configAdapterFlag)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("couldn't determine admin API address: %v", err)
 	}
@@ -697,7 +697,7 @@ func cmdFmt(fl Flags) (int, error) {
 	output := caddyfile.Format(input)
 
 	if fl.Bool("overwrite") {
-		if err := os.WriteFile(configFile, output, 0o600); err != nil {
+		if err := os.WriteFile(configFile, output, 0o600); err != nil { //nolint:gosec // path traversal is not really a thing here, this is either "Caddyfile" or admin-controlled
 			return caddy.ExitCodeFailedStartup, fmt.Errorf("overwriting formatted file: %v", err)
 		}
 		return caddy.ExitCodeSuccess, nil
@@ -820,7 +820,7 @@ func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io
 		},
 	}
 
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // the only SSRF here would be self-sabatoge I think
 	if err != nil {
 		return nil, fmt.Errorf("performing request: %v", err)
 	}

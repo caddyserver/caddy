@@ -92,25 +92,7 @@ func (st ServerType) buildTLSApp(
 		tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, catchAllAP)
 	}
 
-	var wildcardHosts []string                        // collect all hosts that have a wildcard in them, and aren't HTTP
 	forcedAutomatedNames := make(map[string]struct{}) // explicitly configured to be automated, even if covered by a wildcard
-
-	for _, p := range pairings {
-		var addresses []string
-		for _, addressWithProtocols := range p.addressesWithProtocols {
-			addresses = append(addresses, addressWithProtocols.address)
-		}
-		if !listenersUseAnyPortOtherThan(addresses, httpPort) {
-			continue
-		}
-		for _, sblock := range p.serverBlocks {
-			for _, addr := range sblock.parsedKeys {
-				if strings.HasPrefix(addr.Host, "*.") {
-					wildcardHosts = append(wildcardHosts, addr.Host[2:])
-				}
-			}
-		}
-	}
 
 	for _, p := range pairings {
 		// avoid setting up TLS automation policies for a server that is HTTP-only
@@ -131,12 +113,6 @@ func (st ServerType) buildTLSApp(
 
 			// get values that populate an automation policy for this block
 			ap, err := newBaseAutomationPolicy(options, warnings, true)
-			if err != nil {
-				return nil, warnings, err
-			}
-
-			// make a plain copy so we can compare whether we made any changes
-			apCopy, err := newBaseAutomationPolicy(options, warnings, true)
 			if err != nil {
 				return nil, warnings, err
 			}
@@ -165,6 +141,12 @@ func (st ServerType) buildTLSApp(
 
 			if keyTypeVals, ok := sblock.pile["tls.key_type"]; ok {
 				ap.KeyType = keyTypeVals[0].Value.(string)
+			}
+
+			if renewalWindowRatioVals, ok := sblock.pile["tls.renewal_window_ratio"]; ok {
+				ap.RenewalWindowRatio = renewalWindowRatioVals[0].Value.(float64)
+			} else if globalRenewalWindowRatio, ok := options["renewal_window_ratio"]; ok {
+				ap.RenewalWindowRatio = globalRenewalWindowRatio.(float64)
 			}
 
 			// certificate issuers
@@ -252,16 +234,6 @@ func (st ServerType) buildTLSApp(
 
 			hostsNotHTTP := sblock.hostsFromKeysNotHTTP(httpPort)
 			sort.Strings(hostsNotHTTP) // solely for deterministic test results
-
-			// if the we prefer wildcards and the AP is unchanged,
-			// then we can skip this AP because it should be covered
-			// by an AP with a wildcard
-			if slices.Contains(autoHTTPS, "prefer_wildcard") {
-				if hostsCoveredByWildcard(hostsNotHTTP, wildcardHosts) &&
-					reflect.DeepEqual(ap, apCopy) {
-					continue
-				}
-			}
 
 			// associate our new automation policy with this server block's hosts
 			ap.SubjectsRaw = hostsNotHTTP
@@ -360,6 +332,11 @@ func (st ServerType) buildTLSApp(
 	// set up "global" (to the TLS app) DNS provider config
 	if globalDNS, ok := options["dns"]; ok && globalDNS != nil {
 		tlsApp.DNSRaw = caddyconfig.JSONModuleObject(globalDNS, "name", globalDNS.(caddy.Module).CaddyModule().ID.Name(), nil)
+	}
+
+	// set up "global" (to the TLS app) DNS resolvers config
+	if globalResolvers, ok := options["tls_resolvers"]; ok && globalResolvers != nil {
+		tlsApp.Resolvers = globalResolvers.([]string)
 	}
 
 	// set up ECH from Caddyfile options
@@ -576,9 +553,8 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]any) e
 		if acmeIssuer.Challenges.DNS == nil {
 			acmeIssuer.Challenges.DNS = new(caddytls.DNSChallengeConfig)
 		}
-		// If global `dns` is set, do NOT set provider in issuer, just set empty dns config
-		if globalDNS == nil && acmeIssuer.Challenges.DNS.ProviderRaw == nil {
-			// Set a global DNS provider if `acme_dns` is set and `dns` is NOT set
+		if globalACMEDNS != nil && acmeIssuer.Challenges.DNS.ProviderRaw == nil {
+			// Set a global DNS provider if `acme_dns` is set
 			acmeIssuer.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(globalACMEDNS, "name", globalACMEDNS.(caddy.Module).CaddyModule().ID.Name(), nil)
 		}
 	}
@@ -624,6 +600,15 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]any) e
 	if globalCertLifetime != nil && acmeIssuer.CertificateLifetime == 0 {
 		acmeIssuer.CertificateLifetime = globalCertLifetime.(caddy.Duration)
 	}
+	// apply global resolvers if DNS challenge is configured and resolvers are not already set
+	globalResolvers := options["tls_resolvers"]
+	if globalResolvers != nil && acmeIssuer.Challenges != nil && acmeIssuer.Challenges.DNS != nil {
+		// Check if DNS challenge is actually configured
+		hasDNSChallenge := globalACMEDNSok || acmeIssuer.Challenges.DNS.ProviderRaw != nil
+		if hasDNSChallenge && len(acmeIssuer.Challenges.DNS.Resolvers) == 0 {
+			acmeIssuer.Challenges.DNS.Resolvers = globalResolvers.([]string)
+		}
+	}
 	return nil
 }
 
@@ -641,7 +626,8 @@ func newBaseAutomationPolicy(
 	_, hasLocalCerts := options["local_certs"]
 	keyType, hasKeyType := options["key_type"]
 	ocspStapling, hasOCSPStapling := options["ocsp_stapling"]
-	hasGlobalAutomationOpts := hasIssuers || hasLocalCerts || hasKeyType || hasOCSPStapling
+	renewalWindowRatio, hasRenewalWindowRatio := options["renewal_window_ratio"]
+	hasGlobalAutomationOpts := hasIssuers || hasLocalCerts || hasKeyType || hasOCSPStapling || hasRenewalWindowRatio
 
 	globalACMECA := options["acme_ca"]
 	globalACMECARoot := options["acme_ca_root"]
@@ -688,6 +674,10 @@ func newBaseAutomationPolicy(
 		ap.OCSPOverrides = ocspConfig.ResponderOverrides
 	}
 
+	if hasRenewalWindowRatio {
+		ap.RenewalWindowRatio = renewalWindowRatio.(float64)
+	}
+
 	return ap, nil
 }
 
@@ -708,14 +698,31 @@ func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) []*caddytls
 	emptyAPCount := 0
 	origLenAPs := len(aps)
 	// compute the number of empty policies (disregarding subjects) - see #4128
+	// while we're at it,
 	emptyAP := new(caddytls.AutomationPolicy)
 	for i := 0; i < len(aps); i++ {
 		emptyAP.SubjectsRaw = aps[i].SubjectsRaw
+		emptyAP.ManagersRaw = nil
 		if reflect.DeepEqual(aps[i], emptyAP) {
+			// AP is empty
 			emptyAPCount++
-			if !automationPolicyHasAllPublicNames(aps[i]) {
-				// if this automation policy has internal names, we might as well remove it
-				// so auto-https can implicitly use the internal issuer
+
+			// see if this AP shadows something later
+			shadowIdx := automationPolicyShadows(i, aps)
+			emptyAP.SubjectsRaw = nil
+			if shadowIdx >= 0 {
+				emptyAP.SubjectsRaw = aps[shadowIdx].SubjectsRaw
+				// allow the later policy, which is likely for a wildcard, to have cert
+				// managers ("get_certificate"), since wildcards now cover specific
+				// subdomains by default, when configured (see discussion in #7559)
+				emptyAP.ManagersRaw = aps[shadowIdx].ManagersRaw
+			}
+
+			// if this is the last AP, we can delete it, since auto-https should
+			// pick it up; if it shadows something later that is also empty, we
+			// can similarly delete this; but if it shadows something that is NOT
+			// empty, we must not delete it since the shadowing has a purpose
+			if i == len(aps)-1 || (shadowIdx >= 0 && reflect.DeepEqual(aps[shadowIdx], emptyAP)) {
 				aps = slices.Delete(aps, i, i+1)
 				i--
 			}
@@ -848,21 +855,4 @@ func automationPolicyHasAllPublicNames(ap *caddytls.AutomationPolicy) bool {
 
 func isTailscaleDomain(name string) bool {
 	return strings.HasSuffix(strings.ToLower(name), ".ts.net")
-}
-
-func hostsCoveredByWildcard(hosts []string, wildcards []string) bool {
-	if len(hosts) == 0 || len(wildcards) == 0 {
-		return false
-	}
-	for _, host := range hosts {
-		for _, wildcard := range wildcards {
-			if strings.HasPrefix(host, "*.") {
-				continue
-			}
-			if certmagic.MatchWildcard(host, "*."+wildcard) {
-				return true
-			}
-		}
-	}
-	return false
 }

@@ -584,8 +584,8 @@ func (t *TLSConfig) unmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // MakeTLSClientConfig returns a tls.Config usable by a client to a backend.
 // If there is no custom TLS configuration, a nil config may be returned.
 func (t *TLSConfig) makeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
-	repl, _ := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-	if repl == nil {
+	repl, ok := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	if !ok || repl == nil {
 		repl = caddy.NewReplacer()
 	}
 	cfg := new(tls.Config)
@@ -672,7 +672,7 @@ func (hcp *HTTPCertPool) Provision(ctx caddy.Context) error {
 		if err != nil {
 			return err
 		}
-		res, err := httpClient.Do(req)
+		res, err := httpClient.Do(req) //nolint:gosec // SSRF false positive... uri comes from config
 		if err != nil {
 			return err
 		}

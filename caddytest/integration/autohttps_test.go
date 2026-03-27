@@ -143,3 +143,26 @@ func TestAutoHTTPRedirectsInsertedBeforeUserDefinedCatchAllWithNoExplicitHTTPSit
 	tester.AssertGetResponse("http://foo.localhost:9080/", 200, "Foo")
 	tester.AssertGetResponse("http://baz.localhost:9080/", 200, "Foo")
 }
+
+func TestAutoHTTPSRedirectSortingExactMatchOverWildcard(t *testing.T) {
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`
+    {
+        skip_install_trust
+        admin localhost:2999
+        http_port     9080
+        https_port    9443
+        local_certs
+    }
+    *.localhost:10443 {
+        respond "Wildcard"
+    }
+    dev.localhost {
+        respond "Exact"
+    }
+  `, "caddyfile")
+
+	tester.AssertRedirect("http://dev.localhost:9080/", "https://dev.localhost/", http.StatusPermanentRedirect)
+
+	tester.AssertRedirect("http://foo.localhost:9080/", "https://foo.localhost:10443/", http.StatusPermanentRedirect)
+}

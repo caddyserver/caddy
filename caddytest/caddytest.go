@@ -187,7 +187,7 @@ func (tc *Tester) initServer(rawConfig string, configType string) error {
 		req.Header.Add("Content-Type", "text/"+configType)
 	}
 
-	res, err := client.Do(req)
+	res, err := client.Do(req) //nolint:gosec // no SSRF because URL is hard-coded to localhost, and port comes from config
 	if err != nil {
 		tc.t.Errorf("unable to contact caddy server. %s", err)
 		return err
@@ -279,7 +279,7 @@ func validateTestPrerequisites(tc *Tester) error {
 			return err
 		}
 		tc.t.Cleanup(func() {
-			os.Remove(f.Name())
+			os.Remove(f.Name()) //nolint:gosec // false positive, filename comes from std lib, no path traversal
 		})
 		if _, err := fmt.Fprintf(f, initConfig, tc.config.AdminPort); err != nil {
 			return err
@@ -506,7 +506,7 @@ func applyHeaders(t testing.TB, req *http.Request, requestHeaders []string) {
 func (tc *Tester) AssertResponseCode(req *http.Request, expectedStatusCode int) *http.Response {
 	tc.t.Helper()
 
-	resp, err := tc.Client.Do(req)
+	resp, err := tc.Client.Do(req) //nolint:gosec // no SSRFs demonstrated
 	if err != nil {
 		tc.t.Fatalf("failed to call server %s", err)
 	}

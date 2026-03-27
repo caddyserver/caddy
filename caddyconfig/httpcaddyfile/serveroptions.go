@@ -57,6 +57,9 @@ type serverOptions struct {
 	ShouldLogCredentials  bool
 	Metrics               *caddyhttp.Metrics
 	Trace                 bool // TODO: EXPERIMENTAL
+	// If set, overrides whether QUIC listeners allow 0-RTT (early data).
+	// If nil, the default behavior is used (currently allowed).
+	Allow0RTT *bool
 }
 
 func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
@@ -309,6 +312,17 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 			}
 			serverOpts.Trace = true
 
+		case "0rtt":
+			// only supports "off" for now
+			if !d.NextArg() {
+				return nil, d.ArgErr()
+			}
+			if d.Val() != "off" {
+				return nil, d.Errf("unsupported 0rtt argument '%s' (only 'off' is supported)", d.Val())
+			}
+			boolVal := false
+			serverOpts.Allow0RTT = &boolVal
+
 		default:
 			return nil, d.Errf("unrecognized servers option '%s'", d.Val())
 		}
@@ -373,6 +387,7 @@ func applyServerOptions(
 		server.TrustedProxiesStrict = opts.TrustedProxiesStrict
 		server.TrustedProxiesUnix = opts.TrustedProxiesUnix
 		server.Metrics = opts.Metrics
+		server.Allow0RTT = opts.Allow0RTT
 		if opts.ShouldLogCredentials {
 			if server.Logs == nil {
 				server.Logs = new(caddyhttp.ServerLogConfig)

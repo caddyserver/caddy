@@ -359,6 +359,12 @@ func (h *Handler) doActiveHealthCheckForAllHosts() {
 				dialInfoUpstream = &Upstream{
 					Dial: h.HealthChecks.Active.Upstream,
 				}
+			} else if upstream.activeHealthCheckPort != 0 {
+				// health_port overrides the port; addr has already been updated
+				// with the health port, so use its address for dialing
+				dialInfoUpstream = &Upstream{
+					Dial: addr.JoinHostPort(0),
+				}
 			}
 			dialInfo, _ := dialInfoUpstream.fillDialInfo(repl)
 
@@ -500,7 +506,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 	}
 
 	// do the request, being careful to tame the response body
-	resp, err := h.HealthChecks.Active.httpClient.Do(req)
+	resp, err := h.HealthChecks.Active.httpClient.Do(req) //nolint:gosec // no SSRF
 	if err != nil {
 		if c := h.HealthChecks.Active.logger.Check(zapcore.InfoLevel, "HTTP request failed"); c != nil {
 			c.Write(

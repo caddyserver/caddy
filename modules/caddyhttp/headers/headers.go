@@ -161,11 +161,11 @@ func (ops *HeaderOps) Provision(_ caddy.Context) error {
 
 // containsPlaceholders checks if the string contains Caddy placeholder syntax {key}
 func containsPlaceholders(s string) bool {
-	openIdx := strings.Index(s, "{")
-	if openIdx == -1 {
+	_, after, ok := strings.Cut(s, "{")
+	if !ok {
 		return false
 	}
-	closeIdx := strings.Index(s[openIdx+1:], "}")
+	closeIdx := strings.Index(after, "}")
 	if closeIdx == -1 {
 		return false
 	}

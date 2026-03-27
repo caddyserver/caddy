@@ -420,7 +420,16 @@ func getReqTLSReplacement(req *http.Request, key string) (any, bool) {
 	if strings.HasPrefix(field, "client.") {
 		cert := getTLSPeerCert(req.TLS)
 		if cert == nil {
-			return nil, false
+			// Instead of returning (nil, false) here, we set it to a dummy
+			// value to fix #7530. This way, even if there is no client cert,
+			// evaluating placeholders with ReplaceKnown() will still remove
+			// the placeholder, which would be expected. It is not expected
+			// for the placeholder to sometimes get removed based on whether
+			// the client presented a cert. We also do not return true here
+			// because we probably should remain accurate about whether a
+			// placeholder is, in fact, known or not.
+			// (This allocation may be slightly inefficient.)
+			cert = new(x509.Certificate)
 		}
 
 		// subject alternate names (SANs)

@@ -1,11 +1,13 @@
 package reverseproxy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"reflect"
 	"testing"
 
+	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
@@ -94,3 +96,102 @@ func TestHTTPTransportUnmarshalCaddyFileWithCaPools(t *testing.T) {
 		})
 	}
 }
+
+func TestHTTPTransport_RequestHeaderOps_TLS(t *testing.T) {
+	var ht HTTPTransport
+	// When TLS is nil, expect no header ops
+	if ops := ht.RequestHeaderOps(); ops != nil {
+		t.Fatalf("expected nil HeaderOps when TLS is nil, got: %#v", ops)
+	}
+
+	// When TLS is configured, expect a HeaderOps that sets Host
+	ht.TLS = &TLSConfig{}
+	ops := ht.RequestHeaderOps()
+	if ops == nil {
+		t.Fatal("expected non-nil HeaderOps when TLS is set")
+	}
+	if ops.Set == nil {
+		t.Fatalf("expected ops.Set to be non-nil, got nil")
+	}
+	if got := ops.Set.Get("Host"); got != "{http.reverse_proxy.upstream.hostport}" {
+		t.Fatalf("unexpected Host value; want placeholder, got: %s", got)
+	}
+}
+
+// TestHTTPTransport_DialTLSContext_ProxyProtocol verifies that when TLS and
+// ProxyProtocol are both enabled, DialTLSContext is set. This is critical because
+// ProxyProtocol modifies req.URL.Host to include client info with "->" separator
+// (e.g., "[2001:db8::1]:12345->127.0.0.1:443"), which breaks Go's address parsing.
+// Without a custom DialTLSContext, Go's HTTP library would fail with
+// "too many colons in address" when trying to parse the mangled host.
+func TestHTTPTransport_DialTLSContext_ProxyProtocol(t *testing.T) {
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+
+	tests := []struct {
+		name                    string
+		tls                     *TLSConfig
+		proxyProtocol           string
+		serverNameHasPlaceholder bool
+		expectDialTLSContext    bool
+	}{
+		{
+			name:                 "no TLS, no proxy protocol",
+			tls:                  nil,
+			proxyProtocol:        "",
+			expectDialTLSContext: false,
+		},
+		{
+			name:                 "TLS without proxy protocol",
+			tls:                  &TLSConfig{},
+			proxyProtocol:        "",
+			expectDialTLSContext: false,
+		},
+		{
+			name:                 "TLS with proxy protocol v1",
+			tls:                  &TLSConfig{},
+			proxyProtocol:        "v1",
+			expectDialTLSContext: true,
+		},
+		{
+			name:                 "TLS with proxy protocol v2",
+			tls:                  &TLSConfig{},
+			proxyProtocol:        "v2",
+			expectDialTLSContext: true,
+		},
+		{
+			name:                     "TLS with placeholder ServerName",
+			tls:                      &TLSConfig{ServerName: "{http.request.host}"},
+			proxyProtocol:            "",
+			serverNameHasPlaceholder: true,
+			expectDialTLSContext:     true,
+		},
+		{
+			name:                     "TLS with placeholder ServerName and proxy protocol",
+			tls:                      &TLSConfig{ServerName: "{http.request.host}"},
+			proxyProtocol:            "v2",
+			serverNameHasPlaceholder: true,
+			expectDialTLSContext:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ht := &HTTPTransport{
+				TLS:           tt.tls,
+				ProxyProtocol: tt.proxyProtocol,
+			}
+
+			rt, err := ht.NewTransport(ctx)
+			if err != nil {
+				t.Fatalf("NewTransport() error = %v", err)
+			}
+
+			hasDialTLSContext := rt.DialTLSContext != nil
+			if hasDialTLSContext != tt.expectDialTLSContext {
+				t.Errorf("DialTLSContext set = %v, want %v", hasDialTLSContext, tt.expectDialTLSContext)
+			}
+		})
+	}
+}
+

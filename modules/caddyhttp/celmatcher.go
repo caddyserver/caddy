@@ -412,10 +412,12 @@ func CELMatcherImpl(macroName, funcName string, matcherDataTypes []*cel.Type, fa
 			return nil, fmt.Errorf("unsupported matcher data type: %s, %s", matcherDataTypes[0], matcherDataTypes[1])
 		}
 	case 3:
+		// nolint:gosec // false positive, impossible to be out of bounds; see: https://github.com/securego/gosec/issues/1525
 		if matcherDataTypes[0] == cel.StringType && matcherDataTypes[1] == cel.StringType && matcherDataTypes[2] == cel.StringType {
 			macro = parser.NewGlobalMacro(macroName, 3, celMatcherStringListMacroExpander(funcName))
 			matcherDataTypes = []*cel.Type{cel.ListType(cel.StringType)}
 		} else {
+			// nolint:gosec // false positive, impossible to be out of bounds; see: https://github.com/securego/gosec/issues/1525
 			return nil, fmt.Errorf("unsupported matcher data type: %s, %s, %s", matcherDataTypes[0], matcherDataTypes[1], matcherDataTypes[2])
 		}
 	}
@@ -665,12 +667,29 @@ func celMatcherJSONMacroExpander(funcName string) parser.MacroExpander {
 // map literals containing heterogeneous values, in this case string and list
 // of string.
 func CELValueToMapStrList(data ref.Val) (map[string][]string, error) {
+	// Prefer map[string]any, but newer cel-go versions may return map[any]any
 	mapStrType := reflect.TypeFor[map[string]any]()
 	mapStrRaw, err := data.ConvertToNative(mapStrType)
+	var mapStrIface map[string]any
 	if err != nil {
-		return nil, err
+		// Try map[any]any and convert keys to strings
+		mapAnyType := reflect.TypeFor[map[any]any]()
+		mapAnyRaw, err2 := data.ConvertToNative(mapAnyType)
+		if err2 != nil {
+			return nil, err
+		}
+		mapAnyIface := mapAnyRaw.(map[any]any)
+		mapStrIface = make(map[string]any, len(mapAnyIface))
+		for k, v := range mapAnyIface {
+			ks, ok := k.(string)
+			if !ok {
+				return nil, fmt.Errorf("unsupported map key type in header match: %T", k)
+			}
+			mapStrIface[ks] = v
+		}
+	} else {
+		mapStrIface = mapStrRaw.(map[string]any)
 	}
-	mapStrIface := mapStrRaw.(map[string]any)
 	mapStrListStr := make(map[string][]string, len(mapStrIface))
 	for k, v := range mapStrIface {
 		switch val := v.(type) {
@@ -685,13 +704,26 @@ func CELValueToMapStrList(data ref.Val) (map[string][]string, error) {
 			for i, elem := range val {
 				strVal, ok := elem.(types.String)
 				if !ok {
-					return nil, fmt.Errorf("unsupported value type in header match: %T", val)
+					return nil, fmt.Errorf("unsupported value type in matcher input: %T", val)
 				}
 				convVals[i] = string(strVal)
 			}
 			mapStrListStr[k] = convVals
+		case []any:
+			convVals := make([]string, len(val))
+			for i, elem := range val {
+				switch e := elem.(type) {
+				case string:
+					convVals[i] = e
+				case types.String:
+					convVals[i] = string(e)
+				default:
+					return nil, fmt.Errorf("unsupported element type in matcher input list: %T", elem)
+				}
+			}
+			mapStrListStr[k] = convVals
 		default:
-			return nil, fmt.Errorf("unsupported value type in header match: %T", val)
+			return nil, fmt.Errorf("unsupported value type in matcher input: %T", val)
 		}
 	}
 	return mapStrListStr, nil
