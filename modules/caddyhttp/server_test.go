@@ -499,3 +499,79 @@ func TestServer_DetermineTrustedProxy_MatchRightMostUntrustedFirst(t *testing.T)
 	assert.True(t, trusted)
 	assert.Equal(t, clientIP, "90.100.110.120")
 }
+
+func TestServeHTTP_InvalidHostHeader(t *testing.T) {
+	tests := []struct {
+		name       string
+		host       string
+		wantStatus int
+	}{
+		{"valid host", "example.com", http.StatusOK},
+		{"valid IPv6", "[::1]", http.StatusOK},
+		{"valid with port", "example.com:80", http.StatusOK},
+		{"valid IPv6 with port", "[::1]:8080", http.StatusOK},
+		{"valid IPv6 full", "[2001:db8::1]", http.StatusOK},
+		{"valid IPv6 full with port", "[2001:db8::1]:443", http.StatusOK},
+		{"valid IPv6 zone", "[fe80::1%25eth0]", http.StatusOK},
+		{"valid IPvFuture", "[v1.test]", http.StatusOK},
+		{"valid IPvFuture with port", "[v1.test]:80", http.StatusOK},
+		{"valid port zero", "example.com:0", http.StatusOK},
+		{"valid port max", "example.com:65535", http.StatusOK},
+		{"valid empty host", "", http.StatusBadRequest},
+		{"valid IPv4", "192.168.1.1", http.StatusOK},
+		{"valid IPv4 with port", "192.168.1.1:8080", http.StatusOK},
+		{"valid subdomain", "sub.example.com:80", http.StatusOK},
+
+		{"empty IP-literal", "[]", http.StatusBadRequest},
+		{"unclosed bracket", "[::1", http.StatusBadRequest},
+		{"invalid IPv6", "[12345]", http.StatusBadRequest},
+		{"invalid hex char", "[123g::1]", http.StatusBadRequest},
+		{"double colon host", "example.com::80", http.StatusBadRequest},
+		{"non-numeric port", "example.com:80a", http.StatusBadRequest},
+		{"port out of range", "example.com:99999", http.StatusBadRequest},
+		{"bracketed IPv4", "[127.0.0.1]", http.StatusBadRequest},
+		{"bare IPv6", "::1", http.StatusBadRequest},
+		{"bare IPv6 full", "2001:db8::1", http.StatusBadRequest},
+		{"empty port", "example.com:", http.StatusBadRequest},
+		{"IPv6 empty port", "[::1]:", http.StatusBadRequest},
+		{"IPv6 garbage after bracket", "[::1]abc", http.StatusBadRequest},
+		{"IPvFuture no hex digits", "[v.test]", http.StatusBadRequest},
+		{"IPvFuture no dot", "[v1test]", http.StatusBadRequest},
+		{"IPvFuture empty after dot", "[v1.]", http.StatusBadRequest},
+		{"IPvFuture uppercase V", "[V1.test]", http.StatusOK},
+		{"port negative", "example.com:-1", http.StatusBadRequest},
+		{"port overflow", "example.com:65536", http.StatusBadRequest},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &Server{}
+
+			// minimal handler that always returns 200
+			s.primaryHandlerChain = HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+				w.WriteHeader(http.StatusOK)
+				return nil
+			})
+
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.Host = tt.host
+			req.Proto = "HTTP/1.1"
+			req.ProtoMajor = 1
+			req.ProtoMinor = 1
+
+			rr := httptest.NewRecorder()
+			err := s.serveHTTP(rr, req)
+
+			gotStatus := rr.Code
+			if err != nil {
+				if he, ok := err.(HandlerError); ok {
+					gotStatus = he.StatusCode
+				}
+			}
+
+			if gotStatus != tt.wantStatus {
+				t.Errorf("host %q: got status %d, want %d", tt.host, gotStatus, tt.wantStatus)
+			}
+		})
+	}
+}
