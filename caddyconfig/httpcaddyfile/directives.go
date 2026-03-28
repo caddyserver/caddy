@@ -418,7 +418,6 @@ func parseSegmentAsConfig(h Helper) ([]ConfigValue, error) {
 				allResults = append(allResults, result)
 			}
 		}
-
 	}
 
 	return allResults, nil
