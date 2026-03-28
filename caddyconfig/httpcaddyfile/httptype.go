@@ -143,6 +143,7 @@ func (st ServerType) Setup(
 				parentBlock:  sb.block,
 				groupCounter: gc,
 				State:        state,
+				BlockState:   state,
 			}
 
 			results, err := dirFunc(h)
@@ -504,6 +505,7 @@ func (ServerType) extractNamedRoutes(
 			parentBlock:  sb.block,
 			groupCounter: gc,
 			State:        state,
+			BlockState:   state,
 		}
 
 		handler, err := ParseSegmentAsSubroute(h)

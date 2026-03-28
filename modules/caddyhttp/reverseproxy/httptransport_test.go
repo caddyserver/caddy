@@ -129,11 +129,11 @@ func TestHTTPTransport_DialTLSContext_ProxyProtocol(t *testing.T) {
 	defer cancel()
 
 	tests := []struct {
-		name                    string
-		tls                     *TLSConfig
-		proxyProtocol           string
+		name                     string
+		tls                      *TLSConfig
+		proxyProtocol            string
 		serverNameHasPlaceholder bool
-		expectDialTLSContext    bool
+		expectDialTLSContext     bool
 	}{
 		{
 			name:                 "no TLS, no proxy protocol",
@@ -194,4 +194,3 @@ func TestHTTPTransport_DialTLSContext_ProxyProtocol(t *testing.T) {
 		})
 	}
 }
-
