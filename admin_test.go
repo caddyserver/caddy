@@ -31,6 +31,8 @@ import (
 	"github.com/caddyserver/certmagic"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 var testCfg = []byte(`{
@@ -239,6 +241,51 @@ func TestAdminHandlerErrorHandling(t *testing.T) {
 	}
 	if apiErr.Message != "test error" {
 		t.Errorf("expected error message 'test error', got '%s'", apiErr.Message)
+	}
+}
+
+func TestAdminHandlerServeHTTPRedactsSensitiveHeadersInLogs(t *testing.T) {
+	core, logs := observer.New(zap.InfoLevel)
+
+	defaultLoggerMu.Lock()
+	origLogger := defaultLogger.logger
+	defaultLogger.logger = zap.New(core)
+	defaultLoggerMu.Unlock()
+	t.Cleanup(func() {
+		defaultLoggerMu.Lock()
+		defaultLogger.logger = origLogger
+		defaultLoggerMu.Unlock()
+	})
+
+	handler := adminHandler{
+		mux: http.NewServeMux(),
+	}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	req.Header.Set("Cookie", "session=secret")
+	req.Header.Set("X-Test", "ok")
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if logs.Len() == 0 {
+		t.Fatal("expected request log entry")
+	}
+
+	ctx := logs.All()[0].ContextMap()
+	headers, ok := ctx["headers"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected headers field in log context, got %T", ctx["headers"])
+	}
+
+	if got := headers["Authorization"]; !reflect.DeepEqual(got, []any{"REDACTED"}) {
+		t.Fatalf("expected redacted Authorization header, got %#v", got)
+	}
+	if got := headers["Cookie"]; !reflect.DeepEqual(got, []any{"REDACTED"}) {
+		t.Fatalf("expected redacted Cookie header, got %#v", got)
+	}
+	if got := headers["X-Test"]; !reflect.DeepEqual(got, []any{"ok"}) {
+		t.Fatalf("expected X-Test header to remain visible, got %#v", got)
 	}
 }
 
