@@ -202,10 +202,10 @@ func RegisterGlobalOption(opt string, setupFunc UnmarshalGlobalFunc) {
 type Helper struct {
 	*caddyfile.Dispenser
 	// State stores intermediate variables during caddyfile adaptation.
-	State        map[string]any
+	State map[string]any
 	// BlockState stores intermediate variables scoped to the current block.
 	// It propagates down, but unlike state not back up from child to parent.
-	BlockState map[string]any
+	BlockState   map[string]any
 	options      map[string]any
 	warnings     *[]caddyconfig.Warning
 	matcherDefs  map[string]caddy.ModuleMap
