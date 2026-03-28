@@ -20,7 +20,6 @@ import (
 	"net/url"
 	"os"
 	"path"
-	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
@@ -100,7 +99,7 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, 
 			}
 
 			if fsrv.Browse.RevealSymlinks {
-				symLinkTarget, err := filepath.EvalSymlinks(path)
+				symLinkTarget, err := os.Readlink(path)
 				if err == nil {
 					symlinkPath = symLinkTarget
 				}
