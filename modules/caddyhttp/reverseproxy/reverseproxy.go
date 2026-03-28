@@ -1007,6 +1007,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 		if c := logger.Check(zapcore.DebugLevel, logMessage); c != nil {
 			c.Write(zap.Error(err))
 		}
+		recordUpstreamMetrics(di.Upstream.String(), req.Method, http.StatusBadGateway, duration)
 		return err
 	}
 	if c := logger.Check(zapcore.DebugLevel, logMessage); c != nil {
@@ -1018,6 +1019,8 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 			zap.Int("status", res.StatusCode),
 		)
 	}
+
+	recordUpstreamMetrics(di.Upstream.String(), req.Method, res.StatusCode, duration)
 
 	// duration until upstream wrote response headers (roundtrip duration)
 	repl.Set("http.reverse_proxy.upstream.latency", duration)

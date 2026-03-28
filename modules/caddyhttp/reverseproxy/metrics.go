@@ -11,11 +11,14 @@ import (
 	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/internal/metrics"
 )
 
 var reverseProxyMetrics = struct {
 	once             sync.Once
 	upstreamsHealthy *prometheus.GaugeVec
+	upstreamRequests *prometheus.CounterVec
+	upstreamDuration *prometheus.HistogramVec
 	logger           *zap.Logger
 }{}
 
@@ -23,6 +26,8 @@ func initReverseProxyMetrics(handler *Handler, registry *prometheus.Registry) {
 	const ns, sub = "caddy", "reverse_proxy"
 
 	upstreamsLabels := []string{"upstream"}
+	upstreamRequestLabels := []string{"upstream", "code", "method"}
+
 	reverseProxyMetrics.once.Do(func() {
 		reverseProxyMetrics.upstreamsHealthy = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: ns,
@@ -30,6 +35,21 @@ func initReverseProxyMetrics(handler *Handler, registry *prometheus.Registry) {
 			Name:      "upstreams_healthy",
 			Help:      "Health status of reverse proxy upstreams.",
 		}, upstreamsLabels)
+
+		reverseProxyMetrics.upstreamRequests = prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: ns,
+			Subsystem: sub,
+			Name:      "upstream_requests_total",
+			Help:      "Counter of requests made to reverse proxy upstreams.",
+		}, upstreamRequestLabels)
+
+		reverseProxyMetrics.upstreamDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace: ns,
+			Subsystem: sub,
+			Name:      "upstream_request_duration_seconds",
+			Help:      "Histogram of request durations to reverse proxy upstreams.",
+			Buckets:   prometheus.DefBuckets,
+		}, upstreamRequestLabels)
 	})
 
 	// duplicate registration could happen if multiple sites with reverse proxy are configured; so ignore the error because
@@ -39,6 +59,22 @@ func initReverseProxyMetrics(handler *Handler, registry *prometheus.Registry) {
 		!errors.Is(err, prometheus.AlreadyRegisteredError{
 			ExistingCollector: reverseProxyMetrics.upstreamsHealthy,
 			NewCollector:      reverseProxyMetrics.upstreamsHealthy,
+		}) {
+		panic(err)
+	}
+
+	if err := registry.Register(reverseProxyMetrics.upstreamRequests); err != nil &&
+		!errors.Is(err, prometheus.AlreadyRegisteredError{
+			ExistingCollector: reverseProxyMetrics.upstreamRequests,
+			NewCollector:      reverseProxyMetrics.upstreamRequests,
+		}) {
+		panic(err)
+	}
+
+	if err := registry.Register(reverseProxyMetrics.upstreamDuration); err != nil &&
+		!errors.Is(err, prometheus.AlreadyRegisteredError{
+			ExistingCollector: reverseProxyMetrics.upstreamDuration,
+			NewCollector:      reverseProxyMetrics.upstreamDuration,
 		}) {
 		panic(err)
 	}
@@ -96,4 +132,20 @@ func (m *metricsUpstreamsHealthyUpdater) update() {
 
 		reverseProxyMetrics.upstreamsHealthy.With(labels).Set(gaugeValue)
 	}
+}
+
+func recordUpstreamMetrics(upstream string, method string, statusCode int, duration time.Duration) {
+	// Guard for test cases that bypass Provision()
+	if reverseProxyMetrics.upstreamRequests == nil {
+		return
+	}
+
+	labels := prometheus.Labels{
+		"upstream": upstream,
+		"method":   metrics.SanitizeMethod(method),
+		"code":     metrics.SanitizeCode(statusCode),
+	}
+
+	reverseProxyMetrics.upstreamRequests.With(labels).Inc()
+	reverseProxyMetrics.upstreamDuration.With(labels).Observe(duration.Seconds())
 }
