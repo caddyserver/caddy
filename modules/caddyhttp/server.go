@@ -935,10 +935,10 @@ func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter
 	ctx = context.WithValue(ctx, ServerCtxKey, s)
 
 	trusted, clientIP := determineTrustedProxy(r, s)
-	ctx = context.WithValue(ctx, VarsCtxKey, map[string]any{
-		TrustedProxyVarKey: trusted,
-		ClientIPVarKey:     clientIP,
-	})
+	varsMap := &sync.Map{}
+	varsMap.Store(TrustedProxyVarKey, trusted)
+	varsMap.Store(ClientIPVarKey, clientIP)
+	ctx = context.WithValue(ctx, VarsCtxKey, varsMap)
 
 	ctx = context.WithValue(ctx, routeGroupCtxKey, make(map[string]struct{}))
 
