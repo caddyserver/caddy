@@ -15,6 +15,8 @@
 package caddy
 
 import (
+	"net"
+	"net/http"
 	"reflect"
 	"testing"
 
@@ -650,5 +652,141 @@ func TestSplitUnixSocketPermissionsBits(t *testing.T) {
 		if !tc.expectErr && actualFileMode.Perm().String() != tc.expectFileMode {
 			t.Errorf("Test %d: Expected perms '%s' but got '%s'", i, tc.expectFileMode, actualFileMode.Perm().String())
 		}
+	}
+}
+
+func TestCanBindAddress(t *testing.T) {
+	originalLocalAdminServer := localAdminServer
+	originalRemoteAdminServer := remoteAdminServer
+
+	defer func() {
+		localAdminServer = originalLocalAdminServer
+		remoteAdminServer = originalRemoteAdminServer
+	}()
+
+	testCases := []struct {
+		name        string
+		canBind     bool
+		netw        string
+		host        string
+		port        uint
+		lclAdminSvr *http.Server
+		remAdminSvr *http.Server
+	}{
+		{
+			name:    "binds on tcp :2019 when local admin server is not set",
+			canBind: true,
+			netw:    "tcp",
+			host:    "",
+			port:    2019,
+		},
+		{
+			name:    "binds on tcp :2021 when remote admin server is not set",
+			canBind: true,
+			netw:    "tcp",
+			host:    "",
+			port:    2021,
+		},
+		{
+			name: "binds on tcp :2019 when only remote admin server is enabled on different port",
+			remAdminSvr: &http.Server{
+				Addr: net.JoinHostPort("localhost", "2021"),
+			},
+			canBind: true,
+			netw:    "tcp",
+			host:    "",
+			port:    2019,
+		},
+		{
+			name: "fails to bind on tcp :2019 when local admin server is already on localhost:2019",
+			remAdminSvr: &http.Server{
+				Addr: net.JoinHostPort("localhost", "2021"),
+			},
+			lclAdminSvr: &http.Server{
+				Addr: net.JoinHostPort("localhost", "2019"),
+			},
+			canBind: false,
+			netw:    "tcp",
+			host:    "",
+			port:    2019,
+		},
+		{
+			name: "binds on tcp :2019 when local admin is on different port",
+			lclAdminSvr: &http.Server{
+				Addr: net.JoinHostPort("localhost", "2029"),
+			},
+			canBind: true,
+			netw:    "tcp",
+			host:    "",
+			port:    2019,
+		},
+		{
+			name: "binds on tcp localhost:2021 when remote admin is on different interface",
+			remAdminSvr: &http.Server{
+				Addr: net.JoinHostPort("192.168.2.3", "2021"),
+			},
+			lclAdminSvr: &http.Server{
+				Addr: net.JoinHostPort("localhost", "2019"),
+			},
+			canBind: true,
+			netw:    "tcp",
+			host:    "localhost",
+			port:    2021,
+		},
+		{
+			name: "fails to bind on tcp :2021 when remote admin is bound to all interfaces",
+			remAdminSvr: &http.Server{
+				Addr: net.JoinHostPort("", "2021"),
+			},
+			lclAdminSvr: &http.Server{
+				Addr: net.JoinHostPort("localhost", "2019"),
+			},
+			canBind: false,
+			netw:    "tcp",
+			host:    "",
+			port:    2021,
+		},
+		{
+			name: "fails to bind on tcp6 [::]:2019 when remote admin uses same address and port",
+			remAdminSvr: &http.Server{
+				Addr: net.JoinHostPort("::", "2019"),
+			},
+			canBind: false,
+			netw:    "tcp6",
+			host:    "::",
+			port:    2019,
+		},
+		{
+			name: "binds on tcp6 [::1]:2019 when remote admin is on [::]:2021",
+			remAdminSvr: &http.Server{
+				Addr: net.JoinHostPort("::", "2021"),
+			},
+			canBind: true,
+			netw:    "tcp6",
+			host:    "::1",
+			port:    2019,
+		},
+		{
+			name: "binds on tcp4 127.0.0.1:2021 when admin is on different port/interface",
+			lclAdminSvr: &http.Server{
+				Addr: net.JoinHostPort("0.0.0.0", "2019"),
+			},
+			canBind: true,
+			netw:    "tcp4",
+			host:    "127.0.0.1",
+			port:    2021,
+		},
+	}
+
+	for i, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			localAdminServer = tc.lclAdminSvr
+			remoteAdminServer = tc.remAdminSvr
+
+			canBind := CanBindAddress(tc.netw, tc.host, tc.port)
+			if canBind != tc.canBind {
+				t.Errorf("Test %d: Expected %v but got: %v", i, tc.canBind, canBind)
+			}
+		})
 	}
 }
