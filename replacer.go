@@ -121,6 +121,18 @@ func (r *Replacer) Delete(variable string) {
 	r.mapMutex.Unlock()
 }
 
+// DeleteByPrefix removes all static variables with
+// keys starting with the given prefix
+func (r *Replacer) DeleteByPrefix(prefix string) {
+	r.mapMutex.Lock()
+	for key := range r.static {
+		if strings.HasPrefix(key, prefix) {
+			delete(r.static, key)
+		}
+	}
+	r.mapMutex.Unlock()
+}
+
 // fromStatic provides values from r.static.
 func (r *Replacer) fromStatic(key string) (any, bool) {
 	r.mapMutex.RLock()
