@@ -39,7 +39,7 @@ import (
 func init() {
 	caddycmd.RegisterCommand(caddycmd.Command{
 		Name:  "file-server",
-		Usage: "[--domain <example.com>] [--root <path>] [--listen <addr>] [--browse] [--reveal-symlinks] [--access-log] [--precompressed]",
+		Usage: "[--domain <example.com>] [--root <path>] [--listen <addr>] [--browse] [--reveal-symlinks] [--access-log] [--precompressed] [--allow-precompressed-without-base]",
 		Short: "Spins up a production-ready file server",
 		Long: `
 A simple but production-ready file server. Useful for quick deployments,
@@ -56,7 +56,12 @@ By default, Zstandard and Gzip compression are enabled. Use --no-compress
 to disable compression.
 
 If --browse is enabled, requests for folders without an index file will
-respond with a file listing.`,
+respond with a file listing.
+
+If --allow-precompressed-without-base is enabled along with --precompressed,
+the file server will serve precompressed files even when the uncompressed
+base file does not exist. This is useful for saving disk space by only
+keeping compressed versions of files.`,
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().StringP("domain", "d", "", "Domain name at which to serve the files")
 			cmd.Flags().StringP("root", "r", "", "The path to the root of the site")
@@ -69,6 +74,7 @@ respond with a file listing.`,
 			cmd.Flags().IntP("file-limit", "f", defaultDirEntryLimit, "Max directories to read")
 			cmd.Flags().BoolP("no-compress", "", false, "Disable Zstandard and Gzip compression")
 			cmd.Flags().StringSliceP("precompressed", "p", []string{}, "Specify precompression file extensions. Compression preference implied from flag order.")
+			cmd.Flags().BoolP("allow-precompressed-without-base", "", false, "Allow serving precompressed files without base files")
 			cmd.RunE = caddycmd.WrapCommandFuncForCobra(cmdFileServer)
 			cmd.AddCommand(&cobra.Command{
 				Use:     "export-template",
@@ -100,6 +106,7 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("invalid precompressed flag: %v", err)
 	}
+	allowPrecompressedWithoutBase := fs.Bool("allow-precompressed-without-base")
 	var handlers []json.RawMessage
 
 	if compress {
@@ -150,6 +157,7 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 			order = append(order, compression)
 		}
 		handler.PrecompressedOrder = order
+		handler.AllowPrecompressedWithoutBase = allowPrecompressedWithoutBase
 	}
 
 	if browse {

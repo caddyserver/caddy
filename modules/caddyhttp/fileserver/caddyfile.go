@@ -52,13 +52,14 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 // the static file server and configures it with this syntax:
 //
 //	file_server [<matcher>] [browse] {
-//	    fs            <filesystem>
-//	    root          <path>
-//	    hide          <files...>
-//	    index         <files...>
-//	    browse        [<template_file>]
-//	    precompressed <formats...>
-//	    status        <status>
+//	    fs                         <filesystem>
+//	    root                       <path>
+//	    hide                       <files...>
+//	    index                      <files...>
+//	    browse                     [<template_file>]
+//	    precompressed              <formats...>
+//	    allow_precompressed_without_base
+//	    status                     <status>
 //	    disable_canonical_uris
 //	}
 //
@@ -193,6 +194,12 @@ func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.ArgErr()
 			}
 			fsrv.EtagFileExtensions = etagFileExtensions
+
+		case "allow_precompressed_without_base":
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+			fsrv.AllowPrecompressedWithoutBase = true
 
 		default:
 			return d.Errf("unknown subdirective '%s'", d.Val())
