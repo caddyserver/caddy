@@ -80,8 +80,18 @@ func (a Authentication) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	var user User
 	var authed bool
 	var err error
+
+	// Track the first failed provider's response for potential use
+	// when all providers fail. This preserves headers like WWW-Authenticate.
+	var firstFailedRecorder *authResponseRecorder
+
 	for provName, prov := range a.Providers {
-		user, authed, err = prov.Authenticate(w, r)
+		// Use a response recorder to isolate each provider's side effects
+		// on the response writer (headers, status code). This prevents
+		// a failed provider's headers from leaking to the final response
+		// when a subsequent provider succeeds.
+		rec := newAuthResponseRecorder(w)
+		user, authed, err = prov.Authenticate(rec, r)
 		if err != nil {
 			if c := a.logger.Check(zapcore.ErrorLevel, "auth provider returned error"); c != nil {
 				c.Write(zap.String("provider", provName), zap.Error(err))
@@ -89,13 +99,31 @@ func (a Authentication) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			// Set the error from the authentication provider in a placeholder,
 			// so it can be used in the handle_errors directive.
 			repl.Set("http.auth."+provName+".error", err.Error())
+			// Record the first failed provider's response for potential use
+			if firstFailedRecorder == nil {
+				firstFailedRecorder = rec
+			}
 			continue
 		}
 		if authed {
 			break
 		}
+		// Provider returned authed=false without error
+		// Record the first failed provider's response for potential use
+		if firstFailedRecorder == nil {
+			firstFailedRecorder = rec
+		}
 	}
 	if !authed {
+		// All providers failed. Apply the first failed provider's response
+		// to the real response writer. This ensures headers like WWW-Authenticate
+		// are set correctly for 401 responses.
+		if firstFailedRecorder != nil && len(firstFailedRecorder.headers) > 0 {
+			// Copy headers from the recorded response to the real response
+			for k, v := range firstFailedRecorder.headers {
+				w.Header()[k] = v
+			}
+		}
 		return caddyhttp.Error(http.StatusUnauthorized, fmt.Errorf("not authenticated"))
 	}
 
@@ -105,6 +133,43 @@ func (a Authentication) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	}
 
 	return next.ServeHTTP(w, r)
+}
+
+// authResponseRecorder is a minimal response recorder that captures headers
+// written by an authentication provider. It does not write to the underlying
+// response writer, allowing the authentication handler to isolate side effects
+// from different providers.
+type authResponseRecorder struct {
+	http.ResponseWriter
+	headers      http.Header
+	wroteHeader  bool
+	statusCode   int
+}
+
+func newAuthResponseRecorder(w http.ResponseWriter) *authResponseRecorder {
+	return &authResponseRecorder{
+		ResponseWriter: w,
+		headers:        make(http.Header),
+	}
+}
+
+func (r *authResponseRecorder) Header() http.Header {
+	return r.headers
+}
+
+func (r *authResponseRecorder) WriteHeader(code int) {
+	if !r.wroteHeader {
+		r.statusCode = code
+		r.wroteHeader = true
+	}
+}
+
+func (r *authResponseRecorder) Write(b []byte) (int, error) {
+	if !r.wroteHeader {
+		r.statusCode = http.StatusOK
+		r.wroteHeader = true
+	}
+	return len(b), nil
 }
 
 // Authenticator is a type which can authenticate a request.
