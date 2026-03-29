@@ -853,10 +853,10 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 		}
 	} else {
 		// otherwise, set a safe default mode
-		if len(clientauth.TrustedCACerts) > 0 ||
+		hasCACerts := len(clientauth.TrustedCACerts) > 0 ||
 			len(clientauth.TrustedCACertPEMFiles) > 0 ||
-			len(clientauth.TrustedLeafCerts) > 0 ||
-			clientauth.CARaw != nil || clientauth.ca != nil {
+			clientauth.CARaw != nil || clientauth.ca != nil
+		if hasCACerts {
 			cfg.ClientAuth = tls.RequireAndVerifyClientCert
 		} else {
 			cfg.ClientAuth = tls.RequireAnyClientCert
@@ -907,7 +907,7 @@ func (clientauth *ClientAuthentication) verifyConnection(cs tls.ConnectionState)
 		}
 	}
 	for _, verifier := range clientauth.verifiers {
-		if err := verifier.VerifyClientCertificate(nil, cs.VerifiedChains); err != nil {
+		if err := verifier.VerifyClientCertificate(cs.PeerCertificatesRaw, cs.VerifiedChains); err != nil {
 			return err
 		}
 	}
