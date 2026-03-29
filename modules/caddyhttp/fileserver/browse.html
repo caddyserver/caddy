@@ -1202,6 +1202,15 @@ footer {
 						sizebar.style.width = `${size/largest * 100}%`;
 					}
 				});
+
+				// restore layout preference from localStorage if not in URL
+				const savedLayout = localStorage.getItem('browse-layout');
+				if (savedLayout) {
+					const currentLayout = new URL(window.location.href).searchParams.get('layout') || '';
+					if (savedLayout !== currentLayout) {
+						queryParam('layout', savedLayout);
+					}
+				}
 			}
 
 			function filter() {
@@ -1228,9 +1237,11 @@ footer {
 			}
 
 			document.getElementById("layout-list").addEventListener("click", function() {
+				localStorage.setItem('browse-layout', '');
 				queryParam('layout', '');
 			});
 			document.getElementById("layout-grid").addEventListener("click", function() {
+				localStorage.setItem('browse-layout', 'grid');
 				queryParam('layout', 'grid');
 			});
 
