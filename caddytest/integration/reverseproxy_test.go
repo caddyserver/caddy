@@ -738,7 +738,7 @@ func TestReverseProxyRetryMatchCombined(t *testing.T) {
 }
 
 // TestReverseProxyRetryMatchIsTransportError verifies that the
-// isTransportError() CEL function correctly identifies transport errors
+// {rp.is_transport_error} == true CEL function correctly identifies transport errors
 // and allows retrying them alongside response-based matching
 func TestReverseProxyRetryMatchIsTransportError(t *testing.T) {
 	// Good upstream: returns 200
@@ -784,7 +784,7 @@ func TestReverseProxyRetryMatchIsTransportError(t *testing.T) {
 			lb_policy round_robin
 			lb_retries 1
 			lb_retry_match {
-				expression `+"`isTransportError() || {rp.status_code} in [502, 503]`"+`
+				expression `+"`{rp.is_transport_error} || {rp.status_code} in [502, 503]`"+`
 			}
 		}
 	}

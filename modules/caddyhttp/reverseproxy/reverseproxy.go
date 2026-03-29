@@ -1057,19 +1057,10 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	// expressions and handle_response routes; clear stale header
 	// placeholders from a previous attempt first so they don't
 	// leak into the next retry evaluation
-	if prev, ok := repl.Get("http.reverse_proxy.header_keys"); ok {
-		if keys, ok := prev.([]string); ok {
-			for _, k := range keys {
-				repl.Delete("http.reverse_proxy.header." + k)
-			}
-		}
-	}
-	headerKeys := make([]string, 0, len(res.Header))
+	repl.DeleteByPrefix("http.reverse_proxy.header.")
 	for field, value := range res.Header {
 		repl.Set("http.reverse_proxy.header."+field, strings.Join(value, ","))
-		headerKeys = append(headerKeys, field)
 	}
-	repl.Set("http.reverse_proxy.header_keys", headerKeys)
 	repl.Set("http.reverse_proxy.status_code", res.StatusCode)
 	repl.Set("http.reverse_proxy.status_text", res.Status)
 
@@ -1083,7 +1074,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	// request condition
 	if h.LoadBalancing != nil && len(h.LoadBalancing.RetryMatch) > 0 {
 		for _, matcherSet := range h.LoadBalancing.RetryMatch {
-			if !matcherSetHasResponseMatcher(matcherSet) {
+			if !matcherSetHasExpressionMatcher(matcherSet) {
 				continue
 			}
 			match, err := matcherSet.MatchWithError(req)
@@ -1320,11 +1311,11 @@ func (lb LoadBalancing) tryAgain(ctx caddy.Context, start time.Time, retries int
 			}
 
 			// set transport error flag so CEL expressions can use
-			// isTransportError() to decide whether to retry
+			// {rp.is_transport_error} to decide whether to retry
 			repl, _ := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 			if repl != nil {
 				repl.Set("http.reverse_proxy.is_transport_error", true)
-				defer repl.Set("http.reverse_proxy.is_transport_error", false)
+				defer repl.Delete("http.reverse_proxy.is_transport_error")
 			}
 
 			match, err := lb.RetryMatch.AnyMatchWithError(req)
@@ -1619,9 +1610,9 @@ type LoadBalancing struct {
 	// GET requests will be retried. Matcher sets with CEL expression
 	// matchers are evaluated against upstream responses and can
 	// reference {rp.status_code}, {rp.header.*}, and
-	// isTransportError(). Dial errors are always retried regardless
-	// of this setting. Retries use the next available upstream per
-	// the load balancing policy
+	// {rp.is_transport_error}. Dial errors are always retried
+	// regardless of this setting. Retries use the next available
+	// upstream per the load balancing policy
 	RetryMatchRaw caddyhttp.RawMatcherSets `json:"retry_match,omitempty" caddy:"namespace=http.matchers"`
 
 	SelectionPolicy Selector              `json:"-"`
@@ -1719,20 +1710,14 @@ type RequestHeaderOpsTransport interface {
 	RequestHeaderOps() *headers.HeaderOps
 }
 
-// canMatchResponse is implemented by matchers that may reference
-// response data via placeholders (e.g. CEL expression matchers
-// using {rp.status_code} or {rp.header.*})
-type canMatchResponse interface {
-	CanMatchResponse()
-}
-
-// matcherSetHasResponseMatcher reports whether a matcher set contains
-// at least one matcher that can reference response data. Matcher sets
-// without such matchers only test request properties and should not
-// be evaluated for response-based retry decisions
-func matcherSetHasResponseMatcher(matcherSet caddyhttp.MatcherSet) bool {
+// matcherSetHasExpressionMatcher reports whether a matcher set contains
+// at least one expression matcher. Expression matchers can reference
+// response data via placeholders like {rp.status_code}. Matcher sets
+// without expression matchers only test request properties and should
+// not be evaluated for response-based retry decisions
+func matcherSetHasExpressionMatcher(matcherSet caddyhttp.MatcherSet) bool {
 	for _, m := range matcherSet {
-		if _, ok := m.(canMatchResponse); ok {
+		if _, ok := m.(*caddyhttp.MatchExpression); ok {
 			return true
 		}
 	}

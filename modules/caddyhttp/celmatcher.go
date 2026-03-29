@@ -126,10 +126,6 @@ func (m *MatchExpression) Provision(ctx caddy.Context) error {
 	// light (and possibly naïve) syntactic sugar
 	m.expandedExpr = placeholderRegexp.ReplaceAllString(m.Expr, placeholderExpansion)
 
-	// rewrite isTransportError() to isTransportError(req) so the
-	// function receives the request context
-	m.expandedExpr = transportErrorRegexp.ReplaceAllString(m.expandedExpr, transportErrorExpansion)
-
 	// as a second pass, we'll strip the escape character from an escaped
 	// placeholder, so that it can be used as an input to other CEL functions
 	m.expandedExpr = escapedPlaceholderRegexp.ReplaceAllString(m.expandedExpr, escapedPlaceholderExpansion)
@@ -172,11 +168,6 @@ func (m *MatchExpression) Provision(ctx caddy.Context) error {
 			[]*cel.Type{httpRequestObjectType, cel.StringType},
 			cel.AnyType,
 		)),
-		cel.Function(CELTransportErrorFuncName, cel.SingletonUnaryBinding(isTransportErrorFunc), cel.Overload(
-			CELTransportErrorFuncName+"_httpRequest",
-			[]*cel.Type{httpRequestObjectType},
-			cel.BoolType,
-		)),
 		cel.Variable(CELRequestVarName, httpRequestObjectType),
 		cel.CustomTypeAdapter(m.ta),
 		ext.Strings(),
@@ -217,10 +208,6 @@ func (m MatchExpression) Match(r *http.Request) bool {
 	}
 	return match
 }
-
-// CanMatchResponse is a marker indicating that expression matchers
-// may reference response data via placeholders like {rp.status_code}
-func (m MatchExpression) CanMatchResponse() {}
 
 // MatchWithError returns true if r matches m.
 func (m MatchExpression) MatchWithError(r *http.Request) (bool, error) {
@@ -291,29 +278,6 @@ func (m MatchExpression) caddyPlaceholderFunc(lhs, rhs ref.Val) ref.Val {
 	val, _ := repl.Get(string(phStr))
 
 	return m.ta.NativeToValue(val)
-}
-
-// isTransportErrorFunc implements the isTransportError() CEL function
-// that returns true when the evaluation is happening during a transport
-// error retry decision (as opposed to a response-based retry decision)
-func isTransportErrorFunc(val ref.Val) ref.Val {
-	celReq, ok := val.(celHTTPRequest)
-	if !ok {
-		return types.NewErr(
-			"invalid request of type '%v' to %s(request)",
-			val.Type(),
-			CELTransportErrorFuncName,
-		)
-	}
-	repl, ok := celReq.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-	if !ok || repl == nil {
-		return types.Bool(false)
-	}
-	v, _ := repl.Get("http.reverse_proxy.is_transport_error")
-	if b, ok := v.(bool); ok {
-		return types.Bool(b)
-	}
-	return types.Bool(false)
 }
 
 // httpRequestCELType is the type representation of a native HTTP request.
@@ -850,10 +814,6 @@ var (
 	placeholderRegexp    = regexp.MustCompile(`([^\\]|^){([a-zA-Z][\w.-]+)}`)
 	placeholderExpansion = `${1}ph(req, "${2}")`
 
-	// rewrite isTransportError() calls to pass the request object
-	transportErrorRegexp    = regexp.MustCompile(`isTransportError\(\)`)
-	transportErrorExpansion = `isTransportError(req)`
-
 	// As a second pass, we need to strip the escape character in front of
 	// the placeholder, if it exists.
 	escapedPlaceholderRegexp    = regexp.MustCompile(`\\{([a-zA-Z][\w.-]+)}`)
@@ -866,10 +826,6 @@ var httpRequestObjectType = cel.ObjectType("http.Request")
 
 // The name of the CEL function which accesses Replacer values.
 const CELPlaceholderFuncName = "ph"
-
-// The name of the CEL function that checks if the current evaluation
-// context is a transport error (connection succeeded but roundtrip failed)
-const CELTransportErrorFuncName = "isTransportError"
 
 // The name of the CEL request variable.
 const CELRequestVarName = "req"

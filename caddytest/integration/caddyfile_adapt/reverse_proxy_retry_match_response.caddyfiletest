@@ -50,12 +50,12 @@ reverse_proxy 127.0.0.1:65535 {
 		expression `header_regexp('Content-Type', '^application/json') && {rp.status_code} == 502`
 	}
 
-	# isTransportError() for transport error handling
+	# transport error handling via placeholder
 	lb_retry_match {
-		expression `isTransportError() || {rp.status_code} in [502, 503]`
+		expression `{rp.is_transport_error} || {rp.status_code} in [502, 503]`
 	}
 	lb_retry_match {
-		expression `isTransportError() && method('POST')`
+		expression `{rp.is_transport_error} && method('POST')`
 	}
 }
 ----------
@@ -124,10 +124,10 @@ reverse_proxy 127.0.0.1:65535 {
 												"expression": "header_regexp('Content-Type', '^application/json') \u0026\u0026 {http.reverse_proxy.status_code} == 502"
 											},
 											{
-												"expression": "isTransportError() || {http.reverse_proxy.status_code} in [502, 503]"
+												"expression": "{http.reverse_proxy.is_transport_error} || {http.reverse_proxy.status_code} in [502, 503]"
 											},
 											{
-												"expression": "isTransportError() \u0026\u0026 method('POST')"
+												"expression": "{http.reverse_proxy.is_transport_error} \u0026\u0026 method('POST')"
 											}
 										]
 									},

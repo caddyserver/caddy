@@ -1,8 +1,8 @@
 package reverseproxy
 
 import (
+	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -259,29 +259,16 @@ func TestDialErrorBodyRetry(t *testing.T) {
 	}
 }
 
-// placeholderMatcher is a test-only RequestMatcherWithError that checks
-// a Caddy replacer placeholder against a set of allowed values. This
-// lets us test the response-retry mechanism without needing to provision
-// a full CEL expression matcher (which requires a Caddy context)
-type placeholderMatcher struct {
-	placeholder string
-	values      []any
-}
-
-func (m placeholderMatcher) CanMatchResponse() {}
-
-func (m placeholderMatcher) MatchWithError(req *http.Request) (bool, error) {
-	repl, ok := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-	if !ok || repl == nil {
-		return false, nil
+// newExpressionMatcher provisions a MatchExpression for use in tests
+func newExpressionMatcher(t *testing.T, expr string) *caddyhttp.MatchExpression {
+	t.Helper()
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	t.Cleanup(cancel)
+	m := &caddyhttp.MatchExpression{Expr: expr}
+	if err := m.Provision(ctx); err != nil {
+		t.Fatalf("failed to provision expression %q: %v", expr, err)
 	}
-	val, _ := repl.Get(m.placeholder)
-	for _, v := range m.values {
-		if fmt.Sprint(val) == fmt.Sprint(v) {
-			return true, nil
-		}
-	}
-	return false, nil
+	return m
 }
 
 // minimalHandlerWithRetryMatch is like minimalHandler but also configures
@@ -293,16 +280,11 @@ func minimalHandlerWithRetryMatch(retries int, retryMatch caddyhttp.MatcherSets,
 }
 
 // TestResponseRetryStatusCode verifies that when an upstream returns a status
-// code matching a retry_match entry, the request is retried on the next
-// upstream. The retry match uses a placeholder matcher on
-// http.reverse_proxy.status_code which is how CEL expression matchers access
-// the response status at runtime
+// code matching a retry_match expression, the request is retried on the next
+// upstream
 func TestResponseRetryStatusCode(t *testing.T) {
-	var badHits atomic.Int32
-
 	// Bad upstream: returns 502
 	badServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		badHits.Add(1)
 		w.WriteHeader(http.StatusBadGateway)
 	}))
 	t.Cleanup(badServer.Close)
@@ -314,90 +296,42 @@ func TestResponseRetryStatusCode(t *testing.T) {
 	}))
 	t.Cleanup(goodServer.Close)
 
-	tests := []struct {
-		name        string
-		matchCodes  []any
-		wantStatus  int
-		wantRetried bool // whether a retry should have happened
-	}{
-		{
-			name:        "502 matches retry_match - retries to good upstream",
-			matchCodes:  []any{502, 503},
-			wantStatus:  http.StatusOK,
-			wantRetried: true,
-		},
-		{
-			name:        "404 does not match retry_match - returns 404",
-			matchCodes:  []any{502, 503},
-			wantStatus:  http.StatusNotFound,
-			wantRetried: false,
+	retryMatch := caddyhttp.MatcherSets{
+		caddyhttp.MatcherSet{
+			newExpressionMatcher(t, "{http.reverse_proxy.status_code} in [502, 503]"),
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			badHits.Store(0)
+	// RoundRobin picks index 1 first, then 0
+	upstreams := []*Upstream{
+		{Host: new(Host), Dial: goodServer.Listener.Addr().String()},
+		{Host: new(Host), Dial: badServer.Listener.Addr().String()},
+	}
 
-			retryMatch := caddyhttp.MatcherSets{
-				caddyhttp.MatcherSet{
-					placeholderMatcher{
-						placeholder: "http.reverse_proxy.status_code",
-						values:      tc.matchCodes,
-					},
-				},
-			}
+	h := minimalHandlerWithRetryMatch(1, retryMatch, upstreams...)
 
-			// Determine the bad upstream response code
-			var badUpstream *httptest.Server
-			if !tc.wantRetried {
-				// For the non-match case, use a server returning 404
-				badUpstream = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					badHits.Add(1)
-					w.WriteHeader(http.StatusNotFound)
-				}))
-				t.Cleanup(badUpstream.Close)
-			} else {
-				badUpstream = badServer
-			}
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req = prepareTestRequest(req)
+	rec := httptest.NewRecorder()
 
-			// RoundRobin picks index 1 first, then 0
-			upstreams := []*Upstream{
-				{Host: new(Host), Dial: goodServer.Listener.Addr().String()},
-				{Host: new(Host), Dial: badUpstream.Listener.Addr().String()},
-			}
+	err := h.ServeHTTP(rec, req, caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+		return nil
+	}))
 
-			h := minimalHandlerWithRetryMatch(1, retryMatch, upstreams...)
+	gotStatus := rec.Code
+	if err != nil {
+		if herr, ok := err.(caddyhttp.HandlerError); ok {
+			gotStatus = herr.StatusCode
+		}
+	}
 
-			req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
-			req = prepareTestRequest(req)
-			rec := httptest.NewRecorder()
-
-			err := h.ServeHTTP(rec, req, caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
-				return nil
-			}))
-
-			gotStatus := rec.Code
-			if err != nil {
-				if herr, ok := err.(caddyhttp.HandlerError); ok {
-					gotStatus = herr.StatusCode
-				}
-			}
-
-			if gotStatus != tc.wantStatus {
-				t.Errorf("status: got %d, want %d (err=%v)", gotStatus, tc.wantStatus, err)
-			}
-
-			if tc.wantRetried && badHits.Load() != 1 {
-				t.Errorf("bad upstream hits: got %d, want 1", badHits.Load())
-			}
-		})
+	if gotStatus != http.StatusOK {
+		t.Errorf("status: got %d, want %d (err=%v)", gotStatus, http.StatusOK, err)
 	}
 }
 
 // TestResponseRetryHeader verifies that response header matching triggers
-// retries. The retry match checks http.reverse_proxy.header.X-Upstream-Retry
-// which is how CEL expressions like {rp.header.X-Upstream-Retry} access
-// response headers at runtime
+// retries via a CEL expression checking {rp.header.*}
 func TestResponseRetryHeader(t *testing.T) {
 	// Bad upstream: returns 200 but with X-Upstream-Retry header
 	badServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -416,10 +350,7 @@ func TestResponseRetryHeader(t *testing.T) {
 
 	retryMatch := caddyhttp.MatcherSets{
 		caddyhttp.MatcherSet{
-			placeholderMatcher{
-				placeholder: "http.reverse_proxy.header.X-Upstream-Retry",
-				values:      []any{"true"},
-			},
+			newExpressionMatcher(t, `{http.reverse_proxy.header.X-Upstream-Retry} == "true"`),
 		},
 	}
 
@@ -464,10 +395,7 @@ func TestResponseRetryNoMatchNoRetry(t *testing.T) {
 
 	retryMatch := caddyhttp.MatcherSets{
 		caddyhttp.MatcherSet{
-			placeholderMatcher{
-				placeholder: "http.reverse_proxy.status_code",
-				values:      []any{502, 503},
-			},
+			newExpressionMatcher(t, "{http.reverse_proxy.status_code} in [502, 503]"),
 		},
 	}
 
@@ -503,10 +431,7 @@ func TestResponseRetryExhaustedPreservesStatusCode(t *testing.T) {
 
 	retryMatch := caddyhttp.MatcherSets{
 		caddyhttp.MatcherSet{
-			placeholderMatcher{
-				placeholder: "http.reverse_proxy.status_code",
-				values:      []any{503},
-			},
+			newExpressionMatcher(t, "{http.reverse_proxy.status_code} == 503"),
 		},
 	}
 
@@ -561,10 +486,7 @@ func TestResponseRetryHeaderCleanup(t *testing.T) {
 
 	retryMatch := caddyhttp.MatcherSets{
 		caddyhttp.MatcherSet{
-			placeholderMatcher{
-				placeholder: "http.reverse_proxy.header.X-Retry",
-				values:      []any{"true"},
-			},
+			newExpressionMatcher(t, `{http.reverse_proxy.header.X-Retry} == "true"`),
 		},
 	}
 
@@ -667,7 +589,7 @@ func brokenUpstreamAddr(t *testing.T) string {
 
 // TestTransportErrorPlaceholder verifies that the is_transport_error
 // placeholder is set to true during transport error evaluation in tryAgain()
-// and that expression matchers using isTransportError() can match it
+// and that expression matchers using {rp.is_transport_error} can match it
 func TestTransportErrorPlaceholder(t *testing.T) {
 	broken := brokenUpstreamAddr(t)
 
@@ -677,14 +599,9 @@ func TestTransportErrorPlaceholder(t *testing.T) {
 	}))
 	t.Cleanup(goodServer.Close)
 
-	// Matcher that checks the is_transport_error placeholder -
-	// simulates what isTransportError() does in CEL
 	retryMatch := caddyhttp.MatcherSets{
 		caddyhttp.MatcherSet{
-			placeholderMatcher{
-				placeholder: "http.reverse_proxy.is_transport_error",
-				values:      []any{true},
-			},
+			newExpressionMatcher(t, "{http.reverse_proxy.is_transport_error} == true"),
 		},
 	}
 
@@ -719,11 +636,11 @@ func TestTransportErrorPlaceholder(t *testing.T) {
 
 // TestTransportErrorPlaceholderNotSetForResponses verifies that the
 // is_transport_error placeholder is NOT set when evaluating response
-// matchers, so isTransportError() returns false for response retries
+// matchers, so {rp.is_transport_error} is false for response retries
 func TestTransportErrorPlaceholderNotSetForResponses(t *testing.T) {
 	var hits atomic.Int32
 
-	// Server returns 502 - but the matcher only checks isTransportError
+	// Server returns 502 - but the matcher only checks is_transport_error
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits.Add(1)
 		w.WriteHeader(http.StatusBadGateway)
@@ -733,10 +650,7 @@ func TestTransportErrorPlaceholderNotSetForResponses(t *testing.T) {
 	// Only matches transport errors, not response errors
 	retryMatch := caddyhttp.MatcherSets{
 		caddyhttp.MatcherSet{
-			placeholderMatcher{
-				placeholder: "http.reverse_proxy.is_transport_error",
-				values:      []any{true},
-			},
+			newExpressionMatcher(t, "{http.reverse_proxy.is_transport_error} == true"),
 		},
 	}
 
@@ -758,55 +672,50 @@ func TestTransportErrorPlaceholderNotSetForResponses(t *testing.T) {
 	// Should hit only once - is_transport_error is false during response
 	// evaluation so the 502 is NOT retried
 	if hits.Load() != 1 {
-		t.Errorf("upstream hits: got %d, want 1 (isTransportError should be false for responses)", hits.Load())
+		t.Errorf("upstream hits: got %d, want 1 (is_transport_error should be false for responses)", hits.Load())
 	}
 }
 
-// TestRetryMatchRejectsExpressionMixedWithOtherMatchers verifies that
-// lb_retry_match rejects a block that mixes expression with other matchers
-func TestRetryMatchRejectsExpressionMixedWithOtherMatchers(t *testing.T) {
+// TestRetryMatchAllowsExpressionMixedWithOtherMatchers verifies that
+// lb_retry_match accepts a block mixing expression with other matchers
+func TestRetryMatchAllowsExpressionMixedWithOtherMatchers(t *testing.T) {
 	tests := []struct {
-		name    string
-		input   string
-		wantErr bool
+		name  string
+		input string
 	}{
 		{
-			name: "expression alone is allowed",
+			name: "expression alone",
 			input: `reverse_proxy localhost:9080 {
 				lb_retry_match {
 					expression ` + "`{rp.status_code} in [502, 503]`" + `
 				}
 			}`,
-			wantErr: false,
 		},
 		{
-			name: "method alone is allowed",
+			name: "method alone",
 			input: `reverse_proxy localhost:9080 {
 				lb_retry_match {
 					method PUT
 				}
 			}`,
-			wantErr: false,
 		},
 		{
-			name: "expression mixed with method is rejected",
+			name: "expression mixed with method",
 			input: `reverse_proxy localhost:9080 {
 				lb_retry_match {
 					method POST
 					expression ` + "`{rp.status_code} in [502, 503]`" + `
 				}
 			}`,
-			wantErr: true,
 		},
 		{
-			name: "expression mixed with path is rejected",
+			name: "expression mixed with path",
 			input: `reverse_proxy localhost:9080 {
 				lb_retry_match {
 					path /api*
 					expression ` + "`{rp.status_code} == 502`" + `
 				}
 			}`,
-			wantErr: true,
 		},
 	}
 
@@ -815,10 +724,7 @@ func TestRetryMatchRejectsExpressionMixedWithOtherMatchers(t *testing.T) {
 			h := &Handler{}
 			d := caddyfile.NewTestDispenser(tc.input)
 			err := h.UnmarshalCaddyfile(d)
-			if tc.wantErr && err == nil {
-				t.Error("expected error but got nil")
-			}
-			if !tc.wantErr && err != nil {
+			if err != nil {
 				t.Errorf("unexpected error: %v", err)
 			}
 		})

@@ -327,13 +327,6 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if err != nil {
 				return d.Errf("failed to parse lb_retry_match: %v", err)
 			}
-			// expression matchers and non-expression matchers cannot be
-			// mixed in the same block - expression matchers evaluate
-			// against responses while non-expression matchers evaluate
-			// against transport errors
-			if _, hasExpr := matcherSet["expression"]; hasExpr && len(matcherSet) > 1 {
-				return d.Errf("lb_retry_match: expression cannot be mixed with other matchers in the same block; use either an expression or request matchers, not both")
-			}
 			if h.LoadBalancing == nil {
 				h.LoadBalancing = new(LoadBalancing)
 			}
