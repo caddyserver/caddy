@@ -411,9 +411,15 @@ is always printed to stdout.
 		Long: `
 Downloads an updated Caddy binary with the same modules/plugins at the
 latest versions. EXPERIMENTAL: May be changed or removed.
+
+The upgrade command checks the version of the downloaded binary before
+replacing the current one. If the downloaded version is older than the
+current version, the upgrade will be aborted to prevent accidental downgrade.
+Use the --allow-downgrade flag to explicitly allow downgrade.
 `,
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().BoolP("keep-backup", "k", false, "Keep the backed up binary, instead of deleting it")
+			cmd.Flags().BoolP("allow-downgrade", "", false, "Allow downgrade even if the downloaded version is older")
 			cmd.RunE = WrapCommandFuncForCobra(cmdUpgrade)
 		},
 	})
