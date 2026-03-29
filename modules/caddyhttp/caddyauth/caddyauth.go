@@ -117,12 +117,22 @@ func (a Authentication) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	if !authed {
 		// All providers failed. Apply the first failed provider's response
 		// to the real response writer. This ensures headers like WWW-Authenticate
-		// are set correctly for 401 responses.
-		if firstFailedRecorder != nil && len(firstFailedRecorder.headers) > 0 {
+		// are set correctly, and preserves redirect status codes (e.g., 302)
+		// when a provider uses them for authentication flows.
+		if firstFailedRecorder != nil {
+			// Determine the status code to use:
+			// - If the provider set a redirect status (3xx), use that
+			// - Otherwise, default to 401 Unauthorized
+			statusCode := http.StatusUnauthorized
+			if firstFailedRecorder.wroteHeader && firstFailedRecorder.statusCode >= 300 && firstFailedRecorder.statusCode < 400 {
+				statusCode = firstFailedRecorder.statusCode
+			}
+
 			// Copy headers from the recorded response to the real response
 			for k, v := range firstFailedRecorder.headers {
 				w.Header()[k] = v
 			}
+			return caddyhttp.Error(statusCode, fmt.Errorf("not authenticated"))
 		}
 		return caddyhttp.Error(http.StatusUnauthorized, fmt.Errorf("not authenticated"))
 	}
