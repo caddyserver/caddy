@@ -308,6 +308,11 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	if err != nil {
 		err = fsrv.mapDirOpenError(fileSystem, err, filename)
 		if errors.Is(err, fs.ErrNotExist) {
+			// Check if there are precompressed files that can be served
+			// even when the base file doesn't exist (issue #5116)
+			if servedErr := fsrv.tryServePrecompressedOnly(fileSystem, filename, filesToHide, w, r, repl); servedErr == nil {
+				return nil // successfully served a precompressed file
+			}
 			return fsrv.notFound(w, r, next)
 		} else if errors.Is(err, fs.ErrInvalid) {
 			return caddyhttp.Error(http.StatusBadRequest, err)
@@ -772,6 +777,140 @@ func (fsrv *FileServer) getEtagFromFile(fileSystem fs.FS, filename string) (stri
 		return string(etag), nil
 	}
 	return "", nil
+}
+
+// tryServePrecompressedOnly attempts to serve a precompressed file when the base
+// file doesn't exist. This supports the use case of having only compressed files
+// on disk without the uncompressed originals (issue #5116).
+// Returns nil if a precompressed file was successfully served, or an error if not.
+func (fsrv *FileServer) tryServePrecompressedOnly(
+	fileSystem fs.FS,
+	filename string,
+	filesToHide []string,
+	w http.ResponseWriter,
+	r *http.Request,
+	repl *caddy.Replacer,
+) error {
+	// Skip if no precompressors are configured
+	if len(fsrv.precompressors) == 0 {
+		return caddyhttp.Error(http.StatusNotFound, nil)
+	}
+
+	respHeader := w.Header()
+
+	// Set Vary header for proper cache key generation
+	respHeader.Add("Vary", "Accept-Encoding")
+
+	// Check for precompressed files based on client's Accept-Encoding
+	for _, ae := range encode.AcceptedEncodings(r, fsrv.PrecompressedOrder) {
+		precompress, ok := fsrv.precompressors[ae]
+		if !ok {
+			continue
+		}
+		compressedFilename := filename + precompress.Suffix()
+
+		// Check if the compressed file is hidden
+		if fileHidden(compressedFilename, filesToHide) {
+			if c := fsrv.logger.Check(zapcore.DebugLevel, "hiding precompressed file"); c != nil {
+				c.Write(
+					zap.String("filename", compressedFilename),
+					zap.Strings("files_to_hide", filesToHide),
+				)
+			}
+			continue
+		}
+
+		compressedInfo, err := fs.Stat(fileSystem, compressedFilename)
+		if err != nil || compressedInfo.IsDir() {
+			if c := fsrv.logger.Check(zapcore.DebugLevel, "precompressed file not accessible"); c != nil {
+				c.Write(zap.String("filename", compressedFilename), zap.Error(err))
+			}
+			continue
+		}
+
+		if c := fsrv.logger.Check(zapcore.DebugLevel, "opening precompressed file without base"); c != nil {
+			c.Write(zap.String("filename", compressedFilename))
+		}
+
+		file, err := fsrv.openFile(fileSystem, compressedFilename, w)
+		if err != nil {
+			if c := fsrv.logger.Check(zapcore.WarnLevel, "opening precompressed file failed"); c != nil {
+				c.Write(zap.String("filename", compressedFilename), zap.Error(err))
+			}
+			if caddyErr, ok := err.(caddyhttp.HandlerError); ok && caddyErr.StatusCode == http.StatusServiceUnavailable {
+				return err
+			}
+			continue
+		}
+		defer file.Close()
+
+		// Set Content-Encoding header
+		respHeader.Set("Content-Encoding", ae)
+
+		// Set Content-Length for non-range requests (stdlib won't set it when Content-Encoding is set)
+		if r.Header.Get("Range") == "" {
+			respHeader.Set("Content-Length", strconv.FormatInt(compressedInfo.Size(), 10))
+		}
+
+		// Calculate Etag from the compressed file
+		var etag string
+		if fsrv.EtagFileExtensions != nil {
+			etag, err = fsrv.getEtagFromFile(fileSystem, compressedFilename)
+			if err != nil {
+				return err
+			}
+		}
+		if etag == "" {
+			etag = calculateEtag(compressedInfo)
+		}
+		if etag != "" {
+			respHeader.Set("Etag", etag)
+		}
+
+		// Set Content-Type based on the original filename (without compression suffix)
+		if respHeader.Get("Content-Type") == "" {
+			mtyp := mime.TypeByExtension(filepath.Ext(filename))
+			if mtyp == "" {
+				// Do not allow Go to sniff the content-type
+				respHeader["Content-Type"] = nil
+			} else {
+				respHeader.Set("Content-Type", mtyp)
+			}
+		}
+
+		// Handle status code override if configured or in error context
+		var statusCodeOverride int
+		if reqErr, ok := r.Context().Value(caddyhttp.ErrorCtxKey).(error); ok {
+			statusCodeOverride = http.StatusInternalServerError
+			if handlerErr, ok := reqErr.(caddyhttp.HandlerError); ok {
+				if handlerErr.StatusCode > 0 {
+					statusCodeOverride = handlerErr.StatusCode
+				}
+			}
+		}
+		if codeStr := fsrv.StatusCode.String(); codeStr != "" {
+			statusCodeOverride, err = strconv.Atoi(repl.ReplaceAll(codeStr, ""))
+			if err != nil {
+				return caddyhttp.Error(http.StatusInternalServerError, err)
+			}
+		}
+		if statusCodeOverride > 0 {
+			w = statusOverrideResponseWriter{ResponseWriter: w, code: statusCodeOverride}
+		}
+
+		// Only GET and HEAD methods are allowed for static files
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			respHeader.Add("Allow", "GET, HEAD")
+			return caddyhttp.Error(http.StatusMethodNotAllowed, nil)
+		}
+
+		// Serve the compressed file
+		http.ServeContent(w, r, compressedInfo.Name(), compressedInfo.ModTime(), file.(io.ReadSeeker))
+		return nil
+	}
+
+	// No precompressed file found
+	return caddyhttp.Error(http.StatusNotFound, nil)
 }
 
 // redirect performs a redirect to a given path. The 'toPath' parameter
