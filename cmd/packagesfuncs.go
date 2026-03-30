@@ -43,6 +43,12 @@ func cmdUpgrade(fl Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, err
 	}
 
+	// for upgrade, we want to get the latest versions, so clear any pinned versions
+	for path, pkg := range pluginPkgs {
+		pkg.Version = ""
+		pluginPkgs[path] = pkg
+	}
+
 	return upgradeBuild(pluginPkgs, fl)
 }
 
