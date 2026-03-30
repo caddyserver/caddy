@@ -267,7 +267,14 @@ func (fsrv *FileServer) browseApplyQueryParams(w http.ResponseWriter, r *http.Re
 	}
 
 	switch layoutParam {
-	case "list", "grid", "":
+	case "":
+		// if no layout param, try to get from cookie
+		if layoutCookie, layoutErr := r.Cookie("layout"); layoutErr == nil {
+			listing.Layout = layoutCookie.Value
+		}
+	case "list", "grid":
+		// set cookie to persist the layout choice
+		http.SetCookie(w, &http.Cookie{Name: "layout", Value: layoutParam, Secure: r.TLS != nil})
 		listing.Layout = layoutParam
 	default:
 		listing.Layout = "list"
