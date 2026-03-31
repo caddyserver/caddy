@@ -40,8 +40,8 @@ func init() {
 	caddy.RegisterModule(RandomSelection{})
 	caddy.RegisterModule(RandomChoiceSelection{})
 	caddy.RegisterModule(LeastConnSelection{})
-	caddy.RegisterModule(RoundRobinSelection{})
-	caddy.RegisterModule(WeightedRoundRobinSelection{})
+	caddy.RegisterModule(new(RoundRobinSelection))
+	caddy.RegisterModule(new(WeightedRoundRobinSelection))
 	caddy.RegisterModule(FirstSelection{})
 	caddy.RegisterModule(IPHashSelection{})
 	caddy.RegisterModule(ClientIPHashSelection{})
@@ -83,12 +83,12 @@ type WeightedRoundRobinSelection struct {
 	// The weight of each upstream in order,
 	// corresponding with the list of upstreams configured.
 	Weights     []int `json:"weights,omitempty"`
-	index       uint32
+	index       atomic.Uint32
 	totalWeight int
 }
 
 // CaddyModule returns the Caddy module information.
-func (WeightedRoundRobinSelection) CaddyModule() caddy.ModuleInfo {
+func (*WeightedRoundRobinSelection) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
 		ID: "http.reverse_proxy.selection_policies.weighted_round_robin",
 		New: func() caddy.Module {
@@ -143,7 +143,7 @@ func (r *WeightedRoundRobinSelection) Select(pool UpstreamPool, _ *http.Request,
 			weights = append(weights, w)
 		}
 	}
-	currentWeight := int(atomic.AddUint32(&r.index, 1)) % r.totalWeight
+	currentWeight := int(r.index.Add(1)) % r.totalWeight
 	for i, weight := range weights {
 		totalWeight += weight
 		if currentWeight < totalWeight {
@@ -295,11 +295,11 @@ func (r *LeastConnSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // RoundRobinSelection is a policy that selects
 // a host based on round-robin ordering.
 type RoundRobinSelection struct {
-	robin uint32
+	robin atomic.Uint32
 }
 
 // CaddyModule returns the Caddy module information.
-func (RoundRobinSelection) CaddyModule() caddy.ModuleInfo {
+func (*RoundRobinSelection) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
 		ID:  "http.reverse_proxy.selection_policies.round_robin",
 		New: func() caddy.Module { return new(RoundRobinSelection) },
@@ -313,7 +313,7 @@ func (r *RoundRobinSelection) Select(pool UpstreamPool, _ *http.Request, _ http.
 		return nil
 	}
 	for range n {
-		robin := atomic.AddUint32(&r.robin, 1)
+		robin := r.robin.Add(1)
 		host := pool[robin%n]
 		if host.Available() {
 			return host

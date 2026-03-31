@@ -16,6 +16,7 @@ package rewrite
 
 import (
 	"net/http"
+	"reflect"
 	"regexp"
 	"testing"
 
@@ -393,6 +394,55 @@ func TestRewrite(t *testing.T) {
 		}
 		if expected, actual := tc.expect.URL.Fragment, tc.input.URL.Fragment; expected != actual {
 			t.Errorf("Test %d: Expected URL.Fragment='%s' but got '%s'", i, expected, actual)
+		}
+	}
+}
+
+func TestQueryOpsRenameNoOpCases(t *testing.T) {
+	repl := caddy.NewReplacer()
+
+	for i, tc := range []struct {
+		input  *http.Request
+		expect map[string][]string
+		ops    *queryOps
+	}{
+		{
+			ops: &queryOps{
+				Rename: []queryOpsArguments{{Key: "ID", Val: "id"}},
+			},
+			input:  newRequest(t, "GET", "/?page=test&id=5&test=100"),
+			expect: map[string][]string{"id": {"5"}, "page": {"test"}, "test": {"100"}},
+		},
+		{
+			ops: &queryOps{
+				Rename: []queryOpsArguments{{Key: "id", Val: "id"}},
+			},
+			input:  newRequest(t, "GET", "/?page=test&id=5&test=100"),
+			expect: map[string][]string{"id": {"5"}, "page": {"test"}, "test": {"100"}},
+		},
+		{
+			ops: &queryOps{
+				Rename: []queryOpsArguments{{Key: "ID", Val: "id"}},
+			},
+			input:  newRequest(t, "GET", "/?page=test&ID=5&test=100"),
+			expect: map[string][]string{"id": {"5"}, "page": {"test"}, "test": {"100"}},
+		},
+		{
+			ops: &queryOps{
+				Rename: []queryOpsArguments{{Key: "ID", Val: "id"}},
+			},
+			input:  newRequest(t, "GET", "/?page=test&ID=5&id=7&test=100"),
+			expect: map[string][]string{"id": {"5"}, "page": {"test"}, "test": {"100"}},
+		},
+	} {
+		repl.Set("http.request.uri", tc.input.RequestURI)
+		repl.Set("http.request.uri.path", tc.input.URL.Path)
+		repl.Set("http.request.uri.query", tc.input.URL.RawQuery)
+
+		tc.ops.do(tc.input, repl)
+
+		if actual := tc.input.URL.Query(); !reflect.DeepEqual(tc.expect, map[string][]string(actual)) {
+			t.Errorf("Test %d: Expected query=%v but got %v", i, tc.expect, actual)
 		}
 	}
 }

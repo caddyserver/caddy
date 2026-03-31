@@ -149,6 +149,15 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 		iss.AccountKey = accountKey
 	}
 
+	// expand DNS override domain, if non-empty
+	if iss.Challenges != nil && iss.Challenges.DNS != nil && iss.Challenges.DNS.OverrideDomain != "" {
+		overrideDomain, err := repl.ReplaceOrErr(iss.Challenges.DNS.OverrideDomain, true, true)
+		if err != nil {
+			return fmt.Errorf("expanding DNS override domain '%s': %v", iss.Challenges.DNS.OverrideDomain, err)
+		}
+		iss.Challenges.DNS.OverrideDomain = overrideDomain
+	}
+
 	// DNS challenge provider, if not already established
 	if iss.Challenges != nil && iss.Challenges.DNS != nil && iss.Challenges.DNS.solver == nil {
 		var prov certmagic.DNSProvider
