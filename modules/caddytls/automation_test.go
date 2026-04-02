@@ -7,6 +7,36 @@ import (
 	"go.uber.org/zap"
 )
 
+// TestGetAutomationPolicyForNameIPv6Brackets verifies that getAutomationPolicyForName
+// does NOT match a policy registered for "2a12:4944:efe4::" when given the bracketed
+// form "[2a12:4944:efe4::]" that Go's HTTP server places in r.Host for IPv6 requests.
+func TestGetAutomationPolicyForNameIPv6Brackets(t *testing.T) {
+	ipv6Addr := "2a12:4944:efe4::"
+
+	specificPolicy := &AutomationPolicy{
+		subjects: []string{ipv6Addr},
+	}
+	defaultPolicy := &AutomationPolicy{}
+
+	tlsApp := &TLS{
+		Automation: &AutomationConfig{
+			Policies:                        []*AutomationPolicy{specificPolicy},
+			defaultPublicAutomationPolicy:   defaultPolicy,
+			defaultInternalAutomationPolicy: defaultPolicy,
+		},
+	}
+
+	got := tlsApp.getAutomationPolicyForName("[" + ipv6Addr + "]")
+	if got == specificPolicy {
+		t.Errorf("getAutomationPolicyForName with bracketed IPv6 host should NOT match the specific policy (bug: brackets prevent matching)")
+	}
+
+	got = tlsApp.getAutomationPolicyForName(ipv6Addr)
+	if got != specificPolicy {
+		t.Errorf("getAutomationPolicyForName with un-bracketed IPv6 host should return specific policy, got %v", got)
+	}
+}
+
 func TestAutomationPolicyMakeCertMagicConfigImplicitTailscaleManagersOnly(t *testing.T) {
 	ap := AutomationPolicy{
 		Managers: []certmagic.Manager{Tailscale{}},

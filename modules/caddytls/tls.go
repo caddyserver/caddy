@@ -684,15 +684,32 @@ func (t *TLS) HandleHTTPChallenge(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 
+	// Normalize r.Host for lookup: Go's HTTP server wraps IPv6 addresses in
+	// brackets per RFC 7230 (e.g. "[::1]" or "[::1]:80"), but automation policy
+	// subjects and ACME challenge keys use bare addresses without brackets.
+	hostForLookup, _, err := net.SplitHostPort(r.Host)
+	if err != nil {
+		hostForLookup = strings.TrimPrefix(r.Host, "[")
+		hostForLookup = strings.TrimSuffix(hostForLookup, "]")
+	}
+
 	// try all the issuers until we find the one that initiated the challenge
-	ap := t.getAutomationPolicyForName(r.Host)
+	ap := t.getAutomationPolicyForName(hostForLookup)
+
+	// Clone the request with the normalized host so that certmagic handlers
+	// (which call hostOnly(r.Host) internally) receive a bare address without
+	// brackets. hostOnly uses net.SplitHostPort, which cannot strip brackets
+	// from a host-only IPv6 literal like "[::1]" (no port), so we must
+	// normalize before passing the request down.
+	reqWithNormalizedHost := r.Clone(r.Context())
+	reqWithNormalizedHost.Host = hostForLookup
 
 	if acmeChallenge {
 		type acmeCapable interface{ GetACMEIssuer() *ACMEIssuer }
 
 		for _, iss := range ap.magic.Issuers {
 			if acmeIssuer, ok := iss.(acmeCapable); ok {
-				if acmeIssuer.GetACMEIssuer().issuer.HandleHTTPChallenge(w, r) {
+				if acmeIssuer.GetACMEIssuer().issuer.HandleHTTPChallenge(w, reqWithNormalizedHost) {
 					return true
 				}
 			}
@@ -703,13 +720,13 @@ func (t *TLS) HandleHTTPChallenge(w http.ResponseWriter, r *http.Request) bool {
 		// so that users can proxy the others through to their backends; but we
 		// might not have an automation policy for all identifiers that are trying
 		// to get certificates (e.g. the admin endpoint), so we do this manual check
-		if challenge, ok := certmagic.GetACMEChallenge(r.Host); ok {
-			return certmagic.SolveHTTPChallenge(t.logger, w, r, challenge.Challenge)
+		if challenge, ok := certmagic.GetACMEChallenge(hostForLookup); ok {
+			return certmagic.SolveHTTPChallenge(t.logger, w, reqWithNormalizedHost, challenge.Challenge)
 		}
 	} else if zerosslValidation {
 		for _, iss := range ap.magic.Issuers {
 			if ziss, ok := iss.(*ZeroSSLIssuer); ok {
-				if ziss.issuer.HandleZeroSSLHTTPValidation(w, r) {
+				if ziss.issuer.HandleZeroSSLHTTPValidation(w, reqWithNormalizedHost) {
 					return true
 				}
 			}
