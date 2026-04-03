@@ -16,6 +16,7 @@ package reverseproxy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -127,6 +128,9 @@ type ActiveHealthChecks struct {
 	// body of a healthy backend.
 	ExpectBody string `json:"expect_body,omitempty"`
 
+	// Whether backends are initially considered unhealthy.
+	InitiallyUnhealthy bool `json:"initially_unhealthy,omitempty"`
+
 	uri        *url.URL
 	httpClient *http.Client
 	bodyRegexp *regexp.Regexp
@@ -185,7 +189,21 @@ func (a *ActiveHealthChecks) Provision(ctx caddy.Context, h *Handler) error {
 		},
 	}
 
+	if a.Passes < 1 {
+		a.Passes = 1
+	}
+
+	if a.Fails < 1 {
+		a.Fails = 1
+	}
+
 	for _, upstream := range h.Upstreams {
+		if a.InitiallyUnhealthy {
+			upstream.setHealthy(upstream.activeHealthPasses() >= a.Passes)
+		} else {
+			upstream.setHealthy(upstream.activeHealthFails() < a.Fails)
+		}
+
 		// if there's an alternative upstream for health-check provided in the config,
 		// then use it, otherwise use the upstream's dial address. if upstream is used,
 		// then the port is ignored.
@@ -208,14 +226,6 @@ func (a *ActiveHealthChecks) Provision(ctx caddy.Context, h *Handler) error {
 		if err != nil {
 			return fmt.Errorf("expect_body: compiling regular expression: %v", err)
 		}
-	}
-
-	if a.Passes < 1 {
-		a.Passes = 1
-	}
-
-	if a.Fails < 1 {
-		a.Fails = 1
 	}
 
 	return nil
@@ -477,7 +487,6 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 			// dispatch an event that the host newly became unhealthy
 			if upstream.setHealthy(false) {
 				h.events.Emit(h.ctx, "unhealthy", map[string]any{"host": hostAddr})
-				upstream.Host.resetHealth()
 			}
 		}
 	}
@@ -500,7 +509,6 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 					c.Write(zap.String("host", hostAddr))
 				}
 				h.events.Emit(h.ctx, "healthy", map[string]any{"host": hostAddr})
-				upstream.Host.resetHealth()
 			}
 		}
 	}
@@ -508,6 +516,11 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 	// do the request, being careful to tame the response body
 	resp, err := h.HealthChecks.Active.httpClient.Do(req) //nolint:gosec // no SSRF
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			// context was canceled, so don't count this as a failure
+			return nil
+		}
+
 		if c := h.HealthChecks.Active.logger.Check(zapcore.InfoLevel, "HTTP request failed"); c != nil {
 			c.Write(
 				zap.String("host", hostAddr),

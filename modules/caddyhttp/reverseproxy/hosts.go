@@ -227,6 +227,7 @@ func (h *Host) countHealthPass(delta int) error {
 	if result < 0 {
 		return fmt.Errorf("count below 0: %d", result)
 	}
+	h.activeFails.Store(0)
 	return nil
 }
 
@@ -237,13 +238,8 @@ func (h *Host) countHealthFail(delta int) error {
 	if result < 0 {
 		return fmt.Errorf("count below 0: %d", result)
 	}
-	return nil
-}
-
-// resetHealth resets the health check counters.
-func (h *Host) resetHealth() {
 	h.activePasses.Store(0)
-	h.activeFails.Store(0)
+	return nil
 }
 
 // healthy returns true if the upstream is not actively marked as unhealthy.
