@@ -96,6 +96,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //	    flush_interval     <duration>
 //	    request_buffers    <size>
 //	    response_buffers   <size>
+//	    stream_buffer_size <size>
 //	    stream_timeout     <duration>
 //	    stream_close_delay <duration>
 //	    verbose_logs
@@ -646,7 +647,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				h.FlushInterval = caddy.Duration(dur)
 			}
 
-		case "request_buffers", "response_buffers":
+		case "request_buffers", "response_buffers", "stream_buffer_size":
 			subdir := d.Val()
 			if !d.NextArg() {
 				return d.ArgErr()
@@ -670,6 +671,8 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				h.RequestBuffers = size
 			case "response_buffers":
 				h.ResponseBuffers = size
+			case "stream_buffer_size":
+				h.StreamBufferSize = int(size)
 			}
 
 		case "stream_timeout":

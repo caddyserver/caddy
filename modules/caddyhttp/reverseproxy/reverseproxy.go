@@ -171,6 +171,12 @@ type Handler struct {
 	// forcibly closed at the end of the timeout. Default: no timeout.
 	StreamTimeout caddy.Duration `json:"stream_timeout,omitempty"`
 
+	// The size of the buffer used for each direction of streaming
+	// requests such as WebSockets. If zero, the default size is 32 KiB.
+	// This only affects upgraded bidirectional streams, not normal
+	// request or response buffering.
+	StreamBufferSize int `json:"stream_buffer_size,omitempty"`
+
 	// If nonzero, streaming requests such as WebSockets will not be
 	// closed when the proxy config is unloaded, and instead the stream
 	// will remain open until the delay is complete. In other words,
