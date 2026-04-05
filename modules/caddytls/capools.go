@@ -821,10 +821,12 @@ func (scp SystemCAPool) CertPool() *x509.CertPool {
 	return scp.pool
 }
 
+// The `combined` pool type merges multiple pools. The `sources` pools must implement the
+// `CertificateProvider` interface, which allows them to export their certificate set.
+//
 // Note: SystemCAPool does not implement CertificateProvider because
 // x509.SystemCertPool() doesn't expose its certificates, so it cannot
 // be used as a source in CombinedCAPool.
-
 type CombinedCAPool struct {
 	// The CA pool sources to combine. Each source is a CA pool provider module.
 	SourcesRaw []json.RawMessage `json:"sources,omitempty" caddy:"namespace=tls.ca_pool.source inline_key=provider"`
