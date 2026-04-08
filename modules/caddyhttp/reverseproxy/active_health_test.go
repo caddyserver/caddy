@@ -18,48 +18,55 @@ import (
 	"testing"
 )
 
+func newTestUpstream() *Upstream {
+	return &Upstream{
+		Host:              new(Host),
+		activeHealthStats: &ActiveHealthStats{},
+	}
+}
+
 // TestConsecutiveCounterResetOnPass verifies that a health check pass
 // resets the consecutive failure counter to zero. Without this, non-
 // consecutive failures could accumulate and incorrectly trip the threshold.
 func TestConsecutiveCounterResetOnPass(t *testing.T) {
-	host := new(Host)
+	upstream := newTestUpstream()
 
 	// Simulate: fail, fail, then pass
-	host.countHealthFail(1)
-	host.countHealthFail(1)
-	if host.activeHealthFails() != 2 {
-		t.Fatalf("expected 2 fails, got %d", host.activeHealthFails())
+	upstream.countHealthFail(1)
+	upstream.countHealthFail(1)
+	if upstream.activeHealthFails() != 2 {
+		t.Fatalf("expected 2 fails, got %d", upstream.activeHealthFails())
 	}
 
 	// A pass should reset the fail counter
-	host.countHealthPass(1)
-	if host.activeHealthFails() != 0 {
-		t.Errorf("expected fail counter to reset to 0 after a pass, got %d", host.activeHealthFails())
+	upstream.countHealthPass(1)
+	if upstream.activeHealthFails() != 0 {
+		t.Errorf("expected fail counter to reset to 0 after a pass, got %d", upstream.activeHealthFails())
 	}
-	if host.activeHealthPasses() != 1 {
-		t.Errorf("expected 1 pass, got %d", host.activeHealthPasses())
+	if upstream.activeHealthPasses() != 1 {
+		t.Errorf("expected 1 pass, got %d", upstream.activeHealthPasses())
 	}
 }
 
 // TestConsecutiveCounterResetOnFail verifies that a health check failure
 // resets the consecutive pass counter to zero.
 func TestConsecutiveCounterResetOnFail(t *testing.T) {
-	host := new(Host)
+	upstream := newTestUpstream()
 
 	// Simulate: pass, pass, then fail
-	host.countHealthPass(1)
-	host.countHealthPass(1)
-	if host.activeHealthPasses() != 2 {
-		t.Fatalf("expected 2 passes, got %d", host.activeHealthPasses())
+	upstream.countHealthPass(1)
+	upstream.countHealthPass(1)
+	if upstream.activeHealthPasses() != 2 {
+		t.Fatalf("expected 2 passes, got %d", upstream.activeHealthPasses())
 	}
 
 	// A fail should reset the pass counter
-	host.countHealthFail(1)
-	if host.activeHealthPasses() != 0 {
-		t.Errorf("expected pass counter to reset to 0 after a fail, got %d", host.activeHealthPasses())
+	upstream.countHealthFail(1)
+	if upstream.activeHealthPasses() != 0 {
+		t.Errorf("expected pass counter to reset to 0 after a fail, got %d", upstream.activeHealthPasses())
 	}
-	if host.activeHealthFails() != 1 {
-		t.Errorf("expected 1 fail, got %d", host.activeHealthFails())
+	if upstream.activeHealthFails() != 1 {
+		t.Errorf("expected 1 fail, got %d", upstream.activeHealthFails())
 	}
 }
 
@@ -68,42 +75,42 @@ func TestConsecutiveCounterResetOnFail(t *testing.T) {
 // Before the fix, fail-pass-fail-pass-fail would reach Fails=3 even
 // though there were zero consecutive failures.
 func TestNonConsecutiveFailuresDoNotTripThreshold(t *testing.T) {
-	host := new(Host)
+	upstream := newTestUpstream()
 
 	// Interleave: fail, pass, fail, pass, fail
 	for i := 0; i < 3; i++ {
-		host.countHealthFail(1)
+		upstream.countHealthFail(1)
 		if i < 2 {
-			host.countHealthPass(1)
+			upstream.countHealthPass(1)
 		}
 	}
 
 	// With correct consecutive tracking, we should have only 1 consecutive fail
-	if host.activeHealthFails() != 1 {
-		t.Errorf("expected 1 consecutive fail, got %d", host.activeHealthFails())
+	if upstream.activeHealthFails() != 1 {
+		t.Errorf("expected 1 consecutive fail, got %d", upstream.activeHealthFails())
 	}
 }
 
 // TestConsecutiveFailuresDoTripThreshold verifies that truly consecutive
 // failures correctly accumulate and trip the threshold.
 func TestConsecutiveFailuresDoTripThreshold(t *testing.T) {
-	host := new(Host)
+	upstream := newTestUpstream()
 
 	const failThreshold = 3
 
-	host.countHealthFail(1)
-	host.countHealthFail(1)
-	host.countHealthFail(1)
+	upstream.countHealthFail(1)
+	upstream.countHealthFail(1)
+	upstream.countHealthFail(1)
 
-	if host.activeHealthFails() != 3 {
-		t.Errorf("expected 3 consecutive fails, got %d", host.activeHealthFails())
+	if upstream.activeHealthFails() != 3 {
+		t.Errorf("expected 3 consecutive fails, got %d", upstream.activeHealthFails())
 	}
-	if host.activeHealthFails() < failThreshold {
+	if upstream.activeHealthFails() < failThreshold {
 		t.Error("3 consecutive failures should trip threshold of 3")
 	}
 	// Pass counter should be 0 (reset by the first fail)
-	if host.activeHealthPasses() != 0 {
-		t.Errorf("expected 0 passes after consecutive fails, got %d", host.activeHealthPasses())
+	if upstream.activeHealthPasses() != 0 {
+		t.Errorf("expected 0 passes after consecutive fails, got %d", upstream.activeHealthPasses())
 	}
 }
 
@@ -111,8 +118,9 @@ func TestConsecutiveFailuresDoTripThreshold(t *testing.T) {
 // and there are no prior health check passes, the upstream starts unhealthy.
 func TestInitiallyUnhealthy(t *testing.T) {
 	upstream := &Upstream{
-		Dial: "10.4.0.1:80",
-		Host: new(Host),
+		Dial:              "10.4.0.1:80",
+		Host:              new(Host),
+		activeHealthStats: &ActiveHealthStats{},
 	}
 
 	// Simulate what Provision does when InitiallyUnhealthy=true and
@@ -129,13 +137,13 @@ func TestInitiallyUnhealthy(t *testing.T) {
 // is true but the host already has enough passes (e.g., across a reload),
 // it starts healthy.
 func TestInitiallyUnhealthyWithPriorPasses(t *testing.T) {
-	host := new(Host)
-	host.countHealthPass(1) // simulate a prior health check pass
-
+	stats := &ActiveHealthStats{}
 	upstream := &Upstream{
-		Dial: "10.4.0.2:80",
-		Host: host,
+		Dial:              "10.4.0.2:80",
+		Host:              new(Host),
+		activeHealthStats: stats,
 	}
+	upstream.countHealthPass(1) // simulate a prior health check pass
 
 	passes := 1
 	upstream.setHealthy(upstream.activeHealthPasses() >= passes)
@@ -149,8 +157,9 @@ func TestInitiallyUnhealthyWithPriorPasses(t *testing.T) {
 // start healthy unless they have accumulated enough failures.
 func TestInitiallyHealthyDefault(t *testing.T) {
 	upstream := &Upstream{
-		Dial: "10.4.0.3:80",
-		Host: new(Host),
+		Dial:              "10.4.0.3:80",
+		Host:              new(Host),
+		activeHealthStats: &ActiveHealthStats{},
 	}
 
 	// Default behavior: healthy unless fails >= threshold
@@ -165,13 +174,12 @@ func TestInitiallyHealthyDefault(t *testing.T) {
 // TestInitiallyHealthyDefaultWithPriorFails verifies that an upstream
 // with prior failures (e.g., from before a reload) starts unhealthy.
 func TestInitiallyHealthyDefaultWithPriorFails(t *testing.T) {
-	host := new(Host)
-	host.countHealthFail(1) // simulate a prior failure
-
 	upstream := &Upstream{
-		Dial: "10.4.0.4:80",
-		Host: host,
+		Dial:              "10.4.0.4:80",
+		Host:              new(Host),
+		activeHealthStats: &ActiveHealthStats{},
 	}
+	upstream.countHealthFail(1) // simulate a prior failure
 
 	fails := 1
 	upstream.setHealthy(upstream.activeHealthFails() < fails)
