@@ -38,10 +38,13 @@ jobs:
 
       - name: Trim and validate inputs
         id: inputs
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_COMMIT_HASH: ${{ inputs.commit_hash }}
         run: |
           # Trim whitespace from inputs
-          VERSION=$(echo "${{ inputs.version }}" | xargs)
-          COMMIT_HASH=$(echo "${{ inputs.commit_hash }}" | xargs)
+          VERSION=$(echo "$INPUT_VERSION" | xargs)
+          COMMIT_HASH=$(echo "$INPUT_COMMIT_HASH" | xargs)
           
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "commit_hash=$COMMIT_HASH" >> $GITHUB_OUTPUT
@@ -65,9 +68,11 @@ jobs:
           fi
 
       - name: Check if tag already exists
+        env:
+          VERSION: ${{ steps.inputs.outputs.version }}
         run: |
-          if git rev-parse "${{ steps.inputs.outputs.version }}" >/dev/null 2>&1; then
-            echo "Error: Tag ${{ steps.inputs.outputs.version }} already exists"
+          if git rev-parse "$VERSION" >/dev/null 2>&1; then
+            echo "Error: Tag $VERSION already exists"
             exit 1
           fi
 
@@ -128,9 +133,10 @@ jobs:
 
       - name: Generate changelog and create branch
         id: setup
+        env:
+          VERSION: ${{ steps.inputs.outputs.version }}
+          COMMIT_HASH: ${{ steps.inputs.outputs.commit_hash }}
         run: |
-          VERSION="${{ steps.inputs.outputs.version }}"
-          COMMIT_HASH="${{ steps.inputs.outputs.commit_hash }}"
           
           # Create a new branch for the release proposal
           BRANCH_NAME="release_proposal-$VERSION"
@@ -239,11 +245,16 @@ jobs:
           result-encoding: json
 
       - name: Post summary
+        env:
+          VERSION: ${{ steps.inputs.outputs.version }}
+          COMMIT_HASH: ${{ steps.inputs.outputs.commit_hash }}
+          BEHIND_INFO: ${{ steps.setup.outputs.behind_info }}
+          PR_URL: ${{ fromJson(steps.create_pr.outputs.result).url }}
         run: |
           echo "## Release Proposal PR Created! 🚀" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Version: **${{ steps.inputs.outputs.version }}**" >> $GITHUB_STEP_SUMMARY
-          echo "Commit: **${{ steps.inputs.outputs.commit_hash }}**" >> $GITHUB_STEP_SUMMARY
-          echo "Status: ${{ steps.setup.outputs.behind_info }}" >> $GITHUB_STEP_SUMMARY
+          echo "Version: **$VERSION**" >> $GITHUB_STEP_SUMMARY
+          echo "Commit: **$COMMIT_HASH**" >> $GITHUB_STEP_SUMMARY
+          echo "Status: $BEHIND_INFO" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "PR: ${{ fromJson(steps.create_pr.outputs.result).url }}" >> $GITHUB_STEP_SUMMARY
+          echo "PR: $PR_URL" >> $GITHUB_STEP_SUMMARY
