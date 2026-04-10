@@ -930,6 +930,36 @@ func TestAcceptSiteImportWithBraces(t *testing.T) {
 	}
 }
 
+func TestGlobalOptionsAfterImportedSnippetsGivesHelpfulError(t *testing.T) {
+	tempDir := t.TempDir()
+	importFile1 := filepath.Join(tempDir, "matcher_snippet_1.caddy")
+	importFile2 := filepath.Join(tempDir, "matcher_snippet_2.caddy")
+
+	err := os.WriteFile(importFile1, []byte(`(matcher1)`), 0o644)
+	if err != nil {
+		t.Fatalf("writing first import file: %v", err)
+	}
+
+	err = os.WriteFile(importFile2, []byte(`(matcher2)`), 0o644)
+	if err != nil {
+		t.Fatalf("writing second import file: %v", err)
+	}
+
+	_, err = Parse("Testfile", []byte(`import `+importFile1+`
+import `+importFile2+`
+{
+	debug
+}`))
+	if err == nil {
+		t.Fatal("Expected an error, but got nil")
+	}
+
+	expected := "global options block must appear before import directives; move the global options block to the top of the Caddyfile"
+	if !strings.HasPrefix(err.Error(), expected) {
+		t.Errorf("Expected error to start with '%s' but got '%v'", expected, err)
+	}
+}
+
 func testParser(input string) parser {
 	return parser{Dispenser: NewTestDispenser(input)}
 }

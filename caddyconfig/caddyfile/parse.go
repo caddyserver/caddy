@@ -682,9 +682,26 @@ func (p *parser) directive() error {
 // a opening curly brace. It does NOT advance the token.
 func (p *parser) openCurlyBrace() error {
 	if p.Val() != "{" {
+		if p.valLooksLikeGlobalOptionsAfterImportedSnippets() {
+			return p.Err("global options block must appear before import directives; move the global options block to the top of the Caddyfile")
+		}
 		return p.SyntaxErr("{")
 	}
 	return nil
+}
+
+func (p *parser) valLooksLikeGlobalOptionsAfterImportedSnippets() bool {
+	if p.Val() != "import" || len(p.block.Keys) == 0 {
+		return false
+	}
+
+	for _, key := range p.block.Keys {
+		if !strings.HasPrefix(key.Text, "(") || !strings.HasSuffix(key.Text, ")") {
+			return false
+		}
+	}
+
+	return true
 }
 
 // closeCurlyBrace expects the current token to be
