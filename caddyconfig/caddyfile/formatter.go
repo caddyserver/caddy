@@ -84,7 +84,7 @@ func Format(input []byte) []byte {
 		finishToken()
 		if currentLineFirstToken != "" {
 			previousLineWasTopLevelImport = nesting == 0 && currentLineFirstToken == "import"
-		} else if !(openBrace && openBraceOwnLine && !openBraceWritten) {
+		} else if !openBrace || !openBraceOwnLine || openBraceWritten {
 			previousLineWasTopLevelImport = false
 		}
 		currentLineFirstToken = ""
