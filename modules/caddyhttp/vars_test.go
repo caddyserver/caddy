@@ -23,10 +23,14 @@ import (
 	"github.com/caddyserver/caddy/v2"
 )
 
-func newVarsTestRequest(t *testing.T, headers http.Header, vars map[string]any) (*http.Request, *caddy.Replacer) {
+func newVarsTestRequest(t *testing.T, target string, headers http.Header, vars map[string]any) (*http.Request, *caddy.Replacer) {
 	t.Helper()
 
-	req := httptest.NewRequest(http.MethodGet, "https://example.com/test", nil)
+	if target == "" {
+		target = "https://example.com/test"
+	}
+
+	req := httptest.NewRequest(http.MethodGet, target, nil)
 	req.Header = headers
 
 	repl := caddy.NewReplacer()
@@ -49,6 +53,7 @@ func TestVarsMatcherDoesNotExpandResolvedValues(t *testing.T) {
 
 	for _, tc := range []struct {
 		name    string
+		target  string
 		match   VarsMatcher
 		headers http.Header
 		vars    map[string]any
@@ -67,6 +72,12 @@ func TestVarsMatcherDoesNotExpandResolvedValues(t *testing.T) {
 			expect:  false,
 		},
 		{
+			name:   "query placeholder value containing placeholder syntax is not re-expanded",
+			target: "https://example.com/test?foo=%7Benv.CADDY_VARS_TEST_SECRET%7D",
+			match:  VarsMatcher{"{http.request.uri.query.foo}": []string{"topsecret"}},
+			expect: false,
+		},
+		{
 			name:   "matcher values still expand placeholders",
 			match:  VarsMatcher{"secret": []string{"{env.CADDY_VARS_TEST_SECRET}"}},
 			vars:   map[string]any{"secret": "topsecret"},
@@ -76,7 +87,7 @@ func TestVarsMatcherDoesNotExpandResolvedValues(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			req, _ := newVarsTestRequest(t, tc.headers, tc.vars)
+			req, _ := newVarsTestRequest(t, tc.target, tc.headers, tc.vars)
 
 			actual, err := tc.match.MatchWithError(req)
 			if err != nil {
@@ -95,6 +106,7 @@ func TestMatchVarsREDoesNotExpandResolvedValues(t *testing.T) {
 
 	for _, tc := range []struct {
 		name    string
+		target  string
 		match   MatchVarsRE
 		headers http.Header
 		vars    map[string]any
@@ -112,6 +124,12 @@ func TestMatchVarsREDoesNotExpandResolvedValues(t *testing.T) {
 			headers: http.Header{"X-Input": []string{"{env.CADDY_VARS_TEST_SECRET}"}},
 			expect:  false,
 		},
+		{
+			name:   "query placeholder value containing placeholder syntax is not re-expanded",
+			target: "https://example.com/test?foo=%7Benv.CADDY_VARS_TEST_SECRET%7D",
+			match:  MatchVarsRE{"{http.request.uri.query.foo}": &MatchRegexp{Pattern: "^topsecret$"}},
+			expect: false,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -126,7 +144,7 @@ func TestMatchVarsREDoesNotExpandResolvedValues(t *testing.T) {
 				t.Fatalf("Validate() error = %v", err)
 			}
 
-			req, _ := newVarsTestRequest(t, tc.headers, tc.vars)
+			req, _ := newVarsTestRequest(t, tc.target, tc.headers, tc.vars)
 
 			actual, err := tc.match.MatchWithError(req)
 			if err != nil {
