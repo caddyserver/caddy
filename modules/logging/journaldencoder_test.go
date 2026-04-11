@@ -89,7 +89,7 @@ journald {
 	}
 }
 
-func TestJournaldEncoderSuppressesJSONTimestamp(t *testing.T) {
+func TestJournaldEncoderPreservesJSONTimestamp(t *testing.T) {
 	enc := &JournaldEncoder{
 		Encoder: &JSONEncoder{},
 	}
@@ -108,8 +108,8 @@ func TestJournaldEncoderSuppressesJSONTimestamp(t *testing.T) {
 	defer buf.Free()
 
 	got := buf.String()
-	if strings.Contains(got, `"ts"`) {
-		t.Fatalf("got JSON output with ts field: %q", got)
+	if !strings.Contains(got, `"ts"`) {
+		t.Fatalf("got JSON output without ts field: %q", got)
 	}
 }
 

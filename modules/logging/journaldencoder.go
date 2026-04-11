@@ -81,7 +81,7 @@ func (je *JournaldEncoder) Provision(ctx caddy.Context) error {
 		je.Encoder = val.(zapcore.Encoder)
 	}
 
-	suppressEncoderTimestamp(je.Encoder)
+	suppressConsoleEncoderTimestamp(je.Encoder)
 
 	return nil
 }
@@ -106,7 +106,7 @@ func (je *JournaldEncoder) ConfigureDefaultFormat(wo caddy.WriterOpener) error {
 		}
 	}
 
-	suppressEncoderTimestamp(je.Encoder)
+	suppressConsoleEncoderTimestamp(je.Encoder)
 
 	return nil
 }
@@ -194,22 +194,19 @@ func journaldPriorityPrefix(level zapcore.Level) string {
 	}
 }
 
-func suppressEncoderTimestamp(enc zapcore.Encoder) {
+func suppressConsoleEncoderTimestamp(enc zapcore.Encoder) {
 	empty := ""
 
 	switch e := enc.(type) {
 	case *ConsoleEncoder:
 		e.TimeKey = &empty
 		_ = e.Provision(caddy.Context{})
-	case *JSONEncoder:
-		e.TimeKey = &empty
-		_ = e.Provision(caddy.Context{})
 	case *AppendEncoder:
-		suppressEncoderTimestamp(e.wrapped)
+		suppressConsoleEncoderTimestamp(e.wrapped)
 	case *FilterEncoder:
-		suppressEncoderTimestamp(e.wrapped)
+		suppressConsoleEncoderTimestamp(e.wrapped)
 	case *JournaldEncoder:
-		suppressEncoderTimestamp(e.Encoder)
+		suppressConsoleEncoderTimestamp(e.Encoder)
 	}
 }
 
