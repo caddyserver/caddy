@@ -220,6 +220,13 @@ type Handler struct {
 	// EXPERIMENTAL: This feature is subject to change or removal.
 	VerboseLogs bool `json:"verbose_logs,omitempty"`
 
+	// If true, omit the Via header on proxied responses sent to the client.
+	//
+	// Per RFC 9110, proxies MUST add Via to forwarded messages.
+	// However, an HTTP-to-HTTP gateway MAY omit Via on response messages.
+	// This option controls that response behavior.
+	OmitViaHeader bool `json:"omit_via_header,omitempty"`
+
 	Transport        http.RoundTripper `json:"-"`
 	CB               CircuitBreaker    `json:"-"`
 	DynamicUpstreams UpstreamSource    `json:"-"`
@@ -1153,11 +1160,13 @@ func (h *Handler) finalizeResponse(
 
 	// delete our Server header and use Via instead (see #6275)
 	rw.Header().Del("Server")
-	var protoPrefix string
-	if !strings.HasPrefix(strings.ToUpper(res.Proto), "HTTP/") {
-		protoPrefix = res.Proto[:strings.Index(res.Proto, "/")+1]
+	if !h.OmitViaHeader {
+		var protoPrefix string
+		if !strings.HasPrefix(strings.ToUpper(res.Proto), "HTTP/") {
+			protoPrefix = res.Proto[:strings.Index(res.Proto, "/")+1]
+		}
+		rw.Header().Add("Via", fmt.Sprintf("%s%d.%d Caddy", protoPrefix, res.ProtoMajor, res.ProtoMinor))
 	}
-	rw.Header().Add("Via", fmt.Sprintf("%s%d.%d Caddy", protoPrefix, res.ProtoMajor, res.ProtoMinor))
 
 	// apply any response header operations
 	if h.Headers != nil && h.Headers.Response != nil {
