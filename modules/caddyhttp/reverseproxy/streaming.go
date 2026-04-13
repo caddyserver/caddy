@@ -246,7 +246,7 @@ func (h *Handler) handleH2UpgradeTunnel(
 	var (
 		toBackend   int64
 		fromBackend int64
-		result      = "closed"
+		result      string
 	)
 
 	// when a stream timeout is encountered, no error will be read from errc
