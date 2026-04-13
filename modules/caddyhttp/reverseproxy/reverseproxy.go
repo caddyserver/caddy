@@ -193,10 +193,9 @@ type Handler struct {
 	// connections are closed on reload (optionally delayed by stream_close_delay).
 	StreamRetainOnReload bool `json:"stream_retain_on_reload,omitempty"`
 
-	// If true, suppresses the access log entry normally emitted when an
-	// upgraded stream handshake completes and the request unwinds. By default
-	// the handshake is still logged as a normal request with status 101.
-	StreamLogSkipHandshake bool `json:"stream_log_skip_handshake,omitempty"`
+	// Controls logging behavior for upgraded stream lifecycle events.
+	// If omitted, defaults are used (level=DEBUG, logger_name="http.handlers.reverse_proxy.stream").
+	StreamLogs *StreamLogs `json:"stream_logs,omitempty"`
 
 	// If configured, rewrites the copy of the upstream request.
 	// Allows changing the request method and URI (path and query).
@@ -259,7 +258,33 @@ type Handler struct {
 	ctx    caddy.Context
 	logger *zap.Logger
 	events *caddyevents.App
+
+	streamLogLevel      zapcore.Level
+	streamLogLoggerName string
 }
+
+// StreamLogs controls logging for upgraded stream lifecycle events.
+type StreamLogs struct {
+	// The minimum level at which stream lifecycle events are logged.
+	// Supported values are debug, info, warn, and error. Default: debug.
+	Level string `json:"level,omitempty"`
+
+	// Logger name for stream lifecycle logs. Default: "http.handlers.reverse_proxy.stream".
+	// Special value "access" uses the access logger namespace and, if set,
+	// respects the first value in access_logger_names/log_name for the request.
+	LoggerName string `json:"logger_name,omitempty"`
+
+	// If true, suppresses the access log entry normally emitted when an
+	// upgraded stream handshake completes and the request unwinds.
+	SkipHandshake bool `json:"skip_handshake,omitempty"`
+}
+
+const (
+	defaultStreamLogLevel     = zapcore.DebugLevel
+	defaultStreamLoggerName   = "http.handlers.reverse_proxy.stream"
+	streamLoggerNameUseAccess = "access"
+	defaultAccessLoggerBase   = "http.log.access"
+)
 
 // CaddyModule returns the Caddy module information.
 func (Handler) CaddyModule() caddy.ModuleInfo {
@@ -279,6 +304,20 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	h.ctx = ctx
 	h.logger = ctx.Logger()
 	h.tunnel = newTunnelState(h.logger, time.Duration(h.StreamCloseDelay))
+	h.streamLogLevel = defaultStreamLogLevel
+	h.streamLogLoggerName = defaultStreamLoggerName
+	if h.StreamLogs != nil {
+		if h.StreamLogs.Level != "" {
+			lvl, err := zapcore.ParseLevel(strings.ToLower(strings.TrimSpace(h.StreamLogs.Level)))
+			if err != nil {
+				return fmt.Errorf("invalid stream_logs.level %q: %w", h.StreamLogs.Level, err)
+			}
+			h.streamLogLevel = lvl
+		}
+		if name := strings.TrimSpace(h.StreamLogs.LoggerName); name != "" {
+			h.streamLogLoggerName = name
+		}
+	}
 
 	// warn about unsafe buffering config
 	if h.RequestBuffers == -1 || h.ResponseBuffers == -1 {
@@ -445,6 +484,39 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	upstreamHealthyUpdater.init()
 
 	return nil
+}
+
+func (h Handler) streamLogsSkipHandshake() bool {
+	return h.StreamLogs != nil && h.StreamLogs.SkipHandshake
+}
+
+func (h Handler) streamLoggerForRequest(req *http.Request) *zap.Logger {
+	name := strings.TrimSpace(h.streamLogLoggerName)
+	if name == "" {
+		name = defaultStreamLoggerName
+	}
+
+	if name == streamLoggerNameUseAccess {
+		logger := caddy.Log().Named(defaultAccessLoggerBase)
+		names := caddyhttp.GetVar(req.Context(), caddyhttp.AccessLoggerNameVarKey)
+		namesSlice, ok := names.([]any)
+		if !ok {
+			return logger
+		}
+		for _, v := range namesSlice {
+			name, ok := v.(string)
+			if !ok {
+				continue
+			}
+			if name == "" {
+				return logger
+			}
+			return logger.Named(name)
+		}
+		return logger
+	}
+
+	return caddy.Log().Named(name)
 }
 
 // Cleanup cleans up the resources made by h.

@@ -199,10 +199,14 @@ func TestHandlerCleanupRetainModeClosesOnlyRemovedUpstreams(t *testing.T) {
 	}
 }
 
-func TestHandlerUnmarshalCaddyfileStreamLogSkipHandshake(t *testing.T) {
+func TestHandlerUnmarshalCaddyfileStreamLogsBlock(t *testing.T) {
 	d := caddyfile.NewTestDispenser(`
 	reverse_proxy localhost:9000 {
-		stream_log_skip_handshake
+		stream_logs {
+			level info
+			logger_name access
+			skip_handshake
+		}
 	}
 	`)
 
@@ -210,7 +214,16 @@ func TestHandlerUnmarshalCaddyfileStreamLogSkipHandshake(t *testing.T) {
 	if err := h.UnmarshalCaddyfile(d); err != nil {
 		t.Fatalf("UnmarshalCaddyfile() error = %v", err)
 	}
-	if !h.StreamLogSkipHandshake {
-		t.Fatal("expected stream_log_skip_handshake to enable StreamLogSkipHandshake")
+	if h.StreamLogs == nil {
+		t.Fatal("expected stream_logs to be configured")
+	}
+	if h.StreamLogs.Level != "info" {
+		t.Fatalf("expected stream_logs.level=info, got %q", h.StreamLogs.Level)
+	}
+	if h.StreamLogs.LoggerName != "access" {
+		t.Fatalf("expected stream_logs.logger_name=access, got %q", h.StreamLogs.LoggerName)
+	}
+	if !h.StreamLogs.SkipHandshake {
+		t.Fatal("expected stream_logs.skip_handshake=true")
 	}
 }
