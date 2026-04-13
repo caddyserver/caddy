@@ -611,8 +611,8 @@ func fakeClosedErr(l interface{ Addr() net.Addr }) error {
 var errFakeClosed = fmt.Errorf("QUIC listener 'closed' 😉")
 
 type fakeCloseQuicListener struct {
-	closed              int32 // accessed atomically; belongs to this struct only
-	*sharedQuicListener       // embedded, so we also become a quic.EarlyListener
+	closed              atomic.Int32
+	*sharedQuicListener // embedded, so we also become a quic.EarlyListener
 	context             context.Context
 	contextCancel       context.CancelCauseFunc
 }
@@ -629,16 +629,16 @@ func (fcql *fakeCloseQuicListener) Accept(_ context.Context) (*quic.Conn, error)
 	}
 
 	// if the listener is "closed", return a fake closed error instead
-	if atomic.LoadInt32(&fcql.closed) == 1 && errors.Is(err, context.Canceled) {
+	if fcql.closed.Load() == 1 && errors.Is(err, context.Canceled) {
 		return nil, fakeClosedErr(fcql)
 	}
 	return nil, err
 }
 
 func (fcql *fakeCloseQuicListener) Close() error {
-	if atomic.CompareAndSwapInt32(&fcql.closed, 0, 1) {
+	if fcql.closed.CompareAndSwap(0, 1) {
 		fcql.contextCancel(errFakeClosed)
-	} else if atomic.CompareAndSwapInt32(&fcql.closed, 1, 2) {
+	} else if fcql.closed.CompareAndSwap(1, 2) {
 		_, _ = listenerPool.Delete(fcql.sharedQuicListener.key)
 	}
 	return nil
