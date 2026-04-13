@@ -208,26 +208,31 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 	}
 	deleteFrontConn := tunnel.registerConnection(conn, gracefulClose(conn, false), upstreamAddr)
 	deleteBackConn := tunnel.registerConnection(backConn, gracefulClose(backConn, true), upstreamAddr)
-	if h.StreamLogSkipHandshake {
+	if h.streamLogsSkipHandshake() {
 		caddyhttp.SetVar(req.Context(), caddyhttp.LogSkipVar, true)
 	}
 	repl := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	repl.Set("http.reverse_proxy.upgraded", true)
+	streamUUID, _ := repl.GetString("http.request.uuid")
+	streamFields := makeStreamLogFields(streamUUID)
+	streamLogger := h.streamLoggerForRequest(req)
+	streamLevel := h.streamLogLevel
 	finishMetrics := trackActiveStream(upstreamAddr)
 
 	start := time.Now()
 
 	if isH2 {
-		h.handleH2UpgradeTunnel(logger, wg, conn, backConn, deleteFrontConn, deleteBackConn, bufferSize, streamTimeout, start, finishMetrics)
+		h.handleH2UpgradeTunnel(streamLogger, streamLevel, wg, conn, backConn, deleteFrontConn, deleteBackConn, bufferSize, streamTimeout, start, finishMetrics, streamFields)
 	} else {
-		h.handleDetachedUpgradeTunnel(logger, conn, backConn, deleteFrontConn, deleteBackConn, bufferSize, streamTimeout, start, finishMetrics)
+		h.handleDetachedUpgradeTunnel(streamLogger, streamLevel, conn, backConn, deleteFrontConn, deleteBackConn, bufferSize, streamTimeout, start, finishMetrics, streamFields)
 		// Return immediately without touching wg. finalizeResponse's
 		// wg.Wait() returns at once since wg was never incremented.
 	}
 }
 
 func (h *Handler) handleH2UpgradeTunnel(
-	logger *zap.Logger,
+	streamLogger *zap.Logger,
+	streamLevel zapcore.Level,
 	wg *sync.WaitGroup,
 	conn io.ReadWriteCloser,
 	backConn io.ReadWriteCloser,
@@ -237,6 +242,7 @@ func (h *Handler) handleH2UpgradeTunnel(
 	streamTimeout time.Duration,
 	start time.Time,
 	finishMetrics func(result string, duration time.Duration, toBackend, fromBackend int64),
+	streamFields []zap.Field,
 ) {
 	// H2 extended connect: ServeHTTP must block because rw and req.Body are
 	// only valid while the handler goroutine is running. Defers clean up
@@ -275,12 +281,12 @@ func (h *Handler) handleH2UpgradeTunnel(
 	select {
 	case err := <-errc:
 		result = classifyStreamResult(err)
-		if c := logger.Check(zapcore.DebugLevel, "streaming error"); c != nil {
+		if c := streamLogger.Check(streamLevel, "streaming error"); c != nil {
 			c.Write(zap.Error(err))
 		}
 	case t := <-timeoutc:
 		result = "timeout"
-		if c := logger.Check(zapcore.DebugLevel, "stream timed out"); c != nil {
+		if c := streamLogger.Check(streamLevel, "stream timed out"); c != nil {
 			c.Write(zap.Time("timeout", t))
 		}
 	}
@@ -292,17 +298,20 @@ func (h *Handler) handleH2UpgradeTunnel(
 	wg.Wait()
 
 	finishMetrics(result, time.Since(start), toBackend, fromBackend)
-	if c := logger.Check(zapcore.DebugLevel, "connection closed"); c != nil {
-		c.Write(
+	if c := streamLogger.Check(streamLevel, "connection closed"); c != nil {
+		fields := append([]zap.Field{}, streamFields...)
+		fields = append(fields,
 			zap.Duration("duration", time.Since(start)),
 			zap.Int64("bytes_to_backend", toBackend),
 			zap.Int64("bytes_from_backend", fromBackend),
 		)
+		c.Write(fields...)
 	}
 }
 
 func (h *Handler) handleDetachedUpgradeTunnel(
-	logger *zap.Logger,
+	streamLogger *zap.Logger,
+	streamLevel zapcore.Level,
 	conn io.ReadWriteCloser,
 	backConn io.ReadWriteCloser,
 	deleteFrontConn func(),
@@ -311,6 +320,7 @@ func (h *Handler) handleDetachedUpgradeTunnel(
 	streamTimeout time.Duration,
 	start time.Time,
 	finishMetrics func(result string, duration time.Duration, toBackend, fromBackend int64),
+	streamFields []zap.Field,
 ) {
 	// HTTP/1.1 hijacked connection: launch a detached goroutine so that
 	// ServeHTTP can return immediately, allowing the Handler to be GC'd
@@ -326,12 +336,14 @@ func (h *Handler) handleDetachedUpgradeTunnel(
 		defer deleteFrontConn()
 		defer func() {
 			finishMetrics(result, time.Since(start), toBackend, fromBackend)
-			if c := logger.Check(zapcore.DebugLevel, "connection closed"); c != nil {
-				c.Write(
+			if c := streamLogger.Check(streamLevel, "connection closed"); c != nil {
+				fields := append([]zap.Field{}, streamFields...)
+				fields = append(fields,
 					zap.Duration("duration", time.Since(start)),
 					zap.Int64("bytes_to_backend", toBackend),
 					zap.Int64("bytes_from_backend", fromBackend),
 				)
+				c.Write(fields...)
 			}
 		}()
 
@@ -362,12 +374,12 @@ func (h *Handler) handleDetachedUpgradeTunnel(
 		select {
 		case err := <-errc:
 			result = classifyStreamResult(err)
-			if c := logger.Check(zapcore.DebugLevel, "streaming error"); c != nil {
+			if c := streamLogger.Check(streamLevel, "streaming error"); c != nil {
 				c.Write(zap.Error(err))
 			}
 		case t := <-timeoutc:
 			result = "timeout"
-			if c := logger.Check(zapcore.DebugLevel, "stream timed out"); c != nil {
+			if c := streamLogger.Check(streamLevel, "stream timed out"); c != nil {
 				c.Write(zap.Time("timeout", t))
 			}
 		}
@@ -386,6 +398,14 @@ func classifyStreamResult(err error) string {
 		return "closed"
 	}
 	return "error"
+}
+
+func makeStreamLogFields(streamUUID string) []zap.Field {
+	fields := make([]zap.Field, 0, 1)
+	if streamUUID != "" {
+		fields = append(fields, zap.String("uuid", streamUUID))
+	}
+	return fields
 }
 
 // flushInterval returns the p.FlushInterval value, conditionally
