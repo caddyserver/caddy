@@ -86,12 +86,12 @@ func TestReverseProxyReloadStressUpgradedStreamsHeapProfiles(t *testing.T) {
 }
 
 type stressRunResult struct {
-	streamCount           int
-	aliveAfterReloads     int
+	streamCount            int
+	aliveAfterReloads      int
 	aliveBeforeDelayExpiry int // only meaningful for close_delay mode
-	beforeReload          heapSnapshot
-	midReload             heapSnapshot // after all reloads, before delay expiry clean-up
-	afterReload           heapSnapshot // after all streams have been fully cleaned up
+	beforeReload           heapSnapshot
+	midReload              heapSnapshot // after all reloads, before delay expiry clean-up
+	afterReload            heapSnapshot // after all streams have been fully cleaned up
 }
 
 type heapSnapshot struct {
