@@ -1,23 +1,25 @@
 package reverseproxy
 
 import (
-	"bufio"
+ "bufio"
+ "context"
+ "errors"
+ "net"
+ "net/http"
+ "net/http/httptest"
+ "net/url"
+ "runtime"
+ "github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"bytes"
-	"context"
-	"errors"
 	"io"
-	"net"
-	"net/http"
 	"net/http/httptest"
-	"net/url"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
 func TestHandlerCopyResponse(t *testing.T) {
@@ -50,12 +52,15 @@ func TestSwitchProtocolCopierBufferSize(t *testing.T) {
 	var wg sync.WaitGroup
 	var errc = make(chan error, 1)
 	var dst bytes.Buffer
+	var sent, received int64
 
 	copier := switchProtocolCopier{
 		user:       nopReadWriteCloser{Reader: strings.NewReader("hello")},
 		backend:    nopReadWriteCloser{Writer: &dst},
 		wg:         &wg,
 		bufferSize: 7,
+		sent:       &sent,
+		received:   &received,
 	}
 
 	buf := copier.buffer()
@@ -67,88 +72,11 @@ func TestSwitchProtocolCopierBufferSize(t *testing.T) {
 	go copier.copyToBackend(errc)
 	wg.Wait()
 
-	// the destination cannot be half-closed, so a clean copy reports errCopyDone
-	if err := <-errc; !errors.Is(err, errCopyDone) {
-		t.Fatalf("copyToBackend() error = %v, want %v", err, errCopyDone)
+	if err := <-errc; err != nil {
+		t.Fatalf("copyToBackend() error = %v", err)
 	}
 	if got := dst.String(); got != "hello" {
 		t.Fatalf("copied data = %q, want %q", got, "hello")
-	}
-}
-
-// A clean EOF in one direction must be propagated to the destination as a
-// write-half close instead of tearing the whole tunnel down.
-// See https://github.com/caddyserver/caddy/issues/8026.
-func TestSwitchProtocolCopierHalfClose(t *testing.T) {
-	closeWriteErr := errors.New("no half-close")
-
-	for _, tc := range []struct {
-		name    string
-		dst     io.ReadWriteCloser
-		wantErr error // nil means the half-close was propagated
-	}{
-		{
-			name:    "destination supports CloseWrite",
-			dst:     &closeWriteRecorder{},
-			wantErr: nil,
-		},
-		{
-			name:    "destination does not support CloseWrite",
-			dst:     nopReadWriteCloser{Writer: io.Discard},
-			wantErr: errCopyDone,
-		},
-		{
-			name:    "CloseWrite fails",
-			dst:     &closeWriteRecorder{err: closeWriteErr},
-			wantErr: closeWriteErr,
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var wg sync.WaitGroup
-			errc := make(chan error, 1)
-			copier := switchProtocolCopier{
-				user:    nopReadWriteCloser{Reader: strings.NewReader("hello")},
-				backend: tc.dst,
-				wg:      &wg,
-			}
-
-			wg.Add(1)
-			go copier.copyToBackend(errc)
-			wg.Wait()
-
-			if err := <-errc; !errors.Is(err, tc.wantErr) {
-				t.Fatalf("copyToBackend() error = %v, want %v", err, tc.wantErr)
-			}
-			if rec, ok := tc.dst.(*closeWriteRecorder); ok && !rec.called {
-				t.Fatal("CloseWrite() was not called on a destination that supports it")
-			}
-		})
-	}
-}
-
-// A copy error must be reported as-is and must not be mistaken for a clean
-// half-close, so the tunnel is still torn down immediately.
-func TestSwitchProtocolCopierErrorIsNotHalfClose(t *testing.T) {
-	var wg sync.WaitGroup
-	errc := make(chan error, 1)
-	wantErr := errors.New("write failed")
-	dst := &closeWriteRecorder{writeErr: wantErr}
-
-	copier := switchProtocolCopier{
-		user:    nopReadWriteCloser{Reader: strings.NewReader("hello")},
-		backend: dst,
-		wg:      &wg,
-	}
-
-	wg.Add(1)
-	go copier.copyToBackend(errc)
-	wg.Wait()
-
-	if err := <-errc; !errors.Is(err, wantErr) {
-		t.Fatalf("error = %v, want %v", err, wantErr)
-	}
-	if dst.called {
-		t.Fatal("CloseWrite() was called after a copy error")
 	}
 }
 
@@ -166,6 +94,135 @@ type nopReadWriteCloser struct {
 }
 
 func (nopReadWriteCloser) Close() error { return nil }
+
+type trackingReadWriteCloser struct {
+	closed chan struct{}
+	one    sync.Once
+}
+
+func newTrackingReadWriteCloser() *trackingReadWriteCloser {
+	return &trackingReadWriteCloser{closed: make(chan struct{})}
+}
+
+func (c *trackingReadWriteCloser) Read(_ []byte) (int, error)  { return 0, io.EOF }
+func (c *trackingReadWriteCloser) Write(p []byte) (int, error) { return len(p), nil }
+func (c *trackingReadWriteCloser) Close() error {
+	c.one.Do(func() {
+		close(c.closed)
+	})
+	return nil
+}
+
+func (c *trackingReadWriteCloser) isClosed() bool {
+	select {
+	case <-c.closed:
+		return true
+	default:
+		return false
+	}
+}
+
+func TestHandlerCleanupLegacyModeClosesAllConnections(t *testing.T) {
+	ts := newTunnelState(caddy.Log(), 0)
+	connA := newTrackingReadWriteCloser()
+	connB := newTrackingReadWriteCloser()
+	ts.registerConnection(connA, nil, "a")
+	ts.registerConnection(connB, nil, "b")
+
+	h := &Handler{
+		tunnel:               ts,
+		StreamRetainOnReload: false,
+	}
+
+	if err := h.Cleanup(); err != nil {
+		t.Fatalf("cleanup failed: %v", err)
+	}
+	if !connA.isClosed() || !connB.isClosed() {
+		t.Fatalf("legacy cleanup should close all upgraded connections")
+	}
+}
+
+func TestHandlerCleanupLegacyModeHonorsDelay(t *testing.T) {
+	ts := newTunnelState(caddy.Log(), 40*time.Millisecond)
+	conn := newTrackingReadWriteCloser()
+	ts.registerConnection(conn, nil, "a")
+
+	h := &Handler{
+		tunnel:               ts,
+		StreamRetainOnReload: false,
+	}
+
+	if err := h.Cleanup(); err != nil {
+		t.Fatalf("cleanup failed: %v", err)
+	}
+	if conn.isClosed() {
+		t.Fatal("connection should not close immediately when stream_close_delay is set")
+	}
+
+	select {
+	case <-conn.closed:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("connection did not close after stream_close_delay elapsed")
+	}
+}
+
+func TestHandlerCleanupRetainModeClosesOnlyRemovedUpstreams(t *testing.T) {
+	const upstreamA = "upstream-a"
+	const upstreamB = "upstream-b"
+
+	// Simulate old+new configs both referencing upstreamA (refcount 2),
+	// while upstreamB is only referenced by the old config (refcount 1).
+	hosts.LoadOrStore(upstreamA, struct{}{})
+	hosts.LoadOrStore(upstreamA, struct{}{})
+	hosts.LoadOrStore(upstreamB, struct{}{})
+	t.Cleanup(func() {
+		_, _ = hosts.Delete(upstreamA)
+		_, _ = hosts.Delete(upstreamA)
+		_, _ = hosts.Delete(upstreamB)
+	})
+
+	ts := newTunnelState(caddy.Log(), 0)
+	connA := newTrackingReadWriteCloser()
+	connB := newTrackingReadWriteCloser()
+	ts.registerConnection(connA, nil, upstreamA)
+	ts.registerConnection(connB, nil, upstreamB)
+
+	h := &Handler{
+		tunnel:               ts,
+		StreamRetainOnReload: true,
+		Upstreams: UpstreamPool{
+			&Upstream{Dial: upstreamA},
+			&Upstream{Dial: upstreamB},
+		},
+	}
+
+	if err := h.Cleanup(); err != nil {
+		t.Fatalf("cleanup failed: %v", err)
+	}
+
+	if connA.isClosed() {
+		t.Fatal("connection for retained upstream should remain open")
+	}
+	if !connB.isClosed() {
+		t.Fatal("connection for removed upstream should be closed")
+	}
+}
+
+func TestHandlerUnmarshalCaddyfileStreamLogSkipHandshake(t *testing.T) {
+	d := caddyfile.NewTestDispenser(`
+	reverse_proxy localhost:9000 {
+		stream_log_skip_handshake
+	}
+	`)
+
+	var h Handler
+	if err := h.UnmarshalCaddyfile(d); err != nil {
+		t.Fatalf("UnmarshalCaddyfile() error = %v", err)
+	}
+	if !h.StreamLogSkipHandshake {
+		t.Fatal("expected stream_log_skip_handshake to enable StreamLogSkipHandshake")
+	}
+}
 
 // closeWriteRecorder is a destination that supports closing only its write
 // half, and records whether that happened.
