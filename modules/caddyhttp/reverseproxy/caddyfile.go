@@ -99,6 +99,8 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //	    stream_buffer_size <size>
 //	    stream_timeout     <duration>
 //	    stream_close_delay <duration>
+//	    stream_retain_on_reload
+//	    stream_log_skip_handshake
 //	    verbose_logs
 //
 //	    # request manipulation
@@ -702,6 +704,18 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 				h.StreamCloseDelay = caddy.Duration(dur)
 			}
+
+		case "stream_retain_on_reload":
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+			h.StreamRetainOnReload = true
+
+		case "stream_log_skip_handshake":
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+			h.StreamLogSkipHandshake = true
 
 		case "trusted_proxies":
 			for d.NextArg() {

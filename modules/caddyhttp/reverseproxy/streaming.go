@@ -26,6 +26,7 @@ import (
 	"io"
 	weakrand "math/rand/v2"
 	"mime"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -35,6 +36,7 @@ import (
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/net/http/httpguts"
 
+	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
@@ -57,7 +59,7 @@ func (rwc h2ReadWriteCloser) Write(p []byte) (n int, err error) {
 	return n, nil
 }
 
-func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, rw http.ResponseWriter, req *http.Request, res *http.Response) {
+func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, rw http.ResponseWriter, req *http.Request, res *http.Response, upstreamAddr string) {
 	reqUpType := upgradeType(req.Header)
 	resUpType := upgradeType(res.Header)
 
@@ -90,13 +92,22 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 	copyHeader(rw.Header(), res.Header)
 	normalizeWebsocketHeaders(rw.Header())
 
+	// Capture all h fields needed by the tunnel now, so that the Handler (h)
+	// is not referenced after this function returns (for HTTP/1.1 hijacked
+	// connections the tunnel runs in a detached goroutine).
+	tunnel := h.tunnel
+	bufferSize := h.StreamBufferSize
+	streamTimeout := time.Duration(h.StreamTimeout)
+
 	var (
 		conn io.ReadWriteCloser
 		brw  *bufio.ReadWriter
+		isH2 bool
 	)
 	// websocket over http2 or http3 if extended connect is enabled, assuming backend doesn't support this, the request will be modified to http1.1 upgrade
 	// TODO: once we can reliably detect backend support this, it can be removed for those backends
 	if body, ok := caddyhttp.GetVar(req.Context(), "extended_connect_websocket_body").(io.ReadCloser); ok {
+		isH2 = true
 		req.Body = body
 		rw.Header().Del("Upgrade")
 		rw.Header().Del("Connection")
@@ -143,26 +154,24 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 		}
 	}
 
-	// adopted from https://github.com/golang/go/commit/8bcf2834afdf6a1f7937390903a41518715ef6f5
-	backConnCloseCh := make(chan struct{})
-	go func() {
-		// Ensure that the cancellation of a request closes the backend.
-		// See issue https://golang.org/issue/35559.
-		select {
-		case <-req.Context().Done():
-		case <-backConnCloseCh:
-		}
-		backConn.Close()
-	}()
-	defer close(backConnCloseCh)
-
-	start := time.Now()
-	defer func() {
-		conn.Close()
-		if c := logger.Check(zapcore.DebugLevel, "connection closed"); c != nil {
-			c.Write(zap.Duration("duration", time.Since(start)))
-		}
-	}()
+	// For H2 extended connect: close backConn when the request context is
+	// cancelled (e.g. client disconnects). For HTTP/1.1 hijacked connections
+	// we skip this because req.Context() may be cancelled when ServeHTTP
+	// returns early, which would prematurely close the backend connection.
+	if isH2 {
+		// adopted from https://github.com/golang/go/commit/8bcf2834afdf6a1f7937390903a41518715ef6f5
+		backConnCloseCh := make(chan struct{})
+		go func() {
+			// Ensure that the cancellation of a request closes the backend.
+			// See issue https://golang.org/issue/35559.
+			select {
+			case <-req.Context().Done():
+			case <-backConnCloseCh:
+			}
+			backConn.Close()
+		}()
+		defer close(backConnCloseCh)
+	}
 
 	if err := brw.Flush(); err != nil {
 		if c := logger.Check(zapcore.DebugLevel, "response flush"); c != nil {
@@ -184,13 +193,11 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 		}
 	}
 
-	// Ensure the hijacked client connection, and the new connection established
-	// with the backend, are both closed in the event of a server shutdown. This
-	// is done by registering them. We also try to gracefully close connections
-	// we recognize as websockets.
-	// We need to make sure the client connection messages (i.e. to upstream)
-	// are masked, so we need to know whether the connection is considered the
-	// server or the client side of the proxy.
+	// Register both connections with the tunnel tracker. We also try to
+	// gracefully close connections we recognize as websockets. We need to make
+	// sure the client connection messages (i.e. to upstream) are masked, so we
+	// need to know whether the connection is considered the server or the
+	// client side of the proxy.
 	gracefulClose := func(conn io.ReadWriteCloser, isClient bool) func() error {
 		if isWebsocket(req) {
 			return func() error {
@@ -199,43 +206,186 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 		}
 		return nil
 	}
-	deleteFrontConn := h.registerConnection(conn, gracefulClose(conn, false))
-	deleteBackConn := h.registerConnection(backConn, gracefulClose(backConn, true))
-	defer deleteFrontConn()
+	deleteFrontConn := tunnel.registerConnection(conn, gracefulClose(conn, false), upstreamAddr)
+	deleteBackConn := tunnel.registerConnection(backConn, gracefulClose(backConn, true), upstreamAddr)
+	if h.StreamLogSkipHandshake {
+		caddyhttp.SetVar(req.Context(), caddyhttp.LogSkipVar, true)
+	}
+	repl := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	repl.Set("http.reverse_proxy.upgraded", true)
+	finishMetrics := trackActiveStream(upstreamAddr)
+
+	start := time.Now()
+
+	if isH2 {
+		h.handleH2UpgradeTunnel(logger, wg, conn, backConn, deleteFrontConn, deleteBackConn, bufferSize, streamTimeout, start, finishMetrics)
+	} else {
+		h.handleDetachedUpgradeTunnel(logger, conn, backConn, deleteFrontConn, deleteBackConn, bufferSize, streamTimeout, start, finishMetrics)
+		// Return immediately without touching wg. finalizeResponse's
+		// wg.Wait() returns at once since wg was never incremented.
+	}
+}
+
+func (h *Handler) handleH2UpgradeTunnel(
+	logger *zap.Logger,
+	wg *sync.WaitGroup,
+	conn io.ReadWriteCloser,
+	backConn io.ReadWriteCloser,
+	deleteFrontConn func(),
+	deleteBackConn func(),
+	bufferSize int,
+	streamTimeout time.Duration,
+	start time.Time,
+	finishMetrics func(result string, duration time.Duration, toBackend, fromBackend int64),
+) {
+	// H2 extended connect: ServeHTTP must block because rw and req.Body are
+	// only valid while the handler goroutine is running. Defers clean up
+	// when the select below fires and this function returns.
 	defer deleteBackConn()
-
-	spc := switchProtocolCopier{
-		user:       conn,
-		backend:    backConn,
-		wg:         wg,
-		bufferSize: h.StreamBufferSize,
-	}
-
-	// setup the timeout if requested
-	var timeoutc <-chan time.Time
-	if h.StreamTimeout > 0 {
-		timer := time.NewTimer(time.Duration(h.StreamTimeout))
-		defer timer.Stop()
-		timeoutc = timer.C
-	}
+	defer deleteFrontConn()
+	var (
+		toBackend   int64
+		fromBackend int64
+		result      = "closed"
+	)
 
 	// when a stream timeout is encountered, no error will be read from errc
 	// a buffer size of 2 will allow both the read and write goroutines to send the error and exit
 	// see: https://github.com/caddyserver/caddy/issues/7418
 	errc := make(chan error, 2)
+	spc := switchProtocolCopier{
+		user:       conn,
+		backend:    backConn,
+		wg:         wg,
+		bufferSize: bufferSize,
+		sent:       &toBackend,
+		received:   &fromBackend,
+	}
 	wg.Add(2)
+
+	var timeoutc <-chan time.Time
+	if streamTimeout > 0 {
+		timer := time.NewTimer(streamTimeout)
+		defer timer.Stop()
+		timeoutc = timer.C
+	}
+
 	go spc.copyToBackend(errc)
 	go spc.copyFromBackend(errc)
 	select {
 	case err := <-errc:
+		result = classifyStreamResult(err)
 		if c := logger.Check(zapcore.DebugLevel, "streaming error"); c != nil {
 			c.Write(zap.Error(err))
 		}
-	case time := <-timeoutc:
+	case t := <-timeoutc:
+		result = "timeout"
 		if c := logger.Check(zapcore.DebugLevel, "stream timed out"); c != nil {
-			c.Write(zap.Time("timeout", time))
+			c.Write(zap.Time("timeout", t))
 		}
 	}
+
+	// Close both ends to unblock the still-running copy goroutine,
+	// then wait for it so byte counts are final before metrics/logging.
+	conn.Close()
+	backConn.Close()
+	wg.Wait()
+
+	finishMetrics(result, time.Since(start), toBackend, fromBackend)
+	if c := logger.Check(zapcore.DebugLevel, "connection closed"); c != nil {
+		c.Write(
+			zap.Duration("duration", time.Since(start)),
+			zap.Int64("bytes_to_backend", toBackend),
+			zap.Int64("bytes_from_backend", fromBackend),
+		)
+	}
+}
+
+func (h *Handler) handleDetachedUpgradeTunnel(
+	logger *zap.Logger,
+	conn io.ReadWriteCloser,
+	backConn io.ReadWriteCloser,
+	deleteFrontConn func(),
+	deleteBackConn func(),
+	bufferSize int,
+	streamTimeout time.Duration,
+	start time.Time,
+	finishMetrics func(result string, duration time.Duration, toBackend, fromBackend int64),
+) {
+	// HTTP/1.1 hijacked connection: launch a detached goroutine so that
+	// ServeHTTP can return immediately, allowing the Handler to be GC'd
+	// after a config reload. The goroutine captures only tunnel (a small
+	// *tunnelState), logger, conn/backConn, and scalar config values.
+	go func() {
+		var (
+			toBackend   int64
+			fromBackend int64
+			result      = "closed"
+		)
+		defer deleteBackConn()
+		defer deleteFrontConn()
+		defer func() {
+			finishMetrics(result, time.Since(start), toBackend, fromBackend)
+			if c := logger.Check(zapcore.DebugLevel, "connection closed"); c != nil {
+				c.Write(
+					zap.Duration("duration", time.Since(start)),
+					zap.Int64("bytes_to_backend", toBackend),
+					zap.Int64("bytes_from_backend", fromBackend),
+				)
+			}
+		}()
+
+		var innerWg sync.WaitGroup
+		// when a stream timeout is encountered, no error will be read from errc
+		// a buffer size of 2 will allow both the read and write goroutines to send the error and exit
+		// see: https://github.com/caddyserver/caddy/issues/7418
+		errc := make(chan error, 2)
+		spc := switchProtocolCopier{
+			user:       conn,
+			backend:    backConn,
+			wg:         &innerWg,
+			bufferSize: bufferSize,
+			sent:       &toBackend,
+			received:   &fromBackend,
+		}
+		innerWg.Add(2)
+
+		var timeoutc <-chan time.Time
+		if streamTimeout > 0 {
+			timer := time.NewTimer(streamTimeout)
+			defer timer.Stop()
+			timeoutc = timer.C
+		}
+
+		go spc.copyToBackend(errc)
+		go spc.copyFromBackend(errc)
+		select {
+		case err := <-errc:
+			result = classifyStreamResult(err)
+			if c := logger.Check(zapcore.DebugLevel, "streaming error"); c != nil {
+				c.Write(zap.Error(err))
+			}
+		case t := <-timeoutc:
+			result = "timeout"
+			if c := logger.Check(zapcore.DebugLevel, "stream timed out"); c != nil {
+				c.Write(zap.Time("timeout", t))
+			}
+		}
+
+		// Close both ends to unblock the still-running copy goroutine,
+		// then wait for it to finish so byte counts are accurate before
+		// the deferred log fires.
+		conn.Close()
+		backConn.Close()
+		innerWg.Wait()
+	}()
+}
+
+func classifyStreamResult(err error) string {
+	if err == nil || errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) || errors.Is(err, context.Canceled) {
+		return "closed"
+	}
+	return "error"
 }
 
 // flushInterval returns the p.FlushInterval value, conditionally
@@ -375,75 +525,86 @@ func (h Handler) copyBuffer(dst io.Writer, src io.Reader, buf []byte, logger *za
 	}
 }
 
-// registerConnection holds onto conn so it can be closed in the event
-// of a server shutdown. This is useful because hijacked connections or
-// connections dialed to backends don't close when server is shut down.
-// The caller should call the returned delete() function when the
-// connection is done to remove it from memory.
-func (h *Handler) registerConnection(conn io.ReadWriteCloser, gracefulClose func() error) (del func()) {
-	h.connectionsMu.Lock()
-	h.connections[conn] = openConnection{conn, gracefulClose}
-	h.connectionsMu.Unlock()
-	return func() {
-		h.connectionsMu.Lock()
-		delete(h.connections, conn)
-		// if there is no connection left before the connections close timer fires
-		if len(h.connections) == 0 && h.connectionsCloseTimer != nil {
-			// we release the timer that holds the reference to Handler
-			if (*h.connectionsCloseTimer).Stop() {
-				h.logger.Debug("stopped streaming connections close timer - all connections are already closed")
-			}
-			h.connectionsCloseTimer = nil
-		}
-		h.connectionsMu.Unlock()
+// openConnection maps an open connection to an optional function for graceful
+// close and records which upstream address the connection is proxying to.
+type openConnection struct {
+	conn          io.ReadWriteCloser
+	gracefulClose func() error
+	upstream      string
+}
+
+// tunnelState tracks hijacked/upgraded connections for selective cleanup.
+type tunnelState struct {
+	connections map[io.ReadWriteCloser]openConnection
+	closeTimer  *time.Timer
+	closeDelay  time.Duration
+	mu          sync.Mutex
+	logger      *zap.Logger
+}
+
+func newTunnelState(logger *zap.Logger, closeDelay time.Duration) *tunnelState {
+	return &tunnelState{
+		connections: make(map[io.ReadWriteCloser]openConnection),
+		closeDelay:  closeDelay,
+		logger:      logger,
 	}
 }
 
-// closeConnections immediately closes all hijacked connections (both to client and backend).
-func (h *Handler) closeConnections() error {
-	var err error
-	h.connectionsMu.Lock()
-	defer h.connectionsMu.Unlock()
+// registerConnection stores conn in the tracking map. The caller must invoke
+// the returned del func when the connection is done.
+func (ts *tunnelState) registerConnection(conn io.ReadWriteCloser, gracefulClose func() error, upstream string) (del func()) {
+	ts.mu.Lock()
+	ts.connections[conn] = openConnection{conn, gracefulClose, upstream}
+	ts.mu.Unlock()
+	return func() {
+		ts.mu.Lock()
+		delete(ts.connections, conn)
+		if len(ts.connections) == 0 && ts.closeTimer != nil {
+			if ts.closeTimer.Stop() {
+				ts.logger.Debug("stopped streaming connections close timer - all connections are already closed")
+			}
+			ts.closeTimer = nil
+		}
+		ts.mu.Unlock()
+	}
+}
 
-	for _, oc := range h.connections {
+// closeConnections closes all tracked connections.
+func (ts *tunnelState) closeConnections() error {
+	var err error
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	for _, oc := range ts.connections {
 		if oc.gracefulClose != nil {
-			// this is potentially blocking while we have the lock on the connections
-			// map, but that should be OK since the server has in theory shut down
-			// and we are no longer using the connections map
-			gracefulErr := oc.gracefulClose()
-			if gracefulErr != nil && err == nil {
+			if gracefulErr := oc.gracefulClose(); gracefulErr != nil && err == nil {
 				err = gracefulErr
 			}
 		}
-		closeErr := oc.conn.Close()
-		if closeErr != nil && err == nil {
+		if closeErr := oc.conn.Close(); closeErr != nil && err == nil {
 			err = closeErr
 		}
 	}
 	return err
 }
 
-// cleanupConnections closes hijacked connections.
-// Depending on the value of StreamCloseDelay it does that either immediately
-// or sets up a timer that will do that later.
-func (h *Handler) cleanupConnections() error {
-	if h.StreamCloseDelay == 0 {
-		return h.closeConnections()
+// cleanupConnections closes upgraded connections. Depending on closeDelay it
+// does that either immediately or after a timer.
+func (ts *tunnelState) cleanupConnections() error {
+	if ts.closeDelay == 0 {
+		return ts.closeConnections()
 	}
 
-	h.connectionsMu.Lock()
-	defer h.connectionsMu.Unlock()
-	// the handler is shut down, no new connection can appear,
-	// so we can skip setting up the timer when there are no connections
-	if len(h.connections) > 0 {
-		delay := time.Duration(h.StreamCloseDelay)
-		h.connectionsCloseTimer = time.AfterFunc(delay, func() {
-			if c := h.logger.Check(zapcore.DebugLevel, "closing streaming connections after delay"); c != nil {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	if len(ts.connections) > 0 {
+		delay := ts.closeDelay
+		ts.closeTimer = time.AfterFunc(delay, func() {
+			if c := ts.logger.Check(zapcore.DebugLevel, "closing streaming connections after delay"); c != nil {
 				c.Write(zap.Duration("delay", delay))
 			}
-			err := h.closeConnections()
+			err := ts.closeConnections()
 			if err != nil {
-				if c := h.logger.Check(zapcore.ErrorLevel, "failed to closed connections after delay"); c != nil {
+				if c := ts.logger.Check(zapcore.ErrorLevel, "failed to close connections after delay"); c != nil {
 					c.Write(
 						zap.Error(err),
 						zap.Duration("delay", delay),
@@ -567,11 +728,26 @@ func isWebsocket(r *http.Request) bool {
 		httpguts.HeaderValuesContainsToken(r.Header["Upgrade"], "websocket")
 }
 
-// openConnection maps an open connection to
-// an optional function for graceful close.
-type openConnection struct {
-	conn          io.ReadWriteCloser
-	gracefulClose func() error
+// closeConnectionsForUpstream closes all tracked connections that were
+// established to the given upstream address.
+func (ts *tunnelState) closeConnectionsForUpstream(addr string) error {
+	var err error
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	for _, oc := range ts.connections {
+		if oc.upstream != addr {
+			continue
+		}
+		if oc.gracefulClose != nil {
+			if gracefulErr := oc.gracefulClose(); gracefulErr != nil && err == nil {
+				err = gracefulErr
+			}
+		}
+		if closeErr := oc.conn.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}
+	return err
 }
 
 type maxLatencyWriter struct {
@@ -642,16 +818,23 @@ type switchProtocolCopier struct {
 	user, backend io.ReadWriteCloser
 	wg            *sync.WaitGroup
 	bufferSize    int
+	// sent and received accumulate byte counts for each direction.
+	// They are written before wg.Done() and read after wg.Wait(), so no
+	// additional synchronization is needed beyond the WaitGroup barrier.
+	sent     *int64 // bytes copied to backend; must be non-nil
+	received *int64 // bytes copied from backend; must be non-nil
 }
 
 func (c switchProtocolCopier) copyFromBackend(errc chan<- error) {
-	_, err := io.CopyBuffer(c.user, c.backend, c.buffer())
+	n, err := io.CopyBuffer(c.user, c.backend, c.buffer())
+	*c.received = n
 	errc <- err
 	c.wg.Done()
 }
 
 func (c switchProtocolCopier) copyToBackend(errc chan<- error) {
-	_, err := io.CopyBuffer(c.backend, c.user, c.buffer())
+	n, err := io.CopyBuffer(c.backend, c.user, c.buffer())
+	*c.sent = n
 	errc <- err
 	c.wg.Done()
 }

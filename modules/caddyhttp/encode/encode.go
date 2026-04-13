@@ -405,6 +405,11 @@ func (rw *responseWriter) ReadFrom(r io.Reader) (int64, error) {
 // Close writes any remaining buffered response and
 // deallocates any active resources.
 func (rw *responseWriter) Close() error {
+	if caddyhttp.ResponseWriterHijacked(rw.ResponseWriter) {
+		rw.releaseEncoder()
+		return nil
+	}
+
 	// didn't write, probably head request
 	if !rw.wroteHeader {
 		cl, err := strconv.Atoi(rw.Header().Get("Content-Length"))
@@ -422,11 +427,18 @@ func (rw *responseWriter) Close() error {
 	var err error
 	if rw.w != nil {
 		err = rw.w.Close()
-		rw.w.Reset(nil)
-		rw.config.writerPools[rw.encodingName].Put(rw.w)
-		rw.w = nil
+		rw.releaseEncoder()
 	}
 	return err
+}
+
+func (rw *responseWriter) releaseEncoder() {
+	if rw.w == nil {
+		return
+	}
+	rw.w.Reset(nil)
+	rw.config.writerPools[rw.encodingName].Put(rw.w)
+	rw.w = nil
 }
 
 // Unwrap returns the underlying ResponseWriter.

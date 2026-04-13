@@ -186,6 +186,18 @@ type Handler struct {
 	// by the previous config closing. Default: no delay.
 	StreamCloseDelay caddy.Duration `json:"stream_close_delay,omitempty"`
 
+	// If true, upgraded connections such as WebSockets are retained across
+	// config reloads when their upstream still exists in the new config.
+	// Connections using upstreams that are removed are closed during cleanup.
+	// By default this is false, preserving legacy behavior where upgraded
+	// connections are closed on reload (optionally delayed by stream_close_delay).
+	StreamRetainOnReload bool `json:"stream_retain_on_reload,omitempty"`
+
+	// If true, suppresses the access log entry normally emitted when an
+	// upgraded stream handshake completes and the request unwinds. By default
+	// the handshake is still logged as a normal request with status 101.
+	StreamLogSkipHandshake bool `json:"stream_log_skip_handshake,omitempty"`
+
 	// If configured, rewrites the copy of the upstream request.
 	// Allows changing the request method and URI (path and query).
 	// Since the rewrite is applied to the copy, it does not persist
@@ -240,10 +252,9 @@ type Handler struct {
 	// Holds the handle_response Caddyfile tokens while adapting
 	handleResponseSegments []*caddyfile.Dispenser
 
-	// Stores upgraded requests (hijacked connections) for proper cleanup
-	connections           map[io.ReadWriteCloser]openConnection
-	connectionsCloseTimer *time.Timer
-	connectionsMu         *sync.Mutex
+	// Tracks hijacked/upgraded connections (WebSocket etc.) so they can be
+	// closed when their upstream is removed from the config.
+	tunnel *tunnelState
 
 	ctx    caddy.Context
 	logger *zap.Logger
@@ -267,8 +278,7 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	h.events = eventAppIface.(*caddyevents.App)
 	h.ctx = ctx
 	h.logger = ctx.Logger()
-	h.connections = make(map[io.ReadWriteCloser]openConnection)
-	h.connectionsMu = new(sync.Mutex)
+	h.tunnel = newTunnelState(h.logger, time.Duration(h.StreamCloseDelay))
 
 	// warn about unsafe buffering config
 	if h.RequestBuffers == -1 || h.ResponseBuffers == -1 {
@@ -439,13 +449,29 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 
 // Cleanup cleans up the resources made by h.
 func (h *Handler) Cleanup() error {
-	err := h.cleanupConnections()
-
-	// remove hosts from our config from the pool
-	for _, upstream := range h.Upstreams {
-		_, _ = hosts.Delete(upstream.String())
+	if !h.StreamRetainOnReload {
+		// Legacy behavior: close all upgraded connections on reload, either
+		// immediately or after StreamCloseDelay.
+		err := h.tunnel.cleanupConnections()
+		for _, upstream := range h.Upstreams {
+			_, _ = hosts.Delete(upstream.String())
+		}
+		return err
 	}
 
+	var err error
+	for _, upstream := range h.Upstreams {
+		// hosts.Delete returns deleted=true when the ref count reaches zero,
+		// meaning no other active config references this upstream. In that
+		// case close any tunnels proxying to it; otherwise let them survive
+		// to their natural end since the upstream is still in use.
+		deleted, _ := hosts.Delete(upstream.String())
+		if deleted {
+			if closeErr := h.tunnel.closeConnectionsForUpstream(upstream.String()); closeErr != nil && err == nil {
+				err = closeErr
+			}
+		}
+	}
 	return err
 }
 
@@ -1127,10 +1153,11 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 		// we use the original request here, so that any routes from 'next'
 		// see the original request rather than the proxy cloned request.
 		hrc := &handleResponseContext{
-			handler:  h,
-			response: res,
-			start:    start,
-			logger:   logger,
+			handler:      h,
+			response:     res,
+			start:        start,
+			logger:       logger,
+			upstreamAddr: di.Upstream.String(),
 		}
 		ctx := origReq.Context()
 		ctx = context.WithValue(ctx, proxyHandleResponseContextCtxKey, hrc)
@@ -1160,7 +1187,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	}
 
 	// copy the response body and headers back to the upstream client
-	return h.finalizeResponse(rw, req, res, repl, start, logger)
+	return h.finalizeResponse(rw, req, res, repl, start, logger, di.Upstream.String())
 }
 
 // finalizeResponse prepares and copies the response.
@@ -1171,11 +1198,12 @@ func (h *Handler) finalizeResponse(
 	repl *caddy.Replacer,
 	start time.Time,
 	logger *zap.Logger,
+	upstreamAddr string,
 ) error {
 	// deal with 101 Switching Protocols responses: (WebSocket, h2c, etc)
 	if res.StatusCode == http.StatusSwitchingProtocols {
 		var wg sync.WaitGroup
-		h.handleUpgradeResponse(logger, &wg, rw, req, res)
+		h.handleUpgradeResponse(logger, &wg, rw, req, res, upstreamAddr)
 		wg.Wait()
 		return nil
 	}
@@ -1797,6 +1825,9 @@ type handleResponseContext struct {
 	// i.e. copied and closed, to make sure that it doesn't
 	// happen twice.
 	isFinalized bool
+
+	// upstreamAddr is the selected upstream address for this request.
+	upstreamAddr string
 }
 
 // proxyHandleResponseContextCtxKey is the context key for the active proxy handler

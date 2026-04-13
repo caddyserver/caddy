@@ -7,8 +7,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
 func TestHandlerCopyResponse(t *testing.T) {
@@ -41,12 +43,15 @@ func TestSwitchProtocolCopierBufferSize(t *testing.T) {
 	var wg sync.WaitGroup
 	var errc = make(chan error, 1)
 	var dst bytes.Buffer
+	var sent, received int64
 
 	copier := switchProtocolCopier{
 		user:       nopReadWriteCloser{Reader: strings.NewReader("hello")},
 		backend:    nopReadWriteCloser{Writer: &dst},
 		wg:         &wg,
 		bufferSize: 7,
+		sent:       &sent,
+		received:   &received,
 	}
 
 	buf := copier.buffer()
@@ -80,3 +85,132 @@ type nopReadWriteCloser struct {
 }
 
 func (nopReadWriteCloser) Close() error { return nil }
+
+type trackingReadWriteCloser struct {
+	closed chan struct{}
+	one    sync.Once
+}
+
+func newTrackingReadWriteCloser() *trackingReadWriteCloser {
+	return &trackingReadWriteCloser{closed: make(chan struct{})}
+}
+
+func (c *trackingReadWriteCloser) Read(_ []byte) (int, error)  { return 0, io.EOF }
+func (c *trackingReadWriteCloser) Write(p []byte) (int, error) { return len(p), nil }
+func (c *trackingReadWriteCloser) Close() error {
+	c.one.Do(func() {
+		close(c.closed)
+	})
+	return nil
+}
+
+func (c *trackingReadWriteCloser) isClosed() bool {
+	select {
+	case <-c.closed:
+		return true
+	default:
+		return false
+	}
+}
+
+func TestHandlerCleanupLegacyModeClosesAllConnections(t *testing.T) {
+	ts := newTunnelState(caddy.Log(), 0)
+	connA := newTrackingReadWriteCloser()
+	connB := newTrackingReadWriteCloser()
+	ts.registerConnection(connA, nil, "a")
+	ts.registerConnection(connB, nil, "b")
+
+	h := &Handler{
+		tunnel:               ts,
+		StreamRetainOnReload: false,
+	}
+
+	if err := h.Cleanup(); err != nil {
+		t.Fatalf("cleanup failed: %v", err)
+	}
+	if !connA.isClosed() || !connB.isClosed() {
+		t.Fatalf("legacy cleanup should close all upgraded connections")
+	}
+}
+
+func TestHandlerCleanupLegacyModeHonorsDelay(t *testing.T) {
+	ts := newTunnelState(caddy.Log(), 40*time.Millisecond)
+	conn := newTrackingReadWriteCloser()
+	ts.registerConnection(conn, nil, "a")
+
+	h := &Handler{
+		tunnel:               ts,
+		StreamRetainOnReload: false,
+	}
+
+	if err := h.Cleanup(); err != nil {
+		t.Fatalf("cleanup failed: %v", err)
+	}
+	if conn.isClosed() {
+		t.Fatal("connection should not close immediately when stream_close_delay is set")
+	}
+
+	select {
+	case <-conn.closed:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("connection did not close after stream_close_delay elapsed")
+	}
+}
+
+func TestHandlerCleanupRetainModeClosesOnlyRemovedUpstreams(t *testing.T) {
+	const upstreamA = "upstream-a"
+	const upstreamB = "upstream-b"
+
+	// Simulate old+new configs both referencing upstreamA (refcount 2),
+	// while upstreamB is only referenced by the old config (refcount 1).
+	hosts.LoadOrStore(upstreamA, struct{}{})
+	hosts.LoadOrStore(upstreamA, struct{}{})
+	hosts.LoadOrStore(upstreamB, struct{}{})
+	t.Cleanup(func() {
+		_, _ = hosts.Delete(upstreamA)
+		_, _ = hosts.Delete(upstreamA)
+		_, _ = hosts.Delete(upstreamB)
+	})
+
+	ts := newTunnelState(caddy.Log(), 0)
+	connA := newTrackingReadWriteCloser()
+	connB := newTrackingReadWriteCloser()
+	ts.registerConnection(connA, nil, upstreamA)
+	ts.registerConnection(connB, nil, upstreamB)
+
+	h := &Handler{
+		tunnel:               ts,
+		StreamRetainOnReload: true,
+		Upstreams: UpstreamPool{
+			&Upstream{Dial: upstreamA},
+			&Upstream{Dial: upstreamB},
+		},
+	}
+
+	if err := h.Cleanup(); err != nil {
+		t.Fatalf("cleanup failed: %v", err)
+	}
+
+	if connA.isClosed() {
+		t.Fatal("connection for retained upstream should remain open")
+	}
+	if !connB.isClosed() {
+		t.Fatal("connection for removed upstream should be closed")
+	}
+}
+
+func TestHandlerUnmarshalCaddyfileStreamLogSkipHandshake(t *testing.T) {
+	d := caddyfile.NewTestDispenser(`
+	reverse_proxy localhost:9000 {
+		stream_log_skip_handshake
+	}
+	`)
+
+	var h Handler
+	if err := h.UnmarshalCaddyfile(d); err != nil {
+		t.Fatalf("UnmarshalCaddyfile() error = %v", err)
+	}
+	if !h.StreamLogSkipHandshake {
+		t.Fatal("expected stream_log_skip_handshake to enable StreamLogSkipHandshake")
+	}
+}

@@ -70,6 +70,7 @@ type responseRecorder struct {
 	size         int
 	wroteHeader  bool
 	stream       bool
+	hijacked     bool
 
 	readSize *int
 }
@@ -144,7 +145,8 @@ func NewResponseRecorder(w http.ResponseWriter, buf *bytes.Buffer, shouldBuffer 
 
 // WriteHeader writes the headers with statusCode to the wrapped
 // ResponseWriter unless the response is to be buffered instead.
-// 1xx responses are never buffered.
+// 1xx responses are never buffered, except 101 which is treated
+// as a final upgrade response.
 func (rr *responseRecorder) WriteHeader(statusCode int) {
 	if rr.wroteHeader {
 		return
@@ -153,6 +155,12 @@ func (rr *responseRecorder) WriteHeader(statusCode int) {
 	// save statusCode always, in case HTTP middleware upgrades websocket
 	// connections by manually setting headers and writing status 101
 	rr.statusCode = statusCode
+	if statusCode == http.StatusSwitchingProtocols {
+		rr.stream = true
+		rr.wroteHeader = true
+		rr.ResponseWriterWrapper.WriteHeader(statusCode)
+		return
+	}
 
 	// decide whether we should buffer the response
 	if rr.shouldBuffer == nil {
@@ -222,7 +230,14 @@ func (rr *responseRecorder) Buffered() bool {
 	return !rr.stream
 }
 
+func (rr *responseRecorder) Hijacked() bool {
+	return rr.hijacked
+}
+
 func (rr *responseRecorder) WriteResponse() error {
+	if rr.hijacked {
+		return nil
+	}
 	if rr.statusCode == 0 {
 		// could happen if no handlers actually wrote anything,
 		// and this prevents a panic; status must be > 0
@@ -258,13 +273,16 @@ func (rr *responseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	// Per http documentation, returned bufio.Writer is empty, but bufio.Read maybe not
-	conn = &hijackedConn{conn, rr}
+	rr.hijacked = true
+	rr.stream = true
+	rr.wroteHeader = true
+	// Per http documentation, returned bufio.Writer is empty, but bufio.Read maybe not.
+	// Return the raw hijacked connection so upgraded stream traffic does not keep
+	// traversing the response recorder hot path.
 	brw.Writer.Reset(conn)
 
 	buffered := brw.Reader.Buffered()
 	if buffered != 0 {
-		conn.(*hijackedConn).updateReadSize(buffered)
 		data, _ := brw.Peek(buffered)
 		brw.Reader.Reset(io.MultiReader(bytes.NewReader(data), conn))
 		// peek to make buffered data appear, as Reset will make it 0
@@ -275,40 +293,24 @@ func (rr *responseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return conn, brw, nil
 }
 
-// used to track the size of hijacked response writers
-type hijackedConn struct {
-	net.Conn
-	rr *responseRecorder
-}
-
-func (hc *hijackedConn) updateReadSize(n int) {
-	if hc.rr.readSize != nil {
-		*hc.rr.readSize += n
+// ResponseWriterHijacked reports whether w or one of its wrapped response
+// writers has been hijacked.
+func ResponseWriterHijacked(w http.ResponseWriter) bool {
+	for w != nil {
+		if hijacked, ok := w.(interface{ Hijacked() bool }); ok && hijacked.Hijacked() {
+			return true
+		}
+		unwrapper, ok := w.(interface{ Unwrap() http.ResponseWriter })
+		if !ok {
+			return false
+		}
+		next := unwrapper.Unwrap()
+		if next == w {
+			return false
+		}
+		w = next
 	}
-}
-
-func (hc *hijackedConn) Read(p []byte) (int, error) {
-	n, err := hc.Conn.Read(p)
-	hc.updateReadSize(n)
-	return n, err
-}
-
-func (hc *hijackedConn) WriteTo(w io.Writer) (int64, error) {
-	n, err := io.Copy(w, hc.Conn)
-	hc.updateReadSize(int(n))
-	return n, err
-}
-
-func (hc *hijackedConn) Write(p []byte) (int, error) {
-	n, err := hc.Conn.Write(p)
-	hc.rr.size += n
-	return n, err
-}
-
-func (hc *hijackedConn) ReadFrom(r io.Reader) (int64, error) {
-	n, err := io.Copy(hc.Conn, r)
-	hc.rr.size += int(n)
-	return n, err
+	return false
 }
 
 // ResponseRecorder is a http.ResponseWriter that records
@@ -319,6 +321,7 @@ type ResponseRecorder interface {
 	Status() int
 	Buffer() *bytes.Buffer
 	Buffered() bool
+	Hijacked() bool
 	Size() int
 	WriteResponse() error
 }
@@ -338,7 +341,4 @@ var (
 	// see PR #5022 (25%-50% speedup)
 	_ io.ReaderFrom = (*ResponseWriterWrapper)(nil)
 	_ io.ReaderFrom = (*responseRecorder)(nil)
-	_ io.ReaderFrom = (*hijackedConn)(nil)
-
-	_ io.WriterTo = (*hijackedConn)(nil)
 )
