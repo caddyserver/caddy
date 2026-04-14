@@ -23,6 +23,7 @@ import (
 	"net"
 	"net/http"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -140,8 +141,9 @@ type TLS struct {
 	logger             *zap.Logger
 	events             *caddyevents.App
 
-	serverNames   map[string]struct{}
-	serverNamesMu *sync.Mutex
+	serverNames    map[string]struct{}
+	serverNameALPN map[string]map[string]struct{}
+	serverNamesMu  *sync.Mutex
 
 	// set of subjects with managed certificates,
 	// and hashes of manually-loaded certificates
@@ -169,6 +171,7 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	repl := caddy.NewReplacer()
 	t.managing, t.loaded = make(map[string]string), make(map[string]string)
 	t.serverNames = make(map[string]struct{})
+	t.serverNameALPN = make(map[string]map[string]struct{})
 	t.serverNamesMu = new(sync.Mutex)
 
 	// set up default DNS module, if any, and make sure it implements all the
@@ -658,17 +661,99 @@ func (t *TLS) managingWildcardFor(subj string, otherSubjsToManage map[string]str
 //
 // EXPERIMENTAL: This function and its semantics/behavior are subject to change.
 func (t *TLS) RegisterServerNames(dnsNames []string) {
+	t.RegisterServerNamesWithALPN(dnsNames, nil)
+}
+
+// RegisterServerNamesWithALPN registers the provided DNS names with the TLS app
+// and associates them with the given HTTPS RR ALPN values, if any.
+//
+// EXPERIMENTAL: This function and its semantics/behavior are subject to change.
+func (t *TLS) RegisterServerNamesWithALPN(dnsNames []string, alpnValues []string) {
 	t.serverNamesMu.Lock()
+	defer t.serverNamesMu.Unlock()
+
 	for _, name := range dnsNames {
 		host, _, err := net.SplitHostPort(name)
 		if err != nil {
 			host = name
 		}
-		if strings.TrimSpace(host) != "" && !certmagic.SubjectIsIP(host) {
-			t.serverNames[strings.ToLower(host)] = struct{}{}
+		host = strings.ToLower(strings.TrimSpace(host))
+		if host == "" || certmagic.SubjectIsIP(host) {
+			continue
+		}
+		t.serverNames[host] = struct{}{}
+
+		if len(alpnValues) == 0 {
+			continue
+		}
+
+		if t.serverNameALPN[host] == nil {
+			t.serverNameALPN[host] = make(map[string]struct{}, len(alpnValues))
+		}
+		for _, alpn := range alpnValues {
+			if alpn == "" {
+				continue
+			}
+			t.serverNameALPN[host][alpn] = struct{}{}
 		}
 	}
-	t.serverNamesMu.Unlock()
+}
+
+func (t *TLS) alpnValuesForServerNames(dnsNames []string) map[string][]string {
+	t.serverNamesMu.Lock()
+	defer t.serverNamesMu.Unlock()
+
+	result := make(map[string][]string, len(dnsNames))
+	for _, name := range dnsNames {
+		host, _, err := net.SplitHostPort(name)
+		if err != nil {
+			host = name
+		}
+		host = strings.ToLower(strings.TrimSpace(host))
+		if host == "" {
+			continue
+		}
+
+		alpnSet := t.serverNameALPN[host]
+		if len(alpnSet) == 0 {
+			continue
+		}
+		result[host] = orderedHTTPSRRALPN(alpnSet)
+	}
+
+	return result
+}
+
+func orderedHTTPSRRALPN(alpnSet map[string]struct{}) []string {
+	if len(alpnSet) == 0 {
+		return nil
+	}
+
+	knownOrder := []string{"h3", "h2", "http/1.1"}
+	ordered := make([]string, 0, len(alpnSet))
+	seen := make(map[string]struct{}, len(alpnSet))
+
+	for _, alpn := range knownOrder {
+		if _, ok := alpnSet[alpn]; ok {
+			ordered = append(ordered, alpn)
+			seen[alpn] = struct{}{}
+		}
+	}
+
+	if len(ordered) == len(alpnSet) {
+		return ordered
+	}
+
+	var remaining []string
+	for alpn := range alpnSet {
+		if _, ok := seen[alpn]; ok {
+			continue
+		}
+		remaining = append(remaining, alpn)
+	}
+	slices.Sort(remaining)
+
+	return append(ordered, remaining...)
 }
 
 // HandleHTTPChallenge ensures that the ACME HTTP challenge or ZeroSSL HTTP

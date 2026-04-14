@@ -173,7 +173,7 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 		for d := range serverDomainSet {
 			echDomains = append(echDomains, d)
 		}
-		app.tlsApp.RegisterServerNames(echDomains)
+		app.tlsApp.RegisterServerNamesWithALPN(echDomains, httpsRRALPNs(srv))
 
 		// nothing more to do here if there are no domains that qualify for
 		// automatic HTTPS and there are no explicit TLS connection policies:
@@ -548,6 +548,52 @@ func (app *App) makeRedirRoute(redirToPort uint, matcherSet MatcherSet) Route {
 			},
 		},
 	}
+}
+
+func httpsRRALPNs(srv *Server) []string {
+	// Automatic HTTPS runs before server provisioning fills in the default
+	// protocols, so derive the effective set directly from the raw config here.
+	serverProtocols := srv.Protocols
+	if len(serverProtocols) == 0 {
+		serverProtocols = []string{"h1", "h2", "h3"}
+	}
+
+	protocols := make(map[string]struct{}, len(serverProtocols))
+	if srv.ListenProtocols == nil {
+		for _, protocol := range serverProtocols {
+			protocols[protocol] = struct{}{}
+		}
+	} else {
+		for _, lnProtocols := range srv.ListenProtocols {
+			if len(lnProtocols) == 0 {
+				for _, protocol := range serverProtocols {
+					protocols[protocol] = struct{}{}
+				}
+				continue
+			}
+			for _, protocol := range lnProtocols {
+				if protocol == "" {
+					for _, inherited := range serverProtocols {
+						protocols[inherited] = struct{}{}
+					}
+					continue
+				}
+				protocols[protocol] = struct{}{}
+			}
+		}
+	}
+
+	alpn := make([]string, 0, 3)
+	if _, ok := protocols["h3"]; ok {
+		alpn = append(alpn, "h3")
+	}
+	if _, ok := protocols["h2"]; ok {
+		alpn = append(alpn, "h2")
+	}
+	if _, ok := protocols["h1"]; ok {
+		alpn = append(alpn, "http/1.1")
+	}
+	return alpn
 }
 
 // createAutomationPolicies ensures that automated certificates for this

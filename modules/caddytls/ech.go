@@ -440,6 +440,10 @@ func (t *TLS) publishECHConfigs(logger *zap.Logger) error {
 				zap.Strings("domains", dnsNamesToPublish),
 				zap.Uint8s("config_ids", configIDs))
 
+			if dnsPublisher, ok := publisher.(*ECHDNSPublisher); ok {
+				dnsPublisher.alpnByDomain = t.alpnValuesForServerNames(dnsNamesToPublish)
+			}
+
 			// publish this ECH config list with this publisher
 			pubTime := time.Now()
 			err := publisher.PublishECHConfigList(t.ctx, dnsNamesToPublish, echCfgListBin)
@@ -776,7 +780,8 @@ type ECHDNSPublisher struct {
 	ProviderRaw json.RawMessage `json:"provider,omitempty" caddy:"namespace=dns.providers inline_key=name"`
 	provider    ECHDNSProvider
 
-	logger *zap.Logger
+	alpnByDomain map[string][]string
+	logger       *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -872,12 +877,7 @@ nextName:
 			continue
 		}
 		params := httpsRec.Params
-		if params == nil {
-			params = make(libdns.SvcParams)
-		}
-
-		// overwrite only the "ech" SvcParamKey
-		params["ech"] = []string{base64.StdEncoding.EncodeToString(configListBin)}
+		params = dnsPub.publishedSvcParams(domain, params, configListBin)
 
 		// publish record
 		_, err = dnsPub.provider.SetRecords(ctx, zone, []libdns.Record{
@@ -901,6 +901,25 @@ nextName:
 		return errs
 	}
 	return nil
+}
+
+func (dnsPub *ECHDNSPublisher) publishedSvcParams(domain string, existing libdns.SvcParams, configListBin []byte) libdns.SvcParams {
+	params := make(libdns.SvcParams, len(existing)+2)
+	for key, values := range existing {
+		params[key] = append([]string(nil), values...)
+	}
+
+	params["ech"] = []string{base64.StdEncoding.EncodeToString(configListBin)}
+
+	if len(dnsPub.alpnByDomain) == 0 {
+		return params
+	}
+
+	if alpn := dnsPub.alpnByDomain[strings.ToLower(domain)]; len(alpn) > 0 {
+		params["alpn"] = append([]string(nil), alpn...)
+	}
+
+	return params
 }
 
 // echConfig represents an ECHConfig from the specification,
