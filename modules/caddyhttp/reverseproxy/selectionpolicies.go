@@ -40,8 +40,8 @@ func init() {
 	caddy.RegisterModule(RandomSelection{})
 	caddy.RegisterModule(RandomChoiceSelection{})
 	caddy.RegisterModule(LeastConnSelection{})
-	caddy.RegisterModule(RoundRobinSelection{})
-	caddy.RegisterModule(WeightedRoundRobinSelection{})
+	caddy.RegisterModule(new(RoundRobinSelection))
+	caddy.RegisterModule(new(WeightedRoundRobinSelection))
 	caddy.RegisterModule(FirstSelection{})
 	caddy.RegisterModule(IPHashSelection{})
 	caddy.RegisterModule(ClientIPHashSelection{})
@@ -88,7 +88,7 @@ type WeightedRoundRobinSelection struct {
 }
 
 // CaddyModule returns the Caddy module information.
-func (WeightedRoundRobinSelection) CaddyModule() caddy.ModuleInfo {
+func (*WeightedRoundRobinSelection) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
 		ID: "http.reverse_proxy.selection_policies.weighted_round_robin",
 		New: func() caddy.Module {
@@ -299,7 +299,7 @@ type RoundRobinSelection struct {
 }
 
 // CaddyModule returns the Caddy module information.
-func (RoundRobinSelection) CaddyModule() caddy.ModuleInfo {
+func (*RoundRobinSelection) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
 		ID:  "http.reverse_proxy.selection_policies.round_robin",
 		New: func() caddy.Module { return new(RoundRobinSelection) },

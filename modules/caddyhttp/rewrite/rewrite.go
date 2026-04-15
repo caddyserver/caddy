@@ -529,7 +529,14 @@ func (q *queryOps) do(r *http.Request, repl *caddy.Replacer) {
 		if key == "" || val == "" {
 			continue
 		}
-		query[val] = query[key]
+		if key == val {
+			continue
+		}
+		originalValues, ok := query[key]
+		if !ok {
+			continue
+		}
+		query[val] = originalValues
 		delete(query, key)
 	}
 

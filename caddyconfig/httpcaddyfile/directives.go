@@ -202,7 +202,10 @@ func RegisterGlobalOption(opt string, setupFunc UnmarshalGlobalFunc) {
 type Helper struct {
 	*caddyfile.Dispenser
 	// State stores intermediate variables during caddyfile adaptation.
-	State        map[string]any
+	State map[string]any
+	// BlockState stores intermediate variables scoped to the current block.
+	// It propagates down, but unlike state not back up from child to parent.
+	BlockState   map[string]any
 	options      map[string]any
 	warnings     *[]caddyconfig.Warning
 	matcherDefs  map[string]caddy.ModuleMap
@@ -385,6 +388,11 @@ func parseSegmentAsConfig(h Helper) ([]ConfigValue, error) {
 			}
 		}
 
+		// clone BlockState once for the entire block so sibling directives
+		// can share state, but changes don't leak to the parent scope
+		subBlockState := make(map[string]any, len(h.BlockState))
+		maps.Copy(subBlockState, h.BlockState)
+
 		// with matchers ready to go, evaluate each directive's segment
 		for _, seg := range segments {
 			dir := seg.Directive()
@@ -396,6 +404,7 @@ func parseSegmentAsConfig(h Helper) ([]ConfigValue, error) {
 			subHelper := h
 			subHelper.Dispenser = caddyfile.NewDispenser(seg)
 			subHelper.matcherDefs = matcherDefs
+			subHelper.BlockState = subBlockState
 
 			results, err := dirFunc(subHelper)
 			if err != nil {
