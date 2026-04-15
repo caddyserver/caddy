@@ -1,0 +1,35 @@
+---
+description: Governance rules for caddy — quality gates, security, conventions
+globs:
+  - "**/*.go"
+alwaysApply: true
+---
+
+# Governance — caddy
+
+> Generated from governance.md by crag. Regenerate: `crag compile --target cursor`
+
+**Stack:** go
+
+## Quality Gates
+
+Run these checks in order before committing:
+### Lint
+- `go vet ./...`
+- `golangci-lint run`
+
+### Test
+- `go test ./...`
+
+### Ci (inferred from workflow)
+- `go build -trimpath -ldflags="-w -s" -v`
+- `go test -v -coverprofile="cover-profile.out" -short -race ./...`
+- `go build -trimpath -o caddy-"$GOOS"-$GOARCH 2> /dev/null`
+## Security
+
+- No hardcoded secrets — grep for sk_live, AKIA, password= before commit
+
+## Conventions
+
+- Follow project commit conventions
+- Runtimes: go
