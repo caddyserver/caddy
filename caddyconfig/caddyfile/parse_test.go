@@ -960,6 +960,77 @@ import `+importFile2+`
 	}
 }
 
+func TestImportedSnippetDefinitionRetainsBlockPlaceholder(t *testing.T) {
+	tempDir := t.TempDir()
+	importFile := filepath.Join(tempDir, "snippets.caddy")
+
+	err := os.WriteFile(importFile, []byte(`
+		(site) {
+			http://{args[0]} {
+				respond "before"
+				{block}
+				respond "after"
+			}
+		}
+	`), 0o644)
+	if err != nil {
+		t.Fatalf("writing imported snippet file: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name               string
+		input              string
+		expectedDirectives []string
+	}{
+		{
+			name: "with nested block",
+			input: `
+				import ` + importFile + `
+
+				import site example.com {
+					redir https://example.net
+				}
+			`,
+			expectedDirectives: []string{"respond", "redir", "respond"},
+		},
+		{
+			name: "without nested block",
+			input: `
+				import ` + importFile + `
+
+				import site example.com
+			`,
+			expectedDirectives: []string{"respond", "respond"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := testParser(tc.input)
+			blocks, err := p.parseAll()
+			if err != nil {
+				t.Fatalf("parseAll: %v", err)
+			}
+
+			if len(blocks) != 1 {
+				t.Fatalf("expected exactly one server block, got %d", len(blocks))
+			}
+
+			if actual := blocks[0].GetKeysText(); len(actual) != 1 || actual[0] != "http://example.com" {
+				t.Fatalf("expected server block key http://example.com, got %v", actual)
+			}
+
+			if len(blocks[0].Segments) != len(tc.expectedDirectives) {
+				t.Fatalf("expected %d segments, got %d", len(tc.expectedDirectives), len(blocks[0].Segments))
+			}
+
+			for i, directive := range tc.expectedDirectives {
+				if actual := blocks[0].Segments[i].Directive(); actual != directive {
+					t.Fatalf("segment %d: expected directive %q, got %q", i, directive, actual)
+				}
+			}
+		})
+	}
+}
+
 func testParser(input string) parser {
 	return parser{Dispenser: NewTestDispenser(input)}
 }
