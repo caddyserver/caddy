@@ -39,7 +39,7 @@ import (
 func init() {
 	caddycmd.RegisterCommand(caddycmd.Command{
 		Name:  "file-server",
-		Usage: "[--domain <example.com>] [--root <path>] [--listen <addr>] [--browse] [--reveal-symlinks] [--access-log] [--precompressed]",
+		Usage: "[--domain <example.com>] [--root <path>] [--listen <addr>] [--browse] [--reveal-symlinks] [--access-log] [--precompressed] [--prefer-precompressed]",
 		Short: "Spins up a production-ready file server",
 		Long: `
 A simple but production-ready file server. Useful for quick deployments,
@@ -69,6 +69,7 @@ respond with a file listing.`,
 			cmd.Flags().IntP("file-limit", "f", defaultDirEntryLimit, "Max directories to read")
 			cmd.Flags().BoolP("no-compress", "", false, "Disable Zstandard and Gzip compression")
 			cmd.Flags().StringSliceP("precompressed", "p", []string{}, "Specify precompression file extensions. Compression preference implied from flag order.")
+			cmd.Flags().BoolP("prefer-precompressed", "", false, "Serve precompressed files even without the uncompressed base file")
 			cmd.RunE = caddycmd.WrapCommandFuncForCobra(cmdFileServer)
 			cmd.AddCommand(&cobra.Command{
 				Use:     "export-template",
@@ -96,6 +97,7 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 	debug := fs.Bool("debug")
 	revealSymlinks := fs.Bool("reveal-symlinks")
 	compress := !fs.Bool("no-compress")
+	preferPrecompressed := fs.Bool("prefer-precompressed")
 	precompressed, err := fs.GetStringSlice("precompressed")
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("invalid precompressed flag: %v", err)
@@ -151,6 +153,8 @@ func cmdFileServer(fs caddycmd.Flags) (int, error) {
 		}
 		handler.PrecompressedOrder = order
 	}
+
+	handler.PreferPrecompressed = preferPrecompressed
 
 	if browse {
 		handler.Browse = &Browse{RevealSymlinks: revealSymlinks, FileLimit: fileLimit}

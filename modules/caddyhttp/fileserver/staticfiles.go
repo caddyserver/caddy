@@ -168,6 +168,14 @@ type FileServer struct {
 	PrecompressedOrder []string `json:"precompressed_order,omitempty"`
 	precompressors     map[string]encode.Precompressed
 
+	// If true, the file server will look for precompressed sidecar files
+	// on disk even when the original uncompressed file does not exist.
+	// This allows serving only precompressed files without keeping the
+	// original uncompressed versions on disk. If the client does not
+	// support any of the available compressed encodings, a 404 is returned.
+	// Requires precompressed encoders to be configured.
+	PreferPrecompressed bool `json:"prefer_precompressed,omitempty"`
+
 	// List of file extensions to try to read Etags from.
 	// If set, file Etags will be read from sidecar files
 	// with any of these suffixes, instead of generating
@@ -244,6 +252,10 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 		fsrv.precompressors[ae] = p
 	}
 
+	if fsrv.PreferPrecompressed && len(fsrv.precompressors) == 0 {
+		fsrv.logger.Warn("prefer_precompressed is enabled but no precompressed encoders are configured; option will have no effect")
+	}
+
 	if fsrv.Browse != nil {
 		// check sort options
 		for idx, sortOption := range fsrv.Browse.SortOptions {
@@ -308,19 +320,27 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	if err != nil {
 		err = fsrv.mapDirOpenError(fileSystem, err, filename)
 		if errors.Is(err, fs.ErrNotExist) {
-			return fsrv.notFound(w, r, next)
+			if !fsrv.PreferPrecompressed || len(fsrv.precompressors) == 0 {
+				return fsrv.notFound(w, r, next)
+			}
+			// info stays nil; we'll try precompressed files below
+			if c := fsrv.logger.Check(zapcore.DebugLevel, "base file not found, trying precompressed variants"); c != nil {
+				c.Write(zap.String("filename", filename))
+			}
 		} else if errors.Is(err, fs.ErrInvalid) {
 			return caddyhttp.Error(http.StatusBadRequest, err)
 		} else if errors.Is(err, fs.ErrPermission) {
 			return caddyhttp.Error(http.StatusForbidden, err)
+		} else {
+			return caddyhttp.Error(http.StatusInternalServerError, err)
 		}
-		return caddyhttp.Error(http.StatusInternalServerError, err)
 	}
 
 	// if the request mapped to a directory, see if
 	// there is an index file we can serve
 	var implicitIndexFile bool
-	if info.IsDir() && len(fsrv.IndexNames) > 0 {
+	var precompressedIndexOnly bool
+	if info != nil && info.IsDir() && len(fsrv.IndexNames) > 0 {
 		for _, indexPage := range fsrv.IndexNames {
 			indexPage := repl.ReplaceAll(indexPage, "")
 			indexPath := caddyhttp.SanitizedPathJoin(filename, indexPage)
@@ -337,6 +357,19 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 
 			indexInfo, err := fs.Stat(fileSystem, indexPath)
 			if err != nil {
+				// if prefer_precompressed, check if a precompressed
+				// variant of the index file exists on disk
+				if fsrv.PreferPrecompressed && len(fsrv.precompressors) > 0 {
+					if fsrv.hasPrecompressedVariant(fileSystem, indexPath, filesToHide, r) {
+						filename = indexPath
+						implicitIndexFile = true
+						precompressedIndexOnly = true
+						if c := fsrv.logger.Check(zapcore.DebugLevel, "located precompressed index file"); c != nil {
+							c.Write(zap.String("filename", filename))
+						}
+						break
+					}
+				}
 				continue
 			}
 
@@ -360,7 +393,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 
 	// if still referencing a directory, delegate
 	// to browse or return an error
-	if info.IsDir() {
+	if info != nil && info.IsDir() && !precompressedIndexOnly {
 		if c := fsrv.logger.Check(zapcore.DebugLevel, "no index file in directory"); c != nil {
 			c.Write(
 				zap.String("path", filename),
@@ -374,7 +407,9 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	}
 
 	// one last check to ensure the file isn't hidden (we might
-	// have changed the filename from when we last checked)
+	// have changed the filename from when we last checked);
+	// this also applies in prefer_precompressed mode: if the
+	// base path is hidden, we don't attempt precompressed variants
 	if fileHidden(filename, filesToHide) {
 		if c := fsrv.logger.Check(zapcore.DebugLevel, "hiding file"); c != nil {
 			c.Write(
@@ -389,7 +424,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	// slash convention: if a directory, trailing slash; if a file, no
 	// trailing slash - not enforcing this can break relative hrefs
 	// in HTML (see https://github.com/caddyserver/caddy/issues/2741)
-	if fsrv.CanonicalURIs == nil || *fsrv.CanonicalURIs {
+	if info != nil && (fsrv.CanonicalURIs == nil || *fsrv.CanonicalURIs) {
 		// Only redirect if the last element of the path (the filename) was not
 		// rewritten; if the admin wanted to rewrite to the canonical path, they
 		// would have, and we have to be very careful not to introduce unwanted
@@ -419,6 +454,13 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		}
 	}
 
+	// if we matched a precompressed index but no base index file exists,
+	// set info to nil so the precompressed loop below handles serving;
+	// this is done after canonical URI redirect so the redirect still works
+	if precompressedIndexOnly {
+		info = nil
+	}
+
 	var file fs.File
 	respHeader := w.Header()
 
@@ -439,6 +481,9 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			continue
 		}
 		compressedFilename := filename + precompress.Suffix()
+		if fileHidden(compressedFilename, filesToHide) {
+			continue
+		}
 		compressedInfo, err := fs.Stat(fileSystem, compressedFilename)
 		if err != nil || compressedInfo.IsDir() {
 			if c := fsrv.logger.Check(zapcore.DebugLevel, "precompressed file not accessible"); c != nil {
@@ -480,10 +525,17 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		}
 
 		// don't assign info = compressedInfo because sidecars are kind
-		// of transparent; however we do need to set the Etag:
+		// of transparent (unless the base file doesn't exist, handled
+		// below); however we do need to set the Etag:
 		// https://caddy.community/t/gzipped-sidecar-file-wrong-same-etag/16793
 		if etag == "" {
 			etag = calculateEtag(compressedInfo)
+		}
+
+		// if there's no base file (prefer_precompressed mode), use the
+		// compressed file's info for modtime in ServeContent
+		if info == nil {
+			info = compressedInfo
 		}
 
 		break
@@ -491,6 +543,12 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 
 	// no precompressed file found, use the actual file
 	if file == nil {
+		// if the base file doesn't exist (prefer_precompressed mode) and no
+		// precompressed variant was found, return 404
+		if info == nil {
+			return fsrv.notFound(w, r, next)
+		}
+
 		if c := fsrv.logger.Check(zapcore.DebugLevel, "opening file"); c != nil {
 			c.Write(zap.String("filename", filename))
 		}
@@ -582,6 +640,26 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	http.ServeContent(w, r, info.Name(), info.ModTime(), file.(io.ReadSeeker))
 
 	return nil
+}
+
+// hasPrecompressedVariant checks whether any precompressed sidecar file
+// exists for the given filename (e.g. filename.gz, filename.br) that is
+// also accepted by the client's Accept-Encoding header.
+func (fsrv *FileServer) hasPrecompressedVariant(fileSystem fs.FS, filename string, filesToHide []string, r *http.Request) bool {
+	for _, ae := range encode.AcceptedEncodings(r, fsrv.PrecompressedOrder) {
+		precompress, ok := fsrv.precompressors[ae]
+		if !ok {
+			continue
+		}
+		compressedPath := filename + precompress.Suffix()
+		if fileHidden(compressedPath, filesToHide) {
+			continue
+		}
+		if info, err := fs.Stat(fileSystem, compressedPath); err == nil && !info.IsDir() {
+			return true
+		}
+	}
+	return false
 }
 
 // openFile opens the file at the given filename. If there was an error,

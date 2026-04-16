@@ -58,6 +58,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //	    index         <files...>
 //	    browse        [<template_file>]
 //	    precompressed <formats...>
+//	    prefer_precompressed
 //	    status        <status>
 //	    disable_canonical_uris
 //	}
@@ -167,6 +168,12 @@ func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 				fsrv.PrecompressedRaw[format] = caddyconfig.JSON(precompress, nil)
 			}
+
+		case "prefer_precompressed":
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+			fsrv.PreferPrecompressed = true
 
 		case "status":
 			if !d.NextArg() {
