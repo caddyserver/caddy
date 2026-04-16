@@ -37,7 +37,7 @@ func init() {
     caddy.RegisterModule(MyModule{})
 }
 
-func (m MyModule) CaddyModule() caddy.ModuleInfo {
+func (MyModule) CaddyModule() caddy.ModuleInfo {
     return caddy.ModuleInfo{
         ID:  "namespace.category.name",
         New: func() caddy.Module { return new(MyModule) },
@@ -198,7 +198,7 @@ Use non-standard ports (9080, 9443, 2999) to avoid conflicts with running server
 
 Per [CONTRIBUTING.md](.github/CONTRIBUTING.md), AI-assisted code **MUST** be:
 
-1. **Disclosed** — Tell reviewers when code was AI-generated or AI-assisted
+1. **Disclosed** — Tell reviewers when code was AI-generated or AI-assisted, mentioning which agent/model is used
 2. **Fully comprehended** — You must be able to explain every line
 3. **Tested** — Automated tests when feasible, thorough manual tests otherwise
 4. **Licensed** — Verify AI output doesn't include plagiarized or incompatibly-licensed code
@@ -216,4 +216,4 @@ Per [CONTRIBUTING.md](.github/CONTRIBUTING.md), AI-assisted code **MUST** be:
 - [CONTRIBUTING.md](.github/CONTRIBUTING.md) — Full PR process and expectations
 - [Extending Caddy](https://caddyserver.com/docs/extending-caddy) — Module development guide
 - [JSON Config](https://caddyserver.com/docs/json/) — Native configuration reference
-- [Caddyfile](https://caddyserver.com/docs/caddyfile) — Caddyfile syntax guide
+- [Caddyfile](https://caddyserver.com/docs/caddyfile/concepts) — Caddyfile syntax guide
