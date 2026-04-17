@@ -11,17 +11,16 @@ import (
 
 func TestRegisterServerNamesWithALPN(t *testing.T) {
 	tlsApp := &TLS{
-		serverNames:    make(map[string]struct{}),
-		serverNameALPN: make(map[string]map[string]struct{}),
-		serverNamesMu:  new(sync.Mutex),
+		serverNames:   make(map[string]serverNameRegistration),
+		serverNamesMu: new(sync.Mutex),
 	}
 
-	tlsApp.RegisterServerNamesWithALPN([]string{
+	tlsApp.RegisterServerNames([]string{
 		"Example.com:443",
 		"example.com",
 		"127.0.0.1:443",
 	}, []string{"h2", "http/1.1"})
-	tlsApp.RegisterServerNamesWithALPN([]string{"EXAMPLE.COM"}, []string{"h3"})
+	tlsApp.RegisterServerNames([]string{"EXAMPLE.COM"}, []string{"h3"})
 
 	got := tlsApp.alpnValuesForServerNames([]string{"example.com:443", "127.0.0.1:443"})
 	want := map[string][]string{

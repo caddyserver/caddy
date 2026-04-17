@@ -301,6 +301,8 @@ type Server struct {
 	onStopFuncs      []func(context.Context) error // TODO: Experimental (Nov. 2023)
 }
 
+var defaultProtocols = []string{"h1", "h2", "h3"}
+
 var (
 	ServerHeader = "Caddy"
 	serverHeader = []string{ServerHeader}
@@ -900,13 +902,14 @@ func (s *Server) logRequest(
 // protocol returns true if the protocol proto is configured/enabled.
 func (s *Server) protocol(proto string) bool {
 	if s.ListenProtocols == nil {
-		if slices.Contains(s.Protocols, proto) {
+		if slices.Contains(s.protocolsWithDefaults(), proto) {
 			return true
 		}
 	} else {
+		serverProtocols := s.protocolsWithDefaults()
 		for _, lnProtocols := range s.ListenProtocols {
 			for _, lnProtocol := range lnProtocols {
-				if lnProtocol == "" && slices.Contains(s.Protocols, proto) || lnProtocol == proto {
+				if lnProtocol == "" && slices.Contains(serverProtocols, proto) || lnProtocol == proto {
 					return true
 				}
 			}
@@ -914,6 +917,13 @@ func (s *Server) protocol(proto string) bool {
 	}
 
 	return false
+}
+
+func (s *Server) protocolsWithDefaults() []string {
+	if len(s.Protocols) == 0 {
+		return defaultProtocols
+	}
+	return s.Protocols
 }
 
 // Listeners returns the server's listeners. These are active listeners,

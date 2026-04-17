@@ -23,6 +23,7 @@ import (
 	"maps"
 	"net"
 	"net/http"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -235,7 +236,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 
 		// if no protocols configured explicitly, enable all except h2c
 		if len(srv.Protocols) == 0 {
-			srv.Protocols = []string{"h1", "h2", "h3"}
+			srv.Protocols = slices.Clone(srv.protocolsWithDefaults())
 		}
 
 		srvProtocolsUnique := map[string]struct{}{}
