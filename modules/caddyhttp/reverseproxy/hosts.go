@@ -58,6 +58,7 @@ type Upstream struct {
 	// HeaderAffinity string
 	// IPAffinity     string
 
+	activeHealthStats         *ActiveHealthStats
 	activeHealthCheckPort     int
 	activeHealthCheckUpstream string
 	healthCheckPolicy         *PassiveHealthChecks
@@ -134,6 +135,37 @@ func (u *Upstream) fillHost() {
 	u.Host = host
 }
 
+func (u *Upstream) provisionActiveHealthStats(key string) {
+	u.Host.activeHealthStatsMu.Lock()
+	defer u.Host.activeHealthStatsMu.Unlock()
+
+	if u.Host.activeHealthStats == nil {
+		u.Host.activeHealthStats = make(map[string]*ActiveHealthStats)
+	}
+
+	stats, ok := u.Host.activeHealthStats[key]
+	if !ok {
+		stats = &ActiveHealthStats{key: key}
+		u.Host.activeHealthStats[key] = stats
+	}
+
+	stats.refs++
+	u.activeHealthStats = stats
+}
+
+func (u *Upstream) releaseActiveHealthStats() {
+	if u.activeHealthStats != nil {
+		u.Host.activeHealthStatsMu.Lock()
+		defer u.Host.activeHealthStatsMu.Unlock()
+
+		u.activeHealthStats.refs--
+		if u.activeHealthStats.refs <= 0 {
+			delete(u.Host.activeHealthStats, u.activeHealthStats.key)
+		}
+		u.activeHealthStats = nil
+	}
+}
+
 // fillDynamicHost is like fillHost, but stores the host in the separate
 // dynamicHosts map rather than the reference-counted UsagePool. Dynamic
 // hosts are not reference-counted; instead, they are retained as long as
@@ -171,13 +203,22 @@ func (u *Upstream) fillDynamicHost() {
 	})
 }
 
+// ActiveHealthStats holds the health check stats for an active health check URI.
+type ActiveHealthStats struct {
+	key               string
+	refs              int64 // synchronized via Host.activeHealthStatsMu
+	consecutivePasses atomic.Int64
+	consecutiveFails  atomic.Int64
+}
+
 // Host is the basic, in-memory representation of the state of a remote host.
 // Its fields are accessed atomically and Host values must not be copied.
 type Host struct {
-	numRequests  atomic.Int64 // atomic.Int64 is automatically aligned for us (see https://golang.org/pkg/sync/atomic/#pkg-note-BUG)
-	fails        atomic.Int64
-	activePasses atomic.Int64
-	activeFails  atomic.Int64
+	numRequests atomic.Int64 // atomic.Int64 is automatically aligned for us (see https://golang.org/pkg/sync/atomic/#pkg-note-BUG)
+	fails       atomic.Int64
+
+	activeHealthStatsMu sync.Mutex                    // protects activeHealthStats and refs in ActiveHealthStats
+	activeHealthStats   map[string]*ActiveHealthStats // keyed by active health check URI
 }
 
 // NumRequests returns the number of active requests to the upstream.
@@ -191,13 +232,19 @@ func (h *Host) Fails() int {
 }
 
 // activeHealthPasses returns the number of consecutive active health check passes with the upstream.
-func (h *Host) activeHealthPasses() int {
-	return int(h.activePasses.Load())
+func (u *Upstream) activeHealthPasses() int {
+	if u.activeHealthStats == nil {
+		return 0
+	}
+	return int(u.activeHealthStats.consecutivePasses.Load())
 }
 
 // activeHealthFails returns the number of consecutive active health check failures with the upstream.
-func (h *Host) activeHealthFails() int {
-	return int(h.activeFails.Load())
+func (u *Upstream) activeHealthFails() int {
+	if u.activeHealthStats == nil {
+		return 0
+	}
+	return int(u.activeHealthStats.consecutiveFails.Load())
 }
 
 // countRequest mutates the active request count by
@@ -222,28 +269,32 @@ func (h *Host) countFail(delta int) error {
 
 // countHealthPass mutates the recent passes count by
 // delta. It returns an error if the adjustment fails.
-func (h *Host) countHealthPass(delta int) error {
-	result := h.activePasses.Add(int64(delta))
+func (u *Upstream) countHealthPass(delta int) error {
+	if u.activeHealthStats == nil {
+		return fmt.Errorf("active health stats not provisioned for upstream %s", u.String())
+	}
+
+	result := u.activeHealthStats.consecutivePasses.Add(int64(delta))
 	if result < 0 {
 		return fmt.Errorf("count below 0: %d", result)
 	}
+	u.activeHealthStats.consecutiveFails.Store(0)
 	return nil
 }
 
 // countHealthFail mutates the recent failures count by
 // delta. It returns an error if the adjustment fails.
-func (h *Host) countHealthFail(delta int) error {
-	result := h.activeFails.Add(int64(delta))
+func (u *Upstream) countHealthFail(delta int) error {
+	if u.activeHealthStats == nil {
+		return fmt.Errorf("active health stats not provisioned for upstream %s", u.String())
+	}
+
+	result := u.activeHealthStats.consecutiveFails.Add(int64(delta))
 	if result < 0 {
 		return fmt.Errorf("count below 0: %d", result)
 	}
+	u.activeHealthStats.consecutivePasses.Store(0)
 	return nil
-}
-
-// resetHealth resets the health check counters.
-func (h *Host) resetHealth() {
-	h.activePasses.Store(0)
-	h.activeFails.Store(0)
 }
 
 // healthy returns true if the upstream is not actively marked as unhealthy.

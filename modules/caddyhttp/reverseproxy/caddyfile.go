@@ -515,6 +515,18 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 			h.HealthChecks.Active.FollowRedirects = true
 
+		case "health_initially_unhealthy":
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+			if h.HealthChecks == nil {
+				h.HealthChecks = new(HealthChecks)
+			}
+			if h.HealthChecks.Active == nil {
+				h.HealthChecks.Active = new(ActiveHealthChecks)
+			}
+			h.HealthChecks.Active.InitiallyUnhealthy = true
+
 		case "health_passes":
 			if !d.NextArg() {
 				return d.ArgErr()

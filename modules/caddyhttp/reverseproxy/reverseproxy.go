@@ -443,6 +443,7 @@ func (h *Handler) Cleanup() error {
 
 	// remove hosts from our config from the pool
 	for _, upstream := range h.Upstreams {
+		upstream.releaseActiveHealthStats()
 		_, _ = hosts.Delete(upstream.String())
 	}
 

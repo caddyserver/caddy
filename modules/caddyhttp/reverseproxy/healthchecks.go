@@ -16,6 +16,7 @@ package reverseproxy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -127,7 +128,10 @@ type ActiveHealthChecks struct {
 	// body of a healthy backend.
 	ExpectBody string `json:"expect_body,omitempty"`
 
-	uri        *url.URL
+	// Whether backends are initially considered unhealthy.
+	InitiallyUnhealthy bool `json:"initially_unhealthy,omitempty"`
+
+	uri        url.URL
 	httpClient *http.Client
 	bodyRegexp *regexp.Regexp
 	logger     *zap.Logger
@@ -163,15 +167,16 @@ func (a *ActiveHealthChecks) Provision(ctx caddy.Context, h *Handler) error {
 
 	if a.Path != "" {
 		a.logger.Warn("the 'path' option is deprecated, please use 'uri' instead!")
+		a.uri.Path = a.Path
 	}
 
-	// parse the URI string (supports path and query)
+	// parse the URI string (supports path and query) and takes precedence over the deprecated Path field
 	if a.URI != "" {
 		parsedURI, err := url.Parse(a.URI)
 		if err != nil {
 			return err
 		}
-		a.uri = parsedURI
+		a.uri = *parsedURI
 	}
 
 	a.httpClient = &http.Client{
@@ -185,7 +190,22 @@ func (a *ActiveHealthChecks) Provision(ctx caddy.Context, h *Handler) error {
 		},
 	}
 
+	if a.Passes < 1 {
+		a.Passes = 1
+	}
+
+	if a.Fails < 1 {
+		a.Fails = 1
+	}
+
 	for _, upstream := range h.Upstreams {
+		upstream.provisionActiveHealthStats(a.uri.String())
+		if a.InitiallyUnhealthy {
+			upstream.setHealthy(upstream.activeHealthPasses() >= a.Passes)
+		} else {
+			upstream.setHealthy(upstream.activeHealthFails() < a.Fails)
+		}
+
 		// if there's an alternative upstream for health-check provided in the config,
 		// then use it, otherwise use the upstream's dial address. if upstream is used,
 		// then the port is ignored.
@@ -208,14 +228,6 @@ func (a *ActiveHealthChecks) Provision(ctx caddy.Context, h *Handler) error {
 		if err != nil {
 			return fmt.Errorf("expect_body: compiling regular expression: %v", err)
 		}
-	}
-
-	if a.Passes < 1 {
-		a.Passes = 1
-	}
-
-	if a.Fails < 1 {
-		a.Fails = 1
 	}
 
 	return nil
@@ -391,8 +403,10 @@ func (h *Handler) doActiveHealthCheckForAllHosts() {
 func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networkAddr string, upstream *Upstream) error {
 	// create the URL for the request that acts as a health check
 	u := &url.URL{
-		Scheme: "http",
-		Host:   hostAddr,
+		Scheme:   "http",
+		Host:     hostAddr,
+		Path:     h.HealthChecks.Active.uri.Path,
+		RawQuery: h.HealthChecks.Active.uri.RawQuery,
 	}
 
 	// split the host and port if possible, override the port if configured
@@ -413,15 +427,6 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 	// override health check schemes if applicable
 	if hcsot, ok := h.Transport.(HealthCheckSchemeOverriderTransport); ok {
 		hcsot.OverrideHealthCheckScheme(u, port)
-	}
-
-	// if we have a provisioned uri, use that, otherwise use
-	// the deprecated Path option
-	if h.HealthChecks.Active.uri != nil {
-		u.Path = h.HealthChecks.Active.uri.Path
-		u.RawQuery = h.HealthChecks.Active.uri.RawQuery
-	} else {
-		u.Path = h.HealthChecks.Active.Path
 	}
 
 	// replacer used for both body and headers. Only globals (env vars, system info, etc.) are available
@@ -463,7 +468,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 
 	markUnhealthy := func() {
 		// increment failures and then check if it has reached the threshold to mark unhealthy
-		err := upstream.Host.countHealthFail(1)
+		err := upstream.countHealthFail(1)
 		if err != nil {
 			if c := h.HealthChecks.Active.logger.Check(zapcore.ErrorLevel, "could not count active health failure"); c != nil {
 				c.Write(
@@ -473,11 +478,10 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 			}
 			return
 		}
-		if upstream.Host.activeHealthFails() >= h.HealthChecks.Active.Fails {
+		if upstream.activeHealthFails() >= h.HealthChecks.Active.Fails {
 			// dispatch an event that the host newly became unhealthy
 			if upstream.setHealthy(false) {
 				h.events.Emit(h.ctx, "unhealthy", map[string]any{"host": hostAddr})
-				upstream.Host.resetHealth()
 			}
 		}
 	}
@@ -494,13 +498,12 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 			}
 			return
 		}
-		if upstream.Host.activeHealthPasses() >= h.HealthChecks.Active.Passes {
+		if upstream.activeHealthPasses() >= h.HealthChecks.Active.Passes {
 			if upstream.setHealthy(true) {
 				if c := h.HealthChecks.Active.logger.Check(zapcore.InfoLevel, "host is up"); c != nil {
 					c.Write(zap.String("host", hostAddr))
 				}
 				h.events.Emit(h.ctx, "healthy", map[string]any{"host": hostAddr})
-				upstream.Host.resetHealth()
 			}
 		}
 	}
@@ -508,6 +511,11 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 	// do the request, being careful to tame the response body
 	resp, err := h.HealthChecks.Active.httpClient.Do(req) //nolint:gosec // no SSRF
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			// context was canceled, so don't count this as a failure
+			return nil
+		}
+
 		if c := h.HealthChecks.Active.logger.Check(zapcore.InfoLevel, "HTTP request failed"); c != nil {
 			c.Write(
 				zap.String("host", hostAddr),
