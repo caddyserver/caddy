@@ -17,7 +17,7 @@ Follow [Go Code Review Comments](https://go.dev/wiki/CodeReviewComments):
   }
   // normal code
   ```
-- **Naming**: Short variables (`c` not `client`), initialisms (`URL`, `HTTP`, `ID`—not `Url`, `Http`, `Id`)
+- **Naming**: initialisms (`URL`, `HTTP`, `ID`—not `Url`, `Http`, `Id`)
 - **Receiver names**: 1–2 letters reflecting type (`c` for `Client`, `h` for `Handler`)
 - **Error strings**: Lowercase, no trailing punctuation (`"something failed"` not `"Something failed."`)
 - **Doc comments**: Full sentences starting with the name being documented
@@ -26,7 +26,6 @@ Follow [Go Code Review Comments](https://go.dev/wiki/CodeReviewComments):
   type Handler struct { ... }
   ```
 - **Empty slices**: `var t []string` (nil slice), not `t := []string{}` (non-nil zero-length)
-- **Error wrapping**: Preserve error chains with `%w`—`fmt.Errorf("loading config: %w", err)`
 - **Don't panic**: Use error returns for normal error handling
 
 ### Caddy Patterns
@@ -116,7 +115,21 @@ Caddy is built around a **module system** where everything is a module registere
 
 `caddyhttp` and `caddytls` require **extra scrutiny** in code review—these are security-critical.
 
-## Build & Test
+## Quality Gates
+
+
+**All required before PR is merge-ready:**
+
+| Gate | Command | Notes |
+|------|---------|-------|
+| Tests pass | `go test -race -short ./...` | Race detection enabled |
+| Lint clean | `golangci-lint run --timeout 10m` | No warnings in changed files |
+| Builds | `go build ./...` | Must compile |
+| Benchmarks | `go test -bench=. -benchmem` | Required for optimizations |
+
+CI runs tests on **Linux, macOS, and Windows**—ensure cross-platform compatibility.
+
+### Build & Test
 
 ```bash
 # Build
@@ -130,23 +143,7 @@ go test ./caddytest/integration/...
 
 # Lint (matches CI)
 golangci-lint run --timeout 10m
-
-# Custom builds with plugins
-xcaddy build --with github.com/example/plugin
 ```
-
-## Quality Gates
-
-**All required before PR is merge-ready:**
-
-| Gate | Command | Notes |
-|------|---------|-------|
-| Tests pass | `go test -race -short ./...` | Race detection enabled |
-| Lint clean | `golangci-lint run --timeout 10m` | No warnings in changed files |
-| Builds | `go build ./...` | Must compile |
-| Benchmarks | `go test -bench=. -benchmem` | Required for optimizations |
-
-CI runs tests on **Linux, macOS, and Windows**—ensure cross-platform compatibility.
 
 ## Testing Conventions
 
@@ -202,6 +199,7 @@ Per [CONTRIBUTING.md](.github/CONTRIBUTING.md), AI-assisted code **MUST** be:
 2. **Fully comprehended** — You must be able to explain every line
 3. **Tested** — Automated tests when feasible, thorough manual tests otherwise
 4. **Licensed** — Verify AI output doesn't include plagiarized or incompatibly-licensed code
+5. **Contributor License Agreement (CLA)** — The CLA must be signed by the human user
 
 **Do NOT submit code you cannot fully explain.** Contributors are responsible for their submissions.
 
