@@ -2,6 +2,8 @@ package integration
 
 import (
 	"bufio"
+	"crypto/sha1"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +16,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/caddyserver/caddy/v2/caddytest"
 )
@@ -1152,4 +1155,127 @@ func TestReverseProxyUnlimitedRequestBuffersRespectMaxSize(t *testing.T) {
 	if n := forwarded.Load(); n != 0 {
 		t.Errorf("upstream received %d complete request bodies, want 0", n)
 	}
+}
+
+// TestReverseProxyWebSocketUpgradeUnixSocket verifies that a WebSocket
+// upgrade is proxied to a unix socket upstream, and that the upgraded
+// connection carries data in both directions
+func TestReverseProxyWebSocketUpgradeUnixSocket(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.SkipNow()
+	}
+
+	f, err := os.CreateTemp("", "*.sock")
+	if err != nil {
+		t.Fatalf("failed to create temporary socket file: %v", err)
+	}
+	_ = os.Remove(f.Name())
+	socketName := f.Name()
+
+	// upstream completes the handshake, then echoes everything it reads
+	backend := http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if !strings.EqualFold(req.Header.Get("Upgrade"), "websocket") {
+				http.Error(w, "missing websocket upgrade headers", http.StatusBadRequest)
+				return
+			}
+			wsKey := req.Header.Get("Sec-WebSocket-Key")
+			if wsKey == "" {
+				http.Error(w, "missing Sec-WebSocket-Key", http.StatusBadRequest)
+				return
+			}
+
+			conn, brw, err := http.NewResponseController(w).Hijack()
+			if err != nil {
+				return
+			}
+			defer conn.Close()
+
+			_, _ = brw.WriteString("HTTP/1.1 101 Switching Protocols\r\n" +
+				"Upgrade: websocket\r\n" +
+				"Connection: Upgrade\r\n" +
+				"Sec-WebSocket-Accept: " + computeWebSocketAccept(wsKey) + "\r\n" +
+				"\r\n")
+			if brw.Flush() != nil {
+				return
+			}
+			_, _ = io.Copy(conn, brw)
+		}),
+	}
+
+	unixListener, err := net.Listen("unix", socketName)
+	if err != nil {
+		t.Fatalf("failed to listen on unix socket: %v", err)
+	}
+	go backend.Serve(unixListener)
+	t.Cleanup(func() {
+		_ = backend.Close()
+		_ = unixListener.Close()
+		_ = os.Remove(socketName)
+	})
+
+	tester := caddytest.NewTester(t)
+	tester.InitServer(fmt.Sprintf(`
+	{
+		skip_install_trust
+		admin localhost:2999
+		http_port     9080
+		https_port    9443
+		grace_period 1ns
+	}
+	http://localhost:9080 {
+		reverse_proxy unix/%s
+	}
+	`, socketName), "caddyfile")
+
+	conn, err := net.Dial("tcp", "127.0.0.1:9080")
+	if err != nil {
+		t.Fatalf("failed to dial caddy listener: %v", err)
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
+
+	const wsKey = "dGhlIHNhbXBsZSBub25jZQ=="
+	if _, err := io.WriteString(conn, "GET /ws HTTP/1.1\r\n"+
+		"Host: localhost:9080\r\n"+
+		"Connection: Upgrade\r\n"+
+		"Upgrade: websocket\r\n"+
+		"Sec-WebSocket-Version: 13\r\n"+
+		"Sec-WebSocket-Key: "+wsKey+"\r\n"+
+		"\r\n"); err != nil {
+		t.Fatalf("failed to send websocket handshake request: %v", err)
+	}
+
+	br := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(br, nil)
+	if err != nil {
+		t.Fatalf("failed to read handshake response: %v", err)
+	}
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("unexpected status: got %d, want %d", resp.StatusCode, http.StatusSwitchingProtocols)
+	}
+	if got := resp.Header.Get("Upgrade"); !strings.EqualFold(got, "websocket") {
+		t.Fatalf("unexpected Upgrade header: %q", got)
+	}
+	if got, want := resp.Header.Get("Sec-WebSocket-Accept"), computeWebSocketAccept(wsKey); got != want {
+		t.Fatalf("unexpected Sec-WebSocket-Accept header: got %q, want %q", got, want)
+	}
+
+	// the payload doesn't need to be framed; the proxy just tunnels bytes
+	const payload = "hello over unix socket"
+	if _, err := io.WriteString(conn, payload); err != nil {
+		t.Fatalf("failed to write to upgraded connection: %v", err)
+	}
+	echo := make([]byte, len(payload))
+	if _, err := io.ReadFull(br, echo); err != nil {
+		t.Fatalf("failed to read from upgraded connection: %v", err)
+	}
+	if string(echo) != payload {
+		t.Fatalf("unexpected echo: got %q, want %q", echo, payload)
+	}
+}
+
+func computeWebSocketAccept(wsKey string) string {
+	h := sha1.Sum([]byte(wsKey + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"))
+	return base64.StdEncoding.EncodeToString(h[:])
 }
