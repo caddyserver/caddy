@@ -174,7 +174,7 @@ func (u *Upstream) fillDynamicHost() {
 // Host is the basic, in-memory representation of the state of a remote host.
 // Its fields are accessed atomically and Host values must not be copied.
 type Host struct {
-	numRequests  atomic.Int64 // atomic.Int64 is automatically aligned for us (see https://golang.org/pkg/sync/atomic/#pkg-note-BUG)
+	numRequests  atomic.Int64
 	fails        atomic.Int64
 	activePasses atomic.Int64
 	activeFails  atomic.Int64
@@ -250,7 +250,6 @@ func (h *Host) resetHealth() {
 // (This returns the status only from the "active" health checks.)
 func (u *Upstream) healthy() bool {
 	return u.unhealthy.Load() == 0
-	// return atomic.LoadInt32(&u.unhealthy) == 0
 }
 
 // SetHealthy sets the upstream has healthy or unhealthy

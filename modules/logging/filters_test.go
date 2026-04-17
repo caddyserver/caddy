@@ -8,7 +8,7 @@ import (
 	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/caddyserver/caddy/v2/internal"
 )
 
 func TestIPMaskSingleValue(t *testing.T) {
@@ -55,11 +55,11 @@ func TestIPMaskMultiValue(t *testing.T) {
 	f := IPMaskFilter{IPv4MaskRaw: 16, IPv6MaskRaw: 32}
 	f.Provision(caddy.Context{})
 
-	out := f.Filter(zapcore.Field{Interface: caddyhttp.LoggableStringArray{
+	out := f.Filter(zapcore.Field{Interface: internal.LoggableStringArray{
 		"255.255.255.255",
 		"244.244.244.244",
 	}})
-	arr, ok := out.Interface.(caddyhttp.LoggableStringArray)
+	arr, ok := out.Interface.(internal.LoggableStringArray)
 	if !ok {
 		t.Fatalf("field is wrong type: %T", out.Integer)
 	}
@@ -70,11 +70,11 @@ func TestIPMaskMultiValue(t *testing.T) {
 		t.Fatalf("field entry 1 has not been filtered: %s", arr[1])
 	}
 
-	out = f.Filter(zapcore.Field{Interface: caddyhttp.LoggableStringArray{
+	out = f.Filter(zapcore.Field{Interface: internal.LoggableStringArray{
 		"ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
 		"ff00:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
 	}})
-	arr, ok = out.Interface.(caddyhttp.LoggableStringArray)
+	arr, ok = out.Interface.(internal.LoggableStringArray)
 	if !ok {
 		t.Fatalf("field is wrong type: %T", out.Integer)
 	}
@@ -120,11 +120,11 @@ func TestQueryFilterMultiValue(t *testing.T) {
 		t.Fatalf("the filter must be valid")
 	}
 
-	out := f.Filter(zapcore.Field{Interface: caddyhttp.LoggableStringArray{
+	out := f.Filter(zapcore.Field{Interface: internal.LoggableStringArray{
 		"/path1?foo=a&foo=b&bar=c&bar=d&baz=e&hash=hashed",
 		"/path2?foo=c&foo=d&bar=e&bar=f&baz=g&hash=hashed",
 	}})
-	arr, ok := out.Interface.(caddyhttp.LoggableStringArray)
+	arr, ok := out.Interface.(internal.LoggableStringArray)
 	if !ok {
 		t.Fatalf("field is wrong type: %T", out.Interface)
 	}
@@ -162,11 +162,11 @@ func TestCookieFilter(t *testing.T) {
 		{hashAction, "hash", ""},
 	}}
 
-	out := f.Filter(zapcore.Field{Interface: caddyhttp.LoggableStringArray{
+	out := f.Filter(zapcore.Field{Interface: internal.LoggableStringArray{
 		"foo=a; foo=b; bar=c; bar=d; baz=e; hash=hashed",
 	}})
-	outval := out.Interface.(caddyhttp.LoggableStringArray)
-	expected := caddyhttp.LoggableStringArray{
+	outval := out.Interface.(internal.LoggableStringArray)
+	expected := internal.LoggableStringArray{
 		"foo=REDACTED; foo=REDACTED; baz=e; hash=1a06df82",
 	}
 	if outval[0] != expected[0] {
@@ -204,8 +204,8 @@ func TestRegexpFilterMultiValue(t *testing.T) {
 	f := RegexpFilter{RawRegexp: `secret`, Value: "REDACTED"}
 	f.Provision(caddy.Context{})
 
-	out := f.Filter(zapcore.Field{Interface: caddyhttp.LoggableStringArray{"foo-secret-bar", "bar-secret-foo"}})
-	arr, ok := out.Interface.(caddyhttp.LoggableStringArray)
+	out := f.Filter(zapcore.Field{Interface: internal.LoggableStringArray{"foo-secret-bar", "bar-secret-foo"}})
+	arr, ok := out.Interface.(internal.LoggableStringArray)
 	if !ok {
 		t.Fatalf("field is wrong type: %T", out.Integer)
 	}
@@ -229,8 +229,8 @@ func TestHashFilterSingleValue(t *testing.T) {
 func TestHashFilterMultiValue(t *testing.T) {
 	f := HashFilter{}
 
-	out := f.Filter(zapcore.Field{Interface: caddyhttp.LoggableStringArray{"foo", "bar"}})
-	arr, ok := out.Interface.(caddyhttp.LoggableStringArray)
+	out := f.Filter(zapcore.Field{Interface: internal.LoggableStringArray{"foo", "bar"}})
+	arr, ok := out.Interface.(internal.LoggableStringArray)
 	if !ok {
 		t.Fatalf("field is wrong type: %T", out.Integer)
 	}
@@ -292,11 +292,11 @@ func TestMultiRegexpFilterMultiValue(t *testing.T) {
 		t.Fatalf("unexpected error provisioning: %v", err)
 	}
 
-	out := f.Filter(zapcore.Field{Interface: caddyhttp.LoggableStringArray{
+	out := f.Filter(zapcore.Field{Interface: internal.LoggableStringArray{
 		"foo-secret-123",
 		"bar-secret-456",
 	}})
-	arr, ok := out.Interface.(caddyhttp.LoggableStringArray)
+	arr, ok := out.Interface.(internal.LoggableStringArray)
 	if !ok {
 		t.Fatalf("field is wrong type: %T", out.Interface)
 	}
