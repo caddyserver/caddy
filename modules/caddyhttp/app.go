@@ -69,6 +69,7 @@ func init() {
 // `{http.request.orig_uri.path.dir}` | The request's original directory
 // `{http.request.orig_uri.path.file}` | The request's original filename
 // `{http.request.orig_uri.query}` | The request's original query string (without `?`)
+// `{http.request.orig_uri.prefixed_query}` | The request's original query string with a `?` prefix, if non-empty
 // `{http.request.port}` | The port part of the request's Host header
 // `{http.request.proto}` | The protocol of the request
 // `{http.request.local.host}` | The host (IP) part of the local address the connection arrived on
@@ -98,11 +99,15 @@ func init() {
 // `{http.request.tls.client.san.ips.*}` | SAN IP addresses (index optional)
 // `{http.request.tls.client.san.uris.*}` | SAN URIs (index optional)
 // `{http.request.uri}` | The full request URI
+// `{http.request.uri_escaped}` | The full request URI with query-style URL encoding applied (using url.QueryEscape)
 // `{http.request.uri.path}` | The path component of the request URI
+// `{http.request.uri.path_escaped}` | The path component of the request URI with query-style URL encoding applied (using url.QueryEscape)
 // `{http.request.uri.path.*}` | Parts of the path, split by `/` (0-based from left)
 // `{http.request.uri.path.dir}` | The directory, excluding leaf filename
 // `{http.request.uri.path.file}` | The filename of the path, excluding directory
 // `{http.request.uri.query}` | The query string (without `?`)
+// `{http.request.uri.query_escaped}` | The query string with query-style URL encoding applied (using url.QueryEscape)
+// `{http.request.uri.prefixed_query}` | The query string with a `?` prefix, if non-empty
 // `{http.request.uri.query.*}` | Individual query string value
 // `{http.response.header.*}` | Specific response header field
 // `{http.vars.*}` | Custom variables in the HTTP handler chain
