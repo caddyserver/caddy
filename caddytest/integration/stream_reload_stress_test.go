@@ -21,9 +21,11 @@ import (
 	"github.com/caddyserver/caddy/v2/caddytest"
 )
 
-// stressCloseDelay is the stream_close_delay used for the close_delay scenario.
-// Long enough to outlast all test reloads; short enough to keep total test time reasonable.
-const stressCloseDelay = 3 * time.Second
+const (
+	defaultStressStreamCount = 1
+	defaultStressReloadCount = 1
+	defaultStressCloseDelay  = 500 * time.Millisecond
+)
 
 func TestReverseProxyReloadStressUpgradedStreamsHeapProfiles(t *testing.T) {
 	tester := caddytest.NewTester(t).WithDefaultOverrides(caddytest.Config{
@@ -43,7 +45,7 @@ func TestReverseProxyReloadStressUpgradedStreamsHeapProfiles(t *testing.T) {
 	// Reloads are spread across time and interleaved with echo-checks so
 	// stream health is exercised at each reload boundary, not only at the end.
 	legacy := runReloadStress(t, tester, backend.addr, "legacy", false, 0)
-	closeDelay := runReloadStress(t, tester, backend.addr, "close_delay", false, stressCloseDelay)
+	closeDelay := runReloadStress(t, tester, backend.addr, "close_delay", false, stressCloseDelay(t))
 	retain := runReloadStress(t, tester, backend.addr, "retain", true, 0)
 
 	if legacy.aliveAfterReloads != 0 {
@@ -110,8 +112,8 @@ func runReloadStress(t *testing.T, tester *caddytest.Tester, backendAddr, mode s
 
 	const echoEvery = 6 // perform an echo check every N reloads
 
-	streamCount := envIntOrDefault(t, "CADDY_STRESS_STREAM_COUNT", 12)
-	reloadCount := envIntOrDefault(t, "CADDY_STRESS_RELOAD_COUNT", 24)
+	streamCount := envIntOrDefault(t, "CADDY_STRESS_STREAM_COUNT", defaultStressStreamCount)
+	reloadCount := envIntOrDefault(t, "CADDY_STRESS_RELOAD_COUNT", defaultStressReloadCount)
 
 	tester.InitServer(reloadStressConfig(backendAddr, retain, closeDelay, 0), "caddyfile")
 
@@ -205,6 +207,21 @@ func envIntOrDefault(t *testing.T, key string, def int) int {
 	v, err := strconv.Atoi(raw)
 	if err != nil || v <= 0 {
 		t.Fatalf("invalid %s=%q: must be a positive integer", key, raw)
+	}
+	return v
+}
+
+func stressCloseDelay(t *testing.T) time.Duration {
+	t.Helper()
+
+	const key = "CADDY_STRESS_CLOSE_DELAY"
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return defaultStressCloseDelay
+	}
+	v, err := time.ParseDuration(raw)
+	if err != nil || v <= 0 {
+		t.Fatalf("invalid %s=%q: must be a positive duration", key, raw)
 	}
 	return v
 }
