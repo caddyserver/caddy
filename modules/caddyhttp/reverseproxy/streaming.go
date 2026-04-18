@@ -100,14 +100,14 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 	streamTimeout := time.Duration(h.StreamTimeout)
 
 	var (
-		conn io.ReadWriteCloser
-		brw  *bufio.ReadWriter
-		isH2 bool
+		conn              io.ReadWriteCloser
+		brw               *bufio.ReadWriter
+		isExtendedConnect bool
 	)
 	// websocket over http2 or http3 if extended connect is enabled, assuming backend doesn't support this, the request will be modified to http1.1 upgrade
 	// TODO: once we can reliably detect backend support this, it can be removed for those backends
 	if body, ok := caddyhttp.GetVar(req.Context(), "extended_connect_websocket_body").(io.ReadCloser); ok {
-		isH2 = true
+		isExtendedConnect = true
 		req.Body = body
 		rw.Header().Del("Upgrade")
 		rw.Header().Del("Connection")
@@ -115,13 +115,13 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 		rw.WriteHeader(http.StatusOK)
 
 		if c := logger.Check(zap.DebugLevel, "upgrading connection"); c != nil {
-			c.Write(zap.Int("http_version", 2))
+			c.Write(zap.Int("http_version", req.ProtoMajor))
 		}
 
 		//nolint:bodyclose
 		flushErr := http.NewResponseController(rw).Flush()
 		if flushErr != nil {
-			if c := h.logger.Check(zap.ErrorLevel, "failed to flush http2 websocket response"); c != nil {
+			if c := h.logger.Check(zap.ErrorLevel, "failed to flush extended_connect websocket response"); c != nil {
 				c.Write(zap.Error(flushErr))
 			}
 			return
@@ -152,25 +152,6 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 			}
 			return
 		}
-	}
-
-	// For H2 extended connect: close backConn when the request context is
-	// cancelled (e.g. client disconnects). For HTTP/1.1 hijacked connections
-	// we skip this because req.Context() may be cancelled when ServeHTTP
-	// returns early, which would prematurely close the backend connection.
-	if isH2 {
-		// adopted from https://github.com/golang/go/commit/8bcf2834afdf6a1f7937390903a41518715ef6f5
-		backConnCloseCh := make(chan struct{})
-		go func() {
-			// Ensure that the cancellation of a request closes the backend.
-			// See issue https://golang.org/issue/35559.
-			select {
-			case <-req.Context().Done():
-			case <-backConnCloseCh:
-			}
-			backConn.Close()
-		}()
-		defer close(backConnCloseCh)
 	}
 
 	if err := brw.Flush(); err != nil {
@@ -221,8 +202,8 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 
 	start := time.Now()
 
-	if isH2 {
-		h.handleH2UpgradeTunnel(streamLogger, streamLevel, wg, conn, backConn, deleteFrontConn, deleteBackConn, bufferSize, streamTimeout, start, finishMetrics, streamFields)
+	if isExtendedConnect {
+		h.handleExtendedConnectUpgradeTunnel(streamLogger, streamLevel, wg, conn, backConn, deleteFrontConn, deleteBackConn, bufferSize, streamTimeout, start, finishMetrics, streamFields)
 	} else {
 		h.handleDetachedUpgradeTunnel(streamLogger, streamLevel, conn, backConn, deleteFrontConn, deleteBackConn, bufferSize, streamTimeout, start, finishMetrics, streamFields)
 		// Return immediately without touching wg. finalizeResponse's
@@ -230,7 +211,7 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 	}
 }
 
-func (h *Handler) handleH2UpgradeTunnel(
+func (h *Handler) handleExtendedConnectUpgradeTunnel(
 	streamLogger *zap.Logger,
 	streamLevel zapcore.Level,
 	wg *sync.WaitGroup,
@@ -244,7 +225,7 @@ func (h *Handler) handleH2UpgradeTunnel(
 	finishMetrics func(result string, duration time.Duration, toBackend, fromBackend int64),
 	streamFields []zap.Field,
 ) {
-	// H2 extended connect: ServeHTTP must block because rw and req.Body are
+	// Extended CONNECT: ServeHTTP must block because rw and req.Body are
 	// only valid while the handler goroutine is running. Defers clean up
 	// when the select below fires and this function returns.
 	defer deleteBackConn()
