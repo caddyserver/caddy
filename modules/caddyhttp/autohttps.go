@@ -551,43 +551,14 @@ func (app *App) makeRedirRoute(redirToPort uint, matcherSet MatcherSet) Route {
 }
 
 func httpsRRALPNs(srv *Server) []string {
-	// Automatic HTTPS runs before server provisioning fills in the default
-	// protocols, so derive the effective set directly from the raw config here.
-	serverProtocols := srv.protocolsWithDefaults()
-
-	protocols := make(map[string]struct{}, len(serverProtocols))
-	if srv.ListenProtocols == nil {
-		for _, protocol := range serverProtocols {
-			protocols[protocol] = struct{}{}
-		}
-	} else {
-		for _, lnProtocols := range srv.ListenProtocols {
-			if len(lnProtocols) == 0 {
-				for _, protocol := range serverProtocols {
-					protocols[protocol] = struct{}{}
-				}
-				continue
-			}
-			for _, protocol := range lnProtocols {
-				if protocol == "" {
-					for _, inherited := range serverProtocols {
-						protocols[inherited] = struct{}{}
-					}
-					continue
-				}
-				protocols[protocol] = struct{}{}
-			}
-		}
-	}
-
 	alpn := make(map[string]struct{}, 3)
-	if _, ok := protocols["h3"]; ok {
+	if srv.protocol("h3") {
 		alpn["h3"] = struct{}{}
 	}
-	if _, ok := protocols["h2"]; ok {
+	if srv.protocol("h2") {
 		alpn["h2"] = struct{}{}
 	}
-	if _, ok := protocols["h1"]; ok {
+	if srv.protocol("h1") {
 		alpn["http/1.1"] = struct{}{}
 	}
 	return caddytls.OrderedHTTPSRRALPN(alpn)

@@ -22,7 +22,8 @@ func TestHTTPSRRALPNsListenProtocolOverrides(t *testing.T) {
 		ListenProtocols: [][]string{
 			{"h1"},
 			nil,
-			{"h2c", "h3"},
+			{},
+			{"h3", ""},
 		},
 	}
 
