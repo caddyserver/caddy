@@ -574,6 +574,15 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	// get the updated list of upstreams
 	upstreams := h.Upstreams
 	if h.DynamicUpstreams != nil {
+		if retries > 0 {
+			if cachingDynamicUpstreams, ok := h.DynamicUpstreams.(cachingUpstreamSource); ok {
+				if err := cachingDynamicUpstreams.ResetCache(r); err != nil {
+					if c := h.logger.Check(zapcore.ErrorLevel, "failed clearing dynamic upstream source's cache"); c != nil {
+						c.Write(zap.Error(err))
+					}
+				}
+			}
+		}
 		dUpstreams, err := h.DynamicUpstreams.GetUpstreams(r)
 		if err != nil {
 			if c := h.logger.Check(zapcore.ErrorLevel, "failed getting dynamic upstreams; falling back to static upstreams"); c != nil {
@@ -1588,6 +1597,13 @@ type Selector interface {
 // modified.
 type UpstreamSource interface {
 	GetUpstreams(*http.Request) ([]*Upstream, error)
+}
+
+// cachingUpstreamSource is an upstream source that caches its upstreams.
+// EXPERIMENTAL: Subject to change.
+type cachingUpstreamSource interface {
+	UpstreamSource
+	ResetCache(*http.Request) error
 }
 
 // Hop-by-hop headers. These are removed when sent to the backend.

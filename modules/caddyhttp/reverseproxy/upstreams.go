@@ -119,6 +119,18 @@ func (su *SRVUpstreams) Provision(ctx caddy.Context) error {
 	return nil
 }
 
+func (su *SRVUpstreams) ResetCache(r *http.Request) error {
+	srvsMu.Lock()
+	if r == nil {
+		srvs = make(map[string]srvLookup)
+	} else {
+		suAddr, _, _, _ := su.expandedAddr(r)
+		delete(srvs, suAddr)
+	}
+	srvsMu.Unlock()
+	return nil
+}
+
 func (su SRVUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 	suAddr, service, proto, name := su.expandedAddr(r)
 
@@ -554,8 +566,9 @@ var (
 
 // Interface guards
 var (
-	_ caddy.Provisioner = (*SRVUpstreams)(nil)
-	_ UpstreamSource    = (*SRVUpstreams)(nil)
-	_ caddy.Provisioner = (*AUpstreams)(nil)
-	_ UpstreamSource    = (*AUpstreams)(nil)
+	_ caddy.Provisioner     = (*SRVUpstreams)(nil)
+	_ UpstreamSource        = (*SRVUpstreams)(nil)
+	_ cachingUpstreamSource = (*SRVUpstreams)(nil)
+	_ caddy.Provisioner     = (*AUpstreams)(nil)
+	_ UpstreamSource        = (*AUpstreams)(nil)
 )
