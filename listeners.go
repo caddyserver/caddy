@@ -58,6 +58,42 @@ type NetworkAddress struct {
 	EndPort   uint
 }
 
+func (na NetworkAddress) ConflictsWith(other NetworkAddress) bool {
+	// 1. Check if networks conflict (e.g., tcp vs tcp4 vs tcp6)
+	// If one is udp and the other is tcp, they don't conflict.
+	isTCP1 := strings.HasPrefix(na.Network, "tcp")
+	isTCP2 := strings.HasPrefix(other.Network, "tcp")
+	isUDP1 := strings.HasPrefix(na.Network, "udp")
+	isUDP2 := strings.HasPrefix(other.Network, "udp")
+	if (isTCP1 && !isTCP2) || (isUDP1 && !isUDP2) {
+		return false
+	}
+
+	// 2. Check if ports overlap
+	portsOverlap := na.StartPort <= other.EndPort && na.EndPort >= other.StartPort
+	if !portsOverlap {
+		return false
+	}
+
+	// 3. Check if hosts overlap
+	// An empty host means "all interfaces" (0.0.0.0), which conflicts with everything.
+	if na.Host == "" || other.Host == "" {
+		return true
+	}
+
+	// Normalize localhost and 127.0.0.1 to be treated as the same
+	host1 := na.Host
+	host2 := other.Host
+	if host1 == "localhost" {
+		host1 = "127.0.0.1"
+	}
+	if host2 == "localhost" {
+		host2 = "127.0.0.1"
+	}
+
+	return host1 == host2
+}
+
 // ListenAll calls Listen for all addresses represented by this struct, i.e. all ports in the range.
 // (If the address doesn't use ports or has 1 port only, then only 1 listener will be created.)
 // It returns an error if any listener failed to bind, and closes any listeners opened up to that point.
