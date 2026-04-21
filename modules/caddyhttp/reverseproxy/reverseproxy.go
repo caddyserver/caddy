@@ -1600,9 +1600,16 @@ type UpstreamSource interface {
 }
 
 // cachingUpstreamSource is an upstream source that caches its upstreams.
+// The relevant cache entry can be cleared/reset for a given request during
+// retries if a request fails. This can help ensure that down backends are
+// not retried.
 // EXPERIMENTAL: Subject to change.
 type cachingUpstreamSource interface {
 	UpstreamSource
+
+	// ResetCache clears any cached entry related to the given request.
+	// The next time GetUpstreams is called, it should have new upstream
+	// information for the given request.
 	ResetCache(*http.Request) error
 }
 
