@@ -322,6 +322,10 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 		}
 	}
 
+	if h.StreamRetainOnReload {
+		registerDetachedTunnelStates(h.tunnel)
+	}
+
 	// warn about unsafe buffering config
 	if h.RequestBuffers == -1 || h.ResponseBuffers == -1 {
 		h.logger.Warn("UNLIMITED BUFFERING: buffering is enabled without any cap on buffer size, which can result in OOM crashes")
@@ -522,19 +526,40 @@ func (h Handler) streamLoggerForRequest(req *http.Request) *zap.Logger {
 	return caddy.Log().Named(name)
 }
 
-// Cleanup cleans up the resources made by h.
-func (h *Handler) Cleanup() error {
-	if !h.StreamRetainOnReload {
-		// Legacy behavior: close all upgraded connections on reload, either
-		// immediately or after StreamCloseDelay.
-		err := h.tunnel.cleanupConnections()
-		for _, upstream := range h.Upstreams {
-			_, _ = hosts.Delete(upstream.String())
-		}
-		return err
-	}
+var (
+	detachedTunnelStates   = make(map[*tunnelState]struct{})
+	detachedTunnelStatesMu sync.Mutex
+)
+
+func registerDetachedTunnelStates(ts *tunnelState) {
+	detachedTunnelStatesMu.Lock()
+	defer detachedTunnelStatesMu.Unlock()
+	detachedTunnelStates[ts] = struct{}{}
+}
+
+func notifyDetachedTunnelStatesOfUpstreamRemoval(upstream string, self *tunnelState) error {
+	detachedTunnelStatesMu.Lock()
+	defer detachedTunnelStatesMu.Unlock()
 
 	var err error
+	for tunnel := range detachedTunnelStates {
+		if closeErr := tunnel.closeConnectionsForUpstream(upstream); closeErr != nil && tunnel == self && err == nil {
+			err = closeErr
+		}
+	}
+	return err
+}
+
+func unregisterDetachedTunnelStates(ts *tunnelState) {
+	detachedTunnelStatesMu.Lock()
+	defer detachedTunnelStatesMu.Unlock()
+	delete(detachedTunnelStates, ts)
+}
+
+// Cleanup cleans up the resources made by h.
+func (h *Handler) Cleanup() error {
+	// even if StreamRetainOnReload is true, extended connect websockets may still be running
+	err := h.tunnel.cleanupAttachedConnections()
 	for _, upstream := range h.Upstreams {
 		// hosts.Delete returns deleted=true when the ref count reaches zero,
 		// meaning no other active config references this upstream. In that
@@ -542,7 +567,7 @@ func (h *Handler) Cleanup() error {
 		// to their natural end since the upstream is still in use.
 		deleted, _ := hosts.Delete(upstream.String())
 		if deleted {
-			if closeErr := h.tunnel.closeConnectionsForUpstream(upstream.String()); closeErr != nil && err == nil {
+			if closeErr := notifyDetachedTunnelStatesOfUpstreamRemoval(upstream.String(), h.tunnel); closeErr != nil && err == nil {
 				err = closeErr
 			}
 		}
