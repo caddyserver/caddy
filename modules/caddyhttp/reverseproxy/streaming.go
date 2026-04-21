@@ -99,7 +99,7 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 	bufferSize := h.StreamBufferSize
 	streamTimeout := time.Duration(h.StreamTimeout)
 
-	if h.StreamRetainOnReload {
+	if h.StreamDetached {
 		// the return value should be true as it's not hijacked yet,
 		// but some middleware may wrap response writers incorrectly
 		if !caddyhttp.DetachResponseWriterAfterHijack(rw, true) {
@@ -112,7 +112,7 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 	var (
 		conn     io.ReadWriteCloser
 		brw      *bufio.ReadWriter
-		detached = h.StreamRetainOnReload
+		detached = h.StreamDetached
 	)
 	// websocket over http2 or http3 if extended connect is enabled,
 	// assuming backend doesn't support this, the request will be
