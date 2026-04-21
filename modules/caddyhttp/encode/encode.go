@@ -422,18 +422,11 @@ func (rw *responseWriter) Close() error {
 	var err error
 	if rw.w != nil {
 		err = rw.w.Close()
-		rw.releaseEncoder()
+		rw.w.Reset(nil)
+		rw.config.writerPools[rw.encodingName].Put(rw.w)
+		rw.w = nil
 	}
 	return err
-}
-
-func (rw *responseWriter) releaseEncoder() {
-	if rw.w == nil {
-		return
-	}
-	rw.w.Reset(nil)
-	rw.config.writerPools[rw.encodingName].Put(rw.w)
-	rw.w = nil
 }
 
 // Unwrap returns the underlying ResponseWriter.

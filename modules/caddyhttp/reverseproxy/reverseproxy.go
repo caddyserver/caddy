@@ -191,6 +191,9 @@ type Handler struct {
 	// Connections using upstreams that are removed are closed during cleanup.
 	// By default this is false, preserving legacy behavior where upgraded
 	// connections are closed on reload (optionally delayed by stream_close_delay).
+	// Only http1.1 websocket connections are affected, websockets for h2/h3 are not affected.
+	// If true, bytes transferred for http1.1 in the access logs will be zero but those stats
+	// can be found in the stream logs for http1/2/3 regardless if this is enabled.
 	StreamRetainOnReload bool `json:"stream_retain_on_reload,omitempty"`
 
 	// Controls logging behavior for upgraded stream lifecycle events.
@@ -1274,9 +1277,7 @@ func (h *Handler) finalizeResponse(
 ) error {
 	// deal with 101 Switching Protocols responses: (WebSocket, h2c, etc)
 	if res.StatusCode == http.StatusSwitchingProtocols {
-		var wg sync.WaitGroup
-		h.handleUpgradeResponse(logger, &wg, rw, req, res, upstreamAddr)
-		wg.Wait()
+		h.handleUpgradeResponse(logger, rw, req, res, upstreamAddr)
 		return nil
 	}
 
