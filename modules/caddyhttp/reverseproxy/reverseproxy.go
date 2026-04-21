@@ -266,29 +266,6 @@ type Handler struct {
 	streamLogLoggerName string
 }
 
-// StreamLogs controls logging for upgraded stream lifecycle events.
-type StreamLogs struct {
-	// The minimum level at which stream lifecycle events are logged.
-	// Supported values are debug, info, warn, and error. Default: debug.
-	Level string `json:"level,omitempty"`
-
-	// Logger name for stream lifecycle logs. Default: "http.handlers.reverse_proxy.stream".
-	// Special value "access" uses the access logger namespace and, if set,
-	// respects the first value in access_logger_names/log_name for the request.
-	LoggerName string `json:"logger_name,omitempty"`
-
-	// If true, suppresses the access log entry normally emitted when an
-	// upgraded stream handshake completes and the request unwinds.
-	SkipHandshake bool `json:"skip_handshake,omitempty"`
-}
-
-const (
-	defaultStreamLogLevel     = zapcore.DebugLevel
-	defaultStreamLoggerName   = "http.handlers.reverse_proxy.stream"
-	streamLoggerNameUseAccess = "access"
-	defaultAccessLoggerBase   = "http.log.access"
-)
-
 // CaddyModule returns the Caddy module information.
 func (Handler) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
@@ -1891,6 +1868,22 @@ func (brc bodyReadCloser) Close() error {
 	return nil
 }
 
+// StreamLogs controls logging for upgraded stream lifecycle events.
+type StreamLogs struct {
+	// The minimum level at which stream lifecycle events are logged.
+	// Supported values are debug, info, warn, and error. Default: debug.
+	Level string `json:"level,omitempty"`
+
+	// Logger name for stream lifecycle logs. Default: "http.handlers.reverse_proxy.stream".
+	// Special value "access" uses the access logger namespace and, if set,
+	// respects the first value in access_logger_names/log_name for the request.
+	LoggerName string `json:"logger_name,omitempty"`
+
+	// If true, suppresses the access log entry normally emitted when an
+	// upgraded stream handshake completes and the request unwinds.
+	SkipHandshake bool `json:"skip_handshake,omitempty"`
+}
+
 // bufPool is used for buffering requests and responses.
 var bufPool = sync.Pool{
 	New: func() any {
@@ -1935,6 +1928,13 @@ const proxyHandleResponseContextCtxKey caddy.CtxKey = "reverse_proxy_handle_resp
 
 // errNoUpstream occurs when there are no upstream available.
 var errNoUpstream = fmt.Errorf("no upstreams available")
+
+const (
+	defaultStreamLogLevel     = zapcore.DebugLevel
+	defaultStreamLoggerName   = "http.handlers.reverse_proxy.stream"
+	streamLoggerNameUseAccess = "access"
+	defaultAccessLoggerBase   = "http.log.access"
+)
 
 // Interface guards
 var (
