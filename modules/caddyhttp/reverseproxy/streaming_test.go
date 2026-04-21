@@ -121,8 +121,8 @@ func TestHandlerCleanupLegacyModeClosesAllConnections(t *testing.T) {
 	ts.registerConnection(connB, nil, false, "b")
 
 	h := &Handler{
-		tunnelTracker:        ts,
-		StreamRetainOnReload: false,
+		tunnelTracker:  ts,
+		StreamDetached: false,
 	}
 
 	if err := h.Cleanup(); err != nil {
@@ -139,8 +139,8 @@ func TestHandlerCleanupLegacyModeHonorsDelay(t *testing.T) {
 	ts.registerConnection(conn, nil, false, "a")
 
 	h := &Handler{
-		tunnelTracker:        ts,
-		StreamRetainOnReload: false,
+		tunnelTracker:  ts,
+		StreamDetached: false,
 	}
 
 	if err := h.Cleanup(); err != nil {
@@ -157,7 +157,7 @@ func TestHandlerCleanupLegacyModeHonorsDelay(t *testing.T) {
 	}
 }
 
-func TestHandlerCleanupRetainModeClosesOnlyRemovedUpstreams(t *testing.T) {
+func TestHandlerCleanupDetachedModeClosesOnlyRemovedUpstreams(t *testing.T) {
 	const upstreamA = "upstream-a"
 	const upstreamB = "upstream-b"
 
@@ -180,8 +180,8 @@ func TestHandlerCleanupRetainModeClosesOnlyRemovedUpstreams(t *testing.T) {
 	ts.registerConnection(connB, nil, true, upstreamB)
 
 	h := &Handler{
-		tunnelTracker:        ts,
-		StreamRetainOnReload: true,
+		tunnelTracker:  ts,
+		StreamDetached: true,
 		Upstreams: UpstreamPool{
 			&Upstream{Dial: upstreamA},
 			&Upstream{Dial: upstreamB},
@@ -193,7 +193,7 @@ func TestHandlerCleanupRetainModeClosesOnlyRemovedUpstreams(t *testing.T) {
 	}
 
 	if connA.isClosed() {
-		t.Fatal("connection for retained upstream should remain open")
+		t.Fatal("connection for detached upstream should remain open")
 	}
 	if !connB.isClosed() {
 		t.Fatal("connection for removed upstream should be closed")

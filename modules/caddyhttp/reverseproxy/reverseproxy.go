@@ -186,15 +186,17 @@ type Handler struct {
 	// by the previous config closing. Default: no delay.
 	StreamCloseDelay caddy.Duration `json:"stream_close_delay,omitempty"`
 
-	// If true, upgraded connections such as WebSockets are retained across
-	// config reloads when their upstream still exists in the new config.
-	// Connections using upstreams that are removed are closed during cleanup.
-	// By default this is false, preserving legacy behavior where upgraded
-	// connections are closed on reload (optionally delayed by stream_close_delay).
-	// Only http1.1 websocket connections are affected, websockets for h2/h3 are not affected.
-	// If true, bytes transferred for http1.1 in the access logs will be zero but those stats
-	// can be found in the stream logs for http1/2/3 regardless if this is enabled.
-	StreamRetainOnReload bool `json:"stream_retain_on_reload,omitempty"`
+	// If true, upgraded connections such as WebSockets are detached from
+	// the handler and retained across config reloads when their upstream
+	// still exists in the new config. Connections using upstreams that are
+	// removed are closed during cleanup. By default this is false, preserving
+	// legacy behavior where upgraded connections are closed on reload
+	// (optionally delayed by stream_close_delay).
+	// Only http1.1 websocket connections are affected, websockets for h2/h3
+	// are not affected. If true, bytes transferred for http1.1 in the access
+	// logs will be zero but those stats can be found in the stream logs for
+	// http1/2/3 regardless if this is enabled.
+	StreamDetached bool `json:"stream_detached,omitempty"`
 
 	// Controls logging behavior for upgraded stream lifecycle events.
 	// If omitted, defaults are used (level=DEBUG, logger_name="http.handlers.reverse_proxy.stream").
@@ -299,7 +301,7 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 		}
 	}
 
-	if h.StreamRetainOnReload {
+	if h.StreamDetached {
 		registerDetachedTunnelTrackers(h.tunnelTracker)
 	}
 
@@ -535,7 +537,7 @@ func unregisterDetachedTunnelTrackers(ts *tunnelTracker) {
 
 // Cleanup cleans up the resources made by h.
 func (h *Handler) Cleanup() error {
-	// even if StreamRetainOnReload is true, extended connect websockets may still be running
+	// even if StreamDetached is true, extended connect websockets may still be running
 	err := h.tunnelTracker.cleanupAttachedConnections()
 	for _, upstream := range h.Upstreams {
 		// hosts.Delete returns deleted=true when the ref count reaches zero,

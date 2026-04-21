@@ -99,7 +99,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //	    stream_buffer_size <size>
 //	    stream_timeout     <duration>
 //	    stream_close_delay <duration>
-//	    stream_retain_on_reload
+//	    stream_detached
 //	    stream_logs {
 //	        level <debug|info|warn|error>
 //	        logger_name <name|access>
@@ -709,11 +709,11 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				h.StreamCloseDelay = caddy.Duration(dur)
 			}
 
-		case "stream_retain_on_reload":
+		case "stream_detached":
 			if d.NextArg() {
 				return d.ArgErr()
 			}
-			h.StreamRetainOnReload = true
+			h.StreamDetached = true
 
 		case "stream_logs":
 			if d.NextArg() {
