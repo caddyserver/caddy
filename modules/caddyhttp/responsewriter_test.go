@@ -246,11 +246,11 @@ func TestResponseRecorderSwitchingProtocolsIsHijackAware(t *testing.T) {
 	}
 	defer conn.Close()
 
-	if !rr.Hijacked() {
-		t.Fatal("response recorder should report hijacked state")
+	if rr.DetachAfterHijack(true) {
+		t.Fatal("response recorder should report hijacked state by returning false")
 	}
-	if !ResponseWriterHijacked(rr) {
-		t.Fatal("ResponseWriterHijacked() should report true after hijack")
+	if DetachResponseWriterAfterHijack(rr, true) {
+		t.Fatal("DetachResponseWriterAfterHijack() should report false after hijack")
 	}
 	if err := rr.WriteResponse(); err != nil {
 		t.Fatalf("WriteResponse() after hijack returned error: %v", err)
