@@ -256,7 +256,7 @@ type Handler struct {
 
 	// Tracks hijacked/upgraded connections (WebSocket etc.) so they can be
 	// closed when their upstream is removed from the config.
-	tunnel *tunnelState
+	tunnelTracker *tunnelTracker
 
 	ctx    caddy.Context
 	logger *zap.Logger
@@ -283,7 +283,7 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	h.events = eventAppIface.(*caddyevents.App)
 	h.ctx = ctx
 	h.logger = ctx.Logger()
-	h.tunnel = newTunnelState(h.logger, time.Duration(h.StreamCloseDelay))
+	h.tunnelTracker = newTunnelTracker(h.logger, time.Duration(h.StreamCloseDelay))
 	h.streamLogLevel = defaultStreamLogLevel
 	h.streamLogLoggerName = defaultStreamLoggerName
 	if h.StreamLogs != nil {
@@ -300,7 +300,7 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	}
 
 	if h.StreamRetainOnReload {
-		registerDetachedTunnelStates(h.tunnel)
+		registerDetachedTunnelTrackers(h.tunnelTracker)
 	}
 
 	// warn about unsafe buffering config
@@ -504,22 +504,22 @@ func (h Handler) streamLoggerForRequest(req *http.Request) *zap.Logger {
 }
 
 var (
-	detachedTunnelStates   = make(map[*tunnelState]struct{})
-	detachedTunnelStatesMu sync.Mutex
+	detachedTunnelTrackers   = make(map[*tunnelTracker]struct{})
+	detachedTunnelTrackersMu sync.Mutex
 )
 
-func registerDetachedTunnelStates(ts *tunnelState) {
-	detachedTunnelStatesMu.Lock()
-	defer detachedTunnelStatesMu.Unlock()
-	detachedTunnelStates[ts] = struct{}{}
+func registerDetachedTunnelTrackers(ts *tunnelTracker) {
+	detachedTunnelTrackersMu.Lock()
+	defer detachedTunnelTrackersMu.Unlock()
+	detachedTunnelTrackers[ts] = struct{}{}
 }
 
-func notifyDetachedTunnelStatesOfUpstreamRemoval(upstream string, self *tunnelState) error {
-	detachedTunnelStatesMu.Lock()
-	defer detachedTunnelStatesMu.Unlock()
+func notifyDetachedTunnelTrackersOfUpstreamRemoval(upstream string, self *tunnelTracker) error {
+	detachedTunnelTrackersMu.Lock()
+	defer detachedTunnelTrackersMu.Unlock()
 
 	var err error
-	for tunnel := range detachedTunnelStates {
+	for tunnel := range detachedTunnelTrackers {
 		if closeErr := tunnel.closeConnectionsForUpstream(upstream); closeErr != nil && tunnel == self && err == nil {
 			err = closeErr
 		}
@@ -527,16 +527,16 @@ func notifyDetachedTunnelStatesOfUpstreamRemoval(upstream string, self *tunnelSt
 	return err
 }
 
-func unregisterDetachedTunnelStates(ts *tunnelState) {
-	detachedTunnelStatesMu.Lock()
-	defer detachedTunnelStatesMu.Unlock()
-	delete(detachedTunnelStates, ts)
+func unregisterDetachedTunnelTrackers(ts *tunnelTracker) {
+	detachedTunnelTrackersMu.Lock()
+	defer detachedTunnelTrackersMu.Unlock()
+	delete(detachedTunnelTrackers, ts)
 }
 
 // Cleanup cleans up the resources made by h.
 func (h *Handler) Cleanup() error {
 	// even if StreamRetainOnReload is true, extended connect websockets may still be running
-	err := h.tunnel.cleanupAttachedConnections()
+	err := h.tunnelTracker.cleanupAttachedConnections()
 	for _, upstream := range h.Upstreams {
 		// hosts.Delete returns deleted=true when the ref count reaches zero,
 		// meaning no other active config references this upstream. In that
@@ -544,7 +544,7 @@ func (h *Handler) Cleanup() error {
 		// to their natural end since the upstream is still in use.
 		deleted, _ := hosts.Delete(upstream.String())
 		if deleted {
-			if closeErr := notifyDetachedTunnelStatesOfUpstreamRemoval(upstream.String(), h.tunnel); closeErr != nil && err == nil {
+			if closeErr := notifyDetachedTunnelTrackersOfUpstreamRemoval(upstream.String(), h.tunnelTracker); closeErr != nil && err == nil {
 				err = closeErr
 			}
 		}

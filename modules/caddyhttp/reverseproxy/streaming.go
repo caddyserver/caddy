@@ -95,12 +95,13 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 	// Capture all h fields needed by the tunnel now, so that the Handler (h)
 	// is not referenced after this function returns (for HTTP/1.1 hijacked
 	// connections the tunnel runs in a detached goroutine).
-	tunnel := h.tunnel
+	tunnel := h.tunnelTracker
 	bufferSize := h.StreamBufferSize
 	streamTimeout := time.Duration(h.StreamTimeout)
 
 	if h.StreamRetainOnReload {
-		// the return value should be true as it's not hijacked yet, but some middleware may wrap response writers incorrectly
+		// the return value should be true as it's not hijacked yet,
+		// but some middleware may wrap response writers incorrectly
 		if !caddyhttp.DetachResponseWriterAfterHijack(rw, true) {
 			if c := logger.Check(zap.DebugLevel, "detaching connection failed"); c != nil {
 				c.Write(zap.String("tip", "check if your response writers have an Unwrap method or if already hijacked"))
@@ -113,10 +114,14 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 		brw      *bufio.ReadWriter
 		detached = h.StreamRetainOnReload
 	)
-	// websocket over http2 or http3 if extended connect is enabled, assuming backend doesn't support this, the request will be modified to http1.1 upgrade
-	// TODO: once we can reliably detect backend support this, it can be removed for those backends
+	// websocket over http2 or http3 if extended connect is enabled,
+	// assuming backend doesn't support this, the request will be
+	// modified to http1.1 upgrade
+	// TODO: once we can reliably detect backend support this, it can
+	// be removed for those backends
 	if body, ok := caddyhttp.GetVar(req.Context(), "extended_connect_websocket_body").(io.ReadCloser); ok {
-		// websocket over extended connect can't be detached. rw and req.Body are only valid while the handler goroutine is running
+		// websocket over extended connect can't be detached. rw and req.Body
+		// are only valid while the handler goroutine is running
 		detached = false
 		req.Body = body
 		rw.Header().Del("Upgrade")
@@ -213,15 +218,51 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 	start := time.Now()
 
 	if !detached {
-		handleUpgradeTunnel(streamLogger, streamLevel, conn, backConn, deleteFrontConn, deleteBackConn, bufferSize, streamTimeout, start, finishMetrics, streamFields)
+		handleUpgradeTunnel(
+			streamLogger,
+			streamLevel,
+			conn,
+			backConn,
+			deleteFrontConn,
+			deleteBackConn,
+			bufferSize,
+			streamTimeout,
+			start,
+			finishMetrics,
+			streamFields,
+		)
 	} else {
 		// start a new goroutine
-		go handleUpgradeTunnel(streamLogger, streamLevel, conn, backConn, deleteFrontConn, deleteBackConn, bufferSize, streamTimeout, start, finishMetrics, streamFields)
+		go handleUpgradeTunnel(
+			streamLogger,
+			streamLevel,
+			conn,
+			backConn,
+			deleteFrontConn,
+			deleteBackConn,
+			bufferSize,
+			streamTimeout,
+			start,
+			finishMetrics,
+			streamFields,
+		)
 	}
 }
 
 // handleUpgradeTunnel returns when transfer is done.
-func handleUpgradeTunnel(streamLogger *zap.Logger, streamLevel zapcore.Level, conn io.ReadWriteCloser, backConn io.ReadWriteCloser, deleteFrontConn func(), deleteBackConn func(), bufferSize int, streamTimeout time.Duration, start time.Time, finishMetrics func(result string, duration time.Duration, toBackend int64, fromBackend int64), streamFields []zap.Field) {
+func handleUpgradeTunnel(
+	streamLogger *zap.Logger,
+	streamLevel zapcore.Level,
+	conn io.ReadWriteCloser,
+	backConn io.ReadWriteCloser,
+	deleteFrontConn func(),
+	deleteBackConn func(),
+	bufferSize int,
+	streamTimeout time.Duration,
+	start time.Time,
+	finishMetrics func(result string, duration time.Duration, toBackend int64, fromBackend int64),
+	streamFields []zap.Field,
+) {
 	defer deleteBackConn()
 	defer deleteFrontConn()
 	var (
@@ -232,7 +273,8 @@ func handleUpgradeTunnel(streamLogger *zap.Logger, streamLevel zapcore.Level, co
 	)
 
 	// when a stream timeout is encountered, no error will be read from errc
-	// a buffer size of 2 will allow both the read and write goroutines to send the error and exit
+	// a buffer size of 2 will allow both the read and write goroutines to
+	// send the error and exit
 	// see: https://github.com/caddyserver/caddy/issues/7418
 	errc := make(chan error, 2)
 	spc := switchProtocolCopier{
@@ -286,7 +328,10 @@ func handleUpgradeTunnel(streamLogger *zap.Logger, streamLevel zapcore.Level, co
 }
 
 func classifyStreamResult(err error) string {
-	if err == nil || errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) || errors.Is(err, context.Canceled) {
+	if err == nil ||
+		errors.Is(err, io.EOF) ||
+		errors.Is(err, net.ErrClosed) ||
+		errors.Is(err, context.Canceled) {
 		return "closed"
 	}
 	return "error"
@@ -446,8 +491,8 @@ type openConnection struct {
 	upstream      string
 }
 
-// tunnelState tracks hijacked/upgraded connections for selective cleanup.
-type tunnelState struct {
+// tunnelTracker tracks hijacked/upgraded connections for selective cleanup.
+type tunnelTracker struct {
 	connections map[io.ReadWriteCloser]openConnection
 	closeTimer  *time.Timer
 	closeDelay  time.Duration
@@ -456,8 +501,8 @@ type tunnelState struct {
 	logger      *zap.Logger
 }
 
-func newTunnelState(logger *zap.Logger, closeDelay time.Duration) *tunnelState {
-	return &tunnelState{
+func newTunnelTracker(logger *zap.Logger, closeDelay time.Duration) *tunnelTracker {
+	return &tunnelTracker{
 		connections: make(map[io.ReadWriteCloser]openConnection),
 		closeDelay:  closeDelay,
 		logger:      logger,
@@ -466,7 +511,7 @@ func newTunnelState(logger *zap.Logger, closeDelay time.Duration) *tunnelState {
 
 // registerConnection stores conn in the tracking map. The caller must invoke
 // the returned del func when the connection is done.
-func (ts *tunnelState) registerConnection(conn io.ReadWriteCloser, gracefulClose func() error, detached bool, upstream string) (del func()) {
+func (ts *tunnelTracker) registerConnection(conn io.ReadWriteCloser, gracefulClose func() error, detached bool, upstream string) (del func()) {
 	ts.mu.Lock()
 	ts.connections[conn] = openConnection{conn, gracefulClose, detached, upstream}
 	ts.mu.Unlock()
@@ -474,7 +519,7 @@ func (ts *tunnelState) registerConnection(conn io.ReadWriteCloser, gracefulClose
 		ts.mu.Lock()
 		delete(ts.connections, conn)
 		if len(ts.connections) == 0 && ts.stopped {
-			unregisterDetachedTunnelStates(ts)
+			unregisterDetachedTunnelTrackers(ts)
 			if ts.closeTimer != nil {
 				if ts.closeTimer.Stop() {
 					ts.logger.Debug("stopped streaming connections close timer - all connections are already closed")
@@ -487,7 +532,7 @@ func (ts *tunnelState) registerConnection(conn io.ReadWriteCloser, gracefulClose
 }
 
 // closeAttachedConnections closes all tracked attached connections.
-func (ts *tunnelState) closeAttachedConnections() error {
+func (ts *tunnelTracker) closeAttachedConnections() error {
 	var err error
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
@@ -509,9 +554,9 @@ func (ts *tunnelState) closeAttachedConnections() error {
 	return err
 }
 
-// cleanupAttachedConnections closes upgraded attached connections. Depending on closeDelay it
-// does that either immediately or after a timer.
-func (ts *tunnelState) cleanupAttachedConnections() error {
+// cleanupAttachedConnections closes upgraded attached connections.
+// Depending on closeDelay it does that either immediately or after a timer.
+func (ts *tunnelTracker) cleanupAttachedConnections() error {
 	if ts.closeDelay == 0 {
 		return ts.closeAttachedConnections()
 	}
@@ -652,7 +697,7 @@ func isWebsocket(r *http.Request) bool {
 
 // closeConnectionsForUpstream closes all tracked connections that were
 // established to the given upstream address.
-func (ts *tunnelState) closeConnectionsForUpstream(addr string) error {
+func (ts *tunnelTracker) closeConnectionsForUpstream(addr string) error {
 	var err error
 	ts.mu.Lock()
 	defer ts.mu.Unlock()

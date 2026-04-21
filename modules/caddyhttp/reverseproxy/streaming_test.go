@@ -114,14 +114,14 @@ func (c *trackingReadWriteCloser) isClosed() bool {
 }
 
 func TestHandlerCleanupLegacyModeClosesAllConnections(t *testing.T) {
-	ts := newTunnelState(caddy.Log(), 0)
+	ts := newTunnelTracker(caddy.Log(), 0)
 	connA := newTrackingReadWriteCloser()
 	connB := newTrackingReadWriteCloser()
 	ts.registerConnection(connA, nil, false, "a")
 	ts.registerConnection(connB, nil, false, "b")
 
 	h := &Handler{
-		tunnel:               ts,
+		tunnelTracker:        ts,
 		StreamRetainOnReload: false,
 	}
 
@@ -134,12 +134,12 @@ func TestHandlerCleanupLegacyModeClosesAllConnections(t *testing.T) {
 }
 
 func TestHandlerCleanupLegacyModeHonorsDelay(t *testing.T) {
-	ts := newTunnelState(caddy.Log(), 40*time.Millisecond)
+	ts := newTunnelTracker(caddy.Log(), 40*time.Millisecond)
 	conn := newTrackingReadWriteCloser()
 	ts.registerConnection(conn, nil, false, "a")
 
 	h := &Handler{
-		tunnel:               ts,
+		tunnelTracker:        ts,
 		StreamRetainOnReload: false,
 	}
 
@@ -172,15 +172,15 @@ func TestHandlerCleanupRetainModeClosesOnlyRemovedUpstreams(t *testing.T) {
 		_, _ = hosts.Delete(upstreamB)
 	})
 
-	ts := newTunnelState(caddy.Log(), 0)
-	registerDetachedTunnelStates(ts)
+	ts := newTunnelTracker(caddy.Log(), 0)
+	registerDetachedTunnelTrackers(ts)
 	connA := newTrackingReadWriteCloser()
 	connB := newTrackingReadWriteCloser()
 	ts.registerConnection(connA, nil, true, upstreamA)
 	ts.registerConnection(connB, nil, true, upstreamB)
 
 	h := &Handler{
-		tunnel:               ts,
+		tunnelTracker:        ts,
 		StreamRetainOnReload: true,
 		Upstreams: UpstreamPool{
 			&Upstream{Dial: upstreamA},

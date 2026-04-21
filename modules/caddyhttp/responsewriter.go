@@ -270,9 +270,11 @@ func (rr *responseRecorder) setReadSize(size *int) {
 
 func (rr *responseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if !rr.wroteHeader {
-		// hijacking without writing status code first works as long as subsequent writes follows http1.1
-		// wire format, but it will show up with a status code of 0 in the access log and bytes written
-		// will include response headers. Response headers won't be present in the log if not set on the response writer.
+		// hijacking without writing status code first works as long as
+		// subsequent writes follows http1.1 wire format, but it will
+		// show up with a status code of 0 in the access log and bytes
+		// written will include response headers. Response headers won't
+		// be present in the log if not set on the response writer.
 		caddy.Log().Warn("hijacking without writing status code first")
 	}
 	//nolint:bodyclose
@@ -339,9 +341,11 @@ func (hc *hijackedConn) ReadFrom(r io.Reader) (int64, error) {
 	return n, err
 }
 
-// DetachResponseWriterAfterHijack detaches w or one of its wrapped response
-// writers when it's hijacked. Returns true if not already hijacked.
-// When detached, bytes read or written stats will not be recorded for the hijacked connection, and it's safe to use the connection after http middleware returns.
+// DetachResponseWriterAfterHijack detaches w or one of its wrapped
+// response writers when it's hijacked. Returns true if not already
+// hijacked. When detached, bytes read or written stats will not be
+// recorded for the hijacked connection, and it's safe to use the
+// connection after http middleware returns.
 func DetachResponseWriterAfterHijack(w http.ResponseWriter, detached bool) bool {
 	for w != nil {
 		if detacher, ok := w.(interface{ DetachAfterHijack(bool) bool }); ok {
