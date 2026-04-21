@@ -193,7 +193,8 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 	// gracefully close connections we recognize as websockets. We need to make
 	// sure the client connection messages (i.e. to upstream) are masked, so we
 	// need to know whether the connection is considered the server or the
-	// client side of the proxy.
+	// client side of the proxy. Note that gracefulClose must not capture h,
+	// since the tunnel may outlive the handler instance.
 	gracefulClose := func(conn io.ReadWriteCloser, isClient bool) func() error {
 		if isWebsocket(req) {
 			return func() error {
