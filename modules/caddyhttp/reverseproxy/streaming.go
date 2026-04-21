@@ -457,6 +457,7 @@ type tunnelState struct {
 	connections map[io.ReadWriteCloser]openConnection
 	closeTimer  *time.Timer
 	closeDelay  time.Duration
+	stopped     bool
 	mu          sync.Mutex
 	logger      *zap.Logger
 }
@@ -478,7 +479,7 @@ func (ts *tunnelState) registerConnection(conn io.ReadWriteCloser, gracefulClose
 	return func() {
 		ts.mu.Lock()
 		delete(ts.connections, conn)
-		if len(ts.connections) == 0 {
+		if len(ts.connections) == 0 && ts.stopped {
 			unregisterDetachedTunnelStates(ts)
 			if ts.closeTimer != nil {
 				if ts.closeTimer.Stop() {
@@ -496,6 +497,7 @@ func (ts *tunnelState) closeAttachedConnections() error {
 	var err error
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
+	ts.stopped = true
 	for _, oc := range ts.connections {
 		// detached connections are only closed when the upstream is gone from the config
 		if oc.detached {
@@ -660,6 +662,9 @@ func (ts *tunnelState) closeConnectionsForUpstream(addr string) error {
 	var err error
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
+	if !ts.stopped {
+		return nil
+	}
 	for _, oc := range ts.connections {
 		if oc.upstream != addr {
 			continue
