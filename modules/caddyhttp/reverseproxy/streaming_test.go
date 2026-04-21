@@ -182,6 +182,7 @@ func TestHandlerCleanupRetainModeClosesOnlyRemovedUpstreams(t *testing.T) {
 	})
 
 	ts := newTunnelState(caddy.Log(), 0)
+	registerDetachedTunnelStates(ts)
 	connA := newTrackingReadWriteCloser()
 	connB := newTrackingReadWriteCloser()
 	ts.registerConnection(connA, nil, true, upstreamA)

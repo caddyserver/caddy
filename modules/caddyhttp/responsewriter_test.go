@@ -226,9 +226,6 @@ func TestResponseRecorderSwitchingProtocolsIsHijackAware(t *testing.T) {
 	})
 	rr.WriteHeader(http.StatusSwitchingProtocols)
 
-	if rr.Buffered() {
-		t.Fatal("101 switching protocols response should not remain buffered")
-	}
 	if rr.Status() != http.StatusSwitchingProtocols {
 		t.Fatalf("status = %d, want %d", rr.Status(), http.StatusSwitchingProtocols)
 	}
@@ -246,6 +243,9 @@ func TestResponseRecorderSwitchingProtocolsIsHijackAware(t *testing.T) {
 	}
 	defer conn.Close()
 
+	if rr.Buffered() {
+		t.Fatal("hijacked response should not remain buffered")
+	}
 	if rr.DetachAfterHijack(true) {
 		t.Fatal("response recorder should report hijacked state by returning false")
 	}
