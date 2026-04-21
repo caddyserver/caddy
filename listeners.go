@@ -60,12 +60,20 @@ type NetworkAddress struct {
 
 func (na NetworkAddress) ConflictsWith(other NetworkAddress) bool {
 	// 1. Check if networks conflict (e.g., tcp vs tcp4 vs tcp6)
-	// If one is udp and the other is tcp, they don't conflict.
 	isTCP1 := strings.HasPrefix(na.Network, "tcp")
 	isTCP2 := strings.HasPrefix(other.Network, "tcp")
 	isUDP1 := strings.HasPrefix(na.Network, "udp")
 	isUDP2 := strings.HasPrefix(other.Network, "udp")
+	
+	// If one is udp and the other is tcp, they don't conflict.
 	if (isTCP1 && !isTCP2) || (isUDP1 && !isUDP2) {
+		return false
+	}
+	
+	// If one is strictly IPv4 and the other is strictly IPv6, they don't conflict.
+	// (e.g., tcp4 vs tcp6, or udp4 vs udp6)
+	if (strings.HasSuffix(na.Network, "4") && strings.HasSuffix(other.Network, "6")) ||
+	   (strings.HasSuffix(na.Network, "6") && strings.HasSuffix(other.Network, "4")) {
 		return false
 	}
 
@@ -76,19 +84,22 @@ func (na NetworkAddress) ConflictsWith(other NetworkAddress) bool {
 	}
 
 	// 3. Check if hosts overlap
-	// An empty host means "all interfaces" (0.0.0.0), which conflicts with everything.
-	if na.Host == "" || other.Host == "" {
+	host1 := na.Host
+	host2 := other.Host
+
+	// A blank host, 0.0.0.0, or :: means "all interfaces", which conflicts with everything.
+	isAny1 := host1 == "" || host1 == "0.0.0.0" || host1 == "::" || host1 == "[::]"
+	isAny2 := host2 == "" || host2 == "0.0.0.0" || host2 == "::" || host2 == "[::]"
+	if isAny1 || isAny2 {
 		return true
 	}
 
-	// Normalize localhost and 127.0.0.1 to be treated as the same
-	host1 := na.Host
-	host2 := other.Host
-	if host1 == "localhost" {
-		host1 = "127.0.0.1"
+	// Normalize localhost, 127.0.0.1, and IPv6 loopbacks to be treated as the same
+	isLoopback := func(h string) bool {
+		return h == "localhost" || h == "127.0.0.1" || h == "::1" || h == "[::1]"
 	}
-	if host2 == "localhost" {
-		host2 = "127.0.0.1"
+	if isLoopback(host1) && isLoopback(host2) {
+		return true
 	}
 
 	return host1 == host2

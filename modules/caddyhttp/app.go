@@ -202,7 +202,9 @@ func (app *App) Provision(ctx caddy.Context) error {
 	if err != nil {
 		return err
 	}
-
+	// We explicitly only check the local admin address here. Remote admin 
+	// listeners are manually configured, but the local default (2019) is 
+	// highly susceptible to silent hijacking by typical web listener configs.
 	adminAddr, adminEnabled, err := ctx.LocalAdminAddress()
 	if err != nil {
 		return fmt.Errorf("loading admin endpoint listen address: %v", err)

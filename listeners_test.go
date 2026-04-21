@@ -652,3 +652,76 @@ func TestSplitUnixSocketPermissionsBits(t *testing.T) {
 		}
 	}
 }
+
+func TestNetworkAddressConflictsWith(t *testing.T) {
+	tests :=[]struct {
+		name  string
+		addr1 NetworkAddress
+		addr2 NetworkAddress
+		want  bool
+	}{
+		{
+			name:  "Exact same address",
+			addr1: NetworkAddress{Network: "tcp", Host: "localhost", StartPort: 2019, EndPort: 2019},
+			addr2: NetworkAddress{Network: "tcp", Host: "localhost", StartPort: 2019, EndPort: 2019},
+			want:  true,
+		},
+		{
+			name:  "Different ports",
+			addr1: NetworkAddress{Network: "tcp", Host: "localhost", StartPort: 2019, EndPort: 2019},
+			addr2: NetworkAddress{Network: "tcp", Host: "localhost", StartPort: 2020, EndPort: 2020},
+			want:  false,
+		},
+		{
+			name:  "Port range overlap",
+			addr1: NetworkAddress{Network: "tcp", Host: "localhost", StartPort: 2019, EndPort: 2025},
+			addr2: NetworkAddress{Network: "tcp", Host: "localhost", StartPort: 2020, EndPort: 2020},
+			want:  true,
+		},
+		{
+			name:  "IPv4 loopback vs localhost",
+			addr1: NetworkAddress{Network: "tcp", Host: "127.0.0.1", StartPort: 2019, EndPort: 2019},
+			addr2: NetworkAddress{Network: "tcp", Host: "localhost", StartPort: 2019, EndPort: 2019},
+			want:  true,
+		},
+		{
+			name:  "IPv6 loopback vs IPv4 loopback",
+			addr1: NetworkAddress{Network: "tcp", Host: "::1", StartPort: 2019, EndPort: 2019},
+			addr2: NetworkAddress{Network: "tcp", Host: "127.0.0.1", StartPort: 2019, EndPort: 2019},
+			want:  true,
+		},
+		{
+			name:  "Catch-all (empty) vs localhost",
+			addr1: NetworkAddress{Network: "tcp", Host: "", StartPort: 2019, EndPort: 2019},
+			addr2: NetworkAddress{Network: "tcp", Host: "localhost", StartPort: 2019, EndPort: 2019},
+			want:  true,
+		},
+		{
+			name:  "Catch-all (0.0.0.0) vs 127.0.0.1",
+			addr1: NetworkAddress{Network: "tcp", Host: "0.0.0.0", StartPort: 2019, EndPort: 2019},
+			addr2: NetworkAddress{Network: "tcp", Host: "127.0.0.1", StartPort: 2019, EndPort: 2019},
+			want:  true,
+		},
+		{
+			name:  "Different networks tcp vs udp",
+			addr1: NetworkAddress{Network: "tcp", Host: "localhost", StartPort: 2019, EndPort: 2019},
+			addr2: NetworkAddress{Network: "udp", Host: "localhost", StartPort: 2019, EndPort: 2019},
+			want:  false,
+		},
+		{
+			name:  "Strict IPv4 vs Strict IPv6",
+			addr1: NetworkAddress{Network: "tcp4", Host: "127.0.0.1", StartPort: 2019, EndPort: 2019},
+			addr2: NetworkAddress{Network: "tcp6", Host: "::1", StartPort: 2019, EndPort: 2019},
+			want:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.addr1.ConflictsWith(tt.addr2)
+			if got != tt.want {
+				t.Errorf("ConflictsWith() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
