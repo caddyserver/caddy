@@ -272,8 +272,8 @@ func (rr *responseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if !rr.wroteHeader {
 		// hijacking without writing status code first works as long as subsequent writes follows http1.1
 		// wire format, but it will show up with a status code of 0 in the access log and bytes written
-		// will include response headers.
-		caddy.Log().Debug("hijacking without writing status code first")
+		// will include response headers. Response headers won't be present in the log if not set on the response writer.
+		caddy.Log().Warn("hijacking without writing status code first")
 	}
 	//nolint:bodyclose
 	conn, brw, err := http.NewResponseController(rr.ResponseWriterWrapper).Hijack()
