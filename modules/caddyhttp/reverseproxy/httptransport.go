@@ -138,6 +138,20 @@ type HTTPTransport struct {
 	// to change or removal while experimental.
 	Versions []string `json:"versions,omitempty"`
 
+	// WebTransport enables reverse-proxying of WebTransport sessions
+	// (https://datatracker.ietf.org/doc/draft-ietf-webtrans-http3/) to
+	// the upstream. Requires Versions to be exactly ["3"]. When
+	// enabled, the frontend Caddy server must itself be serving HTTP/3,
+	// and any Extended CONNECT request with :protocol=webtransport will
+	// have its streams and datagrams pumped between the client and the
+	// upstream — bypassing the normal HTTP round-trip path.
+	//
+	// EXPERIMENTAL: subject to change or removal. The upstream
+	// WebTransport protocol draft is still evolving; this lands with
+	// whatever draft version the webtransport-go library supports at
+	// build time.
+	WebTransport bool `json:"webtransport,omitempty"`
+
 	// Specify the address to bind to when connecting to an upstream. In other words,
 	// it is the address the upstream sees as the remote address.
 	LocalAddress string `json:"local_address,omitempty"`
@@ -502,6 +516,12 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 		}
 	} else if len(h.Versions) > 1 && slices.Contains(h.Versions, "3") {
 		return nil, fmt.Errorf("if HTTP/3 is enabled to the upstream, no other HTTP versions are supported")
+	}
+
+	// WebTransport rides on HTTP/3 exclusively and reuses the TLS client
+	// config built for h3Transport above.
+	if h.WebTransport && !(len(h.Versions) == 1 && h.Versions[0] == "3") {
+		return nil, fmt.Errorf("webtransport requires versions to be exactly [\"3\"]")
 	}
 
 	// if h2/c is enabled, configure it explicitly
