@@ -483,6 +483,11 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 				InitialPacketSize: 1200,
 				Allow0RTT:         allow0rtt,
 				Tracer:            h3qlog.DefaultConnectionTracer,
+				// Required by WebTransport. Enabling unconditionally: these
+				// are capability bits negotiated during the QUIC handshake
+				// and do not force usage, so non-WT H3 traffic is unaffected.
+				EnableDatagrams:                  true,
+				EnableStreamResetPartialDelivery: true,
 			},
 		)
 		if err != nil {
