@@ -288,6 +288,7 @@ type Server struct {
 
 	server    *http.Server
 	h3server  *http3.Server
+	wtServer  *webtransport.Server
 	addresses []caddy.NetworkAddress
 
 	trustedProxies IPRangeSource
@@ -669,14 +670,34 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 	// create HTTP/3 server if not done already
 	if s.h3server == nil {
 		s.h3server = s.buildHTTP3Server(tlsCfg)
+		s.wtServer = s.buildWebTransportServer()
 	}
 
 	s.quicListeners = append(s.quicListeners, h3ln)
 
-	//nolint:errcheck
-	go s.h3server.ServeListener(h3ln)
+	go s.serveH3AcceptLoop(h3ln)
 
 	return nil
+}
+
+// serveH3AcceptLoop accepts incoming QUIC connections from the HTTP/3
+// listener and dispatches each to the WebTransport-aware serve loop.
+// webtransport.Server.ServeQUICConn wraps http3.Server: non-WebTransport
+// streams are transparently forwarded to the normal HTTP/3 request path
+// (at the cost of one varint peek per stream), so behavior for non-WT
+// clients is unchanged. This replaces http3.Server.ServeListener's
+// accept loop so webtransport.Server.Upgrade has the per-connection
+// session manager state it requires.
+func (s *Server) serveH3AcceptLoop(h3ln http3.QUICListener) {
+	for {
+		conn, err := h3ln.Accept(s.ctx)
+		if err != nil {
+			return
+		}
+		go func() {
+			_ = s.wtServer.ServeQUICConn(conn)
+		}()
+	}
 }
 
 // buildHTTP3Server constructs the http3.Server used by this server for HTTP/3.
@@ -699,6 +720,14 @@ func (s *Server) buildHTTP3Server(tlsCfg *tls.Config) *http3.Server {
 	}
 	webtransport.ConfigureHTTP3Server(h3)
 	return h3
+}
+
+// buildWebTransportServer constructs the webtransport.Server that wraps
+// the http3.Server. It owns the per-connection session state needed by
+// webtransport.Server.Upgrade and demultiplexes WebTransport streams
+// from normal HTTP/3 streams on each accepted QUIC connection.
+func (s *Server) buildWebTransportServer() *webtransport.Server {
+	return &webtransport.Server{H3: s.h3server}
 }
 
 // configureServer applies/binds the registered callback functions to the server.
@@ -940,6 +969,22 @@ func (s *Server) Listeners() []net.Listener { return s.listeners }
 
 // Name returns the server's name.
 func (s *Server) Name() string { return s.name }
+
+// WebTransportServer returns the server's underlying WebTransport
+// serving state as an opaque value. Modules that import
+// github.com/quic-go/webtransport-go may type-assert it to
+// *webtransport.Server. Returns nil if HTTP/3 is not in use.
+//
+// This is exposed as any so caddyhttp's public API does not leak the
+// upstream webtransport-go type to packages that don't use it.
+//
+// EXPERIMENTAL: Subject to change or removal.
+func (s *Server) WebTransportServer() any {
+	if s.wtServer == nil {
+		return nil
+	}
+	return s.wtServer
+}
 
 // PrepareRequest fills the request r for use in a Caddy HTTP handler chain. w and s can
 // be nil, but the handlers will lose response placeholders and access to the server.

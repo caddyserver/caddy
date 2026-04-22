@@ -780,6 +780,17 @@ func (app *App) Stop() error {
 				zap.Strings("addresses", server.Listen))
 		}
 
+		// WebTransport session state is managed separately from the
+		// HTTP/3 server; Close after Shutdown to drop any remaining
+		// sessions and terminate the per-connection accept goroutines.
+		if server.wtServer != nil {
+			if err := server.wtServer.Close(); err != nil {
+				app.logger.Error("WebTransport server close",
+					zap.Error(err),
+					zap.Strings("addresses", server.Listen))
+			}
+		}
+
 		// close the underlying net.PacketConns now
 		// see the comment for ListenQUIC
 		for _, h3ln := range server.quicListeners {
