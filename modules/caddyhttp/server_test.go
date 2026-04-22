@@ -530,3 +530,21 @@ func TestServer_BuildHTTP3ServerAppliesHandlerAndTLS(t *testing.T) {
 	assert.Same(t, tlsCfg, h3.TLSConfig, "http3.Server.TLSConfig should be the config passed in")
 	assert.Equal(t, 4096, h3.MaxHeaderBytes)
 }
+
+// TestServer_BuildWebTransportServerWrapsHTTP3Server asserts that the
+// webtransport.Server wraps the correct http3.Server.
+func TestServer_BuildWebTransportServerWrapsHTTP3Server(t *testing.T) {
+	s := &Server{}
+	s.h3server = s.buildHTTP3Server(&tls.Config{})
+	wt := s.buildWebTransportServer()
+
+	assert.NotNil(t, wt, "expected non-nil webtransport.Server")
+	assert.Same(t, s.h3server, wt.H3, "webtransport.Server should wrap this server's http3.Server")
+}
+
+// TestServer_WebTransportServerNilUntilH3 asserts the accessor returns nil
+// when HTTP/3 has not been configured.
+func TestServer_WebTransportServerNilUntilH3(t *testing.T) {
+	s := &Server{}
+	assert.Nil(t, s.WebTransportServer(), "expected nil before HTTP/3 setup")
+}
