@@ -174,8 +174,15 @@ func (m *Metrics) provisionOTLP(ctx caddy.Context) error {
 		return nil
 	}
 
-	// Make the process-wide Prometheus registry the default source for OTLP
-	// metrics; users can still override it via OTEL_METRICS_PRODUCERS.
+	// Register a Prometheus -> OpenTelemetry bridge against the process-wide
+	// Prometheus registry as the *default* source the NewMetricReader below
+	// will read from.
+	//
+	// NB: despite the "With*" naming, autoexport.WithFallbackMetricProducer is
+	// a package-level setter (it returns nothing) — it mutates autoexport's
+	// internal producer registry and takes effect on the very next call to
+	// NewMetricReader. It is NOT a MetricOption and must not be passed as one.
+	// Users can still override the source by setting OTEL_METRICS_PRODUCERS.
 	reg := ctx.GetMetricsRegistry()
 	autoexport.WithFallbackMetricProducer(func(context.Context) (sdkmetric.Producer, error) {
 		return otelprom.NewMetricProducer(otelprom.WithGatherer(reg)), nil
