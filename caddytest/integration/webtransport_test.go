@@ -148,3 +148,141 @@ func TestWebTransport_EchoHandlerBidi(t *testing.T) {
 		t.Fatalf("echo mismatch:\n  got:  %q\n  want: %q", strings.TrimSpace(string(got)), payload)
 	}
 }
+
+// TestWebTransport_ReverseProxyEndToEnd spins up a single Caddy instance
+// running two HTTP/3 servers: one on :9443 acting as the WebTransport
+// reverse proxy, and one on :9444 acting as the terminating echo
+// upstream. A real webtransport.Dialer dials the proxy; the pump should
+// bridge to the upstream so bytes written on a bidi stream are echoed.
+func TestWebTransport_ReverseProxyEndToEnd(t *testing.T) {
+	if testing.Short() {
+		t.Skip()
+	}
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`{
+  "admin": {
+    "listen": "localhost:2999"
+  },
+  "apps": {
+    "http": {
+      "http_port": 9080,
+      "https_port": 9443,
+      "grace_period": 1,
+      "servers": {
+        "proxy": {
+          "listen": [":9443"],
+          "protocols": ["h3"],
+          "routes": [
+            {
+              "handle": [
+                {
+                  "handler": "reverse_proxy",
+                  "transport": {
+                    "protocol": "http",
+                    "versions": ["3"],
+                    "webtransport": true,
+                    "tls": {"insecure_skip_verify": true}
+                  },
+                  "upstreams": [{"dial": "127.0.0.1:9444"}]
+                }
+              ]
+            }
+          ],
+          "tls_connection_policies": [
+            {
+              "certificate_selection": {"any_tag": ["cert0"]},
+              "default_sni": "a.caddy.localhost"
+            }
+          ]
+        },
+        "upstream": {
+          "listen": [":9444"],
+          "protocols": ["h3"],
+          "routes": [
+            {"handle": [{"handler": "webtransport"}]}
+          ],
+          "tls_connection_policies": [
+            {
+              "certificate_selection": {"any_tag": ["cert0"]},
+              "default_sni": "a.caddy.localhost"
+            }
+          ]
+        }
+      }
+    },
+    "tls": {
+      "certificates": {
+        "load_files": [
+          {
+            "certificate": "/a.caddy.localhost.crt",
+            "key": "/a.caddy.localhost.key",
+            "tags": ["cert0"]
+          }
+        ]
+      }
+    },
+    "pki": {
+      "certificate_authorities": {
+        "local": {"install_trust": false}
+      }
+    }
+  }
+}`, "json")
+
+	dialer := &webtransport.Dialer{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true, //nolint:gosec // local CA
+			ServerName:         "a.caddy.localhost",
+			NextProtos:         []string{http3.NextProtoH3},
+		},
+		QUICConfig: &quic.Config{
+			EnableDatagrams:                  true,
+			EnableStreamResetPartialDelivery: true,
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Retry briefly while both listeners finish binding.
+	var (
+		sess *webtransport.Session
+		rsp  *http.Response
+		err  error
+	)
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		rsp, sess, err = dialer.Dial(ctx, "https://127.0.0.1:9443/", nil)
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("webtransport dial through proxy failed after retries: %v", err)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	defer sess.CloseWithError(0, "")
+
+	if rsp.StatusCode != http.StatusOK {
+		t.Fatalf("unexpected status: %d", rsp.StatusCode)
+	}
+
+	str, err := sess.OpenStreamSync(ctx)
+	if err != nil {
+		t.Fatalf("open stream through proxy: %v", err)
+	}
+	const payload = "reverse-proxied via the pump"
+	if _, err := io.WriteString(str, payload); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := str.Close(); err != nil {
+		t.Fatalf("close write: %v", err)
+	}
+	got, err := io.ReadAll(str)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(got) != payload {
+		t.Fatalf("echo mismatch:\n  got:  %q\n  want: %q", strings.TrimSpace(string(got)), payload)
+	}
+}
