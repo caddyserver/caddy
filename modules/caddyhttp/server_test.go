@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -1533,4 +1534,34 @@ func TestServer_ServeHTTP_DelayedHandlerErrorWritesErrorStatus(t *testing.T) {
 			assert.NotContains(t, buf.String(), "write_error")
 		})
 	}
+}
+
+// TestServer_BuildHTTP3ServerEnablesWebTransport asserts that the http3.Server
+// Caddy builds advertises WebTransport in its SETTINGS and wires the
+// prerequisites webtransport.Server.Upgrade relies on: DATAGRAM support,
+// a non-nil ConnContext hook (used to stash the underlying *quic.Conn for
+// Upgrade to retrieve), and QUIC stream reset partial delivery.
+func TestServer_BuildHTTP3ServerEnablesWebTransport(t *testing.T) {
+	s := &Server{}
+	h3 := s.buildHTTP3Server(&tls.Config{})
+
+	assert.NotNil(t, h3, "expected non-nil http3.Server")
+	assert.True(t, h3.EnableDatagrams, "EnableDatagrams must be true for WebTransport DATAGRAMs")
+	assert.NotEmpty(t, h3.AdditionalSettings, "AdditionalSettings must advertise WebTransport enablement")
+	assert.NotNil(t, h3.ConnContext, "ConnContext must be set so webtransport.Server.Upgrade can retrieve the *quic.Conn")
+	assert.NotNil(t, h3.QUICConfig, "QUICConfig must be set")
+	assert.True(t, h3.QUICConfig.EnableStreamResetPartialDelivery, "EnableStreamResetPartialDelivery is required by webtransport-go")
+}
+
+// TestServer_BuildHTTP3ServerAppliesHandlerAndTLS is a smoke test for the
+// non-WebTransport fields of the constructed http3.Server, guarding against a
+// refactor accidentally dropping them.
+func TestServer_BuildHTTP3ServerAppliesHandlerAndTLS(t *testing.T) {
+	s := &Server{MaxHeaderBytes: 4096}
+	tlsCfg := &tls.Config{}
+	h3 := s.buildHTTP3Server(tlsCfg)
+
+	assert.Same(t, s, h3.Handler, "http3.Server.Handler should be the caddyhttp.Server itself")
+	assert.Same(t, tlsCfg, h3.TLSConfig, "http3.Server.TLSConfig should be the config passed in")
+	assert.Equal(t, 4096, h3.MaxHeaderBytes)
 }
