@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 type responseWriterSpy interface {
@@ -167,5 +168,96 @@ func TestResponseRecorderReadFrom(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// targetIface is an interface that only the innermost writer in the tests
+// below implements; it's used to assert UnwrapResponseWriterAs walks past
+// outer wrappers to find it.
+type targetIface interface {
+	http.ResponseWriter
+	magic() string
+}
+
+type targetWriter struct {
+	baseRespWriter
+}
+
+func (*targetWriter) magic() string { return "ok" }
+
+// plainWrapper wraps an http.ResponseWriter and forwards only the mandatory
+// methods. It implements Unwrap() so the helper can traverse it.
+type plainWrapper struct{ inner http.ResponseWriter }
+
+func (p *plainWrapper) Header() http.Header         { return p.inner.Header() }
+func (p *plainWrapper) Write(b []byte) (int, error) { return p.inner.Write(b) }
+func (p *plainWrapper) WriteHeader(statusCode int)  { p.inner.WriteHeader(statusCode) }
+func (p *plainWrapper) Unwrap() http.ResponseWriter { return p.inner }
+
+func TestUnwrapResponseWriterAs_DirectMatch(t *testing.T) {
+	w := &targetWriter{}
+	got, ok := UnwrapResponseWriterAs[targetIface](w)
+	if !ok {
+		t.Fatal("expected direct match to succeed")
+	}
+	if got.magic() != "ok" {
+		t.Errorf("unexpected writer returned: %v", got)
+	}
+}
+
+func TestUnwrapResponseWriterAs_ThroughSingleWrapper(t *testing.T) {
+	inner := &targetWriter{}
+	outer := &ResponseWriterWrapper{ResponseWriter: inner}
+	got, ok := UnwrapResponseWriterAs[targetIface](outer)
+	if !ok {
+		t.Fatal("expected to unwrap past ResponseWriterWrapper")
+	}
+	if got.magic() != "ok" {
+		t.Error("expected the inner targetWriter")
+	}
+}
+
+func TestUnwrapResponseWriterAs_ThroughMultipleWrappers(t *testing.T) {
+	inner := &targetWriter{}
+	w := http.ResponseWriter(&plainWrapper{
+		inner: &ResponseWriterWrapper{
+			ResponseWriter: &plainWrapper{inner: inner},
+		},
+	})
+	got, ok := UnwrapResponseWriterAs[targetIface](w)
+	if !ok {
+		t.Fatal("expected to unwrap three layers down")
+	}
+	if got.magic() != "ok" {
+		t.Error("expected the inner targetWriter")
+	}
+}
+
+func TestUnwrapResponseWriterAs_NotFound(t *testing.T) {
+	// None of these writers implement targetIface.
+	inner := &baseRespWriter{}
+	outer := &ResponseWriterWrapper{ResponseWriter: inner}
+	_, ok := UnwrapResponseWriterAs[targetIface](outer)
+	if ok {
+		t.Error("expected no match when nothing in the chain implements the interface")
+	}
+}
+
+type selfUnwrapWriter struct{ baseRespWriter }
+
+func (s *selfUnwrapWriter) Unwrap() http.ResponseWriter { return s }
+
+func TestUnwrapResponseWriterAs_StopsOnSelfReference(t *testing.T) {
+	// Defensive: a wrapper whose Unwrap returns itself must not loop forever.
+	loop := &selfUnwrapWriter{}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = UnwrapResponseWriterAs[targetIface](loop)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("UnwrapResponseWriterAs hung on self-referential Unwrap")
 	}
 }
