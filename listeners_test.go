@@ -694,13 +694,13 @@ func TestNetworkAddressConflictsWith(t *testing.T) {
 			name:  "Catch-all (empty) vs localhost",
 			addr1: NetworkAddress{Network: "tcp", Host: "", StartPort: 2019, EndPort: 2019},
 			addr2: NetworkAddress{Network: "tcp", Host: "localhost", StartPort: 2019, EndPort: 2019},
-			want:  true,
+			want:  false,
 		},
 		{
 			name:  "Catch-all (0.0.0.0) vs 127.0.0.1",
 			addr1: NetworkAddress{Network: "tcp", Host: "0.0.0.0", StartPort: 2019, EndPort: 2019},
 			addr2: NetworkAddress{Network: "tcp", Host: "127.0.0.1", StartPort: 2019, EndPort: 2019},
-			want:  true,
+			want:  false,
 		},
 		{
 			name:  "Different networks tcp vs udp",
@@ -713,6 +713,12 @@ func TestNetworkAddressConflictsWith(t *testing.T) {
 			addr1: NetworkAddress{Network: "tcp4", Host: "127.0.0.1", StartPort: 2019, EndPort: 2019},
 			addr2: NetworkAddress{Network: "tcp6", Host: "::1", StartPort: 2019, EndPort: 2019},
 			want:  false,
+		},
+		{
+			name:  "Catch-all (0.0.0.0) vs Catch-all (empty)",
+			addr1: NetworkAddress{Network: "tcp", Host: "0.0.0.0", StartPort: 2019, EndPort: 2019},
+			addr2: NetworkAddress{Network: "tcp", Host: "", StartPort: 2019, EndPort: 2019},
+			want:  true,
 		},
 	}
 

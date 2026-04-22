@@ -87,14 +87,15 @@ func (na NetworkAddress) ConflictsWith(other NetworkAddress) bool {
 	host1 := na.Host
 	host2 := other.Host
 
-	// A blank host, 0.0.0.0, or :: means "all interfaces", which conflicts with everything.
-	isAny1 := host1 == "" || host1 == "0.0.0.0" || host1 == "::" || host1 == "[::]"
-	isAny2 := host2 == "" || host2 == "0.0.0.0" || host2 == "::" || host2 == "[::]"
-	if isAny1 || isAny2 {
+	// Normalize catch-all addresses. They ONLY conflict if BOTH are catch-alls.
+	isCatchAll := func(h string) bool {
+		return h == "" || h == "0.0.0.0" || h == "::" || h == "[::]"
+	}
+	if isCatchAll(host1) && isCatchAll(host2) {
 		return true
 	}
 
-	// Normalize localhost, 127.0.0.1, and IPv6 loopbacks to be treated as the same
+	// Normalize loopbacks. They ONLY conflict if BOTH are loopbacks.
 	isLoopback := func(h string) bool {
 		return h == "localhost" || h == "127.0.0.1" || h == "::1" || h == "[::1]"
 	}
