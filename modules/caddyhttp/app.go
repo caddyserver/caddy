@@ -208,6 +208,9 @@ func (app *App) Provision(ctx caddy.Context) error {
 		app.Metrics.httpMetrics = &httpMetrics{}
 		// Scan config for allowed hosts to prevent cardinality explosion
 		app.Metrics.scanConfigForHosts(app)
+		if err := app.Metrics.provisionOTLP(ctx); err != nil {
+			return err
+		}
 	}
 	// prepare each server
 	oldContext := ctx.Context
@@ -819,6 +822,12 @@ func (app *App) Stop() error {
 				app.logger.Error("server stop hook", zap.String("server", name), zap.Error(err))
 			}
 		}
+	}
+
+	// flush and shut down the OTLP metrics exporter (if configured) so any
+	// last data point reaches the collector before the process exits
+	if err := app.Metrics.shutdown(ctx); err != nil {
+		app.logger.Error("shutting down OTLP metrics", zap.Error(err))
 	}
 
 	app.stopped = true
