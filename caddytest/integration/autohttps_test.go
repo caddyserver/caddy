@@ -55,6 +55,28 @@ func TestAutoHTTPtoHTTPSRedirectsExplicitPortDifferentFromHTTPSPort(t *testing.T
 	tester.AssertRedirect("http://localhost:9080/", "https://localhost:1234/", http.StatusPermanentRedirect)
 }
 
+func TestAutoHTTPtoHTTPSRedirectsPreferHTTPSPortOverAlternatePort(t *testing.T) {
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`
+	{
+		skip_install_trust
+		admin localhost:2999
+		http_port     9080
+		https_port    9443
+		local_certs
+	}
+	localhost {
+		respond "Canonical"
+	}
+
+	localhost:10443 {
+		respond "Alternate"
+	}
+  `, "caddyfile")
+
+	tester.AssertRedirect("http://localhost:9080/", "https://localhost/", http.StatusPermanentRedirect)
+}
+
 func TestAutoHTTPRedirectsWithHTTPListenerFirstInAddresses(t *testing.T) {
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`
