@@ -35,6 +35,7 @@ import (
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 	h3qlog "github.com/quic-go/quic-go/http3/qlog"
+	"github.com/quic-go/webtransport-go"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
@@ -667,16 +668,7 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 
 	// create HTTP/3 server if not done already
 	if s.h3server == nil {
-		s.h3server = &http3.Server{
-			Handler:        s,
-			TLSConfig:      tlsCfg,
-			MaxHeaderBytes: s.MaxHeaderBytes,
-			QUICConfig: &quic.Config{
-				Versions: []quic.Version{quic.Version1, quic.Version2},
-				Tracer:   h3qlog.DefaultConnectionTracer,
-			},
-			IdleTimeout: time.Duration(s.IdleTimeout),
-		}
+		s.h3server = s.buildHTTP3Server(tlsCfg)
 	}
 
 	s.quicListeners = append(s.quicListeners, h3ln)
@@ -685,6 +677,28 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 	go s.h3server.ServeListener(h3ln)
 
 	return nil
+}
+
+// buildHTTP3Server constructs the http3.Server used by this server for HTTP/3.
+// WebTransport support is advertised in SETTINGS and the underlying *quic.Conn
+// is stashed in each request's context, which is a prerequisite for any
+// WebTransport-aware handler or transport to call webtransport.Server.Upgrade.
+// The extra SETTINGS and ConnContext hook are harmless for clients that do not
+// speak WebTransport.
+func (s *Server) buildHTTP3Server(tlsCfg *tls.Config) *http3.Server {
+	h3 := &http3.Server{
+		Handler:        s,
+		TLSConfig:      tlsCfg,
+		MaxHeaderBytes: s.MaxHeaderBytes,
+		QUICConfig: &quic.Config{
+			Versions:                         []quic.Version{quic.Version1, quic.Version2},
+			Tracer:                           h3qlog.DefaultConnectionTracer,
+			EnableStreamResetPartialDelivery: true,
+		},
+		IdleTimeout: time.Duration(s.IdleTimeout),
+	}
+	webtransport.ConfigureHTTP3Server(h3)
+	return h3
 }
 
 // configureServer applies/binds the registered callback functions to the server.
