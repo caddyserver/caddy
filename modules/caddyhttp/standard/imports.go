@@ -23,4 +23,5 @@ import (
 	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/templates"
 	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/timeouts"
 	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/tracing"
+	_ "github.com/caddyserver/caddy/v2/modules/caddyhttp/webtransport"
 )
