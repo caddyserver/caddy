@@ -20,11 +20,14 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/webtransport-go"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
+	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	caddywt "github.com/caddyserver/caddy/v2/modules/caddyhttp/webtransport"
 )
@@ -42,9 +45,20 @@ func isWebTransportExtendedConnect(r *http.Request) bool {
 //
 // Unlike the regular HTTP proxy path, there are no retries: a failed
 // dial closes the client's session and returns (so the handler chain
-// can finish). Requests that reach this function are already known to
-// be WebTransport; callers should gate with isWebTransportProxyRequest.
+// can finish). The outgoing CONNECT is prepared with the same Rewrite,
+// hop-by-hop stripping, X-Forwarded-*/Via, transport- and user-configured
+// header ops as the normal proxy path so operators see consistent
+// behavior. Requests that reach this function are already known to be
+// WebTransport; callers should gate with isWebTransportExtendedConnect.
 func (h *Handler) serveWebTransport(w http.ResponseWriter, r *http.Request) error {
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	start := time.Now()
+	defer func() {
+		d := time.Since(start)
+		repl.Set("http.reverse_proxy.duration", d)
+		repl.Set("http.reverse_proxy.duration_ms", d.Seconds()*1e3)
+	}()
+
 	srv, ok := r.Context().Value(caddyhttp.ServerCtxKey).(*caddyhttp.Server)
 	if !ok || srv == nil {
 		return caddyhttp.Error(http.StatusInternalServerError,
@@ -56,16 +70,64 @@ func (h *Handler) serveWebTransport(w http.ResponseWriter, r *http.Request) erro
 			errors.New("webtransport: HTTP/3 is not enabled on this server; WebTransport requires H3"))
 	}
 
-	// Select an upstream via the configured LB policy. No retries.
-	upstreams := h.Upstreams
 	if h.LoadBalancing == nil || h.LoadBalancing.SelectionPolicy == nil {
 		return caddyhttp.Error(http.StatusInternalServerError,
 			errors.New("webtransport: load balancer is not configured"))
 	}
+
+	// Resolve the candidate upstream set (static or dynamic) and select
+	// one. WT sessions are long-lived and not idempotent, so there are no
+	// retries; picking once matches how operators expect WT to behave.
+	upstreams := h.Upstreams
+	if h.DynamicUpstreams != nil {
+		dynUpstreams, err := h.DynamicUpstreams.GetUpstreams(r)
+		if err != nil {
+			if c := h.logger.Check(zapcore.WarnLevel, "webtransport: dynamic upstreams failed; falling back to static"); c != nil {
+				c.Write(zap.Error(err))
+			}
+		} else {
+			upstreams = dynUpstreams
+			for _, dUp := range dynUpstreams {
+				h.provisionUpstream(dUp, true)
+			}
+		}
+	}
 	upstream := h.LoadBalancing.SelectionPolicy.Select(upstreams, r, w)
 	if upstream == nil {
-		return caddyhttp.Error(http.StatusBadGateway,
-			errors.New("webtransport: no upstream available"))
+		return caddyhttp.Error(http.StatusBadGateway, errNoUpstream)
+	}
+
+	// Resolve per-upstream placeholders (addresses may include them) and
+	// publish the {http.reverse_proxy.upstream.*} replacer values before
+	// we commit to upgrading — so any client-side failure logs downstream
+	// see the selected upstream too.
+	dialInfo, err := upstream.fillDialInfo(repl)
+	if err != nil {
+		return caddyhttp.Error(http.StatusInternalServerError,
+			fmt.Errorf("webtransport: making dial info: %w", err))
+	}
+	repl.Set("http.reverse_proxy.upstream.address", dialInfo.String())
+	repl.Set("http.reverse_proxy.upstream.hostport", dialInfo.Address)
+	repl.Set("http.reverse_proxy.upstream.host", dialInfo.Host)
+	repl.Set("http.reverse_proxy.upstream.port", dialInfo.Port)
+	repl.Set("http.reverse_proxy.upstream.requests", upstream.Host.NumRequests())
+	repl.Set("http.reverse_proxy.upstream.max_requests", upstream.MaxRequests)
+	repl.Set("http.reverse_proxy.upstream.fails", upstream.Host.Fails())
+
+	// Prepare the outgoing request the same way normal proxying does —
+	// Rewrite, hop-by-hop stripping, X-Forwarded-*, Via, etc. — then apply
+	// transport and user header ops. prepareRequest's body-buffering and
+	// Early-Data paths are no-ops for a CONNECT request (empty body).
+	clonedReq, err := h.prepareRequest(r, repl)
+	if err != nil {
+		return caddyhttp.Error(http.StatusInternalServerError,
+			fmt.Errorf("webtransport: preparing request: %w", err))
+	}
+	if h.transportHeaderOps != nil {
+		h.transportHeaderOps.ApplyToRequest(clonedReq)
+	}
+	if h.Headers != nil && h.Headers.Request != nil {
+		h.Headers.Request.ApplyToRequest(clonedReq)
 	}
 
 	// Reach the naked http3 response writer so Upgrade's type assertions
@@ -78,18 +140,24 @@ func (h *Handler) serveWebTransport(w http.ResponseWriter, r *http.Request) erro
 
 	clientSess, err := wtServer.Upgrade(naked, r)
 	if err != nil {
-		h.logger.Debug("webtransport client upgrade failed", zap.Error(err))
+		if c := h.logger.Check(zapcore.DebugLevel, "webtransport client upgrade failed"); c != nil {
+			c.Write(zap.Error(err))
+		}
 		return caddyhttp.Error(http.StatusBadRequest,
 			fmt.Errorf("webtransport upgrade: %w", err))
 	}
 
 	ht := h.Transport.(*HTTPTransport)
-	upstreamURL := buildWebTransportUpstreamURL(upstream.Dial, r)
-	_, upstreamSess, err := dialUpstreamWebTransport(r.Context(), ht.h3Transport.TLSClientConfig, upstreamURL, r.Header.Clone())
+	upstreamURL := buildWebTransportUpstreamURL(dialInfo.Address, clonedReq)
+	_, upstreamSess, err := dialUpstreamWebTransport(r.Context(), ht.h3Transport.TLSClientConfig, upstreamURL, clonedReq.Header)
 	if err != nil {
-		h.logger.Error("webtransport upstream dial failed",
-			zap.String("upstream", upstreamURL),
-			zap.Error(err))
+		h.countFailure(upstream)
+		if c := h.logger.Check(zapcore.ErrorLevel, "webtransport upstream dial failed"); c != nil {
+			c.Write(
+				zap.String("upstream", upstreamURL),
+				zap.Error(err),
+			)
+		}
 		_ = clientSess.CloseWithError(0, "upstream dial failed")
 		return nil
 	}
