@@ -501,13 +501,14 @@ func TestServer_DetermineTrustedProxy_MatchRightMostUntrustedFirst(t *testing.T)
 	assert.Equal(t, clientIP, "90.100.110.120")
 }
 
-// TestServer_BuildHTTP3ServerEnablesWebTransport asserts that the http3.Server
-// Caddy builds advertises WebTransport in its SETTINGS and wires the
-// prerequisites webtransport.Server.Upgrade relies on: DATAGRAM support,
-// a non-nil ConnContext hook (used to stash the underlying *quic.Conn for
-// Upgrade to retrieve), and QUIC stream reset partial delivery.
+// TestServer_BuildHTTP3ServerEnablesWebTransport asserts that with
+// EnableWebTransport=true the http3.Server advertises WebTransport in
+// its SETTINGS and wires the prerequisites webtransport.Server.Upgrade
+// relies on: DATAGRAM support, a non-nil ConnContext hook (used to stash
+// the underlying *quic.Conn for Upgrade to retrieve), and QUIC
+// stream-reset partial delivery.
 func TestServer_BuildHTTP3ServerEnablesWebTransport(t *testing.T) {
-	s := &Server{}
+	s := &Server{EnableWebTransport: true}
 	h3 := s.buildHTTP3Server(&tls.Config{})
 
 	assert.NotNil(t, h3, "expected non-nil http3.Server")
@@ -516,6 +517,23 @@ func TestServer_BuildHTTP3ServerEnablesWebTransport(t *testing.T) {
 	assert.NotNil(t, h3.ConnContext, "ConnContext must be set so webtransport.Server.Upgrade can retrieve the *quic.Conn")
 	assert.NotNil(t, h3.QUICConfig, "QUICConfig must be set")
 	assert.True(t, h3.QUICConfig.EnableStreamResetPartialDelivery, "EnableStreamResetPartialDelivery is required by webtransport-go")
+}
+
+// TestServer_BuildHTTP3ServerWithoutWebTransport asserts that with
+// EnableWebTransport=false (the default) the http3.Server does NOT
+// advertise WebTransport and does not enable the related QUIC/HTTP/3
+// features. This is the load-bearing regression guard: non-WT HTTP/3
+// deployments must pay zero cost for the WebTransport feature.
+func TestServer_BuildHTTP3ServerWithoutWebTransport(t *testing.T) {
+	s := &Server{}
+	h3 := s.buildHTTP3Server(&tls.Config{})
+
+	assert.NotNil(t, h3)
+	assert.False(t, h3.EnableDatagrams, "EnableDatagrams must be false when WebTransport is disabled")
+	assert.Empty(t, h3.AdditionalSettings, "AdditionalSettings must be empty when WebTransport is disabled")
+	assert.Nil(t, h3.ConnContext, "ConnContext must be nil when WebTransport is disabled")
+	assert.NotNil(t, h3.QUICConfig)
+	assert.False(t, h3.QUICConfig.EnableStreamResetPartialDelivery, "EnableStreamResetPartialDelivery must be false when WebTransport is disabled")
 }
 
 // TestServer_BuildHTTP3ServerAppliesHandlerAndTLS is a smoke test for the
@@ -534,7 +552,7 @@ func TestServer_BuildHTTP3ServerAppliesHandlerAndTLS(t *testing.T) {
 // TestServer_BuildWebTransportServerWrapsHTTP3Server asserts that the
 // webtransport.Server wraps the correct http3.Server.
 func TestServer_BuildWebTransportServerWrapsHTTP3Server(t *testing.T) {
-	s := &Server{}
+	s := &Server{EnableWebTransport: true}
 	s.h3server = s.buildHTTP3Server(&tls.Config{})
 	wt := s.buildWebTransportServer()
 
