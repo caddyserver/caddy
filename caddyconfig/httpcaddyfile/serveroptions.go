@@ -53,6 +53,7 @@ type serverOptions struct {
 	KeepAliveCount            int
 	MaxHeaderBytes            int
 	EnableFullDuplex          bool
+	EnableWebTransport        bool
 	ExpectedUnderscoreHeaders []string
 	ExpectedDotHeaders        []string
 	Protocols                 []string
@@ -272,6 +273,12 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 			}
 			serverOpts.EnableFullDuplex = true
 
+		case "enable_webtransport":
+			if d.NextArg() {
+				return nil, d.ArgErr()
+			}
+			serverOpts.EnableWebTransport = true
+
 		case "expected_underscore_headers":
 			args := d.RemainingArgs()
 			if len(args) == 0 {
@@ -453,6 +460,7 @@ func applyServerOptions(
 		server.KeepAliveCount = opts.KeepAliveCount
 		server.MaxHeaderBytes = opts.MaxHeaderBytes
 		server.EnableFullDuplex = opts.EnableFullDuplex
+		server.EnableWebTransport = opts.EnableWebTransport
 		server.ExpectedUnderscoreHeaders = opts.ExpectedUnderscoreHeaders
 		server.ExpectedDotHeaders = opts.ExpectedDotHeaders
 		server.Protocols = opts.Protocols
