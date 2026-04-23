@@ -16,8 +16,16 @@ package integration
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"fmt"
 	"io"
+	"math/big"
+	"net"
 	"net/http"
 	"strings"
 	"testing"
@@ -284,5 +292,211 @@ func TestWebTransport_ReverseProxyEndToEnd(t *testing.T) {
 	}
 	if string(got) != payload {
 		t.Fatalf("echo mismatch:\n  got:  %q\n  want: %q", strings.TrimSpace(string(got)), payload)
+	}
+}
+
+// TestWebTransport_ReverseProxyForwardsHeaders proves that the WebTransport
+// proxy path applies the same request-preparation pipeline as the normal
+// reverse_proxy path: `headers.request.set` lands on the upstream CONNECT,
+// X-Forwarded-For is added, and a Via header is appended. The upstream here
+// is a standalone webtransport.Server (not another Caddy) so we can observe
+// the raw headers of the Extended CONNECT that Caddy forwarded.
+func TestWebTransport_ReverseProxyForwardsHeaders(t *testing.T) {
+	if testing.Short() {
+		t.Skip()
+	}
+
+	// Capture the first Extended CONNECT's headers.
+	gotHeaders := make(chan http.Header, 1)
+	upstreamAddr, stopUpstream := startStandaloneWebTransport(t, func(sess *webtransport.Session, r *http.Request) {
+		select {
+		case gotHeaders <- r.Header.Clone():
+		default:
+		}
+		_ = sess.CloseWithError(0, "")
+	})
+	t.Cleanup(stopUpstream)
+
+	config := fmt.Sprintf(`{
+  "admin": {"listen": "localhost:2999"},
+  "apps": {
+    "http": {
+      "http_port": 9080,
+      "https_port": 9443,
+      "grace_period": 1,
+      "servers": {
+        "proxy": {
+          "listen": [":9443"],
+          "protocols": ["h3"],
+          "routes": [
+            {
+              "handle": [
+                {
+                  "handler": "reverse_proxy",
+                  "transport": {
+                    "protocol": "http",
+                    "versions": ["3"],
+                    "webtransport": true,
+                    "tls": {"insecure_skip_verify": true}
+                  },
+                  "headers": {
+                    "request": {
+                      "set": {"X-Caddy-Test": ["caddy-wt-hdr"]}
+                    }
+                  },
+                  "upstreams": [{"dial": "127.0.0.1:%d"}]
+                }
+              ]
+            }
+          ],
+          "tls_connection_policies": [
+            {
+              "certificate_selection": {"any_tag": ["cert0"]},
+              "default_sni": "a.caddy.localhost"
+            }
+          ]
+        }
+      }
+    },
+    "tls": {
+      "certificates": {
+        "load_files": [
+          {
+            "certificate": "/a.caddy.localhost.crt",
+            "key": "/a.caddy.localhost.key",
+            "tags": ["cert0"]
+          }
+        ]
+      }
+    },
+    "pki": {"certificate_authorities": {"local": {"install_trust": false}}}
+  }
+}`, upstreamAddr.Port)
+
+	tester := caddytest.NewTester(t)
+	tester.InitServer(config, "json")
+
+	dialer := &webtransport.Dialer{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true, //nolint:gosec // local CA
+			ServerName:         "a.caddy.localhost",
+			NextProtos:         []string{http3.NextProtoH3},
+		},
+		QUICConfig: &quic.Config{
+			EnableDatagrams:                  true,
+			EnableStreamResetPartialDelivery: true,
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var sess *webtransport.Session
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		_, s, err := dialer.Dial(ctx, "https://127.0.0.1:9443/", nil)
+		if err == nil {
+			sess = s
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("webtransport dial through proxy failed: %v", err)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	defer sess.CloseWithError(0, "")
+
+	select {
+	case hdr := <-gotHeaders:
+		if got := hdr.Get("X-Caddy-Test"); got != "caddy-wt-hdr" {
+			t.Errorf("upstream did not receive `headers.request.set` value; got X-Caddy-Test=%q", got)
+		}
+		if got := hdr.Get("X-Forwarded-For"); !strings.Contains(got, "127.0.0.1") {
+			t.Errorf("upstream did not receive X-Forwarded-For=127.0.0.1; got %q", got)
+		}
+		if got := hdr.Get("Via"); got == "" {
+			t.Errorf("upstream did not receive Via header")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("upstream did not observe forwarded CONNECT headers in time")
+	}
+}
+
+// startStandaloneWebTransport starts a webtransport.Server on a random UDP
+// port with a self-signed cert. handler runs after a successful Upgrade.
+// Returns the listener addr and a shutdown func.
+func startStandaloneWebTransport(t *testing.T, handler func(s *webtransport.Session, r *http.Request)) (*net.UDPAddr, func()) {
+	t.Helper()
+	tlsCfg := newSelfSignedTLSConfig(t, "localhost")
+
+	mux := http.NewServeMux()
+	h3 := &http3.Server{
+		TLSConfig: tlsCfg,
+		Handler:   mux,
+		QUICConfig: &quic.Config{
+			EnableDatagrams:                  true,
+			EnableStreamResetPartialDelivery: true,
+		},
+	}
+	webtransport.ConfigureHTTP3Server(h3)
+	wtServer := &webtransport.Server{H3: h3}
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		sess, err := wtServer.Upgrade(w, r)
+		if err != nil {
+			t.Logf("standalone WebTransport upgrade failed: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		handler(sess, r)
+	})
+
+	udpAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := net.ListenUDP("udp", udpAddr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	servErr := make(chan error, 1)
+	go func() { servErr <- wtServer.Serve(conn) }()
+	shutdown := func() {
+		_ = wtServer.Close()
+		<-servErr
+		_ = conn.Close()
+	}
+	return conn.LocalAddr().(*net.UDPAddr), shutdown
+}
+
+// newSelfSignedTLSConfig produces a self-signed TLS config suitable for
+// 127.0.0.1 and the given common name, with the H3 ALPN advertised.
+func newSelfSignedTLSConfig(t *testing.T, cn string) *tls.Config {
+	t.Helper()
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: cn},
+		NotBefore:    time.Now().Add(-time.Minute),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		DNSNames:     []string{cn},
+		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")},
+		IsCA:         true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, priv.Public(), priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &tls.Config{
+		Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: priv, Leaf: cert}},
+		NextProtos:   []string{http3.NextProtoH3},
 	}
 }
