@@ -185,6 +185,17 @@ func (h *Handler) serveWebTransport(w http.ResponseWriter, r *http.Request) erro
 			fmt.Errorf("webtransport upgrade: %w", err))
 	}
 
+	// Track the session in the same upstream counters the normal proxy
+	// path maintains: Host.NumRequests drives MaxRequests gating and
+	// least-connections selection; the per-address in-flight counter
+	// feeds the admin API's upstream stats.
+	_ = dialInfo.Upstream.Host.countRequest(1)
+	incInFlightRequest(dialInfo.Address)
+	defer func() {
+		_ = dialInfo.Upstream.Host.countRequest(-1)
+		decInFlightRequest(dialInfo.Address)
+	}()
+
 	runWebTransportPump(clientSess, upstreamSess, h.logger)
 	return nil
 }
