@@ -48,6 +48,7 @@ type serverOptions struct {
 	KeepAliveCount        int
 	MaxHeaderBytes        int
 	EnableFullDuplex      bool
+	EnableWebTransport    bool
 	Protocols             []string
 	StrictSNIHost         *bool
 	TrustedProxiesRaw     json.RawMessage
@@ -218,6 +219,12 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 			}
 			serverOpts.EnableFullDuplex = true
 
+		case "enable_webtransport":
+			if d.NextArg() {
+				return nil, d.ArgErr()
+			}
+			serverOpts.EnableWebTransport = true
+
 		case "log_credentials":
 			if d.NextArg() {
 				return nil, d.ArgErr()
@@ -380,6 +387,7 @@ func applyServerOptions(
 		server.KeepAliveCount = opts.KeepAliveCount
 		server.MaxHeaderBytes = opts.MaxHeaderBytes
 		server.EnableFullDuplex = opts.EnableFullDuplex
+		server.EnableWebTransport = opts.EnableWebTransport
 		server.Protocols = opts.Protocols
 		server.StrictSNIHost = opts.StrictSNIHost
 		server.TrustedProxiesRaw = opts.TrustedProxiesRaw

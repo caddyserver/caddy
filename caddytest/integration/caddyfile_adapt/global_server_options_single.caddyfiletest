@@ -12,6 +12,7 @@
 		}
 		max_header_size 100MB
 		enable_full_duplex
+		enable_webtransport
 		log_credentials
 		protocols h1 h2 h2c h3
 		strict_sni_host
@@ -54,6 +55,7 @@ foo.com {
 					"keepalive_count": 10,
 					"max_header_bytes": 100000000,
 					"enable_full_duplex": true,
+					"enable_webtransport": true,
 					"routes": [
 						{
 							"match": [

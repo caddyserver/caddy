@@ -261,12 +261,6 @@ type Handler struct {
 	CB               CircuitBreaker    `json:"-"`
 	DynamicUpstreams UpstreamSource    `json:"-"`
 
-	// webtransportEnabled is set at Provision time to true iff
-	// Transport is *HTTPTransport with WebTransport enabled. Checked on
-	// the ServeHTTP hot path so non-WT transports skip the type
-	// assertion on every request.
-	webtransportEnabled bool
-
 	// transportHeaderOps is a set of header operations provided
 	// by the transport at provision time, if the transport
 	// implements TransportHeaderOpsProvider. These ops are
@@ -335,12 +329,6 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 			if h.ResponseBuffers == 0 {
 				h.ResponseBuffers = respBuffers
 			}
-		}
-
-		// Cache WebTransport enablement so ServeHTTP can short-circuit
-		// the per-request type assertion on non-WT paths.
-		if ht, ok := h.Transport.(*HTTPTransport); ok {
-			h.webtransportEnabled = ht.WebTransport
 		}
 	}
 	if h.LoadBalancing != nil && h.LoadBalancing.SelectionPolicyRaw != nil {
@@ -504,8 +492,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	// WebTransport: HTTP/3 Extended CONNECT with :protocol=webtransport
 	// can't flow through the normal HTTP round-trip — the session hosts
 	// many QUIC streams and datagrams that need bidirectional pumping.
-	// Branch out early before anything else touches the request.
-	if h.webtransportEnabled && isWebTransportExtendedConnect(r) {
+	// Detect it here the same way the handler detects a WebSocket
+	// upgrade: by request shape, not by a per-handler config flag. The
+	// underlying *webtransport.Server only exists when the parent
+	// server has enable_webtransport set, so serveWebTransport fails
+	// fast and clearly if a WT request reaches a non-WT server.
+	if isWebTransportExtendedConnect(r) {
 		return h.serveWebTransport(w, r)
 	}
 

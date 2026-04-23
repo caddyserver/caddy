@@ -1315,15 +1315,6 @@ func (h *HTTPTransport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.ArgErr()
 			}
 
-		case "webtransport":
-			// Accepts no arguments: `webtransport` alone enables it.
-			// Exclusivity with `versions 3` is enforced at Provision
-			// time so parsing is order-independent.
-			if d.NextArg() {
-				return d.Errf("webtransport does not take arguments")
-			}
-			h.WebTransport = true
-
 		case "compression":
 			if d.NextArg() {
 				if d.Val() == "off" {
