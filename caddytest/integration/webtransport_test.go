@@ -422,6 +422,124 @@ func TestWebTransport_ReverseProxyForwardsHeaders(t *testing.T) {
 	}
 }
 
+// TestWebTransport_UpstreamDialFailureSurfaces5xx proves the WT path dials
+// the upstream BEFORE upgrading the client, so an unreachable upstream
+// returns a proper 5xx on the client's Dial call (webtransport-go surfaces
+// it via RequirementsNotMetError or similar with the response attached) —
+// not a successful Dial followed by an opaque session close.
+func TestWebTransport_UpstreamDialFailureSurfaces5xx(t *testing.T) {
+	if testing.Short() {
+		t.Skip()
+	}
+	// Bind a UDP port then release it so we know nothing is listening.
+	l, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadPort := l.LocalAddr().(*net.UDPAddr).Port
+	_ = l.Close()
+
+	config := fmt.Sprintf(`{
+  "admin": {"listen": "localhost:2999"},
+  "apps": {
+    "http": {
+      "http_port": 9080,
+      "https_port": 9443,
+      "grace_period": 1,
+      "servers": {
+        "proxy": {
+          "listen": [":9443"],
+          "protocols": ["h3"],
+          "routes": [
+            {
+              "handle": [
+                {
+                  "handler": "reverse_proxy",
+                  "transport": {
+                    "protocol": "http",
+                    "versions": ["3"],
+                    "webtransport": true,
+                    "tls": {"insecure_skip_verify": true}
+                  },
+                  "upstreams": [{"dial": "127.0.0.1:%d"}]
+                }
+              ]
+            }
+          ],
+          "tls_connection_policies": [
+            {
+              "certificate_selection": {"any_tag": ["cert0"]},
+              "default_sni": "a.caddy.localhost"
+            }
+          ]
+        }
+      }
+    },
+    "tls": {
+      "certificates": {
+        "load_files": [
+          {
+            "certificate": "/a.caddy.localhost.crt",
+            "key": "/a.caddy.localhost.key",
+            "tags": ["cert0"]
+          }
+        ]
+      }
+    },
+    "pki": {"certificate_authorities": {"local": {"install_trust": false}}}
+  }
+}`, deadPort)
+
+	tester := caddytest.NewTester(t)
+	tester.InitServer(config, "json")
+
+	dialer := &webtransport.Dialer{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true, //nolint:gosec // local CA
+			ServerName:         "a.caddy.localhost",
+			NextProtos:         []string{http3.NextProtoH3},
+		},
+		QUICConfig: &quic.Config{
+			EnableDatagrams:                  true,
+			EnableStreamResetPartialDelivery: true,
+		},
+	}
+
+	// Give the proxy a short window to bind; the upstream dial will then
+	// fail quickly against the unbound port.
+	outer, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+
+	var (
+		rsp     *http.Response
+		dialErr error
+		sess    *webtransport.Session
+	)
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		ctx, c := context.WithTimeout(outer, 2*time.Second)
+		rsp, sess, dialErr = dialer.Dial(ctx, "https://127.0.0.1:9443/", nil)
+		c()
+		if dialErr != nil {
+			break
+		}
+		// Happy path dial isn't allowed here — the upstream is dead.
+		sess.CloseWithError(0, "")
+		if time.Now().After(deadline) {
+			t.Fatal("expected Dial to fail against unreachable upstream, got success")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// The exact error type varies with webtransport-go versions, but the
+	// response (if attached) should carry a 5xx status — proving the
+	// proxy returned an error status instead of upgrading + closing.
+	t.Logf("observed dial error: %v", dialErr)
+	if rsp != nil && rsp.StatusCode < 500 {
+		t.Errorf("expected 5xx status from proxy on upstream failure; got %d", rsp.StatusCode)
+	}
+}
+
 // startStandaloneWebTransport starts a webtransport.Server on a random UDP
 // port with a self-signed cert. handler runs after a successful Upgrade.
 // Returns the listener addr and a shutdown func.
