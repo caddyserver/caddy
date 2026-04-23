@@ -40,16 +40,20 @@ func isWebTransportExtendedConnect(r *http.Request) bool {
 }
 
 // serveWebTransport handles a WebTransport Extended CONNECT: selects an
-// upstream, upgrades the client-side session, dials the upstream-side
+// upstream, dials the upstream-side session, upgrades the client-side
 // session, and runs the session pump until both sides close.
 //
-// Unlike the regular HTTP proxy path, there are no retries: a failed
-// dial closes the client's session and returns (so the handler chain
-// can finish). The outgoing CONNECT is prepared with the same Rewrite,
-// hop-by-hop stripping, X-Forwarded-*/Via, transport- and user-configured
-// header ops as the normal proxy path so operators see consistent
-// behavior. Requests that reach this function are already known to be
-// WebTransport; callers should gate with isWebTransportExtendedConnect.
+// The upstream is dialed *before* the client is upgraded so that a refused
+// or unreachable upstream surfaces as a real 5xx on the client's Dial —
+// not as a bare post-upgrade session close. There are no retries: WT
+// sessions are long-lived and not idempotent.
+//
+// The outgoing CONNECT is prepared with the same Rewrite, hop-by-hop
+// stripping, X-Forwarded-*/Via, transport- and user-configured header ops
+// as the normal proxy path. Response-header ops (gated by `Require`, if
+// configured) apply to the headers the client sees on the 200 OK.
+// Requests that reach this function are already known to be WebTransport;
+// callers should gate with isWebTransportExtendedConnect.
 func (h *Handler) serveWebTransport(w http.ResponseWriter, r *http.Request) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	start := time.Now()
@@ -131,25 +135,21 @@ func (h *Handler) serveWebTransport(w http.ResponseWriter, r *http.Request) erro
 	}
 
 	// Reach the naked http3 response writer so Upgrade's type assertions
-	// succeed through Caddy's wrapper chain.
+	// succeed through Caddy's wrapper chain. Done before dialing so we
+	// fail fast if the writer stack is unexpectedly incompatible.
 	naked, ok := caddyhttp.UnwrapResponseWriterAs[caddywt.Writer](w)
 	if !ok {
 		return caddyhttp.Error(http.StatusInternalServerError,
 			errors.New("webtransport: response writer does not support WebTransport upgrade"))
 	}
 
-	clientSess, err := wtServer.Upgrade(naked, r)
-	if err != nil {
-		if c := h.logger.Check(zapcore.DebugLevel, "webtransport client upgrade failed"); c != nil {
-			c.Write(zap.Error(err))
-		}
-		return caddyhttp.Error(http.StatusBadRequest,
-			fmt.Errorf("webtransport upgrade: %w", err))
-	}
-
+	// Dial the upstream BEFORE upgrading the client. If the upstream is
+	// unreachable or refuses the CONNECT, a proper 5xx goes back over the
+	// H3 stream and the client's Dial sees the real status — instead of
+	// an already-upgraded session closing immediately.
 	ht := h.Transport.(*HTTPTransport)
 	upstreamURL := buildWebTransportUpstreamURL(dialInfo.Address, clonedReq)
-	_, upstreamSess, err := dialUpstreamWebTransport(r.Context(), ht.h3Transport.TLSClientConfig, upstreamURL, clonedReq.Header)
+	upstreamResp, upstreamSess, err := dialUpstreamWebTransport(r.Context(), ht.h3Transport.TLSClientConfig, upstreamURL, clonedReq.Header)
 	if err != nil {
 		h.countFailure(upstream)
 		if c := h.logger.Check(zapcore.ErrorLevel, "webtransport upstream dial failed"); c != nil {
@@ -158,8 +158,31 @@ func (h *Handler) serveWebTransport(w http.ResponseWriter, r *http.Request) erro
 				zap.Error(err),
 			)
 		}
-		_ = clientSess.CloseWithError(0, "upstream dial failed")
-		return nil
+		return caddyhttp.Error(http.StatusBadGateway,
+			fmt.Errorf("webtransport upstream dial: %w", err))
+	}
+	defer upstreamResp.Body.Close()
+
+	// Response-header ops (gated by Require, if configured) are applied to
+	// the 200 OK the client will see. webtransport.Server.Upgrade flushes
+	// w.Header() along with the status, so setting these before Upgrade is
+	// sufficient. Matching against the upstream response mirrors the normal
+	// proxy path where upstream response == client response.
+	if h.Headers != nil && h.Headers.Response != nil {
+		if h.Headers.Response.Require == nil ||
+			h.Headers.Response.Require.Match(upstreamResp.StatusCode, upstreamResp.Header) {
+			h.Headers.Response.ApplyTo(w.Header(), repl)
+		}
+	}
+
+	clientSess, err := wtServer.Upgrade(naked, r)
+	if err != nil {
+		_ = upstreamSess.CloseWithError(0, "client upgrade failed")
+		if c := h.logger.Check(zapcore.DebugLevel, "webtransport client upgrade failed"); c != nil {
+			c.Write(zap.Error(err))
+		}
+		return caddyhttp.Error(http.StatusBadRequest,
+			fmt.Errorf("webtransport upgrade: %w", err))
 	}
 
 	runWebTransportPump(clientSess, upstreamSess, h.logger)
