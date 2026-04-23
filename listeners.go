@@ -24,6 +24,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -204,6 +205,41 @@ func (na NetworkAddress) listen(ctx context.Context, portOffset uint, config net
 	return ln, nil
 }
 
+// CanBindAddress checks whether a new listener can safely be created on the
+// given network, host, and port. This currently only applies to admin ports,
+// and returns true if the address is not already in use; false otherwise
+func CanBindAddress(netw, host string, port uint) bool {
+	portStr := strconv.FormatUint(uint64(port), 10)
+
+	// check the ports are reserved for admin
+	if slices.Contains([]string{"tcp", "tcp4", "tcp6"}, netw) {
+		exitingAddrs := []string{}
+		if localAdminServer != nil {
+			exitingAddrs = append(exitingAddrs, localAdminServer.Addr)
+		}
+		if remoteAdminServer != nil {
+			exitingAddrs = append(exitingAddrs, remoteAdminServer.Addr)
+		}
+		// Check for exact match
+		if slices.Contains(exitingAddrs, net.JoinHostPort(host, portStr)) {
+			return false
+		}
+
+		// Check for wildcard interface conflict on same port
+		for _, addr := range exitingAddrs {
+			addrHost, addrPort, err := net.SplitHostPort(addr)
+			if err != nil {
+				continue
+			}
+			if addrPort == portStr && (isWildcardInterface(host) || isWildcardInterface(addrHost)) {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
 // IsUnixNetwork returns true if na.Network is
 // unix, unixgram, or unixpacket.
 func (na NetworkAddress) IsUnixNetwork() bool {
@@ -269,10 +305,14 @@ func (na NetworkAddress) isLoopback() bool {
 }
 
 func (na NetworkAddress) isWildcardInterface() bool {
-	if na.Host == "" {
+	return isWildcardInterface(na.Host)
+}
+
+func isWildcardInterface(host string) bool {
+	if host == "" {
 		return true
 	}
-	if ip, err := netip.ParseAddr(na.Host); err == nil {
+	if ip, err := netip.ParseAddr(host); err == nil {
 		return ip.IsUnspecified()
 	}
 	return false
