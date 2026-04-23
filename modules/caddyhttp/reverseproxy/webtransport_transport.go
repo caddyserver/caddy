@@ -82,20 +82,7 @@ func (h *Handler) serveWebTransport(w http.ResponseWriter, r *http.Request) erro
 	// Resolve the candidate upstream set (static or dynamic) and select
 	// one. WT sessions are long-lived and not idempotent, so there are no
 	// retries; picking once matches how operators expect WT to behave.
-	upstreams := h.Upstreams
-	if h.DynamicUpstreams != nil {
-		dynUpstreams, err := h.DynamicUpstreams.GetUpstreams(r)
-		if err != nil {
-			if c := h.logger.Check(zapcore.WarnLevel, "webtransport: dynamic upstreams failed; falling back to static"); c != nil {
-				c.Write(zap.Error(err))
-			}
-		} else {
-			upstreams = dynUpstreams
-			for _, dUp := range dynUpstreams {
-				h.provisionUpstream(dUp, true)
-			}
-		}
-	}
+	upstreams := h.resolveUpstreams(r)
 	upstream := h.LoadBalancing.SelectionPolicy.Select(upstreams, r, w)
 	if upstream == nil {
 		return caddyhttp.Error(http.StatusBadGateway, errNoUpstream)
@@ -110,13 +97,7 @@ func (h *Handler) serveWebTransport(w http.ResponseWriter, r *http.Request) erro
 		return caddyhttp.Error(http.StatusInternalServerError,
 			fmt.Errorf("webtransport: making dial info: %w", err))
 	}
-	repl.Set("http.reverse_proxy.upstream.address", dialInfo.String())
-	repl.Set("http.reverse_proxy.upstream.hostport", dialInfo.Address)
-	repl.Set("http.reverse_proxy.upstream.host", dialInfo.Host)
-	repl.Set("http.reverse_proxy.upstream.port", dialInfo.Port)
-	repl.Set("http.reverse_proxy.upstream.requests", upstream.Host.NumRequests())
-	repl.Set("http.reverse_proxy.upstream.max_requests", upstream.MaxRequests)
-	repl.Set("http.reverse_proxy.upstream.fails", upstream.Host.Fails())
+	setUpstreamReplacerVars(repl, upstream, dialInfo)
 
 	// Prepare the outgoing request the same way normal proxying does —
 	// Rewrite, hop-by-hop stripping, X-Forwarded-*, Via, etc. — then apply

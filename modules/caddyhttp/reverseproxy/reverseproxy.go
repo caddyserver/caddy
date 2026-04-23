@@ -72,6 +72,43 @@ func getInFlightRequests() map[string]int64 {
 	return copyMap
 }
 
+// resolveUpstreams returns the candidate upstream set for this request:
+// dynamic upstreams when configured (with fallback to static on error),
+// static upstreams otherwise. Any dynamic upstream entries are provisioned
+// before return.
+func (h *Handler) resolveUpstreams(r *http.Request) []*Upstream {
+	upstreams := h.Upstreams
+	if h.DynamicUpstreams == nil {
+		return upstreams
+	}
+	dUpstreams, err := h.DynamicUpstreams.GetUpstreams(r)
+	if err != nil {
+		if c := h.logger.Check(zapcore.ErrorLevel, "failed getting dynamic upstreams; falling back to static upstreams"); c != nil {
+			c.Write(zap.Error(err))
+		}
+		return upstreams
+	}
+	for _, dUp := range dUpstreams {
+		h.provisionUpstream(dUp, true)
+	}
+	if c := h.logger.Check(zapcore.DebugLevel, "provisioned dynamic upstreams"); c != nil {
+		c.Write(zap.Int("count", len(dUpstreams)))
+	}
+	return dUpstreams
+}
+
+// setUpstreamReplacerVars populates the {http.reverse_proxy.upstream.*}
+// placeholders describing the selected upstream.
+func setUpstreamReplacerVars(repl *caddy.Replacer, upstream *Upstream, di DialInfo) {
+	repl.Set("http.reverse_proxy.upstream.address", di.String())
+	repl.Set("http.reverse_proxy.upstream.hostport", di.Address)
+	repl.Set("http.reverse_proxy.upstream.host", di.Host)
+	repl.Set("http.reverse_proxy.upstream.port", di.Port)
+	repl.Set("http.reverse_proxy.upstream.requests", upstream.Host.NumRequests())
+	repl.Set("http.reverse_proxy.upstream.max_requests", upstream.MaxRequests)
+	repl.Set("http.reverse_proxy.upstream.fails", upstream.Host.Fails())
+}
+
 func init() {
 	caddy.RegisterModule(Handler{})
 }
@@ -592,23 +629,7 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	repl *caddy.Replacer, reqHeader http.Header, reqHost string, next caddyhttp.Handler,
 ) (bool, error) {
 	// get the updated list of upstreams
-	upstreams := h.Upstreams
-	if h.DynamicUpstreams != nil {
-		dUpstreams, err := h.DynamicUpstreams.GetUpstreams(r)
-		if err != nil {
-			if c := h.logger.Check(zapcore.ErrorLevel, "failed getting dynamic upstreams; falling back to static upstreams"); c != nil {
-				c.Write(zap.Error(err))
-			}
-		} else {
-			upstreams = dUpstreams
-			for _, dUp := range dUpstreams {
-				h.provisionUpstream(dUp, true)
-			}
-			if c := h.logger.Check(zapcore.DebugLevel, "provisioned dynamic upstreams"); c != nil {
-				c.Write(zap.Int("count", len(dUpstreams)))
-			}
-		}
-	}
+	upstreams := h.resolveUpstreams(r)
 
 	// choose an available upstream
 	upstream := h.LoadBalancing.SelectionPolicy.Select(upstreams, r, w)
@@ -643,13 +664,7 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	caddyhttp.SetVar(r.Context(), dialInfoVarKey, dialInfo)
 
 	// set placeholders with information about this upstream
-	repl.Set("http.reverse_proxy.upstream.address", dialInfo.String())
-	repl.Set("http.reverse_proxy.upstream.hostport", dialInfo.Address)
-	repl.Set("http.reverse_proxy.upstream.host", dialInfo.Host)
-	repl.Set("http.reverse_proxy.upstream.port", dialInfo.Port)
-	repl.Set("http.reverse_proxy.upstream.requests", upstream.Host.NumRequests())
-	repl.Set("http.reverse_proxy.upstream.max_requests", upstream.MaxRequests)
-	repl.Set("http.reverse_proxy.upstream.fails", upstream.Host.Fails())
+	setUpstreamReplacerVars(repl, upstream, dialInfo)
 
 	// mutate request headers according to this upstream;
 	// because we're in a retry loop, we have to copy headers
