@@ -86,7 +86,7 @@ func (h *Handler) serveWebTransport(w http.ResponseWriter, r *http.Request) erro
 	wtServer, ok := srv.WebTransportServer().(*webtransport.Server)
 	if !ok || wtServer == nil {
 		return caddyhttp.Error(http.StatusInternalServerError,
-			errors.New("webtransport: HTTP/3 is not enabled on this server; WebTransport requires H3"))
+			errors.New("webtransport: server has enable_webtransport=false or HTTP/3 is not enabled"))
 	}
 
 	if h.LoadBalancing == nil || h.LoadBalancing.SelectionPolicy == nil {
@@ -139,11 +139,24 @@ func (h *Handler) serveWebTransport(w http.ResponseWriter, r *http.Request) erro
 			errors.New("webtransport: response writer does not support WebTransport upgrade"))
 	}
 
+	// A WT CONNECT reached this handler because the parent server has
+	// enable_webtransport=true. But the handler's transport still has to
+	// speak HTTP/3 to dial WT upstream. Fail fast and clearly if it
+	// doesn't, the same way we'd fail on an unreachable upstream.
+	ht, ok := h.Transport.(*HTTPTransport)
+	if !ok {
+		return caddyhttp.Error(http.StatusBadGateway,
+			errors.New("webtransport: requires the 'http' transport with versions [\"3\"]"))
+	}
+	if ht.h3Transport == nil {
+		return caddyhttp.Error(http.StatusBadGateway,
+			errors.New("webtransport: transport does not include HTTP/3; set versions to [\"3\"]"))
+	}
+
 	// Dial the upstream BEFORE upgrading the client. If the upstream is
 	// unreachable or refuses the CONNECT, a proper 5xx goes back over the
 	// H3 stream and the client's Dial sees the real status — instead of
 	// an already-upgraded session closing immediately.
-	ht := h.Transport.(*HTTPTransport)
 	upstreamURL := buildWebTransportUpstreamURL(dialInfo.Address, clonedReq)
 	upstreamResp, upstreamSess, err := dialUpstreamWebTransport(r.Context(), ht.h3Transport.TLSClientConfig, upstreamURL, clonedReq.Header)
 	if err != nil {
