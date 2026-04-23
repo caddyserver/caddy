@@ -23,20 +23,35 @@ import (
 	"time"
 
 	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/http3"
 	"github.com/quic-go/webtransport-go"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	caddywt "github.com/caddyserver/caddy/v2/modules/caddyhttp/webtransport"
 )
+
+// webtransportProtocol is the :protocol pseudo-header value sent by a
+// client that wants to establish a WebTransport session over an HTTP/3
+// Extended CONNECT.
+const webtransportProtocol = "webtransport"
+
+// webtransportWriter is the naked HTTP/3 response-writer shape that
+// webtransport.Server.Upgrade type-asserts on. Caddy's
+// UnwrapResponseWriterAs walks the ResponseWriter wrapper chain to this
+// type before calling Upgrade.
+type webtransportWriter interface {
+	http.ResponseWriter
+	http3.Settingser
+	http3.HTTPStreamer
+}
 
 // isWebTransportExtendedConnect reports whether r is an HTTP/3 Extended
 // CONNECT that requests a WebTransport session. Does not check whether
 // WebTransport proxying is configured; callers gate on Handler state.
 func isWebTransportExtendedConnect(r *http.Request) bool {
-	return r.ProtoMajor == 3 && r.Method == http.MethodConnect && r.Proto == caddywt.Protocol
+	return r.ProtoMajor == 3 && r.Method == http.MethodConnect && r.Proto == webtransportProtocol
 }
 
 // serveWebTransport handles a WebTransport Extended CONNECT: selects an
@@ -118,7 +133,7 @@ func (h *Handler) serveWebTransport(w http.ResponseWriter, r *http.Request) erro
 	// Reach the naked http3 response writer so Upgrade's type assertions
 	// succeed through Caddy's wrapper chain. Done before dialing so we
 	// fail fast if the writer stack is unexpectedly incompatible.
-	naked, ok := caddyhttp.UnwrapResponseWriterAs[caddywt.Writer](w)
+	naked, ok := caddyhttp.UnwrapResponseWriterAs[webtransportWriter](w)
 	if !ok {
 		return caddyhttp.Error(http.StatusInternalServerError,
 			errors.New("webtransport: response writer does not support WebTransport upgrade"))
