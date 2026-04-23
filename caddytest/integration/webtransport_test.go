@@ -63,6 +63,7 @@ func TestWebTransport_EchoHandlerBidi(t *testing.T) {
         "srv0": {
           "listen": [":9443"],
           "protocols": ["h3"],
+          "enable_webtransport": true,
           "routes": [
             {
               "handle": [{"handler": "webtransport"}]
@@ -181,6 +182,7 @@ func TestWebTransport_ReverseProxyEndToEnd(t *testing.T) {
         "proxy": {
           "listen": [":9443"],
           "protocols": ["h3"],
+          "enable_webtransport": true,
           "routes": [
             {
               "handle": [
@@ -189,7 +191,6 @@ func TestWebTransport_ReverseProxyEndToEnd(t *testing.T) {
                   "transport": {
                     "protocol": "http",
                     "versions": ["3"],
-                    "webtransport": true,
                     "tls": {"insecure_skip_verify": true}
                   },
                   "upstreams": [{"dial": "127.0.0.1:9444"}]
@@ -207,6 +208,7 @@ func TestWebTransport_ReverseProxyEndToEnd(t *testing.T) {
         "upstream": {
           "listen": [":9444"],
           "protocols": ["h3"],
+          "enable_webtransport": true,
           "routes": [
             {"handle": [{"handler": "webtransport"}]}
           ],
@@ -329,6 +331,7 @@ func TestWebTransport_ReverseProxyForwardsHeaders(t *testing.T) {
         "proxy": {
           "listen": [":9443"],
           "protocols": ["h3"],
+          "enable_webtransport": true,
           "routes": [
             {
               "handle": [
@@ -337,7 +340,6 @@ func TestWebTransport_ReverseProxyForwardsHeaders(t *testing.T) {
                   "transport": {
                     "protocol": "http",
                     "versions": ["3"],
-                    "webtransport": true,
                     "tls": {"insecure_skip_verify": true}
                   },
                   "headers": {
@@ -451,6 +453,7 @@ func TestWebTransport_UpstreamDialFailureSurfaces5xx(t *testing.T) {
         "proxy": {
           "listen": [":9443"],
           "protocols": ["h3"],
+          "enable_webtransport": true,
           "routes": [
             {
               "handle": [
@@ -459,7 +462,6 @@ func TestWebTransport_UpstreamDialFailureSurfaces5xx(t *testing.T) {
                   "transport": {
                     "protocol": "http",
                     "versions": ["3"],
-                    "webtransport": true,
                     "tls": {"insecure_skip_verify": true}
                   },
                   "upstreams": [{"dial": "127.0.0.1:%d"}]
@@ -580,6 +582,7 @@ func TestWebTransport_InFlightRequestsTracked(t *testing.T) {
         "proxy": {
           "listen": [":9443"],
           "protocols": ["h3"],
+          "enable_webtransport": true,
           "routes": [
             {
               "handle": [
@@ -588,7 +591,6 @@ func TestWebTransport_InFlightRequestsTracked(t *testing.T) {
                   "transport": {
                     "protocol": "http",
                     "versions": ["3"],
-                    "webtransport": true,
                     "tls": {"insecure_skip_verify": true}
                   },
                   "upstreams": [{"dial": "%s"}]
