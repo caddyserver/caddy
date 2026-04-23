@@ -462,7 +462,10 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 		sqs := newSharedQUICState(tlsConf)
 		// http3.ConfigureTLSConfig only uses this field and tls App sets this field as well
 		//nolint:gosec
-		quicTlsConfig := &tls.Config{GetConfigForClient: sqs.getConfigForClient}
+		quicTlsConfig := &tls.Config{
+			GetConfigForClient:          sqs.getConfigForClient,
+			GetEncryptedClientHelloKeys: sqs.getEncryptedClientHelloKeys,
+		}
 		// Require clients to verify their source address when we're handling more than 1000 handshakes per second.
 		// TODO: make tunable?
 		limiter := rate.NewLimiter(1000, 1000)
@@ -538,6 +541,16 @@ func (sqs *sharedQUICState) getConfigForClient(ch *tls.ClientHelloInfo) (*tls.Co
 	sqs.rmu.RLock()
 	defer sqs.rmu.RUnlock()
 	return sqs.activeTlsConf.GetConfigForClient(ch)
+}
+
+// getEncryptedClientHelloKeys is used as tls.Config's GetEncryptedClientHelloKeys field.
+func (sqs *sharedQUICState) getEncryptedClientHelloKeys(ch *tls.ClientHelloInfo) ([]tls.EncryptedClientHelloKey, error) {
+	sqs.rmu.RLock()
+	defer sqs.rmu.RUnlock()
+	if sqs.activeTlsConf.GetEncryptedClientHelloKeys == nil {
+		return nil, nil
+	}
+	return sqs.activeTlsConf.GetEncryptedClientHelloKeys(ch)
 }
 
 // addState adds tls.Config and activeRequests to the map if not present and returns the corresponding context and its cancelFunc
