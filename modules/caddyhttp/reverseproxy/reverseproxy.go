@@ -489,18 +489,6 @@ func (h *Handler) Cleanup() error {
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
-	// WebTransport: HTTP/3 Extended CONNECT with :protocol=webtransport
-	// can't flow through the normal HTTP round-trip — the session hosts
-	// many QUIC streams and datagrams that need bidirectional pumping.
-	// Detect it here the same way the handler detects a WebSocket
-	// upgrade: by request shape, not by a per-handler config flag. The
-	// underlying *webtransport.Server only exists when the parent
-	// server has enable_webtransport set, so serveWebTransport fails
-	// fast and clearly if a WT request reaches a non-WT server.
-	if isWebTransportExtendedConnect(r) {
-		return h.serveWebTransport(w, r)
-	}
-
 	// prepare the request for proxying; this is needed only once
 	clonedReq, err := h.prepareRequest(r, repl)
 	if err != nil {
@@ -689,12 +677,13 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 		return true, nil
 	}
 
-	// if the roundtrip was successful, don't retry the request or
-	// ding the health status of the upstream (an error can still
-	// occur after the roundtrip if, for example, a response handler
-	// after the roundtrip returns an error)
-	if succ, ok := proxyErr.(roundtripSucceededError); ok {
-		return true, succ.error
+	// if the handler has already committed a client-visible response
+	// (e.g. a successful roundtrip whose handle_response route errored,
+	// or a WebTransport upgrade that flushed 200 OK and hijacked the
+	// stream), don't retry against another upstream and don't ding the
+	// upstream's health status
+	if term, ok := proxyErr.(terminalError); ok {
+		return true, term.error
 	}
 
 	// remember this failure (if enabled); response-based retries
@@ -990,6 +979,18 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	server := req.Context().Value(caddyhttp.ServerCtxKey).(*caddyhttp.Server)
 	shouldLogCredentials := server.Logs != nil && server.Logs.ShouldLogCredentials
 
+	// WebTransport: Extended CONNECT :protocol=webtransport can't flow
+	// through the normal HTTP round-trip — the session hosts many QUIC
+	// streams and datagrams that need bidirectional pumping. Swap
+	// RoundTrip for a small hijack helper. Upstream dial failures
+	// surface as DialError so the loop can retry across upstreams;
+	// pre-upgrade misconfig and post-upgrade failures return
+	// terminalError because the response is already committed to the
+	// client or no upstream can fix the condition.
+	if isWebTransportExtendedConnect(origReq) {
+		return h.webTransportHijack(rw, req, repl, di, server)
+	}
+
 	// Forward 1xx status codes, backported from https://github.com/golang/go/pull/53164
 	var (
 		roundTripMutex sync.Mutex
@@ -1175,10 +1176,10 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 			res.Body.Close()
 		}
 
-		// wrap any route error in roundtripSucceededError so caller knows that
-		// the roundtrip was successful and to not retry
+		// wrap any route error in terminalError so the outer loop knows
+		// the response is committed and must not be retried
 		if routeErr != nil {
-			return roundtripSucceededError{routeErr}
+			return terminalError{routeErr}
 		}
 
 		// we're done handling the response, and we don't want to
@@ -1757,9 +1758,16 @@ func matcherSetHasExpressionMatcher(matcherSet caddyhttp.MatcherSet) bool {
 	return false
 }
 
-// roundtripSucceededError is an error type that is returned if the
-// roundtrip succeeded, but an error occurred after-the-fact.
-type roundtripSucceededError struct{ error }
+// terminalError signals that the proxy loop must stop and the wrapped
+// error must be propagated unchanged. It is emitted in any situation
+// where the handler has committed enough client-visible state that
+// retrying against another upstream would be unsafe — for example, a
+// handle_response route that ran after a successful round-trip, or a
+// WebTransport upgrade that already flushed 200 OK and hijacked the
+// stream. The inner error may be nil to signal terminal success.
+type terminalError struct{ error }
+
+func (e terminalError) Unwrap() error { return e.error }
 
 // retryableResponseError is returned when the upstream response matched
 // a retry_match entry, indicating the request should be retried with the
