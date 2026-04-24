@@ -1146,7 +1146,6 @@ func parseCanonicalArrayIndex(idx string) (int, error) {
 	if idx == "" {
 		return 0, fmt.Errorf("empty index")
 	}
-
 	i, err := strconv.Atoi(idx)
 	if err != nil {
 		return 0, err
