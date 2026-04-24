@@ -1063,6 +1063,9 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 			buf.Reset()
 			defer bufPool.Put(buf)
 
+			const maxConfigSize = 100 * 1024 * 1024 // 100 MB
+			r.Body = http.MaxBytesReader(w, r.Body, maxConfigSize)
+
 			_, err := io.Copy(buf, r.Body)
 			if err != nil {
 				return APIError{
