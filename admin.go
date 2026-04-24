@@ -1154,7 +1154,6 @@ func parseCanonicalArrayIndex(idx string) (int, error) {
 	if strconv.Itoa(i) != idx {
 		return 0, fmt.Errorf("non-canonical array index")
 	}
-
 	return i, nil
 }
 
