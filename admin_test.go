@@ -210,9 +210,11 @@ func TestETags(t *testing.T) {
 
 func BenchmarkLoad(b *testing.B) {
 	for b.Loop() {
-		Load(testCfg, true)
+		_ = Load(testCfg, true) 
 	}
 }
+
+
 
 func TestAdminHandlerErrorHandling(t *testing.T) {
 	initAdminMetrics()
@@ -390,7 +392,7 @@ func testGetMetricValue(labels map[string]string) float64 {
 	}
 
 	pb := &dto.Metric{}
-	metric.Write(pb)
+	_ = metric.Write(pb)
 	return pb.GetCounter().GetValue()
 }
 

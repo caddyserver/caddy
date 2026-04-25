@@ -590,7 +590,7 @@ func (p *parser) doSingleImport(importFile string) ([]Token, error) {
 	if err != nil {
 		return nil, p.Errf("Could not import %s: %v", importFile, err)
 	}
-	defer file.Close()
+	func() { _ = file.Close() }()
 
 	if info, err := file.Stat(); err != nil {
 		return nil, p.Errf("Could not import %s: %v", importFile, err)

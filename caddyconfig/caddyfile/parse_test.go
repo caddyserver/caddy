@@ -413,13 +413,13 @@ func TestRecursiveImport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(recursiveFile1)
+	defer func() { _ = os.Remove(recursiveFile1) }()
 
 	err = os.WriteFile(recursiveFile2, []byte("dir2 1"), 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(recursiveFile2)
+	defer func() { _ = os.Remove(recursiveFile2) }()
 
 	// import absolute path
 	result, err := testParseOne("import " + recursiveFile1)
@@ -502,7 +502,7 @@ func TestDirectiveImport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(directiveFile)
+	defer func() { _ = os.Remove(directiveFile) }()
 
 	// import from existing file
 	result, err := testParseOne(`localhost

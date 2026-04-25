@@ -837,7 +837,7 @@ type tcpRWTimeoutConn struct {
 
 func (c *tcpRWTimeoutConn) Read(b []byte) (int, error) {
 	if c.readTimeout > 0 {
-		err := c.TCPConn.SetReadDeadline(time.Now().Add(c.readTimeout))
+		err := c.SetReadDeadline(time.Now().Add(c.readTimeout))
 		if err != nil {
 			if ce := c.logger.Check(zapcore.ErrorLevel, "failed to set read deadline"); ce != nil {
 				ce.Write(zap.Error(err))
@@ -849,15 +849,18 @@ func (c *tcpRWTimeoutConn) Read(b []byte) (int, error) {
 
 func (c *tcpRWTimeoutConn) Write(b []byte) (int, error) {
 	if c.writeTimeout > 0 {
-		err := c.TCPConn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
+		// Call SetWriteDeadline directly on c
+		err := c.SetWriteDeadline(time.Now().Add(c.writeTimeout)) 
 		if err != nil {
 			if ce := c.logger.Check(zapcore.ErrorLevel, "failed to set write deadline"); ce != nil {
 				ce.Write(zap.Error(err))
 			}
 		}
 	}
-	return c.TCPConn.Write(b)
+	// Also Call Write directly on c
+	return c.Write(b) 
 }
+
 
 // decodeBase64DERCert base64-decodes, then DER-decodes, certStr.
 func decodeBase64DERCert(certStr string) (*x509.Certificate, error) {

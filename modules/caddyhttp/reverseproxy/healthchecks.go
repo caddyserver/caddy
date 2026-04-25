@@ -463,7 +463,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 
 	markUnhealthy := func() {
 		// increment failures and then check if it has reached the threshold to mark unhealthy
-		err := upstream.Host.countHealthFail(1)
+		err := upstream.countHealthFail(1)
 		if err != nil {
 			if c := h.HealthChecks.Active.logger.Check(zapcore.ErrorLevel, "could not count active health failure"); c != nil {
 				c.Write(
@@ -473,11 +473,11 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 			}
 			return
 		}
-		if upstream.Host.activeHealthFails() >= h.HealthChecks.Active.Fails {
+		if upstream.activeHealthFails() >= h.HealthChecks.Active.Fails {
 			// dispatch an event that the host newly became unhealthy
 			if upstream.setHealthy(false) {
 				h.events.Emit(h.ctx, "unhealthy", map[string]any{"host": hostAddr})
-				upstream.Host.resetHealth()
+				upstream.resetHealth()
 			}
 		}
 	}
