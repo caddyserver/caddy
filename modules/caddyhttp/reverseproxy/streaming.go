@@ -485,6 +485,8 @@ func (h Handler) copyBuffer(dst io.Writer, src io.Reader, buf []byte, logger *za
 
 // openConnection maps an open connection to an optional function for graceful
 // close and records which upstream address the connection is proxying to.
+// Also tracks whether the connection is detached, which means it should only be
+// closed when the upstream is removed from the config, not on every reload.
 type openConnection struct {
 	conn          io.ReadWriteCloser
 	gracefulClose func() error
@@ -493,6 +495,9 @@ type openConnection struct {
 }
 
 // tunnelTracker tracks hijacked/upgraded connections for selective cleanup.
+// This exists to detach the lifecycle of streaming connections from the proxy
+// Handler and config, since we typically want them to survive past config reloads.
+// It also allows for selective connection cleanup based on their attachment status.
 type tunnelTracker struct {
 	connections map[io.ReadWriteCloser]openConnection
 	closeTimer  *time.Timer
