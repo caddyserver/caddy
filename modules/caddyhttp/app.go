@@ -219,8 +219,6 @@ func (app *App) Provision(ctx caddy.Context) error {
 		srv.ctx = ctx
 		srv.logger = app.logger.Named("log")
 		srv.errorLogger = app.logger.Named("log.error")
-		srv.shutdownAtMu = new(sync.RWMutex)
-
 		if srv.Metrics != nil {
 			srv.logger.Warn("per-server 'metrics' is deprecated; use 'metrics' in the root 'http' app instead")
 			app.Metrics = cmp.Or(app.Metrics, &Metrics{
@@ -694,9 +692,7 @@ func (app *App) Stop() error {
 				for _, addr := range na.Expand() {
 					if caddy.ListenerUsage(addr.Network, addr.JoinHostPort(0)) < 2 {
 						app.logger.Debug("listener closing and shutdown delay is configured", zap.String("address", addr.String()))
-						server.shutdownAtMu.Lock()
-						server.shutdownAt = scheduledTime
-						server.shutdownAtMu.Unlock()
+						server.shutdownAt.Store(&scheduledTime)
 						delay = true
 					} else {
 						app.logger.Debug("shutdown delay configured but listener will remain open", zap.String("address", addr.String()))
