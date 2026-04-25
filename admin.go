@@ -212,8 +212,8 @@ type AdminAccess struct {
 // AdminPermissions specifies what kinds of requests are allowed
 // to be made to the admin endpoint.
 type AdminPermissions struct {
-	// The API paths allowed. Paths are simple prefix matches.
-	// Any subpath of the specified paths will be allowed.
+	// The API paths allowed. A request path must either equal an
+	// allowed path or be a subpath with a path-segment boundary.
 	Paths []string `json:"paths,omitempty"`
 
 	// The HTTP methods allowed for the given paths.
@@ -718,7 +718,7 @@ func (remote RemoteAdmin) enforceAccessControls(r *http.Request) error {
 						// verify path
 						pathFound := accessPerm.Paths == nil
 						for _, allowedPath := range accessPerm.Paths {
-							if strings.HasPrefix(r.URL.Path, allowedPath) {
+							if adminPathAllowed(r.URL.Path, allowedPath) {
 								pathFound = true
 								break
 							}
@@ -745,6 +745,19 @@ func (remote RemoteAdmin) enforceAccessControls(r *http.Request) error {
 		HTTPStatus: http.StatusUnauthorized,
 		Message:    "client identity not authorized",
 	}
+}
+
+func adminPathAllowed(reqPath, allowedPath string) bool {
+	if allowedPath == "" || allowedPath == "/" {
+		return strings.HasPrefix(reqPath, allowedPath)
+	}
+	if reqPath == allowedPath {
+		return true
+	}
+	if strings.HasSuffix(allowedPath, "/") {
+		return strings.HasPrefix(reqPath, allowedPath)
+	}
+	return strings.HasPrefix(reqPath, allowedPath+"/")
 }
 
 func stopAdminServer(srv *http.Server) error {
