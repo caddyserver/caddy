@@ -15,11 +15,11 @@
 package caddy
 
 import (
+	"bytes"
 	"context"
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
-	"io"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -966,27 +966,37 @@ func TestUnsyncedConfigAccessCanonicalArrayIndices(t *testing.T) {
 	}
 
 	tests := []struct {
-		name    string
-		path    string
-		wantErr bool
+		name       string
+		path       string
+		wantOutput string
+		wantErr    bool
 	}{
-		{name: "allow zero", path: "/" + rawConfigKey + "/list/0"},
-		{name: "allow one", path: "/" + rawConfigKey + "/list/1"},
-		{name: "allow ten", path: "/" + rawConfigKey + "/list/10"},
+		{name: "allow zero", path: "/" + rawConfigKey + "/list/0", wantOutput: "\"zero\"\n"},
+		{name: "allow one", path: "/" + rawConfigKey + "/list/1", wantOutput: "\"one\"\n"},
+		{name: "allow ten", path: "/" + rawConfigKey + "/list/10", wantOutput: "\"ten\"\n"},
 		{name: "reject leading zero", path: "/" + rawConfigKey + "/list/01", wantErr: true},
 		{name: "reject multiple leading zeros", path: "/" + rawConfigKey + "/list/002", wantErr: true},
 		{name: "reject plus sign", path: "/" + rawConfigKey + "/list/+1", wantErr: true},
 		{name: "reject negative zero", path: "/" + rawConfigKey + "/list/-0", wantErr: true},
 	}
 
-	for _, tc := range tests {
+	for i, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			err := unsyncedConfigAccess(http.MethodGet, tc.path, nil, io.Discard)
-			if tc.wantErr && err == nil {
-				t.Fatal("expected error, got nil")
+			var gotOutput bytes.Buffer
+			err := unsyncedConfigAccess(http.MethodGet, tc.path, nil, &gotOutput)
+
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("test %d (%s): input path %q: expected error, got nil with output %q", i, tc.name, tc.path, gotOutput.String())
+				}
+				return
 			}
-			if !tc.wantErr && err != nil {
-				t.Fatalf("expected no error, got %v", err)
+
+			if err != nil {
+				t.Errorf("test %d (%s): input path %q: expected no error with output %q, got error %v with output %q", i, tc.name, tc.path, tc.wantOutput, err, gotOutput.String())
+			}
+			if gotOutput.String() != tc.wantOutput {
+				t.Errorf("test %d (%s): input path %q: expected output %q, got %q", i, tc.name, tc.path, tc.wantOutput, gotOutput.String())
 			}
 		})
 	}
