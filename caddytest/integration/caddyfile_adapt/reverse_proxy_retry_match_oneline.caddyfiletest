@@ -1,0 +1,58 @@
+:8884
+
+reverse_proxy 127.0.0.1:65535 {
+	lb_retries 3
+	lb_retry_match expression `{rp.status_code} in [502, 503]`
+	lb_retry_match expression `{rp.is_transport_error} || {rp.status_code} == 502`
+	lb_retry_match expression `method('POST') && {rp.status_code} == 503`
+	lb_retry_match `{rp.status_code} == 504`
+	lb_retry_match `{rp.is_transport_error} && method('PUT')`
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8884"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "reverse_proxy",
+									"load_balancing": {
+										"retries": 3,
+										"retry_match": [
+											{
+												"expression": "{http.reverse_proxy.status_code} in [502, 503]"
+											},
+											{
+												"expression": "{http.reverse_proxy.is_transport_error} || {http.reverse_proxy.status_code} == 502"
+											},
+											{
+												"expression": "method('POST') \u0026\u0026 {http.reverse_proxy.status_code} == 503"
+											},
+											{
+												"expression": "{http.reverse_proxy.status_code} == 504"
+											},
+											{
+												"expression": "{http.reverse_proxy.is_transport_error} \u0026\u0026 method('PUT')"
+											}
+										]
+									},
+									"upstreams": [
+										{
+											"dial": "127.0.0.1:65535"
+										}
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

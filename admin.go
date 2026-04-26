@@ -45,6 +45,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+
+	"github.com/caddyserver/caddy/v2/internal"
 )
 
 // testCertMagicStorageOverride is a package-level test hook. Tests may set
@@ -800,7 +802,7 @@ func (h adminHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		zap.String("uri", r.RequestURI),
 		zap.String("remote_ip", ip),
 		zap.String("remote_port", port),
-		zap.Reflect("headers", r.Header),
+		zap.Object("headers", internal.LoggableHTTPHeader{Header: r.Header}),
 	)
 	if r.TLS != nil {
 		log = log.With(
@@ -1060,6 +1062,9 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 			buf := bufPool.Get().(*bytes.Buffer)
 			buf.Reset()
 			defer bufPool.Put(buf)
+
+			const maxConfigSize = 100 * 1024 * 1024 // 100 MB
+			r.Body = http.MaxBytesReader(w, r.Body, maxConfigSize)
 
 			_, err := io.Copy(buf, r.Body)
 			if err != nil {
