@@ -8,7 +8,7 @@ The Caddy project would like to make sure that it stays on top of all relevant a
 | Version     | Supported |
 | ----------- | ----------|
 | 2.latest    | ✔️        |
-| <= 2.latest | :x:       |
+| < 2.latest | :x:       |
 
 
 ## Acceptable Scope
@@ -24,6 +24,8 @@ We do not accept reports if the steps imply or require a compromised system or t
 Client-side exploits are out of scope. In other words, it is not a bug in Caddy if the web browser does something unsafe, even if the downloaded content was served by Caddy. (Those kinds of exploits can generally be mitigated by proper configuration of HTTP headers.) As a general rule, the content served by Caddy is not considered in scope because content is configurable by the site owner or the associated web application.
 
 Security bugs in code dependencies (including Go's standard library) are out of scope. Instead, if a dependency has patched a relevant security bug, please feel free to open a public issue or pull request to update that dependency in our code.
+
+Many reports are not security bugs and can be addressed by updating the documentation.
 
 We accept security reports and patches, but do not assign CVEs, for code that has not been released with a non-prerelease tag.
 

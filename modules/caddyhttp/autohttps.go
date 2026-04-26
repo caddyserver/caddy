@@ -258,18 +258,13 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 			// an empty string to indicate a catch-all, which we have to
 			// treat special later
 			if len(serverDomainSet) == 0 {
-				redirDomains[""] = append(redirDomains[""], addr)
+				app.recordAutoHTTPSRedirectAddress(redirDomains, "", addr)
 				continue
 			}
 
 			// ...and associate it with each domain in this server
 			for d := range serverDomainSet {
-				// if this domain is used on more than one HTTPS-enabled
-				// port, we'll have to choose one, so prefer the HTTPS port
-				if _, ok := redirDomains[d]; !ok ||
-					addr.StartPort == uint(app.httpsPort()) {
-					redirDomains[d] = append(redirDomains[d], addr)
-				}
+				app.recordAutoHTTPSRedirectAddress(redirDomains, d, addr)
 			}
 		}
 	}
@@ -515,6 +510,35 @@ redirServersLoop:
 		zap.Reflect("http", app))
 
 	return nil
+}
+
+// recordAutoHTTPSRedirectAddress stores redirect destinations for one domain
+// using a single winning port while keeping all bind addresses on that port.
+//
+// This is needed to avoid two opposite regressions in auto-HTTPS redirects:
+// preserve all listener addresses when a site binds multiple addresses on the
+// same HTTPS port, but do not mix in alternate HTTPS ports when the canonical
+// app HTTPS port is also available.
+func (app *App) recordAutoHTTPSRedirectAddress(redirDomains map[string][]caddy.NetworkAddress, domain string, addr caddy.NetworkAddress) {
+	existing := redirDomains[domain]
+	if len(existing) == 0 {
+		redirDomains[domain] = []caddy.NetworkAddress{addr}
+		return
+	}
+
+	existingPort := existing[0].StartPort
+	if addr.StartPort != existingPort {
+		if addr.StartPort == uint(app.httpsPort()) && existingPort != uint(app.httpsPort()) {
+			redirDomains[domain] = []caddy.NetworkAddress{addr}
+		}
+		return
+	}
+
+	if slices.Contains(existing, addr) {
+		return
+	}
+
+	redirDomains[domain] = append(existing, addr)
 }
 
 func (app *App) makeRedirRoute(redirToPort uint, matcherSet MatcherSet) Route {

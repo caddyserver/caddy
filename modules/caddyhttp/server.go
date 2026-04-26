@@ -28,7 +28,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/caddyserver/certmagic"
@@ -291,8 +291,7 @@ type Server struct {
 
 	trustedProxies IPRangeSource
 
-	shutdownAt   time.Time
-	shutdownAtMu *sync.RWMutex
+	shutdownAt atomic.Pointer[time.Time]
 
 	// registered callback functions
 	connStateFuncs   []func(net.Conn, http.ConnState)

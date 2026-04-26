@@ -67,7 +67,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //	    lb_retries <retries>
 //	    lb_try_duration <duration>
 //	    lb_try_interval <interval>
-//	    lb_retry_match <request-matcher>
+//	    lb_retry_match <matcher>
 //
 //	    # active health checking
 //	    health_uri          <uri>

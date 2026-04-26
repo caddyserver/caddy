@@ -766,7 +766,7 @@ func Validate(cfg *Config) error {
 // code is emitted.
 func exitProcess(ctx context.Context, logger *zap.Logger) {
 	// let the rest of the program know we're quitting; only do it once
-	if !atomic.CompareAndSwapInt32(exiting, 0, 1) {
+	if !exiting.CompareAndSwap(false, true) {
 		return
 	}
 
@@ -845,11 +845,11 @@ func exitProcess(ctx context.Context, logger *zap.Logger) {
 	}()
 }
 
-var exiting = new(int32) // accessed atomically
+var exiting atomic.Bool
 
 // Exiting returns true if the process is exiting.
 // EXPERIMENTAL API: subject to change or removal.
-func Exiting() bool { return atomic.LoadInt32(exiting) == 1 }
+func Exiting() bool { return exiting.Load() }
 
 // OnExit registers a callback to invoke during process exit.
 // This registration is PROCESS-GLOBAL, meaning that each

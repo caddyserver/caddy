@@ -550,7 +550,11 @@ func (p *parser) doImport(nesting int) error {
 		}
 
 		if foundBlockDirective {
-			tokensCopy = append(tokensCopy, tokensToAdd...)
+			if maybeSnippet {
+				tokensCopy = append(tokensCopy, token)
+			} else {
+				tokensCopy = append(tokensCopy, tokensToAdd...)
+			}
 			continue
 		}
 
