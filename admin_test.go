@@ -16,8 +16,11 @@ package caddy
 
 import (
 	"context"
+	"crypto"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"net/http"
@@ -52,6 +55,13 @@ var testCfg = []byte(`{
 			}
 		}
 		`)
+
+type testAdminPublicKey string
+
+func (k testAdminPublicKey) Equal(x crypto.PublicKey) bool {
+	other, ok := x.(testAdminPublicKey)
+	return ok && k == other
+}
 
 func TestUnsyncedConfigAccess(t *testing.T) {
 	// each test is performed in sequence, so
@@ -646,6 +656,99 @@ func TestAllowedOriginsUnixSocket(t *testing.T) {
 
 			if !reflect.DeepEqual(expectMap, gotMap) {
 				t.Errorf("%d: Origins mismatch.\nExpected: %v\nGot: %v", i, test.expectOrigins, gotOrigins)
+			}
+		})
+	}
+}
+
+func TestRemoteAdminAccessControlPathSegmentMatching(t *testing.T) {
+	const authorizedKey testAdminPublicKey = "authorized"
+	peerCert := &x509.Certificate{PublicKey: authorizedKey}
+
+	tests := []struct {
+		name        string
+		allowedPath string
+		requestPath string
+		wantErr     bool
+	}{
+		{
+			name:        "exact path",
+			allowedPath: "/pki/ca/prod",
+			requestPath: "/pki/ca/prod",
+			wantErr:     false,
+		},
+		{
+			name:        "subpath",
+			allowedPath: "/pki/ca/prod",
+			requestPath: "/pki/ca/prod/certificates",
+			wantErr:     false,
+		},
+		{
+			name:        "trailing slash subpath",
+			allowedPath: "/pki/ca/prod/",
+			requestPath: "/pki/ca/prod/certificates",
+			wantErr:     false,
+		},
+		{
+			name:        "sibling with shared prefix",
+			allowedPath: "/pki/ca/prod",
+			requestPath: "/pki/ca/prod-backup",
+			wantErr:     true,
+		},
+		{
+			name:        "same segment plus digit",
+			allowedPath: "/pki/ca/prod",
+			requestPath: "/pki/ca/prod1",
+			wantErr:     true,
+		},
+		{
+			name:        "root path",
+			allowedPath: "/",
+			requestPath: "/pki/ca/prod",
+			wantErr:     false,
+		},
+	}
+
+	for i, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			remote := RemoteAdmin{
+				AccessControl: []*AdminAccess{
+					{
+						Permissions: []AdminPermissions{
+							{
+								Methods: []string{http.MethodGet},
+								Paths:   []string{test.allowedPath},
+							},
+						},
+						publicKeys: []crypto.PublicKey{authorizedKey},
+					},
+				},
+			}
+
+			req := httptest.NewRequest(http.MethodGet, "https://localhost:2021"+test.requestPath, nil)
+			req.TLS = &tls.ConnectionState{
+				VerifiedChains: [][]*x509.Certificate{{peerCert}},
+			}
+
+			err := remote.enforceAccessControls(req)
+			if test.wantErr {
+				if err == nil {
+					t.Errorf("test %d (%s): allowed path %q, request path %q: expected forbidden error, got nil", i, test.name, test.allowedPath, test.requestPath)
+					return
+				}
+				var apiErr APIError
+				if !errors.As(err, &apiErr) {
+					t.Errorf("test %d (%s): allowed path %q, request path %q: expected APIError with HTTP status %d, got %T: %v", i, test.name, test.allowedPath, test.requestPath, http.StatusForbidden, err, err)
+					return
+				}
+				if apiErr.HTTPStatus != http.StatusForbidden {
+					t.Errorf("test %d (%s): allowed path %q, request path %q: expected HTTP status %d, got %d", i, test.name, test.allowedPath, test.requestPath, http.StatusForbidden, apiErr.HTTPStatus)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("test %d (%s): allowed path %q, request path %q: expected no error, got %v", i, test.name, test.allowedPath, test.requestPath, err)
 			}
 		})
 	}
