@@ -435,7 +435,6 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         TAG: ${{ steps.vars.outputs.version_tag }}
-        COSIGN_EXPERIMENTAL: 1
 
     # Only publish on non-special tags (e.g. non-beta)
     # We will continue to push to Gemfury for the foreseeable future, although
