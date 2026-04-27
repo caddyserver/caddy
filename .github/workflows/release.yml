@@ -415,7 +415,7 @@ jobs:
       run: pip install --upgrade cloudsmith-cli
 
     - name: Install Cosign
-      uses: sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62 # main
+      uses: sigstore/cosign-installer@ba7bc0a3fef59531c69a25acd34668d6d3fe6f22 # v4.1.0
     - name: Cosign version
       run: cosign version
     - name: Install Syft
