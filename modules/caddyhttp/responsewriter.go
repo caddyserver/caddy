@@ -58,6 +58,33 @@ func (rww *ResponseWriterWrapper) Unwrap() http.ResponseWriter {
 	return rww.ResponseWriter
 }
 
+// UnwrapResponseWriterAs walks w through its Unwrap() http.ResponseWriter
+// chain and returns the first writer that satisfies T (along with true).
+// If no writer in the chain satisfies T, it returns the zero value of T
+// and false. This mirrors how http.ResponseController traverses wrapped
+// writers internally and is useful when code needs to reach interfaces
+// implemented only by the raw writer owned by the HTTP server — for
+// example, Extended CONNECT or WebTransport helpers that perform their
+// own type assertions and cannot see past a wrapper.
+func UnwrapResponseWriterAs[T any](w http.ResponseWriter) (T, bool) {
+	var zero T
+	for w != nil {
+		if t, ok := any(w).(T); ok {
+			return t, true
+		}
+		u, ok := w.(interface{ Unwrap() http.ResponseWriter })
+		if !ok {
+			return zero, false
+		}
+		next := u.Unwrap()
+		if next == w {
+			return zero, false
+		}
+		w = next
+	}
+	return zero, false
+}
+
 // ErrNotImplemented is returned when an underlying
 // ResponseWriter does not implement the required method.
 var ErrNotImplemented = fmt.Errorf("method not implemented")

@@ -72,6 +72,43 @@ func getInFlightRequests() map[string]int64 {
 	return copyMap
 }
 
+// resolveUpstreams returns the candidate upstream set for this request:
+// dynamic upstreams when configured (with fallback to static on error),
+// static upstreams otherwise. Any dynamic upstream entries are provisioned
+// before return.
+func (h *Handler) resolveUpstreams(r *http.Request) []*Upstream {
+	upstreams := h.Upstreams
+	if h.DynamicUpstreams == nil {
+		return upstreams
+	}
+	dUpstreams, err := h.DynamicUpstreams.GetUpstreams(r)
+	if err != nil {
+		if c := h.logger.Check(zapcore.ErrorLevel, "failed getting dynamic upstreams; falling back to static upstreams"); c != nil {
+			c.Write(zap.Error(err))
+		}
+		return upstreams
+	}
+	for _, dUp := range dUpstreams {
+		h.provisionUpstream(dUp, true)
+	}
+	if c := h.logger.Check(zapcore.DebugLevel, "provisioned dynamic upstreams"); c != nil {
+		c.Write(zap.Int("count", len(dUpstreams)))
+	}
+	return dUpstreams
+}
+
+// setUpstreamReplacerVars populates the {http.reverse_proxy.upstream.*}
+// placeholders describing the selected upstream.
+func setUpstreamReplacerVars(repl *caddy.Replacer, upstream *Upstream, di DialInfo) {
+	repl.Set("http.reverse_proxy.upstream.address", di.String())
+	repl.Set("http.reverse_proxy.upstream.hostport", di.Address)
+	repl.Set("http.reverse_proxy.upstream.host", di.Host)
+	repl.Set("http.reverse_proxy.upstream.port", di.Port)
+	repl.Set("http.reverse_proxy.upstream.requests", upstream.Host.NumRequests())
+	repl.Set("http.reverse_proxy.upstream.max_requests", upstream.MaxRequests)
+	repl.Set("http.reverse_proxy.upstream.fails", upstream.Host.Fails())
+}
+
 func init() {
 	caddy.RegisterModule(Handler{})
 }
@@ -572,23 +609,7 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	repl *caddy.Replacer, reqHeader http.Header, reqHost string, next caddyhttp.Handler,
 ) (bool, error) {
 	// get the updated list of upstreams
-	upstreams := h.Upstreams
-	if h.DynamicUpstreams != nil {
-		dUpstreams, err := h.DynamicUpstreams.GetUpstreams(r)
-		if err != nil {
-			if c := h.logger.Check(zapcore.ErrorLevel, "failed getting dynamic upstreams; falling back to static upstreams"); c != nil {
-				c.Write(zap.Error(err))
-			}
-		} else {
-			upstreams = dUpstreams
-			for _, dUp := range dUpstreams {
-				h.provisionUpstream(dUp, true)
-			}
-			if c := h.logger.Check(zapcore.DebugLevel, "provisioned dynamic upstreams"); c != nil {
-				c.Write(zap.Int("count", len(dUpstreams)))
-			}
-		}
-	}
+	upstreams := h.resolveUpstreams(r)
 
 	// choose an available upstream
 	upstream := h.LoadBalancing.SelectionPolicy.Select(upstreams, r, w)
@@ -623,13 +644,7 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	caddyhttp.SetVar(r.Context(), dialInfoVarKey, dialInfo)
 
 	// set placeholders with information about this upstream
-	repl.Set("http.reverse_proxy.upstream.address", dialInfo.String())
-	repl.Set("http.reverse_proxy.upstream.hostport", dialInfo.Address)
-	repl.Set("http.reverse_proxy.upstream.host", dialInfo.Host)
-	repl.Set("http.reverse_proxy.upstream.port", dialInfo.Port)
-	repl.Set("http.reverse_proxy.upstream.requests", upstream.Host.NumRequests())
-	repl.Set("http.reverse_proxy.upstream.max_requests", upstream.MaxRequests)
-	repl.Set("http.reverse_proxy.upstream.fails", upstream.Host.Fails())
+	setUpstreamReplacerVars(repl, upstream, dialInfo)
 
 	// mutate request headers according to this upstream;
 	// because we're in a retry loop, we have to copy headers
@@ -662,12 +677,13 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 		return true, nil
 	}
 
-	// if the roundtrip was successful, don't retry the request or
-	// ding the health status of the upstream (an error can still
-	// occur after the roundtrip if, for example, a response handler
-	// after the roundtrip returns an error)
-	if succ, ok := proxyErr.(roundtripSucceededError); ok {
-		return true, succ.error
+	// if the handler has already committed a client-visible response
+	// (e.g. a successful roundtrip whose handle_response route errored,
+	// or a WebTransport upgrade that flushed 200 OK and hijacked the
+	// stream), don't retry against another upstream and don't ding the
+	// upstream's health status
+	if term, ok := proxyErr.(terminalError); ok {
+		return true, term.error
 	}
 
 	// remember this failure (if enabled); response-based retries
@@ -963,6 +979,18 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	server := req.Context().Value(caddyhttp.ServerCtxKey).(*caddyhttp.Server)
 	shouldLogCredentials := server.Logs != nil && server.Logs.ShouldLogCredentials
 
+	// WebTransport: Extended CONNECT :protocol=webtransport can't flow
+	// through the normal HTTP round-trip — the session hosts many QUIC
+	// streams and datagrams that need bidirectional pumping. Swap
+	// RoundTrip for a small hijack helper. Upstream dial failures
+	// surface as DialError so the loop can retry across upstreams;
+	// pre-upgrade misconfig and post-upgrade failures return
+	// terminalError because the response is already committed to the
+	// client or no upstream can fix the condition.
+	if isWebTransportExtendedConnect(origReq) {
+		return h.webTransportHijack(rw, req, repl, di, server)
+	}
+
 	// Forward 1xx status codes, backported from https://github.com/golang/go/pull/53164
 	var (
 		roundTripMutex sync.Mutex
@@ -1148,10 +1176,10 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 			res.Body.Close()
 		}
 
-		// wrap any route error in roundtripSucceededError so caller knows that
-		// the roundtrip was successful and to not retry
+		// wrap any route error in terminalError so the outer loop knows
+		// the response is committed and must not be retried
 		if routeErr != nil {
-			return roundtripSucceededError{routeErr}
+			return terminalError{routeErr}
 		}
 
 		// we're done handling the response, and we don't want to
@@ -1730,9 +1758,16 @@ func matcherSetHasExpressionMatcher(matcherSet caddyhttp.MatcherSet) bool {
 	return false
 }
 
-// roundtripSucceededError is an error type that is returned if the
-// roundtrip succeeded, but an error occurred after-the-fact.
-type roundtripSucceededError struct{ error }
+// terminalError signals that the proxy loop must stop and the wrapped
+// error must be propagated unchanged. It is emitted in any situation
+// where the handler has committed enough client-visible state that
+// retrying against another upstream would be unsafe — for example, a
+// handle_response route that ran after a successful round-trip, or a
+// WebTransport upgrade that already flushed 200 OK and hijacked the
+// stream. The inner error may be nil to signal terminal success.
+type terminalError struct{ error }
+
+func (e terminalError) Unwrap() error { return e.error }
 
 // retryableResponseError is returned when the upstream response matched
 // a retry_match entry, indicating the request should be retried with the
