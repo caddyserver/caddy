@@ -568,7 +568,7 @@ var (
 var (
 	_ caddy.Provisioner     = (*SRVUpstreams)(nil)
 	_ UpstreamSource        = (*SRVUpstreams)(nil)
-	_ cachingUpstreamSource = (*SRVUpstreams)(nil)
+	_ CachingUpstreamSource = (*SRVUpstreams)(nil)
 	_ caddy.Provisioner     = (*AUpstreams)(nil)
 	_ UpstreamSource        = (*AUpstreams)(nil)
 )
