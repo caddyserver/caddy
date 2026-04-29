@@ -4,10 +4,16 @@ package caddy
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
+	"net"
 	"os"
 	"strings"
+	"syscall"
+	"time"
 )
+
+var ErrUnixSocketAlreadyInUse = errors.New("unix socket is already in use by another process")
 
 func reuseUnixSocket(network, addr string) (any, error) {
 	if !IsUnixNetwork(network) {
@@ -34,9 +40,28 @@ func reuseUnixSocket(network, addr string) (any, error) {
 		return nil, nil
 	}
 
-	//Another process created this socket file; try to delete it so we can bind to it later.
-	//This allows us to start up even after a crash (that left an orphaned socket file behind).
-	err := os.Remove(addr)
+	//If the socket file does not exist or has no backing server process, this will fail instantly.
+	connection, err := net.DialTimeout("unix", addr, 10*time.Millisecond)
+
+	if err == nil {
+		connection.Close()
+		return nil, fmt.Errorf("cannot reuse socket %v: %w", addr, ErrUnixSocketAlreadyInUse)
+	}
+
+	//Windows returns this error code both if the socket file does not exist and if it isn't backed by a server process anymore.
+	//See: https://learn.microsoft.com/en-us/windows/win32/winsock/windows-sockets-error-codes-2#wsaeconnrefused
+	const WSAECONNREFUSED syscall.Errno = 10061
+
+	var errno syscall.Errno
+	hasNoListeningServerProcess := errors.As(err, &errno) && errno == WSAECONNREFUSED
+
+	if !hasNoListeningServerProcess {
+		return nil, fmt.Errorf("cannot reuse socket %v: %w", addr, ErrUnixSocketAlreadyInUse)
+	}
+
+	//If the socket file exists, it hasn't been created by our process, and it seemingly
+	//isn't backed by a server process anymore. Try to delete it so we can bind to it later.
+	err = os.Remove(addr)
 
 	if err == nil {
 		return nil, nil
