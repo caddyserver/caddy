@@ -168,8 +168,6 @@ func parseReqHdrCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, 
 	}
 	h.Next() // consume the directive name again (matcher parsing resets)
 
-	configValues := []httpcaddyfile.ConfigValue{}
-
 	if !h.NextArg() {
 		return nil, h.ArgErr()
 	}
@@ -204,7 +202,7 @@ func parseReqHdrCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, 
 		return nil, h.Err(err.Error())
 	}
 
-	configValues = append(configValues, h.NewRoute(matcherSet, hdr)...)
+	configValues := h.NewRoute(matcherSet, hdr)
 
 	if h.NextArg() {
 		return nil, h.ArgErr()

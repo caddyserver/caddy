@@ -29,7 +29,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/caddyserver/caddy/v2/internal"
 )
 
 func init() {
@@ -100,8 +100,8 @@ func (f *HashFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Filter filters the input field with the replacement value.
 func (f *HashFilter) Filter(in zapcore.Field) zapcore.Field {
-	if array, ok := in.Interface.(caddyhttp.LoggableStringArray); ok {
-		newArray := make(caddyhttp.LoggableStringArray, len(array))
+	if array, ok := in.Interface.(internal.LoggableStringArray); ok {
+		newArray := make(internal.LoggableStringArray, len(array))
 		for i, s := range array {
 			newArray[i] = hash(s)
 		}
@@ -241,8 +241,8 @@ func (m *IPMaskFilter) Provision(ctx caddy.Context) error {
 
 // Filter filters the input field.
 func (m IPMaskFilter) Filter(in zapcore.Field) zapcore.Field {
-	if array, ok := in.Interface.(caddyhttp.LoggableStringArray); ok {
-		newArray := make(caddyhttp.LoggableStringArray, len(array))
+	if array, ok := in.Interface.(internal.LoggableStringArray); ok {
+		newArray := make(internal.LoggableStringArray, len(array))
 		for i, s := range array {
 			newArray[i] = m.mask(s)
 		}
@@ -255,7 +255,7 @@ func (m IPMaskFilter) Filter(in zapcore.Field) zapcore.Field {
 }
 
 func (m IPMaskFilter) mask(s string) string {
-	output := ""
+	parts := make([]string, 0)
 	for value := range strings.SplitSeq(s, ",") {
 		value = strings.TrimSpace(value)
 		host, port, err := net.SplitHostPort(value)
@@ -264,7 +264,7 @@ func (m IPMaskFilter) mask(s string) string {
 		}
 		ipAddr := net.ParseIP(host)
 		if ipAddr == nil {
-			output += value + ", "
+			parts = append(parts, value)
 			continue
 		}
 		mask := m.v4Mask
@@ -273,13 +273,13 @@ func (m IPMaskFilter) mask(s string) string {
 		}
 		masked := ipAddr.Mask(mask)
 		if port == "" {
-			output += masked.String() + ", "
+			parts = append(parts, masked.String())
 			continue
 		}
 
-		output += net.JoinHostPort(masked.String(), port) + ", "
+		parts = append(parts, net.JoinHostPort(masked.String(), port))
 	}
-	return strings.TrimSuffix(output, ", ")
+	return strings.Join(parts, ", ")
 }
 
 type filterAction string
@@ -392,8 +392,8 @@ func (m *QueryFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Filter filters the input field.
 func (m QueryFilter) Filter(in zapcore.Field) zapcore.Field {
-	if array, ok := in.Interface.(caddyhttp.LoggableStringArray); ok {
-		newArray := make(caddyhttp.LoggableStringArray, len(array))
+	if array, ok := in.Interface.(internal.LoggableStringArray); ok {
+		newArray := make(internal.LoggableStringArray, len(array))
 		for i, s := range array {
 			newArray[i] = m.processQueryString(s)
 		}
@@ -523,7 +523,7 @@ func (m *CookieFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Filter filters the input field.
 func (m CookieFilter) Filter(in zapcore.Field) zapcore.Field {
-	cookiesSlice, ok := in.Interface.(caddyhttp.LoggableStringArray)
+	cookiesSlice, ok := in.Interface.(internal.LoggableStringArray)
 	if !ok {
 		return in
 	}
@@ -559,7 +559,7 @@ OUTER:
 		transformedRequest.AddCookie(c)
 	}
 
-	in.Interface = caddyhttp.LoggableStringArray(transformedRequest.Header["Cookie"])
+	in.Interface = internal.LoggableStringArray(transformedRequest.Header["Cookie"])
 
 	return in
 }
@@ -613,8 +613,8 @@ func (m *RegexpFilter) Provision(ctx caddy.Context) error {
 
 // Filter filters the input field with the replacement value if it matches the regexp.
 func (f *RegexpFilter) Filter(in zapcore.Field) zapcore.Field {
-	if array, ok := in.Interface.(caddyhttp.LoggableStringArray); ok {
-		newArray := make(caddyhttp.LoggableStringArray, len(array))
+	if array, ok := in.Interface.(internal.LoggableStringArray); ok {
+		newArray := make(internal.LoggableStringArray, len(array))
 		for i, s := range array {
 			newArray[i] = f.regexp.ReplaceAllString(s, f.Value)
 		}
@@ -783,8 +783,8 @@ func (f *MultiRegexpFilter) Validate() error {
 // Filter applies all regexp operations sequentially to the input field.
 // Input is sanitized and validated for security.
 func (f *MultiRegexpFilter) Filter(in zapcore.Field) zapcore.Field {
-	if array, ok := in.Interface.(caddyhttp.LoggableStringArray); ok {
-		newArray := make(caddyhttp.LoggableStringArray, len(array))
+	if array, ok := in.Interface.(internal.LoggableStringArray); ok {
+		newArray := make(internal.LoggableStringArray, len(array))
 		for i, s := range array {
 			newArray[i] = f.processString(s)
 		}

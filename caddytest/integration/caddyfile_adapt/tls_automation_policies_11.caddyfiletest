@@ -54,11 +54,6 @@ b.com {
 								"via": "http"
 							}
 						]
-					},
-					{
-						"subjects": [
-							"b.com"
-						]
 					}
 				]
 			}

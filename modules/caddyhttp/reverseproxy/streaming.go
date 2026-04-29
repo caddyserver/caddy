@@ -24,7 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	weakrand "math/rand"
+	weakrand "math/rand/v2"
 	"mime"
 	"net/http"
 	"sync"
@@ -204,7 +204,12 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 	defer deleteFrontConn()
 	defer deleteBackConn()
 
-	spc := switchProtocolCopier{user: conn, backend: backConn, wg: wg}
+	spc := switchProtocolCopier{
+		user:       conn,
+		backend:    backConn,
+		wg:         wg,
+		bufferSize: h.StreamBufferSize,
+	}
 
 	// setup the timeout if requested
 	var timeoutc <-chan time.Time
@@ -214,7 +219,10 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 		timeoutc = timer.C
 	}
 
-	errc := make(chan error, 1)
+	// when a stream timeout is encountered, no error will be read from errc
+	// a buffer size of 2 will allow both the read and write goroutines to send the error and exit
+	// see: https://github.com/caddyserver/caddy/issues/7418
+	errc := make(chan error, 2)
 	wg.Add(2)
 	go spc.copyToBackend(errc)
 	go spc.copyFromBackend(errc)
@@ -526,14 +534,14 @@ func maskBytes(key [4]byte, pos int, b []byte) int {
 	// Create aligned word size key.
 	var k [wordSize]byte
 	for i := range k {
-		k[i] = key[(pos+i)&3]
+		k[i] = key[(pos+i)&3] // nolint:gosec // false positive, impossible to be out of bounds; see: https://github.com/securego/gosec/issues/1525
 	}
 	kw := *(*uintptr)(unsafe.Pointer(&k))
 
 	// Mask one word at a time.
 	n := (len(b) / wordSize) * wordSize
 	for i := 0; i < n; i += wordSize {
-		*(*uintptr)(unsafe.Pointer(uintptr(unsafe.Pointer(&b[0])) + uintptr(i))) ^= kw
+		*(*uintptr)(unsafe.Add(unsafe.Pointer(&b[0]), i)) ^= kw
 	}
 
 	// Mask one byte at a time for remaining bytes.
@@ -633,18 +641,27 @@ func (m *maxLatencyWriter) stop() {
 type switchProtocolCopier struct {
 	user, backend io.ReadWriteCloser
 	wg            *sync.WaitGroup
+	bufferSize    int
 }
 
 func (c switchProtocolCopier) copyFromBackend(errc chan<- error) {
-	_, err := io.Copy(c.user, c.backend)
+	_, err := io.CopyBuffer(c.user, c.backend, c.buffer())
 	errc <- err
 	c.wg.Done()
 }
 
 func (c switchProtocolCopier) copyToBackend(errc chan<- error) {
-	_, err := io.Copy(c.backend, c.user)
+	_, err := io.CopyBuffer(c.backend, c.user, c.buffer())
 	errc <- err
 	c.wg.Done()
+}
+
+func (c switchProtocolCopier) buffer() []byte {
+	size := c.bufferSize
+	if size <= 0 {
+		size = defaultBufferSize
+	}
+	return make([]byte, size)
 }
 
 var streamingBufPool = sync.Pool{

@@ -16,19 +16,26 @@ package caddy
 
 import (
 	"context"
+	"crypto"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/caddyserver/certmagic"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 var testCfg = []byte(`{
@@ -48,6 +55,13 @@ var testCfg = []byte(`{
 			}
 		}
 		`)
+
+type testAdminPublicKey string
+
+func (k testAdminPublicKey) Equal(x crypto.PublicKey) bool {
+	other, ok := x.(testAdminPublicKey)
+	return ok && k == other
+}
 
 func TestUnsyncedConfigAccess(t *testing.T) {
 	// each test is performed in sequence, so
@@ -240,6 +254,51 @@ func TestAdminHandlerErrorHandling(t *testing.T) {
 	}
 }
 
+func TestAdminHandlerServeHTTPRedactsSensitiveHeadersInLogs(t *testing.T) {
+	core, logs := observer.New(zap.InfoLevel)
+
+	defaultLoggerMu.Lock()
+	origLogger := defaultLogger.logger
+	defaultLogger.logger = zap.New(core)
+	defaultLoggerMu.Unlock()
+	t.Cleanup(func() {
+		defaultLoggerMu.Lock()
+		defaultLogger.logger = origLogger
+		defaultLoggerMu.Unlock()
+	})
+
+	handler := adminHandler{
+		mux: http.NewServeMux(),
+	}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	req.Header.Set("Cookie", "session=secret")
+	req.Header.Set("X-Test", "ok")
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if logs.Len() == 0 {
+		t.Fatal("expected request log entry")
+	}
+
+	ctx := logs.All()[0].ContextMap()
+	headers, ok := ctx["headers"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected headers field in log context, got %T", ctx["headers"])
+	}
+
+	if got := headers["Authorization"]; !reflect.DeepEqual(got, []any{"REDACTED"}) {
+		t.Fatalf("expected redacted Authorization header, got %#v", got)
+	}
+	if got := headers["Cookie"]; !reflect.DeepEqual(got, []any{"REDACTED"}) {
+		t.Fatalf("expected redacted Cookie header, got %#v", got)
+	}
+	if got := headers["X-Test"]; !reflect.DeepEqual(got, []any{"ok"}) {
+		t.Fatalf("expected X-Test header to remain visible, got %#v", got)
+	}
+}
+
 func initAdminMetrics() {
 	if adminMetrics.requestErrors != nil {
 		prometheus.Unregister(adminMetrics.requestErrors)
@@ -275,13 +334,12 @@ func TestAdminHandlerBuiltinRouteErrors(t *testing.T) {
 		},
 	}
 
-	err := replaceLocalAdminServer(cfg, Context{})
+	// Build the admin handler directly (no listener active)
+	addr, err := ParseNetworkAddress("localhost:2019")
 	if err != nil {
-		t.Fatalf("setting up admin server: %v", err)
+		t.Fatalf("Failed to parse address: %v", err)
 	}
-	defer func() {
-		stopAdminServer(localAdminServer)
-	}()
+	handler := cfg.Admin.newAdminHandler(addr, false, Context{})
 
 	tests := []struct {
 		name           string
@@ -314,7 +372,7 @@ func TestAdminHandlerBuiltinRouteErrors(t *testing.T) {
 			req := httptest.NewRequest(test.method, fmt.Sprintf("http://localhost:2019%s", test.path), nil)
 			rr := httptest.NewRecorder()
 
-			localAdminServer.Handler.ServeHTTP(rr, req)
+			handler.ServeHTTP(rr, req)
 
 			if rr.Code != test.expectedStatus {
 				t.Errorf("expected status %d but got %d", test.expectedStatus, rr.Code)
@@ -603,6 +661,99 @@ func TestAllowedOriginsUnixSocket(t *testing.T) {
 	}
 }
 
+func TestRemoteAdminAccessControlPathSegmentMatching(t *testing.T) {
+	const authorizedKey testAdminPublicKey = "authorized"
+	peerCert := &x509.Certificate{PublicKey: authorizedKey}
+
+	tests := []struct {
+		name        string
+		allowedPath string
+		requestPath string
+		wantErr     bool
+	}{
+		{
+			name:        "exact path",
+			allowedPath: "/pki/ca/prod",
+			requestPath: "/pki/ca/prod",
+			wantErr:     false,
+		},
+		{
+			name:        "subpath",
+			allowedPath: "/pki/ca/prod",
+			requestPath: "/pki/ca/prod/certificates",
+			wantErr:     false,
+		},
+		{
+			name:        "trailing slash subpath",
+			allowedPath: "/pki/ca/prod/",
+			requestPath: "/pki/ca/prod/certificates",
+			wantErr:     false,
+		},
+		{
+			name:        "sibling with shared prefix",
+			allowedPath: "/pki/ca/prod",
+			requestPath: "/pki/ca/prod-backup",
+			wantErr:     true,
+		},
+		{
+			name:        "same segment plus digit",
+			allowedPath: "/pki/ca/prod",
+			requestPath: "/pki/ca/prod1",
+			wantErr:     true,
+		},
+		{
+			name:        "root path",
+			allowedPath: "/",
+			requestPath: "/pki/ca/prod",
+			wantErr:     false,
+		},
+	}
+
+	for i, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			remote := RemoteAdmin{
+				AccessControl: []*AdminAccess{
+					{
+						Permissions: []AdminPermissions{
+							{
+								Methods: []string{http.MethodGet},
+								Paths:   []string{test.allowedPath},
+							},
+						},
+						publicKeys: []crypto.PublicKey{authorizedKey},
+					},
+				},
+			}
+
+			req := httptest.NewRequest(http.MethodGet, "https://localhost:2021"+test.requestPath, nil)
+			req.TLS = &tls.ConnectionState{
+				VerifiedChains: [][]*x509.Certificate{{peerCert}},
+			}
+
+			err := remote.enforceAccessControls(req)
+			if test.wantErr {
+				if err == nil {
+					t.Errorf("test %d (%s): allowed path %q, request path %q: expected forbidden error, got nil", i, test.name, test.allowedPath, test.requestPath)
+					return
+				}
+				var apiErr APIError
+				if !errors.As(err, &apiErr) {
+					t.Errorf("test %d (%s): allowed path %q, request path %q: expected APIError with HTTP status %d, got %T: %v", i, test.name, test.allowedPath, test.requestPath, http.StatusForbidden, err, err)
+					return
+				}
+				if apiErr.HTTPStatus != http.StatusForbidden {
+					t.Errorf("test %d (%s): allowed path %q, request path %q: expected HTTP status %d, got %d", i, test.name, test.allowedPath, test.requestPath, http.StatusForbidden, apiErr.HTTPStatus)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("test %d (%s): allowed path %q, request path %q: expected no error, got %v", i, test.name, test.allowedPath, test.requestPath, err)
+			}
+		})
+	}
+}
+
 func TestReplaceRemoteAdminServer(t *testing.T) {
 	const testCert = `MIIDCTCCAfGgAwIBAgIUXsqJ1mY8pKlHQtI3HJ23x2eZPqwwDQYJKoZIhvcNAQEL
 BQAwFDESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTIzMDEwMTAwMDAwMFoXDTI0MDEw
@@ -799,8 +950,24 @@ MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDRS0LmTwUT0iwP
 ...
 -----END PRIVATE KEY-----`)
 
-	testStorage := certmagic.FileStorage{Path: t.TempDir()}
-	err := testStorage.Store(context.Background(), "localhost/localhost.crt", certPEM)
+	tmpDir, err := os.MkdirTemp("", "TestManageIdentity-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	testStorage := certmagic.FileStorage{Path: tmpDir}
+	// Clean up the temp dir after the test finishes. Ensure any background
+	// certificate maintenance is stopped first to avoid RemoveAll races.
+	t.Cleanup(func() {
+		if identityCertCache != nil {
+			identityCertCache.Stop()
+			identityCertCache = nil
+		}
+		// Give goroutines a moment to exit and release file handles.
+		time.Sleep(50 * time.Millisecond)
+		_ = os.RemoveAll(tmpDir)
+	})
+
+	err = testStorage.Store(context.Background(), "localhost/localhost.crt", certPEM)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -862,7 +1029,7 @@ MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDRS0LmTwUT0iwP
 						},
 					},
 				},
-				storage: &certmagic.FileStorage{Path: "testdata"},
+				storage: &testStorage,
 			},
 			checkState: func(t *testing.T, cfg *Config) {
 				if len(cfg.Admin.Identity.issuers) != 1 {
@@ -900,11 +1067,25 @@ MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDRS0LmTwUT0iwP
 				identityCertCache.Stop()
 				identityCertCache = nil
 			}
+			// Ensure any cache started by manageIdentity is stopped at the end
+			defer func() {
+				if identityCertCache != nil {
+					identityCertCache.Stop()
+					identityCertCache = nil
+				}
+			}()
 
 			ctx := Context{
 				Context:         context.Background(),
 				cfg:             test.cfg,
 				moduleInstances: make(map[string][]Module),
+			}
+
+			// If this test provided a FileStorage, set the package-level
+			// testCertMagicStorageOverride so certmagicConfig will use it.
+			if test.cfg != nil && test.cfg.storage != nil {
+				testCertMagicStorageOverride = test.cfg.storage
+				defer func() { testCertMagicStorageOverride = nil }()
 			}
 
 			err := manageIdentity(ctx, test.cfg)

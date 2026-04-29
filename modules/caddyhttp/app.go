@@ -18,6 +18,7 @@ import (
 	"cmp"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"maps"
 	"net"
@@ -51,6 +52,7 @@ func init() {
 // Placeholder | Description
 // ------------|---------------
 // `{http.request.body}` | The request body (⚠️ inefficient; use only for debugging)
+// `{http.request.body_base64}` | The request body, base64-encoded (⚠️ for debugging)
 // `{http.request.cookie.*}` | HTTP request cookie
 // `{http.request.duration}` | Time up to now spent handling the request (after decoding headers from client)
 // `{http.request.duration_ms}` | Same as 'duration', but in milliseconds.
@@ -67,6 +69,7 @@ func init() {
 // `{http.request.orig_uri.path.dir}` | The request's original directory
 // `{http.request.orig_uri.path.file}` | The request's original filename
 // `{http.request.orig_uri.query}` | The request's original query string (without `?`)
+// `{http.request.orig_uri.prefixed_query}` | The request's original query string with a `?` prefix, if non-empty
 // `{http.request.port}` | The port part of the request's Host header
 // `{http.request.proto}` | The protocol of the request
 // `{http.request.local.host}` | The host (IP) part of the local address the connection arrived on
@@ -82,6 +85,7 @@ func init() {
 // `{http.request.tls.proto}` | The negotiated next protocol
 // `{http.request.tls.proto_mutual}` | The negotiated next protocol was advertised by the server
 // `{http.request.tls.server_name}` | The server name requested by the client, if any
+// `{http.request.tls.ech}` | Whether ECH was offered by the client and accepted by the server
 // `{http.request.tls.client.fingerprint}` | The SHA256 checksum of the client certificate
 // `{http.request.tls.client.public_key}` | The public key of the client certificate.
 // `{http.request.tls.client.public_key_sha256}` | The SHA256 checksum of the client's public key.
@@ -95,11 +99,15 @@ func init() {
 // `{http.request.tls.client.san.ips.*}` | SAN IP addresses (index optional)
 // `{http.request.tls.client.san.uris.*}` | SAN URIs (index optional)
 // `{http.request.uri}` | The full request URI
+// `{http.request.uri_escaped}` | The full request URI with query-style URL encoding applied (using url.QueryEscape)
 // `{http.request.uri.path}` | The path component of the request URI
+// `{http.request.uri.path_escaped}` | The path component of the request URI with query-style URL encoding applied (using url.QueryEscape)
 // `{http.request.uri.path.*}` | Parts of the path, split by `/` (0-based from left)
 // `{http.request.uri.path.dir}` | The directory, excluding leaf filename
 // `{http.request.uri.path.file}` | The filename of the path, excluding directory
 // `{http.request.uri.query}` | The query string (without `?`)
+// `{http.request.uri.query_escaped}` | The query string with query-style URL encoding applied (using url.QueryEscape)
+// `{http.request.uri.prefixed_query}` | The query string with a `?` prefix, if non-empty
 // `{http.request.uri.query.*}` | Individual query string value
 // `{http.response.header.*}` | Specific response header field
 // `{http.vars.*}` | Custom variables in the HTTP handler chain
@@ -200,6 +208,9 @@ func (app *App) Provision(ctx caddy.Context) error {
 		app.Metrics.httpMetrics = &httpMetrics{}
 		// Scan config for allowed hosts to prevent cardinality explosion
 		app.Metrics.scanConfigForHosts(app)
+		if err := app.Metrics.provisionOTLP(ctx); err != nil {
+			return err
+		}
 	}
 	// prepare each server
 	oldContext := ctx.Context
@@ -211,8 +222,6 @@ func (app *App) Provision(ctx caddy.Context) error {
 		srv.ctx = ctx
 		srv.logger = app.logger.Named("log")
 		srv.errorLogger = app.logger.Named("log.error")
-		srv.shutdownAtMu = new(sync.RWMutex)
-
 		if srv.Metrics != nil {
 			srv.logger.Warn("per-server 'metrics' is deprecated; use 'metrics' in the root 'http' app instead")
 			app.Metrics = cmp.Or(app.Metrics, &Metrics{
@@ -346,6 +355,20 @@ func (app *App) Provision(ctx caddy.Context) error {
 				srv.listenerWrappers = append([]caddy.ListenerWrapper{new(tlsPlaceholderWrapper)}, srv.listenerWrappers...)
 			}
 		}
+
+		// set up each packet conn modifier
+		if srv.PacketConnWrappersRaw != nil {
+			vals, err := ctx.LoadModule(srv, "PacketConnWrappersRaw")
+			if err != nil {
+				return fmt.Errorf("loading packet conn wrapper modules: %v", err)
+			}
+			// if any wrappers were configured, they come before the QUIC handshake;
+			// unlike TLS above, there is no QUIC placeholder
+			for _, val := range vals.([]any) {
+				srv.packetConnWrappers = append(srv.packetConnWrappers, val.(caddy.PacketConnWrapper))
+			}
+		}
+
 		// pre-compile the primary handler chain, and be sure to wrap it in our
 		// route handler so that important security checks are done, etc.
 		primaryRoute := emptyHandler
@@ -672,9 +695,7 @@ func (app *App) Stop() error {
 				for _, addr := range na.Expand() {
 					if caddy.ListenerUsage(addr.Network, addr.JoinHostPort(0)) < 2 {
 						app.logger.Debug("listener closing and shutdown delay is configured", zap.String("address", addr.String()))
-						server.shutdownAtMu.Lock()
-						server.shutdownAt = scheduledTime
-						server.shutdownAtMu.Unlock()
+						server.shutdownAt.Store(&scheduledTime)
 						delay = true
 					} else {
 						app.logger.Debug("shutdown delay configured but listener will remain open", zap.String("address", addr.String()))
@@ -695,9 +716,10 @@ func (app *App) Stop() error {
 	// enforce grace period if configured
 	if app.GracePeriod > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(app.GracePeriod))
+		timeout := time.Duration(app.GracePeriod)
+		ctx, cancel = context.WithTimeoutCause(ctx, timeout, fmt.Errorf("server graceful shutdown %ds timeout", int(timeout.Seconds())))
 		defer cancel()
-		app.logger.Info("servers shutting down; grace period initiated", zap.Duration("duration", time.Duration(app.GracePeriod)))
+		app.logger.Info("servers shutting down; grace period initiated", zap.Duration("duration", timeout))
 	} else {
 		app.logger.Info("servers shutting down with eternal grace period")
 	}
@@ -723,6 +745,9 @@ func (app *App) Stop() error {
 		}
 
 		if err := server.server.Shutdown(ctx); err != nil {
+			if cause := context.Cause(ctx); cause != nil && errors.Is(err, context.DeadlineExceeded) {
+				err = cause
+			}
 			app.logger.Error("server shutdown",
 				zap.Error(err),
 				zap.Strings("addresses", server.Listen))
@@ -746,6 +771,9 @@ func (app *App) Stop() error {
 		}
 
 		if err := server.h3server.Shutdown(ctx); err != nil {
+			if cause := context.Cause(ctx); cause != nil && errors.Is(err, context.DeadlineExceeded) {
+				err = cause
+			}
 			app.logger.Error("HTTP/3 server shutdown",
 				zap.Error(err),
 				zap.Strings("addresses", server.Listen))
@@ -790,6 +818,12 @@ func (app *App) Stop() error {
 				app.logger.Error("server stop hook", zap.String("server", name), zap.Error(err))
 			}
 		}
+	}
+
+	// flush and shut down the OTLP metrics exporter (if configured) so any
+	// last data point reaches the collector before the process exits
+	if err := app.Metrics.shutdown(ctx); err != nil {
+		app.logger.Error("shutting down OTLP metrics", zap.Error(err))
 	}
 
 	app.stopped = true

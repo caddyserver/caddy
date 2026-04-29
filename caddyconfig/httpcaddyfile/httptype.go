@@ -245,6 +245,7 @@ func BuildServersAndPairings(originalServerBlocks []ServerBlock, options map[str
 				parentBlock:  sb.Block,
 				groupCounter: gc,
 				State:        state,
+				BlockState:   state,
 			}
 
 			results, err := dirFunc(h)
@@ -441,6 +442,7 @@ func (ServerType) extractNamedRoutes(
 			parentBlock:  sb.Block,
 			groupCounter: gc,
 			State:        state,
+			BlockState:   state,
 		}
 
 		handler, err := ParseSegmentAsSubroute(h)
@@ -759,7 +761,7 @@ func (st *ServerType) serversFromPairings(
 				// https://caddy.community/t/making-sense-of-auto-https-and-why-disabling-it-still-serves-https-instead-of-http/9761
 				createdTLSConnPolicies, ok := sblock.Pile["tls.connection_policy"]
 				hasTLSEnabled := (ok && len(createdTLSConnPolicies) > 0) ||
-					(addr.Host != "" && srv.AutoHTTPS != nil && !slices.Contains(srv.AutoHTTPS.Skip, addr.Host))
+					(addr.Host != "" && (srv.AutoHTTPS == nil || !slices.Contains(srv.AutoHTTPS.Skip, addr.Host)))
 
 				// we'll need to remember if the address qualifies for auto-HTTPS, so we
 				// can add a TLS conn policy if necessary
@@ -786,6 +788,20 @@ func (st *ServerType) serversFromPairings(
 					listenerWrapper.(caddy.Module).CaddyModule().ID.Name(),
 					warnings)
 				srv.ListenerWrappersRaw = append(srv.ListenerWrappersRaw, jsonListenerWrapper)
+			}
+
+			// Look for any config values that provide packet conn wrappers on the server block
+			for _, listenerConfig := range sblock.Pile["packet_conn_wrapper"] {
+				packetConnWrapper, ok := listenerConfig.Value.(caddy.PacketConnWrapper)
+				if !ok {
+					return nil, fmt.Errorf("config for a packet conn wrapper did not provide a value that implements caddy.PacketConnWrapper")
+				}
+				jsonPacketConnWrapper := caddyconfig.JSONModuleObject(
+					packetConnWrapper,
+					"wrapper",
+					packetConnWrapper.(caddy.Module).CaddyModule().ID.Name(),
+					warnings)
+				srv.PacketConnWrappersRaw = append(srv.PacketConnWrappersRaw, jsonPacketConnWrapper)
 			}
 
 			// set up each handler directive, making sure to honor directive order

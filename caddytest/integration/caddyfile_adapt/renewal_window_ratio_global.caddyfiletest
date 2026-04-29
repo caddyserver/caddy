@@ -1,0 +1,41 @@
+{
+	renewal_window_ratio 0.1666
+}
+
+example.com {
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"renewal_window_ratio": 0.1666
+					}
+				]
+			}
+		}
+	}
+}

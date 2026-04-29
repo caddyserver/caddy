@@ -23,9 +23,9 @@ import (
 )
 
 // Windows relies on ACLs instead of unix permissions model.
-// Go allows to open files with a particular mode put it is limited to read or write.
+// Go allows to open files with a particular mode but it is limited to read or write.
 // See https://cs.opensource.google/go/go/+/refs/tags/go1.22.3:src/syscall/syscall_windows.go;l=708.
-// This is pretty restrictive and has few interest for log files and thus we just test that log files are
+// This is pretty restrictive and has little interest for log files and thus we just test that log files are
 // opened with R/W permissions by default on Windows too.
 func TestFileCreationMode(t *testing.T) {
 	dir, err := os.MkdirTemp("", "caddytest")
@@ -51,5 +51,43 @@ func TestFileCreationMode(t *testing.T) {
 
 	if st.Mode().Perm()&0o600 != 0o600 {
 		t.Fatalf("file mode is %v, want rw for user", st.Mode().Perm())
+	}
+}
+
+func TestDirMode_Windows_CreateSucceeds(t *testing.T) {
+	dir, err := os.MkdirTemp("", "caddytest")
+	if err != nil {
+		t.Fatalf("failed to create tempdir: %v", err)
+	}
+	defer os.RemoveAll(dir)
+
+	tests := []struct {
+		name    string
+		dirMode string
+	}{
+		{"inherit", "inherit"},
+		{"from_file", "from_file"},
+		{"octal", "0755"},
+		{"default", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			subdir := path.Join(dir, "logs-"+tt.name)
+			fw := &FileWriter{
+				Filename: path.Join(subdir, "test.log"),
+				DirMode:  tt.dirMode,
+				Mode:     0o600,
+			}
+			w, err := fw.OpenWriter()
+			if err != nil {
+				t.Fatalf("failed to open writer: %v", err)
+			}
+			defer w.Close()
+
+			if _, err := os.Stat(fw.Filename); err != nil {
+				t.Fatalf("expected file to exist: %v", err)
+			}
+		})
 	}
 }

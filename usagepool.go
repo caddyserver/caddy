@@ -79,14 +79,15 @@ func (up *UsagePool) LoadOrNew(key any, construct Constructor) (value any, loade
 	up.Lock()
 	upv, loaded = up.pool[key]
 	if loaded {
-		atomic.AddInt32(&upv.refs, 1)
+		upv.refs.Add(1)
 		up.Unlock()
 		upv.RLock()
 		value = upv.value
 		err = upv.err
 		upv.RUnlock()
 	} else {
-		upv = &usagePoolVal{refs: 1}
+		upv = &usagePoolVal{}
+		upv.refs.Store(1)
 		upv.Lock()
 		up.pool[key] = upv
 		up.Unlock()
@@ -118,7 +119,7 @@ func (up *UsagePool) LoadOrStore(key, val any) (value any, loaded bool) {
 	up.Lock()
 	upv, loaded = up.pool[key]
 	if loaded {
-		atomic.AddInt32(&upv.refs, 1)
+		upv.refs.Add(1)
 		up.Unlock()
 		upv.Lock()
 		if upv.err == nil {
@@ -129,7 +130,8 @@ func (up *UsagePool) LoadOrStore(key, val any) (value any, loaded bool) {
 		}
 		upv.Unlock()
 	} else {
-		upv = &usagePoolVal{refs: 1, value: val}
+		upv = &usagePoolVal{value: val}
+		upv.refs.Store(1)
 		up.pool[key] = upv
 		up.Unlock()
 		value = val
@@ -173,7 +175,7 @@ func (up *UsagePool) Delete(key any) (deleted bool, err error) {
 		up.Unlock()
 		return false, nil
 	}
-	refs := atomic.AddInt32(&upv.refs, -1)
+	refs := upv.refs.Add(-1)
 	if refs == 0 {
 		delete(up.pool, key)
 		up.Unlock()
@@ -188,7 +190,7 @@ func (up *UsagePool) Delete(key any) (deleted bool, err error) {
 		up.Unlock()
 		if refs < 0 {
 			panic(fmt.Sprintf("deleted more than stored: %#v (usage: %d)",
-				upv.value, upv.refs))
+				upv.value, upv.refs.Load()))
 		}
 	}
 	return deleted, err
@@ -203,7 +205,7 @@ func (up *UsagePool) References(key any) (int, bool) {
 	if loaded {
 		// I wonder if it'd be safer to read this value during
 		// our lock on the UsagePool... guess we'll see...
-		refs := atomic.LoadInt32(&upv.refs)
+		refs := upv.refs.Load()
 		return int(refs), true
 	}
 	return 0, false
@@ -220,7 +222,7 @@ type Destructor interface {
 }
 
 type usagePoolVal struct {
-	refs  int32 // accessed atomically; must be 64-bit aligned for 32-bit systems
+	refs  atomic.Int32
 	value any
 	err   error
 	sync.RWMutex

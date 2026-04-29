@@ -45,7 +45,15 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+
+	"github.com/caddyserver/caddy/v2/internal"
 )
+
+// testCertMagicStorageOverride is a package-level test hook. Tests may set
+// this variable to provide a temporary certmagic.Storage so that cert
+// management in tests does not hit the real default storage on disk.
+// This must NOT be set in production code.
+var testCertMagicStorageOverride certmagic.Storage
 
 func init() {
 	// The hard-coded default `DefaultAdminListen` can be overridden
@@ -204,8 +212,8 @@ type AdminAccess struct {
 // AdminPermissions specifies what kinds of requests are allowed
 // to be made to the admin endpoint.
 type AdminPermissions struct {
-	// The API paths allowed. Paths are simple prefix matches.
-	// Any subpath of the specified paths will be allowed.
+	// The API paths allowed. A request path must either equal an
+	// allowed path or be a subpath with a path-segment boundary.
 	Paths []string `json:"paths,omitempty"`
 
 	// The HTTP methods allowed for the given paths.
@@ -633,8 +641,19 @@ func (ident *IdentityConfig) certmagicConfig(logger *zap.Logger, makeCache bool)
 		// certmagic config, although it'll be mostly useless for remote management
 		ident = new(IdentityConfig)
 	}
+	// Choose storage: prefer the package-level test override when present,
+	// otherwise use the configured DefaultStorage. Tests may set an override
+	// to divert storage into a temporary location. Otherwise, in production
+	// we use the DefaultStorage since we don't want to act as part of a
+	// cluster; this storage is for the server's local identity only.
+	var storage certmagic.Storage
+	if testCertMagicStorageOverride != nil {
+		storage = testCertMagicStorageOverride
+	} else {
+		storage = DefaultStorage
+	}
 	template := certmagic.Config{
-		Storage: DefaultStorage, // do not act as part of a cluster (this is for the server's local identity)
+		Storage: storage,
 		Logger:  logger,
 		Issuers: ident.issuers,
 	}
@@ -699,7 +718,7 @@ func (remote RemoteAdmin) enforceAccessControls(r *http.Request) error {
 						// verify path
 						pathFound := accessPerm.Paths == nil
 						for _, allowedPath := range accessPerm.Paths {
-							if strings.HasPrefix(r.URL.Path, allowedPath) {
+							if adminPathAllowed(r.URL.Path, allowedPath) {
 								pathFound = true
 								break
 							}
@@ -728,14 +747,31 @@ func (remote RemoteAdmin) enforceAccessControls(r *http.Request) error {
 	}
 }
 
+func adminPathAllowed(reqPath, allowedPath string) bool {
+	if allowedPath == "" || allowedPath == "/" {
+		return strings.HasPrefix(reqPath, allowedPath)
+	}
+	if reqPath == allowedPath {
+		return true
+	}
+	if strings.HasSuffix(allowedPath, "/") {
+		return strings.HasPrefix(reqPath, allowedPath)
+	}
+	return strings.HasPrefix(reqPath, allowedPath+"/")
+}
+
 func stopAdminServer(srv *http.Server) error {
 	if srv == nil {
 		return fmt.Errorf("no admin server")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	timeout := 10 * time.Second
+	ctx, cancel := context.WithTimeoutCause(context.Background(), timeout, fmt.Errorf("stopping admin server: %ds timeout", int(timeout.Seconds())))
 	defer cancel()
 	err := srv.Shutdown(ctx)
 	if err != nil {
+		if cause := context.Cause(ctx); cause != nil && errors.Is(err, context.DeadlineExceeded) {
+			err = cause
+		}
 		return fmt.Errorf("shutting down admin server: %v", err)
 	}
 	Log().Named("admin").Info("stopped previous server", zap.String("address", srv.Addr))
@@ -779,7 +815,7 @@ func (h adminHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		zap.String("uri", r.RequestURI),
 		zap.String("remote_ip", ip),
 		zap.String("remote_port", port),
-		zap.Reflect("headers", r.Header),
+		zap.Object("headers", internal.LoggableHTTPHeader{Header: r.Header}),
 	)
 	if r.TLS != nil {
 		log = log.With(
@@ -807,11 +843,37 @@ func (h adminHandler) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// common mitigations in browser contexts
 	if strings.Contains(r.Header.Get("Upgrade"), "websocket") {
 		// I've never been able demonstrate a vulnerability myself, but apparently
 		// WebSocket connections originating from browsers aren't subject to CORS
 		// restrictions, so we'll just be on the safe side
-		h.handleError(w, r, fmt.Errorf("websocket connections aren't allowed"))
+		h.handleError(w, r, APIError{
+			HTTPStatus: http.StatusBadRequest,
+			Err:        errors.New("websocket connections aren't allowed"),
+			Message:    "WebSocket connections aren't allowed.",
+		})
+		return
+	}
+	if strings.Contains(r.Header.Get("Sec-Fetch-Mode"), "no-cors") {
+		// turns out web pages can just disable the same-origin policy (!???!?)
+		// but at least browsers let us know that's the case, holy heck
+		h.handleError(w, r, APIError{
+			HTTPStatus: http.StatusBadRequest,
+			Err:        errors.New("client attempted to make request by disabling same-origin policy using no-cors mode"),
+			Message:    "Disabling same-origin restrictions is not allowed.",
+		})
+		return
+	}
+	if r.Header.Get("Origin") == "null" {
+		// bug in Firefox in certain cross-origin situations (yikes?)
+		// (not strictly a security vuln on its own, but it's red flaggy,
+		// since it seems to manifest in cross-origin contexts)
+		h.handleError(w, r, APIError{
+			HTTPStatus: http.StatusBadRequest,
+			Err:        errors.New("invalid origin 'null'"),
+			Message:    "Buggy browser is sending null Origin header.",
+		})
 		return
 	}
 
@@ -824,7 +886,9 @@ func (h adminHandler) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if h.enforceOrigin {
+	_, hasOriginHeader := r.Header["Origin"]
+	_, hasSecHeader := r.Header["Sec-Fetch-Mode"]
+	if h.enforceOrigin || hasOriginHeader || hasSecHeader {
 		// cross-site mitigation
 		origin, err := h.checkOrigin(r)
 		if err != nil {
@@ -1012,6 +1076,9 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 			buf.Reset()
 			defer bufPool.Put(buf)
 
+			const maxConfigSize = 100 * 1024 * 1024 // 100 MB
+			r.Body = http.MaxBytesReader(w, r.Body, maxConfigSize)
+
 			_, err := io.Copy(buf, r.Body)
 			if err != nil {
 				return APIError{
@@ -1110,7 +1177,10 @@ func unsyncedConfigAccess(method, path string, body []byte, out io.Writer) error
 	if len(body) > 0 {
 		err = json.Unmarshal(body, &val)
 		if err != nil {
-			return fmt.Errorf("decoding request body: %v", err)
+			if jsonErr, ok := err.(*json.SyntaxError); ok {
+				return fmt.Errorf("decoding request body: %w, at offset %d", jsonErr, jsonErr.Offset)
+			}
+			return fmt.Errorf("decoding request body: %w", err)
 		}
 	}
 

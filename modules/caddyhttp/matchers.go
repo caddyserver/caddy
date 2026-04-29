@@ -262,12 +262,16 @@ func (m MatchHost) Provision(_ caddy.Context) error {
 		if err != nil {
 			return fmt.Errorf("converting hostname '%s' to ASCII: %v", host, err)
 		}
-		if asciiHost != host {
-			m[i] = asciiHost
-		}
 		normalizedHost := strings.ToLower(asciiHost)
 		if firstI, ok := seen[normalizedHost]; ok {
 			return fmt.Errorf("host at index %d is repeated at index %d: %s", firstI, i, host)
+		}
+		// Normalize exact hosts for standardized comparison in large-list fastpath later on.
+		// Keep wildcards/placeholders untouched.
+		if m.fuzzy(asciiHost) {
+			m[i] = asciiHost
+		} else {
+			m[i] = normalizedHost
 		}
 		seen[normalizedHost] = i
 	}
@@ -312,14 +316,15 @@ func (m MatchHost) MatchWithError(r *http.Request) (bool, error) {
 	}
 
 	if m.large() {
+		reqHostLower := strings.ToLower(reqHost)
 		// fast path: locate exact match using binary search (about 100-1000x faster for large lists)
 		pos := sort.Search(len(m), func(i int) bool {
 			if m.fuzzy(m[i]) {
 				return false
 			}
-			return m[i] >= reqHost
+			return m[i] >= reqHostLower
 		})
-		if pos < len(m) && m[pos] == reqHost {
+		if pos < len(m) && m[pos] == reqHostLower {
 			return true, nil
 		}
 	}
@@ -533,6 +538,7 @@ func (m MatchPath) MatchWithError(r *http.Request) (bool, error) {
 }
 
 func (MatchPath) matchPatternWithEscapeSequence(escapedPath, matchPath string) bool {
+	escapedPath = strings.ToLower(escapedPath)
 	// We would just compare the pattern against r.URL.Path,
 	// but the pattern contains %, indicating that we should
 	// compare at least some part of the path in raw/escaped
@@ -632,8 +638,8 @@ func (MatchPath) matchPatternWithEscapeSequence(escapedPath, matchPath string) b
 	// we can now treat rawpath globs (%*) as regular globs (*)
 	matchPath = strings.ReplaceAll(matchPath, "%*", "*")
 
-	// ignore error here because we can't handle it anyway=
-	matches, _ := path.Match(matchPath, sb.String())
+	// ignore error here because we can't handle it anyway
+	matches, _ := path.Match(matchPath, strings.ToLower(sb.String()))
 	return matches
 }
 
@@ -1556,6 +1562,14 @@ func ParseCaddyfileNestedMatcherSet(d *caddyfile.Dispenser) (caddy.ModuleMap, er
 	// instances of the matcher in this set
 	tokensByMatcherName := make(map[string][]caddyfile.Token)
 	for nesting := d.Nesting(); d.NextArg() || d.NextBlock(nesting); {
+		// if the token is quoted (backtick), treat it as a shorthand
+		// for an expression matcher, same as @named matcher parsing
+		if d.Token().Quoted() {
+			expressionToken := d.Token().Clone()
+			expressionToken.Text = "expression"
+			tokensByMatcherName["expression"] = append(tokensByMatcherName["expression"], expressionToken, d.Token())
+			continue
+		}
 		matcherName := d.Val()
 		tokensByMatcherName[matcherName] = append(tokensByMatcherName[matcherName], d.NextSegment()...)
 	}

@@ -103,25 +103,7 @@ func (st ServerType) buildTLSApp(
 		tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, catchAllAP)
 	}
 
-	var wildcardHosts []string                        // collect all hosts that have a wildcard in them, and aren't HTTP
 	forcedAutomatedNames := make(map[string]struct{}) // explicitly configured to be automated, even if covered by a wildcard
-
-	for _, p := range pairings {
-		var addresses []string
-		for _, addressWithProtocols := range p.addressesWithProtocols {
-			addresses = append(addresses, addressWithProtocols.address)
-		}
-		if !listenersUseAnyPortOtherThan(addresses, httpPort) {
-			continue
-		}
-		for _, sblock := range p.serverBlocks {
-			for _, addr := range sblock.ParsedKeys {
-				if strings.HasPrefix(addr.Host, "*.") {
-					wildcardHosts = append(wildcardHosts, addr.Host[2:])
-				}
-			}
-		}
-	}
 
 	for _, p := range pairings {
 		// avoid setting up TLS automation policies for a server that is HTTP-only
@@ -142,12 +124,6 @@ func (st ServerType) buildTLSApp(
 
 			// get values that populate an automation policy for this block
 			ap, err := newBaseAutomationPolicy(options, warnings, true)
-			if err != nil {
-				return nil, warnings, err
-			}
-
-			// make a plain copy so we can compare whether we made any changes
-			apCopy, err := newBaseAutomationPolicy(options, warnings, true)
 			if err != nil {
 				return nil, warnings, err
 			}
@@ -176,6 +152,12 @@ func (st ServerType) buildTLSApp(
 
 			if keyTypeVals, ok := sblock.Pile["tls.key_type"]; ok {
 				ap.KeyType = keyTypeVals[0].Value.(string)
+			}
+
+			if renewalWindowRatioVals, ok := sblock.Pile["tls.renewal_window_ratio"]; ok {
+				ap.RenewalWindowRatio = renewalWindowRatioVals[0].Value.(float64)
+			} else if globalRenewalWindowRatio, ok := options["renewal_window_ratio"]; ok {
+				ap.RenewalWindowRatio = globalRenewalWindowRatio.(float64)
 			}
 
 			// certificate issuers
@@ -263,16 +245,6 @@ func (st ServerType) buildTLSApp(
 
 			hostsNotHTTP := sblock.hostsFromKeysNotHTTP(httpPort)
 			sort.Strings(hostsNotHTTP) // solely for deterministic test results
-
-			// if the we prefer wildcards and the AP is unchanged,
-			// then we can skip this AP because it should be covered
-			// by an AP with a wildcard
-			if slices.Contains(autoHTTPS, "prefer_wildcard") {
-				if hostsCoveredByWildcard(hostsNotHTTP, wildcardHosts) &&
-					reflect.DeepEqual(ap, apCopy) {
-					continue
-				}
-			}
 
 			// associate our new automation policy with this server block's hosts
 			ap.SubjectsRaw = hostsNotHTTP
@@ -371,6 +343,11 @@ func (st ServerType) buildTLSApp(
 	// set up "global" (to the TLS app) DNS provider config
 	if globalDNS, ok := options["dns"]; ok && globalDNS != nil {
 		tlsApp.DNSRaw = caddyconfig.JSONModuleObject(globalDNS, "name", globalDNS.(caddy.Module).CaddyModule().ID.Name(), nil)
+	}
+
+	// set up "global" (to the TLS app) DNS resolvers config
+	if globalResolvers, ok := options["tls_resolvers"]; ok && globalResolvers != nil {
+		tlsApp.Resolvers = globalResolvers.([]string)
 	}
 
 	// set up ECH from Caddyfile options
@@ -587,9 +564,8 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]any) e
 		if acmeIssuer.Challenges.DNS == nil {
 			acmeIssuer.Challenges.DNS = new(caddytls.DNSChallengeConfig)
 		}
-		// If global `dns` is set, do NOT set provider in issuer, just set empty dns config
-		if globalDNS == nil && acmeIssuer.Challenges.DNS.ProviderRaw == nil {
-			// Set a global DNS provider if `acme_dns` is set and `dns` is NOT set
+		if globalACMEDNS != nil && acmeIssuer.Challenges.DNS.ProviderRaw == nil {
+			// Set a global DNS provider if `acme_dns` is set
 			acmeIssuer.Challenges.DNS.ProviderRaw = caddyconfig.JSONModuleObject(globalACMEDNS, "name", globalACMEDNS.(caddy.Module).CaddyModule().ID.Name(), nil)
 		}
 	}
@@ -635,7 +611,299 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]any) e
 	if globalCertLifetime != nil && acmeIssuer.CertificateLifetime == 0 {
 		acmeIssuer.CertificateLifetime = globalCertLifetime.(caddy.Duration)
 	}
+	// apply global resolvers if DNS challenge is configured and resolvers are not already set
+	globalResolvers := options["tls_resolvers"]
+	if globalResolvers != nil && acmeIssuer.Challenges != nil && acmeIssuer.Challenges.DNS != nil {
+		// Check if DNS challenge is actually configured
+		hasDNSChallenge := globalACMEDNSok || acmeIssuer.Challenges.DNS.ProviderRaw != nil
+		if hasDNSChallenge && len(acmeIssuer.Challenges.DNS.Resolvers) == 0 {
+			acmeIssuer.Challenges.DNS.Resolvers = globalResolvers.([]string)
+		}
+	}
 	return nil
+}
+
+// implicitACMEIssuers returns the issuers to use for ACME-related tls
+// shortcuts such as ca, ca_root, and dns. If any global cert_issuer options
+// configure ACME issuers, those become the templates for the local shortcut
+// configuration; otherwise, default ACME issuers are used.
+func implicitACMEIssuers(h Helper, acmeIssuer *caddytls.ACMEIssuer) []certmagic.Issuer {
+	globalIssuers, _ := h.Option("cert_issuer").([]certmagic.Issuer)
+
+	var implicitIssuers []certmagic.Issuer
+	for _, issuer := range globalIssuers {
+		acmeWrapper, ok := issuer.(acmeCapable)
+		if !ok {
+			continue
+		}
+		baseIssuer := acmeWrapper.GetACMEIssuer()
+		if baseIssuer == nil {
+			continue
+		}
+		implicitIssuers = append(implicitIssuers, mergeACMEIssuers(baseIssuer, acmeIssuer))
+	}
+	if len(implicitIssuers) > 0 {
+		return implicitIssuers
+	}
+
+	// If an ACME CA endpoint was set locally, the user expects to use only that
+	// CA rather than the usual default fallback issuers.
+	defaultIssuers := caddytls.DefaultIssuers(acmeIssuer.Email)
+	if acmeIssuer.CA != "" {
+		defaultIssuers = []certmagic.Issuer{new(caddytls.ACMEIssuer)}
+	}
+
+	implicitIssuers = make([]certmagic.Issuer, 0, len(defaultIssuers))
+	for _, issuer := range defaultIssuers {
+		acmeWrapper, ok := issuer.(acmeCapable)
+		if !ok {
+			implicitIssuers = append(implicitIssuers, issuer)
+			continue
+		}
+		baseIssuer := acmeWrapper.GetACMEIssuer()
+		if baseIssuer == nil {
+			implicitIssuers = append(implicitIssuers, issuer)
+			continue
+		}
+		implicitIssuers = append(implicitIssuers, mergeACMEIssuers(baseIssuer, acmeIssuer))
+	}
+	return implicitIssuers
+}
+
+func mergeACMEIssuers(base, overrides *caddytls.ACMEIssuer) *caddytls.ACMEIssuer {
+	if base == nil {
+		return cloneACMEIssuer(overrides)
+	}
+
+	merged := cloneACMEIssuer(base)
+	if overrides == nil {
+		return merged
+	}
+
+	if overrides.CA != "" {
+		merged.CA = overrides.CA
+	}
+	if overrides.TestCA != "" {
+		merged.TestCA = overrides.TestCA
+	}
+	if overrides.Email != "" {
+		merged.Email = overrides.Email
+	}
+	if overrides.Profile != "" {
+		merged.Profile = overrides.Profile
+	}
+	if overrides.AccountKey != "" {
+		merged.AccountKey = overrides.AccountKey
+	}
+	if overrides.ExternalAccount != nil {
+		merged.ExternalAccount = cloneACMEEAB(overrides.ExternalAccount)
+	}
+	if overrides.ACMETimeout != 0 {
+		merged.ACMETimeout = overrides.ACMETimeout
+	}
+	if len(overrides.TrustedRootsPEMFiles) > 0 {
+		merged.TrustedRootsPEMFiles = appendUniqueStrings(merged.TrustedRootsPEMFiles, overrides.TrustedRootsPEMFiles...)
+	}
+	if overrides.PreferredChains != nil {
+		merged.PreferredChains = cloneChainPreference(overrides.PreferredChains)
+	}
+	if overrides.CertificateLifetime != 0 {
+		merged.CertificateLifetime = overrides.CertificateLifetime
+	}
+	if len(overrides.NetworkProxyRaw) > 0 {
+		merged.NetworkProxyRaw = slices.Clone(overrides.NetworkProxyRaw)
+	}
+	merged.Challenges = mergeChallengesConfig(merged.Challenges, overrides.Challenges)
+
+	return merged
+}
+
+func mergeChallengesConfig(base, overrides *caddytls.ChallengesConfig) *caddytls.ChallengesConfig {
+	if base == nil {
+		return cloneChallengesConfig(overrides)
+	}
+	merged := cloneChallengesConfig(base)
+	if overrides == nil {
+		return merged
+	}
+
+	merged.HTTP = mergeHTTPChallengeConfig(merged.HTTP, overrides.HTTP)
+	merged.TLSALPN = mergeTLSALPNChallengeConfig(merged.TLSALPN, overrides.TLSALPN)
+	merged.DNS = mergeDNSChallengeConfig(merged.DNS, overrides.DNS)
+	if overrides.BindHost != "" {
+		merged.BindHost = overrides.BindHost
+	}
+	if overrides.Distributed != nil {
+		value := *overrides.Distributed
+		merged.Distributed = &value
+	}
+
+	return merged
+}
+
+func mergeHTTPChallengeConfig(base, overrides *caddytls.HTTPChallengeConfig) *caddytls.HTTPChallengeConfig {
+	if base == nil {
+		return cloneHTTPChallengeConfig(overrides)
+	}
+	merged := cloneHTTPChallengeConfig(base)
+	if overrides == nil {
+		return merged
+	}
+
+	if overrides.Disabled {
+		merged.Disabled = true
+	}
+	if overrides.AlternatePort != 0 {
+		merged.AlternatePort = overrides.AlternatePort
+	}
+
+	return merged
+}
+
+func mergeTLSALPNChallengeConfig(base, overrides *caddytls.TLSALPNChallengeConfig) *caddytls.TLSALPNChallengeConfig {
+	if base == nil {
+		return cloneTLSALPNChallengeConfig(overrides)
+	}
+	merged := cloneTLSALPNChallengeConfig(base)
+	if overrides == nil {
+		return merged
+	}
+
+	if overrides.Disabled {
+		merged.Disabled = true
+	}
+	if overrides.AlternatePort != 0 {
+		merged.AlternatePort = overrides.AlternatePort
+	}
+
+	return merged
+}
+
+func mergeDNSChallengeConfig(base, overrides *caddytls.DNSChallengeConfig) *caddytls.DNSChallengeConfig {
+	if base == nil {
+		return cloneDNSChallengeConfig(overrides)
+	}
+	merged := cloneDNSChallengeConfig(base)
+	if overrides == nil {
+		return merged
+	}
+
+	if len(overrides.ProviderRaw) > 0 {
+		merged.ProviderRaw = slices.Clone(overrides.ProviderRaw)
+	}
+	if overrides.PropagationDelay != 0 {
+		merged.PropagationDelay = overrides.PropagationDelay
+	}
+	if overrides.PropagationTimeout != 0 {
+		merged.PropagationTimeout = overrides.PropagationTimeout
+	}
+	if overrides.Resolvers != nil {
+		merged.Resolvers = slices.Clone(overrides.Resolvers)
+	}
+	if overrides.OverrideDomain != "" {
+		merged.OverrideDomain = overrides.OverrideDomain
+	}
+	if overrides.TTL != 0 {
+		merged.TTL = overrides.TTL
+	}
+
+	return merged
+}
+
+func cloneACMEIssuer(iss *caddytls.ACMEIssuer) *caddytls.ACMEIssuer {
+	if iss == nil {
+		return nil
+	}
+
+	cloned := *iss
+	cloned.Challenges = cloneChallengesConfig(iss.Challenges)
+	cloned.ExternalAccount = cloneACMEEAB(iss.ExternalAccount)
+	cloned.TrustedRootsPEMFiles = slices.Clone(iss.TrustedRootsPEMFiles)
+	cloned.PreferredChains = cloneChainPreference(iss.PreferredChains)
+	cloned.NetworkProxyRaw = slices.Clone(iss.NetworkProxyRaw)
+
+	return &cloned
+}
+
+func cloneChallengesConfig(cfg *caddytls.ChallengesConfig) *caddytls.ChallengesConfig {
+	if cfg == nil {
+		return nil
+	}
+
+	cloned := *cfg
+	cloned.HTTP = cloneHTTPChallengeConfig(cfg.HTTP)
+	cloned.TLSALPN = cloneTLSALPNChallengeConfig(cfg.TLSALPN)
+	cloned.DNS = cloneDNSChallengeConfig(cfg.DNS)
+	if cfg.Distributed != nil {
+		value := *cfg.Distributed
+		cloned.Distributed = &value
+	}
+
+	return &cloned
+}
+
+func cloneHTTPChallengeConfig(cfg *caddytls.HTTPChallengeConfig) *caddytls.HTTPChallengeConfig {
+	if cfg == nil {
+		return nil
+	}
+
+	cloned := *cfg
+	return &cloned
+}
+
+func cloneTLSALPNChallengeConfig(cfg *caddytls.TLSALPNChallengeConfig) *caddytls.TLSALPNChallengeConfig {
+	if cfg == nil {
+		return nil
+	}
+
+	cloned := *cfg
+	return &cloned
+}
+
+func cloneDNSChallengeConfig(cfg *caddytls.DNSChallengeConfig) *caddytls.DNSChallengeConfig {
+	if cfg == nil {
+		return nil
+	}
+
+	cloned := *cfg
+	cloned.ProviderRaw = slices.Clone(cfg.ProviderRaw)
+	cloned.Resolvers = slices.Clone(cfg.Resolvers)
+
+	return &cloned
+}
+
+func cloneACMEEAB(eab *acme.EAB) *acme.EAB {
+	if eab == nil {
+		return nil
+	}
+
+	cloned := *eab
+	return &cloned
+}
+
+func cloneChainPreference(pref *caddytls.ChainPreference) *caddytls.ChainPreference {
+	if pref == nil {
+		return nil
+	}
+
+	cloned := *pref
+	cloned.RootCommonName = slices.Clone(pref.RootCommonName)
+	cloned.AnyCommonName = slices.Clone(pref.AnyCommonName)
+	if pref.Smallest != nil {
+		value := *pref.Smallest
+		cloned.Smallest = &value
+	}
+
+	return &cloned
+}
+
+func appendUniqueStrings(existing []string, additions ...string) []string {
+	for _, value := range additions {
+		if !slices.Contains(existing, value) {
+			existing = append(existing, value)
+		}
+	}
+	return existing
 }
 
 // newBaseAutomationPolicy returns a new TLS automation policy that gets
@@ -652,7 +920,8 @@ func newBaseAutomationPolicy(
 	_, hasLocalCerts := options["local_certs"]
 	keyType, hasKeyType := options["key_type"]
 	ocspStapling, hasOCSPStapling := options["ocsp_stapling"]
-	hasGlobalAutomationOpts := hasIssuers || hasLocalCerts || hasKeyType || hasOCSPStapling
+	renewalWindowRatio, hasRenewalWindowRatio := options["renewal_window_ratio"]
+	hasGlobalAutomationOpts := hasIssuers || hasLocalCerts || hasKeyType || hasOCSPStapling || hasRenewalWindowRatio
 
 	globalACMECA := options["acme_ca"]
 	globalACMECARoot := options["acme_ca_root"]
@@ -699,6 +968,10 @@ func newBaseAutomationPolicy(
 		ap.OCSPOverrides = ocspConfig.ResponderOverrides
 	}
 
+	if hasRenewalWindowRatio {
+		ap.RenewalWindowRatio = renewalWindowRatio.(float64)
+	}
+
 	return ap, nil
 }
 
@@ -719,14 +992,31 @@ func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) []*caddytls
 	emptyAPCount := 0
 	origLenAPs := len(aps)
 	// compute the number of empty policies (disregarding subjects) - see #4128
+	// while we're at it,
 	emptyAP := new(caddytls.AutomationPolicy)
 	for i := 0; i < len(aps); i++ {
 		emptyAP.SubjectsRaw = aps[i].SubjectsRaw
+		emptyAP.ManagersRaw = nil
 		if reflect.DeepEqual(aps[i], emptyAP) {
+			// AP is empty
 			emptyAPCount++
-			if !automationPolicyHasAllPublicNames(aps[i]) {
-				// if this automation policy has internal names, we might as well remove it
-				// so auto-https can implicitly use the internal issuer
+
+			// see if this AP shadows something later
+			shadowIdx := automationPolicyShadows(i, aps)
+			emptyAP.SubjectsRaw = nil
+			if shadowIdx >= 0 {
+				emptyAP.SubjectsRaw = aps[shadowIdx].SubjectsRaw
+				// allow the later policy, which is likely for a wildcard, to have cert
+				// managers ("get_certificate"), since wildcards now cover specific
+				// subdomains by default, when configured (see discussion in #7559)
+				emptyAP.ManagersRaw = aps[shadowIdx].ManagersRaw
+			}
+
+			// if this is the last AP, we can delete it, since auto-https should
+			// pick it up; if it shadows something later that is also empty, we
+			// can similarly delete this; but if it shadows something that is NOT
+			// empty, we must not delete it since the shadowing has a purpose
+			if i == len(aps)-1 || (shadowIdx >= 0 && reflect.DeepEqual(aps[shadowIdx], emptyAP)) {
 				aps = slices.Delete(aps, i, i+1)
 				i--
 			}
@@ -859,21 +1149,4 @@ func automationPolicyHasAllPublicNames(ap *caddytls.AutomationPolicy) bool {
 
 func isTailscaleDomain(name string) bool {
 	return strings.HasSuffix(strings.ToLower(name), ".ts.net")
-}
-
-func hostsCoveredByWildcard(hosts []string, wildcards []string) bool {
-	if len(hosts) == 0 || len(wildcards) == 0 {
-		return false
-	}
-	for _, host := range hosts {
-		for _, wildcard := range wildcards {
-			if strings.HasPrefix(host, "*.") {
-				continue
-			}
-			if certmagic.MatchWildcard(host, "*."+wildcard) {
-				return true
-			}
-		}
-	}
-	return false
 }

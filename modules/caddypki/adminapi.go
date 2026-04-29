@@ -163,9 +163,9 @@ func (a *adminAPI) handleCACerts(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	w.Header().Set("Content-Type", "application/pem-certificate-chain")
-	_, err = w.Write(interCert)
+	_, err = w.Write(interCert) //nolint:gosec // false positive... no XSS in a PEM for cryin' out loud
 	if err == nil {
-		_, _ = w.Write(rootCert)
+		_, _ = w.Write(rootCert) //nolint:gosec // false positive... no XSS in a PEM for cryin' out loud
 	}
 
 	return nil
@@ -222,11 +222,16 @@ func rootAndIntermediatePEM(ca *CA) (root, inter []byte, err error) {
 	if err != nil {
 		return root, inter, err
 	}
-	inter, err = pemEncodeCert(ca.IntermediateCertificate().Raw)
-	if err != nil {
-		return root, inter, err
+
+	for _, interCert := range ca.IntermediateCertificateChain() {
+		pemBytes, err := pemEncodeCert(interCert.Raw)
+		if err != nil {
+			return nil, nil, err
+		}
+		inter = append(inter, pemBytes...)
 	}
-	return root, inter, err
+
+	return
 }
 
 // caInfo is the response structure for the CA info API endpoint.

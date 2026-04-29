@@ -507,7 +507,7 @@ func (p *parser) doImport(nesting int) error {
 		// format, won't check for nesting correctness or any other error, that's what parser does.
 		if !maybeSnippet && nesting == 0 {
 			// first of the line
-			if i == 0 || isNextOnNewLine(tokensCopy[i-1], token) {
+			if i == 0 || isNextOnNewLine(tokensCopy[len(tokensCopy)-1], token) {
 				index = 0
 			} else {
 				index++
@@ -550,7 +550,11 @@ func (p *parser) doImport(nesting int) error {
 		}
 
 		if foundBlockDirective {
-			tokensCopy = append(tokensCopy, tokensToAdd...)
+			if maybeSnippet {
+				tokensCopy = append(tokensCopy, token)
+			} else {
+				tokensCopy = append(tokensCopy, tokensToAdd...)
+			}
 			continue
 		}
 
@@ -616,7 +620,7 @@ func (p *parser) doSingleImport(importFile string) ([]Token, error) {
 	if err != nil {
 		return nil, p.Errf("Failed to get absolute path of file: %s: %v", importFile, err)
 	}
-	for i := 0; i < len(importedTokens); i++ {
+	for i := range importedTokens {
 		importedTokens[i].File = filename
 	}
 
@@ -682,9 +686,26 @@ func (p *parser) directive() error {
 // a opening curly brace. It does NOT advance the token.
 func (p *parser) openCurlyBrace() error {
 	if p.Val() != "{" {
+		if p.valLooksLikeGlobalOptionsAfterImportedSnippets() {
+			return p.Err("global options block must appear before import directives; move the global options block to the top of the Caddyfile")
+		}
 		return p.SyntaxErr("{")
 	}
 	return nil
+}
+
+func (p *parser) valLooksLikeGlobalOptionsAfterImportedSnippets() bool {
+	if p.Val() != "import" || len(p.block.Keys) == 0 {
+		return false
+	}
+
+	for _, key := range p.block.Keys {
+		if !strings.HasPrefix(key.Text, "(") || !strings.HasSuffix(key.Text, ")") {
+			return false
+		}
+	}
+
+	return true
 }
 
 // closeCurlyBrace expects the current token to be
@@ -761,7 +782,7 @@ type ServerBlock struct {
 }
 
 func (sb ServerBlock) GetKeysText() []string {
-	res := []string{}
+	res := make([]string, 0, len(sb.Keys))
 	for _, k := range sb.Keys {
 		res = append(res, k.Text)
 	}
