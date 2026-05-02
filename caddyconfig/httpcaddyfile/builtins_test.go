@@ -1,10 +1,13 @@
-package httpcaddyfile
+package httpcaddyfile_test
 
 import (
 	"strings"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
+	_ "github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile/blocktypes/globalblock"
+	_ "github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile/blocktypes/httpserverblock"
 	_ "github.com/caddyserver/caddy/v2/modules/logging"
 )
 
@@ -79,7 +82,7 @@ func TestLogDirectiveSyntax(t *testing.T) {
 	} {
 
 		adapter := caddyfile.Adapter{
-			ServerType: ServerType{},
+			ServerType: httpcaddyfile.ServerType{},
 		}
 
 		out, _, err := adapter.Adapt([]byte(tc.input), nil)
@@ -220,7 +223,7 @@ func TestRedirDirectiveSyntax(t *testing.T) {
 	} {
 
 		adapter := caddyfile.Adapter{
-			ServerType: ServerType{},
+			ServerType: httpcaddyfile.ServerType{},
 		}
 
 		_, _, err := adapter.Adapt([]byte(tc.input), nil)
@@ -283,7 +286,7 @@ func TestImportErrorLine(t *testing.T) {
 		},
 	} {
 		adapter := caddyfile.Adapter{
-			ServerType: ServerType{},
+			ServerType: httpcaddyfile.ServerType{},
 		}
 
 		_, _, err := adapter.Adapt([]byte(tc.input), nil)
@@ -356,7 +359,7 @@ func TestNestedImport(t *testing.T) {
 		},
 	} {
 		adapter := caddyfile.Adapter{
-			ServerType: ServerType{},
+			ServerType: httpcaddyfile.ServerType{},
 		}
 
 		_, _, err := adapter.Adapt([]byte(tc.input), nil)

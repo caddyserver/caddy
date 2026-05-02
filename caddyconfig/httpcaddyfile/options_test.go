@@ -1,4 +1,4 @@
-package httpcaddyfile
+package httpcaddyfile_test
 
 import (
 	"encoding/json"
@@ -7,6 +7,9 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
+	_ "github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile/blocktypes/globalblock"
+	_ "github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile/blocktypes/httpserverblock"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 	_ "github.com/caddyserver/caddy/v2/modules/logging"
 )
@@ -51,7 +54,7 @@ func TestGlobalLogOptionSyntax(t *testing.T) {
 	} {
 
 		adapter := caddyfile.Adapter{
-			ServerType: ServerType{},
+			ServerType: httpcaddyfile.ServerType{},
 		}
 
 		out, _, err := adapter.Adapt([]byte(tc.input), nil)
