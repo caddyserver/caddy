@@ -186,6 +186,22 @@ type Handler struct {
 	// by the previous config closing. Default: no delay.
 	StreamCloseDelay caddy.Duration `json:"stream_close_delay,omitempty"`
 
+	// If true, upgraded connections such as WebSockets are detached from
+	// the handler and retained across config reloads when their upstream
+	// still exists in the new config. Connections using upstreams that are
+	// removed are closed during cleanup. By default this is false, preserving
+	// legacy behavior where upgraded connections are closed on reload
+	// (optionally delayed by stream_close_delay).
+	// Only http1.1 websocket connections are affected, websockets for h2/h3
+	// are not affected. If true, bytes transferred for http1.1 in the access
+	// logs will be zero but those stats can be found in the stream logs for
+	// http1/2/3 regardless if this is enabled.
+	StreamDetached bool `json:"stream_detached,omitempty"`
+
+	// Controls logging behavior for upgraded stream lifecycle events.
+	// If omitted, defaults are used (level=DEBUG, logger_name="http.handlers.reverse_proxy.stream").
+	StreamLogs *StreamLogs `json:"stream_logs,omitempty"`
+
 	// If configured, rewrites the copy of the upstream request.
 	// Allows changing the request method and URI (path and query).
 	// Since the rewrite is applied to the copy, it does not persist
@@ -240,14 +256,16 @@ type Handler struct {
 	// Holds the handle_response Caddyfile tokens while adapting
 	handleResponseSegments []*caddyfile.Dispenser
 
-	// Stores upgraded requests (hijacked connections) for proper cleanup
-	connections           map[io.ReadWriteCloser]openConnection
-	connectionsCloseTimer *time.Timer
-	connectionsMu         *sync.Mutex
+	// Tracks hijacked/upgraded connections (WebSocket etc.) so they can be
+	// closed when their upstream is removed from the config.
+	tunnelTracker *tunnelTracker
 
 	ctx    caddy.Context
 	logger *zap.Logger
 	events *caddyevents.App
+
+	streamLogLevel      zapcore.Level
+	streamLogLoggerName string
 }
 
 // CaddyModule returns the Caddy module information.
@@ -267,8 +285,25 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	h.events = eventAppIface.(*caddyevents.App)
 	h.ctx = ctx
 	h.logger = ctx.Logger()
-	h.connections = make(map[io.ReadWriteCloser]openConnection)
-	h.connectionsMu = new(sync.Mutex)
+	h.tunnelTracker = newTunnelTracker(h.logger, time.Duration(h.StreamCloseDelay))
+	h.streamLogLevel = defaultStreamLogLevel
+	h.streamLogLoggerName = defaultStreamLoggerName
+	if h.StreamLogs != nil {
+		if h.StreamLogs.Level != "" {
+			lvl, err := zapcore.ParseLevel(strings.ToLower(strings.TrimSpace(h.StreamLogs.Level)))
+			if err != nil {
+				return fmt.Errorf("invalid stream_logs.level %q: %w", h.StreamLogs.Level, err)
+			}
+			h.streamLogLevel = lvl
+		}
+		if name := strings.TrimSpace(h.StreamLogs.LoggerName); name != "" {
+			h.streamLogLoggerName = name
+		}
+	}
+
+	if h.StreamDetached {
+		registerDetachedTunnelTrackers(h.tunnelTracker)
+	}
 
 	// warn about unsafe buffering config
 	if h.RequestBuffers == -1 || h.ResponseBuffers == -1 {
@@ -437,15 +472,85 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-// Cleanup cleans up the resources made by h.
-func (h *Handler) Cleanup() error {
-	err := h.cleanupConnections()
+func (h Handler) streamLogsSkipHandshake() bool {
+	return h.StreamLogs != nil && h.StreamLogs.SkipHandshake
+}
 
-	// remove hosts from our config from the pool
-	for _, upstream := range h.Upstreams {
-		_, _ = hosts.Delete(upstream.String())
+func (h Handler) streamLoggerForRequest(req *http.Request) *zap.Logger {
+	name := strings.TrimSpace(h.streamLogLoggerName)
+	if name == "" {
+		name = defaultStreamLoggerName
 	}
 
+	if name == streamLoggerNameUseAccess {
+		logger := caddy.Log().Named(defaultAccessLoggerBase)
+		names := caddyhttp.GetVar(req.Context(), caddyhttp.AccessLoggerNameVarKey)
+		namesSlice, ok := names.([]any)
+		if !ok {
+			return logger
+		}
+		for _, v := range namesSlice {
+			name, ok := v.(string)
+			if !ok {
+				continue
+			}
+			if name == "" {
+				return logger
+			}
+			return logger.Named(name)
+		}
+		return logger
+	}
+
+	return caddy.Log().Named(name)
+}
+
+var (
+	detachedTunnelTrackers   = make(map[*tunnelTracker]struct{})
+	detachedTunnelTrackersMu sync.Mutex
+)
+
+func registerDetachedTunnelTrackers(ts *tunnelTracker) {
+	detachedTunnelTrackersMu.Lock()
+	defer detachedTunnelTrackersMu.Unlock()
+	detachedTunnelTrackers[ts] = struct{}{}
+}
+
+func notifyDetachedTunnelTrackersOfUpstreamRemoval(upstream string, self *tunnelTracker) error {
+	detachedTunnelTrackersMu.Lock()
+	defer detachedTunnelTrackersMu.Unlock()
+
+	var err error
+	for tunnel := range detachedTunnelTrackers {
+		if closeErr := tunnel.closeConnectionsForUpstream(upstream); closeErr != nil && tunnel == self && err == nil {
+			err = closeErr
+		}
+	}
+	return err
+}
+
+func unregisterDetachedTunnelTrackers(ts *tunnelTracker) {
+	detachedTunnelTrackersMu.Lock()
+	defer detachedTunnelTrackersMu.Unlock()
+	delete(detachedTunnelTrackers, ts)
+}
+
+// Cleanup cleans up the resources made by h.
+func (h *Handler) Cleanup() error {
+	// even if StreamDetached is true, extended connect websockets may still be running
+	err := h.tunnelTracker.cleanupAttachedConnections()
+	for _, upstream := range h.Upstreams {
+		// hosts.Delete returns deleted=true when the ref count reaches zero,
+		// meaning no other active config references this upstream. In that
+		// case close any tunnels proxying to it; otherwise let them survive
+		// to their natural end since the upstream is still in use.
+		deleted, _ := hosts.Delete(upstream.String())
+		if deleted {
+			if closeErr := notifyDetachedTunnelTrackersOfUpstreamRemoval(upstream.String(), h.tunnelTracker); closeErr != nil && err == nil {
+				err = closeErr
+			}
+		}
+	}
 	return err
 }
 
@@ -1138,10 +1243,11 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 		// we use the original request here, so that any routes from 'next'
 		// see the original request rather than the proxy cloned request.
 		hrc := &handleResponseContext{
-			handler:  h,
-			response: res,
-			start:    start,
-			logger:   logger,
+			handler:      h,
+			response:     res,
+			start:        start,
+			logger:       logger,
+			upstreamAddr: di.Upstream.String(),
 		}
 		ctx := origReq.Context()
 		ctx = context.WithValue(ctx, proxyHandleResponseContextCtxKey, hrc)
@@ -1171,7 +1277,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	}
 
 	// copy the response body and headers back to the upstream client
-	return h.finalizeResponse(rw, req, res, repl, start, logger)
+	return h.finalizeResponse(rw, req, res, repl, start, logger, di.Upstream.String())
 }
 
 // finalizeResponse prepares and copies the response.
@@ -1182,12 +1288,11 @@ func (h *Handler) finalizeResponse(
 	repl *caddy.Replacer,
 	start time.Time,
 	logger *zap.Logger,
+	upstreamAddr string,
 ) error {
 	// deal with 101 Switching Protocols responses: (WebSocket, h2c, etc)
 	if res.StatusCode == http.StatusSwitchingProtocols {
-		var wg sync.WaitGroup
-		h.handleUpgradeResponse(logger, &wg, rw, req, res)
-		wg.Wait()
+		h.handleUpgradeResponse(logger, rw, req, res, upstreamAddr)
 		return nil
 	}
 
@@ -1794,6 +1899,22 @@ func (brc bodyReadCloser) Close() error {
 	return nil
 }
 
+// StreamLogs controls logging for upgraded stream lifecycle events.
+type StreamLogs struct {
+	// The minimum level at which stream lifecycle events are logged.
+	// Supported values are debug, info, warn, and error. Default: debug.
+	Level string `json:"level,omitempty"`
+
+	// Logger name for stream lifecycle logs. Default: "http.handlers.reverse_proxy.stream".
+	// Special value "access" uses the access logger namespace and, if set,
+	// respects the first value in access_logger_names/log_name for the request.
+	LoggerName string `json:"logger_name,omitempty"`
+
+	// If true, suppresses the access log entry normally emitted when an
+	// upgraded stream handshake completes and the request unwinds.
+	SkipHandshake bool `json:"skip_handshake,omitempty"`
+}
+
 // bufPool is used for buffering requests and responses.
 var bufPool = sync.Pool{
 	New: func() any {
@@ -1826,6 +1947,9 @@ type handleResponseContext struct {
 	// i.e. copied and closed, to make sure that it doesn't
 	// happen twice.
 	isFinalized bool
+
+	// upstreamAddr is the selected upstream address for this request.
+	upstreamAddr string
 }
 
 // proxyHandleResponseContextCtxKey is the context key for the active proxy handler
@@ -1835,6 +1959,13 @@ const proxyHandleResponseContextCtxKey caddy.CtxKey = "reverse_proxy_handle_resp
 
 // errNoUpstream occurs when there are no upstream available.
 var errNoUpstream = fmt.Errorf("no upstreams available")
+
+const (
+	defaultStreamLogLevel     = zapcore.DebugLevel
+	defaultStreamLoggerName   = "http.handlers.reverse_proxy.stream"
+	streamLoggerNameUseAccess = "access"
+	defaultAccessLoggerBase   = "http.log.access"
+)
 
 // Interface guards
 var (
