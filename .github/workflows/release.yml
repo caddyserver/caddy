@@ -144,7 +144,7 @@ jobs:
 
       - name: Find related release proposal
         id: find_proposal
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const version = '${{ steps.vars.outputs.version_tag }}';
@@ -262,7 +262,7 @@ jobs:
 
       - name: Update release proposal PR
         if: fromJson(steps.find_proposal.outputs.result).number != null
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const result = ${{ steps.find_proposal.outputs.result }};
@@ -355,7 +355,7 @@ jobs:
 
     steps:
     - name: Harden the runner (Audit all outbound calls)
-      uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
+      uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
       with:
         egress-policy: audit
 
@@ -365,7 +365,7 @@ jobs:
         fetch-depth: 0
 
     - name: Install Go
-      uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+      uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
       with:
         go-version: ${{ matrix.GO_SEMVER }}
         check-latest: true
@@ -415,11 +415,11 @@ jobs:
       run: pip install --upgrade cloudsmith-cli
 
     - name: Install Cosign
-      uses: sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62 # main
+      uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # main
     - name: Cosign version
       run: cosign version
     - name: Install Syft
-      uses: anchore/sbom-action/download-syft@17ae1740179002c89186b61233e0f892c3118b11 # main
+      uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # main
     - name: Syft version
       run: syft version
     - name: Install xcaddy
@@ -428,7 +428,7 @@ jobs:
         xcaddy version
     # GoReleaser will take care of publishing those artifacts into the release
     - name: Run GoReleaser
-      uses: goreleaser/goreleaser-action@ec59f474b9834571250b370d4735c50f8e2d1e29 # v7.0.0
+      uses: goreleaser/goreleaser-action@1a80836c5c9d9e5755a25cb59ec6f45a3b5f41a8 # v7.2.1
       with:
         version: latest
         args: release --clean --timeout 60m
@@ -497,7 +497,7 @@ jobs:
 
     - name: Update release proposal PR
       if: needs.verify-tag.outputs.proposal_issue_number != ''
-      uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
       with:
         script: |
           const prNumber = parseInt('${{ needs.verify-tag.outputs.proposal_issue_number }}');
