@@ -222,6 +222,14 @@ func TestTryFilesRewriteEscapesMatchedPath(t *testing.T) {
 			wantPath:       "/%3F.html",
 			wantRequestURI: "/%253F.html",
 		},
+		{
+			name:           "question mark in nested path",
+			requestTarget:  "/nested/%3F.html",
+			filename:       filepath.Join("nested", "?.html"),
+			wantPath:       "/nested/?.html",
+			wantRequestURI: "/nested/%3F.html",
+			skipWindows:    true,
+		},
 	}
 
 	for _, tc := range tests {
@@ -230,7 +238,11 @@ func TestTryFilesRewriteEscapesMatchedPath(t *testing.T) {
 				t.Skip("Windows file names cannot contain question marks")
 			}
 
-			if err := os.WriteFile(filepath.Join(root, tc.filename), []byte(tc.filename), 0o600); err != nil {
+			filename := filepath.Join(root, tc.filename)
+			if err := os.MkdirAll(filepath.Dir(filename), 0o700); err != nil {
+				t.Fatalf("creating test file parent directory: %v", err)
+			}
+			if err := os.WriteFile(filename, []byte(tc.filename), 0o600); err != nil {
 				t.Fatalf("writing test file: %v", err)
 			}
 
