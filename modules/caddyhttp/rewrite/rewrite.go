@@ -211,12 +211,7 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 		var newPath, newQuery, newFrag string
 
 		if path != "" {
-			// replace the `path` placeholder to escaped path
-			pathPlaceholder := "{http.request.uri.path}"
-			if strings.Contains(path, pathPlaceholder) {
-				path = strings.ReplaceAll(path, pathPlaceholder, r.URL.EscapedPath())
-			}
-
+			path = escapePathPlaceholders(path, r, repl)
 			newPath = repl.ReplaceAll(path, "")
 		}
 
@@ -298,6 +293,29 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 
 	// return true if anything changed
 	return r.Method != oldMethod || r.RequestURI != oldURI
+}
+
+func escapePathPlaceholders(path string, r *http.Request, repl *caddy.Replacer) string {
+	// Replace path-valued placeholders in escaped form before the URI is parsed,
+	// otherwise literal '?' and '%' bytes from the path can be interpreted as URI
+	// delimiters or percent-escape sequences during the rewrite.
+	pathPlaceholder := "{http.request.uri.path}"
+	if strings.Contains(path, pathPlaceholder) {
+		path = strings.ReplaceAll(path, pathPlaceholder, r.URL.EscapedPath())
+	}
+
+	fileMatchRelativePlaceholder := "{http.matchers.file.relative}"
+	if strings.Contains(path, fileMatchRelativePlaceholder) {
+		if val, ok := repl.Get("http.matchers.file.relative"); ok {
+			path = strings.ReplaceAll(path, fileMatchRelativePlaceholder, escapePathPreservingSlashes(fmt.Sprint(val)))
+		}
+	}
+
+	return path
+}
+
+func escapePathPreservingSlashes(path string) string {
+	return strings.ReplaceAll(url.PathEscape(path), "%2F", "/")
 }
 
 // buildQueryString takes an input query string and

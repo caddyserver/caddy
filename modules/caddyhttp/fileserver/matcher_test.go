@@ -28,6 +28,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/internal/filesystems"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp/rewrite"
 )
 
 type testCase struct {
@@ -185,6 +186,82 @@ func fileMatcherTest(t *testing.T, i int, tc testCase) {
 	fileType, _ := repl.Get("http.matchers.file.type")
 	if fileType != tc.expectedType {
 		t.Errorf("Test %d: actual file type: %v, expected: %v", i, fileType, tc.expectedType)
+	}
+}
+
+func TestTryFilesRewriteEscapesMatchedPath(t *testing.T) {
+	root := t.TempDir()
+
+	tests := []struct {
+		name           string
+		requestTarget  string
+		filename       string
+		wantPath       string
+		wantRequestURI string
+		skipWindows    bool
+	}{
+		{
+			name:           "question mark in path",
+			requestTarget:  "/%3F.html",
+			filename:       "?.html",
+			wantPath:       "/?.html",
+			wantRequestURI: "/%3F.html",
+			skipWindows:    true,
+		},
+		{
+			name:           "percent in path",
+			requestTarget:  "/%25.html",
+			filename:       "%.html",
+			wantPath:       "/%.html",
+			wantRequestURI: "/%25.html",
+		},
+		{
+			name:           "encoded question mark remains percent-encoded",
+			requestTarget:  "/%253F.html",
+			filename:       "%3F.html",
+			wantPath:       "/%3F.html",
+			wantRequestURI: "/%253F.html",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.skipWindows && runtime.GOOS == "windows" {
+				t.Skip("Windows file names cannot contain question marks")
+			}
+
+			if err := os.WriteFile(filepath.Join(root, tc.filename), []byte(tc.filename), 0o600); err != nil {
+				t.Fatalf("writing test file: %v", err)
+			}
+
+			m := &MatchFile{
+				fsmap:    &filesystems.FileSystemMap{},
+				Root:     root,
+				TryFiles: []string{"{http.request.uri.path}"},
+			}
+			req := httptest.NewRequest(http.MethodGet, "http://example.com"+tc.requestTarget, nil)
+			repl := caddyhttp.NewTestReplacer(req)
+
+			matched, err := m.MatchWithError(req)
+			if err != nil {
+				t.Fatalf("matching file: %v", err)
+			}
+			if !matched {
+				t.Fatalf("expected request %s to match %s", tc.requestTarget, tc.filename)
+			}
+
+			rewrite.Rewrite{URI: "{http.matchers.file.relative}"}.Rewrite(req, repl)
+
+			if req.URL.Path != tc.wantPath {
+				t.Errorf("rewritten path = %q, want %q", req.URL.Path, tc.wantPath)
+			}
+			if req.RequestURI != tc.wantRequestURI {
+				t.Errorf("rewritten request URI = %q, want %q", req.RequestURI, tc.wantRequestURI)
+			}
+			if req.URL.RawQuery != "" {
+				t.Errorf("rewritten raw query = %q, want empty", req.URL.RawQuery)
+			}
+		})
 	}
 }
 
