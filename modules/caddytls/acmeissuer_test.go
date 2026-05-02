@@ -1,9 +1,9 @@
 package caddytls
 
 import (
-	"testing"
-	"github.com/mholt/acmez/v3/acme"
 	"github.com/caddyserver/caddy/v2"
+	"github.com/mholt/acmez/v3/acme"
+	"testing"
 )
 
 func TestACMEIssuerExpandPlaceholders(t *testing.T) {
@@ -16,7 +16,7 @@ func TestACMEIssuerExpandPlaceholders(t *testing.T) {
 	defer cancel()
 
 	iss := &ACMEIssuer{
-		CA: "{env.CADDY_TEST_CA_URL}",
+		CA:     "{env.CADDY_TEST_CA_URL}",
 		TestCA: "{env.CADDY_TEST_TEST_CA_URL}",
 		ExternalAccount: &acme.EAB{
 			KeyID:  "{env.CADDY_TEST_EAB_KEY_ID}",
