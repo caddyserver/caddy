@@ -253,7 +253,11 @@ func (iss *ACMEIssuer) makeIssuerTemplate(ctx caddy.Context) (certmagic.ACMEIssu
 		if iss.Challenges.DNS != nil {
 			template.DNS01Solver = iss.Challenges.DNS.solver
 		}
-		template.ListenHost = iss.Challenges.BindHost
+		if strings.HasPrefix(iss.Challenges.BindHost, "fd/") {
+			template.ListenHost = ""
+		} else {
+			template.ListenHost = iss.Challenges.BindHost
+		}
 		if iss.Challenges.Distributed != nil {
 			template.DisableDistributedSolvers = !*iss.Challenges.Distributed
 		}
