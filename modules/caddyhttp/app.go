@@ -202,6 +202,13 @@ func (app *App) Provision(ctx caddy.Context) error {
 	if err != nil {
 		return err
 	}
+	// We explicitly only check the local admin address here. Remote admin 
+	// listeners are manually configured, but the local default (2019) is 
+	// highly susceptible to silent hijacking by typical web listener configs.
+	adminAddr, adminEnabled, err := ctx.LocalAdminAddress()
+	if err != nil {
+		return fmt.Errorf("loading admin endpoint listen address: %v", err)
+	}
 
 	if app.Metrics != nil {
 		app.Metrics.init = sync.Once{}
@@ -323,6 +330,18 @@ func (app *App) Provision(ctx caddy.Context) error {
 				return fmt.Errorf("server %s, listener %d: %v", srvName, i, err)
 			}
 			srv.Listen[i] = lnOut
+
+			if !adminEnabled {
+				continue
+			}
+
+			listenAddr, err := caddy.ParseNetworkAddress(lnOut)
+			if err != nil {
+				return fmt.Errorf("server %s, listener %d: parsing listener address '%s': %v", srvName, i, lnOut, err)
+			}
+			if listenAddr.ConflictsWith(adminAddr) {
+				return fmt.Errorf("server %s, listener %d: listener address '%s' conflicts with local admin endpoint '%s'", srvName, i, lnOut, adminAddr.String())
+			}
 		}
 
 		// set up each listener modifier
