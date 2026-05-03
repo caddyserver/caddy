@@ -32,10 +32,10 @@ func init() {
 // Authentication is a middleware which provides user authentication.
 // Rejects requests with HTTP 401 if the request is not authenticated.
 //
-// After a successful authentication, the placeholder
+// When an authentication provider returns user information, the placeholder
 // `{http.auth.user.id}` will be set to the username, and also
 // `{http.auth.user.*}` placeholders may be set for any authentication
-// modules that provide user metadata.
+// modules that provide user metadata, even if authentication is rejected.
 //
 // In case of an error, the placeholder `{http.auth.<provider>.error}`
 // will be set to the error message returned by the authentication
@@ -91,17 +91,18 @@ func (a Authentication) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			repl.Set("http.auth."+provName+".error", err.Error())
 			continue
 		}
+		if authed || user.ID != "" || len(user.Metadata) > 0 {
+			repl.Set("http.auth.user.id", user.ID)
+			for k, v := range user.Metadata {
+				repl.Set("http.auth.user."+k, v)
+			}
+		}
 		if authed {
 			break
 		}
 	}
 	if !authed {
 		return caddyhttp.Error(http.StatusUnauthorized, fmt.Errorf("not authenticated"))
-	}
-
-	repl.Set("http.auth.user.id", user.ID)
-	for k, v := range user.Metadata {
-		repl.Set("http.auth.user."+k, v)
 	}
 
 	return next.ServeHTTP(w, r)
