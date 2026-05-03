@@ -340,7 +340,10 @@ func TestAdminHandlerBuiltinRouteErrors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to parse address: %v", err)
 	}
-	handler := cfg.Admin.newAdminHandler(addr, false, Context{})
+	handler, err := cfg.Admin.newAdminHandler(addr, false, Context{})
+	if err != nil {
+		t.Fatalf("Failed to create admin handler: %v", err)
+	}
 
 	tests := []struct {
 		name           string
@@ -461,7 +464,10 @@ func TestNewAdminHandlerRouterRegistration(t *testing.T) {
 	admin := &AdminConfig{
 		EnforceOrigin: false,
 	}
-	handler := admin.newAdminHandler(addr, false, Context{})
+	handler, err := admin.newAdminHandler(addr, false, Context{})
+	if err != nil {
+		t.Fatalf("Failed to create admin handler: %v", err)
+	}
 
 	req := httptest.NewRequest("GET", "/mock", nil)
 	req.Host = "localhost:2019"
@@ -472,10 +478,6 @@ func TestNewAdminHandlerRouterRegistration(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Errorf("Expected status code %d but got %d", http.StatusOK, rr.Code)
 		t.Logf("Response body: %s", rr.Body.String())
-	}
-
-	if len(admin.routers) != 1 {
-		t.Errorf("Expected 1 router to be stored, got %d", len(admin.routers))
 	}
 }
 
@@ -514,19 +516,16 @@ func TestAdminRouterProvisioning(t *testing.T) {
 		name         string
 		provisionErr error
 		wantErr      bool
-		routersAfter int // expected number of routers after provisioning
 	}{
 		{
 			name:         "successful provisioning",
 			provisionErr: nil,
 			wantErr:      false,
-			routersAfter: 0,
 		},
 		{
 			name:         "provisioning error",
 			provisionErr: fmt.Errorf("provision failed"),
 			wantErr:      true,
-			routersAfter: 1,
 		},
 	}
 
@@ -562,8 +561,7 @@ func TestAdminRouterProvisioning(t *testing.T) {
 				t.Fatalf("Failed to parse address: %v", err)
 			}
 
-			_ = admin.newAdminHandler(addr, false, Context{})
-			err = admin.provisionAdminRouters(Context{})
+			_, err = admin.newAdminHandler(addr, false, Context{})
 
 			if test.wantErr {
 				if err == nil {
@@ -573,10 +571,6 @@ func TestAdminRouterProvisioning(t *testing.T) {
 				if err != nil {
 					t.Errorf("Expected no error but got: %v", err)
 				}
-			}
-
-			if len(admin.routers) != test.routersAfter {
-				t.Errorf("Expected %d routers after provisioning, got %d", test.routersAfter, len(admin.routers))
 			}
 		})
 	}
