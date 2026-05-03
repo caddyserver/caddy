@@ -147,35 +147,28 @@ func (enc *Encode) Validate() error {
 	return nil
 }
 
-func isEncodeAllowed(h http.Header) bool {
-	return !strings.Contains(h.Get("Cache-Control"), "no-transform")
-}
-
 func (enc *Encode) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	if isEncodeAllowed(r.Header) {
-		for _, encName := range AcceptedEncodings(r, enc.Prefer) {
-			if _, ok := enc.writerPools[encName]; !ok {
-				continue // encoding not offered
-			}
-			w = enc.openResponseWriter(encName, w, r.Method == http.MethodConnect)
-			defer w.(*responseWriter).Close()
-
-			// to comply with RFC 9110 section 8.8.3(.3), we modify the Etag when encoding
-			// by appending a hyphen and the encoder name; the problem is, the client will
-			// send back that Etag in a If-None-Match header, but upstream handlers that set
-			// the Etag in the first place don't know that we appended to their Etag! so here
-			// we have to strip our addition so the upstream handlers can still honor client
-			// caches without knowing about our changes...
-			if etag := r.Header.Get("If-None-Match"); etag != "" && !strings.HasPrefix(etag, "W/") {
-				ourSuffix := "-" + encName + `"`
-				if before, ok := strings.CutSuffix(etag, ourSuffix); ok {
-					etag = before + `"`
-					r.Header.Set("If-None-Match", etag)
-				}
-			}
-
-			break
+	for _, encName := range AcceptedEncodings(r, enc.Prefer) {
+		if _, ok := enc.writerPools[encName]; !ok {
+			continue // encoding not offered
 		}
+		w = enc.openResponseWriter(encName, w, r.Method == http.MethodConnect)
+		defer w.(*responseWriter).Close()
+
+		// to comply with RFC 9110 section 8.8.3(.3), we modify the Etag when encoding
+		// by appending a hyphen and the encoder name; the problem is, the client will
+		// send back that Etag in a If-None-Match header, but upstream handlers that set
+		// the Etag in the first place don't know that we appended to their Etag! so here
+		// we have to strip our addition so the upstream handlers can still honor client
+		// caches without knowing about our changes...
+		if etag := r.Header.Get("If-None-Match"); etag != "" && !strings.HasPrefix(etag, "W/") {
+			ourSuffix := "-" + encName + `"`
+			if before, ok := strings.CutSuffix(etag, ourSuffix); ok {
+				etag = before + `"`
+				r.Header.Set("If-None-Match", etag)
+			}
+		}
+		break
 	}
 
 	err := next.ServeHTTP(w, r)
@@ -444,7 +437,7 @@ func (rw *responseWriter) init() {
 
 	hdr := rw.Header()
 
-	if hdr.Get("Content-Encoding") == "" && isEncodeAllowed(hdr) &&
+	if hdr.Get("Content-Encoding") == "" &&
 		rw.config.Match(rw) {
 		rw.w = rw.config.writerPools[rw.encodingName].Get().(Encoder)
 		rw.w.Reset(rw.ResponseWriter)
