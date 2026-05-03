@@ -91,17 +91,18 @@ func (a Authentication) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			repl.Set("http.auth."+provName+".error", err.Error())
 			continue
 		}
+		if authed || user.ID != "" || len(user.Metadata) > 0 {
+			repl.Set("http.auth.user.id", user.ID)
+			for k, v := range user.Metadata {
+				repl.Set("http.auth.user."+k, v)
+			}
+		}
 		if authed {
 			break
 		}
 	}
 	if !authed {
 		return caddyhttp.Error(http.StatusUnauthorized, fmt.Errorf("not authenticated"))
-	}
-
-	repl.Set("http.auth.user.id", user.ID)
-	for k, v := range user.Metadata {
-		repl.Set("http.auth.user."+k, v)
 	}
 
 	return next.ServeHTTP(w, r)
