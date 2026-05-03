@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -488,6 +489,14 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) error {
 	if r.ProtoMajor == 1 && r.ProtoMinor == 1 && r.Host == "" {
 		return HandlerError{
 			Err:        errors.New("rfc9112 forbids empty Host"),
+			StatusCode: http.StatusBadRequest,
+		}
+	}
+
+	// RFC 3986 §3.2.2: validate Host header syntax for IP-literals and port values
+	if !validHostHeader(r.Host) {
+		return HandlerError{
+			Err:        fmt.Errorf("invalid Host header: %q", r.Host),
 			StatusCode: http.StatusBadRequest,
 		}
 	}
@@ -1193,4 +1202,136 @@ func getHTTP3Network(originalNetwork string) (string, error) {
 		return "", fmt.Errorf("network '%s' cannot handle HTTP/3 connections", originalNetwork)
 	}
 	return h3Network, nil
+}
+
+// validHostHeader reports whether a Host header value is valid per RFC 3986 §3.2.2.
+func validHostHeader(host string) bool {
+	if strings.HasPrefix(host, "[") {
+		closeBracket := strings.LastIndex(host, "]")
+		if closeBracket < 0 {
+			return false // no closing bracket
+		}
+
+		inner := host[1:closeBracket]
+		if inner == "" {
+			return false // [] is not valid
+		}
+
+		// IPvFuture starts with 'v' and is allowed by RFC 3986
+		if inner[0] == 'v' || inner[0] == 'V' {
+			if !validIPvFuture(inner) {
+				return false
+			}
+		} else {
+			// strip Zone IDs before parsing
+			ipStr := inner
+			if i := strings.Index(ipStr, "%25"); i >= 0 {
+				ipStr = ipStr[:i]
+			}
+
+			addr, err := netip.ParseAddr(ipStr)
+			if err != nil || !addr.Is6() {
+				return false
+			}
+		}
+
+		rest := host[closeBracket+1:]
+
+		// No port mentioned
+		if rest == "" {
+			return true
+		}
+
+		// check if the rest of the part doesn't start with ":", host:port
+		if rest[0] != ':' {
+			return false
+		}
+
+		return validPort(rest[1:])
+	}
+
+	// More than one colon means IPv6 without brackets, always reject
+	if strings.Count(host, ":") > 1 {
+		return false
+	}
+
+	// Single colon means host:port
+	_, portStr, hasPort := strings.Cut(host, ":")
+	if hasPort {
+		return validPort(portStr)
+	}
+
+	return true
+}
+
+// validIPvFuture checks the format: "v" + hex digits + "." + allowed chars.
+// RFC 3986: "v" 1*HEXDIG "." 1*( unreserved / sub-delims / ":" )
+func validIPvFuture(inner string) bool {
+	// need at least "vF.x"
+	if len(inner) < 4 || (inner[0] != 'v' && inner[0] != 'V') {
+		return false
+	}
+
+	// drop the leading 'v'
+	inner = inner[1:]
+
+	// count hex digits
+	i := 0
+	for i < len(inner) && isHexDigit(inner[i]) {
+		i++
+	}
+
+	// check if there are no hex digits
+	if i == 0 {
+		return false
+	}
+
+	// check for one dot after the hex digits
+	if i >= len(inner) || inner[i] != '.' {
+		return false
+	}
+	i++
+
+	// at least one character must follow the dot
+	if i >= len(inner) {
+		return false
+	}
+
+	// every remaining character must be in the allowed set
+	for ; i < len(inner); i++ {
+		if !isIPvFutureChar(inner[i]) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func isHexDigit(c byte) bool {
+	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+}
+
+// isIPvFutureChar allows: letters, digits, "-._~" (unreserved), "!$&'()*+,;=" (sub-delims), ":"
+func isIPvFutureChar(c byte) bool {
+	if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') {
+		return true
+	}
+
+	switch c {
+	case '-', '.', '_', '~', '!', '$', '&', '\'', '(', ')', '*', '+', ',', ';', '=', ':':
+		return true
+	}
+
+	return false
+}
+
+// validPort checks the port is a number between 0 and 65535.
+func validPort(port string) bool {
+	//  Empty string is rejected since "host:" with no port is not valid.
+	if port == "" {
+		return false
+	}
+
+	n, err := strconv.Atoi(port)
+	return err == nil && n >= 0 && n <= 65535
 }
