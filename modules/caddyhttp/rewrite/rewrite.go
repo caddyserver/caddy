@@ -307,7 +307,9 @@ func escapePathPlaceholders(path string, r *http.Request, repl *caddy.Replacer) 
 	fileMatchRelativePlaceholder := "{http.matchers.file.relative}"
 	if strings.Contains(path, fileMatchRelativePlaceholder) {
 		if val, ok := repl.Get("http.matchers.file.relative"); ok {
-			path = strings.ReplaceAll(path, fileMatchRelativePlaceholder, escapePathPreservingSlashes(fmt.Sprint(val)))
+			if relativePath, ok := val.(string); ok {
+				path = strings.ReplaceAll(path, fileMatchRelativePlaceholder, escapePathPreservingSlashes(relativePath))
+			}
 		}
 	}
 
