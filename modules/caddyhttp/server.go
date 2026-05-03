@@ -300,6 +300,8 @@ type Server struct {
 	onStopFuncs      []func(context.Context) error // TODO: Experimental (Nov. 2023)
 }
 
+var defaultProtocols = []string{"h1", "h2", "h3"}
+
 var (
 	ServerHeader = "Caddy"
 	serverHeader = []string{ServerHeader}
@@ -899,20 +901,56 @@ func (s *Server) logRequest(
 // protocol returns true if the protocol proto is configured/enabled.
 func (s *Server) protocol(proto string) bool {
 	if s.ListenProtocols == nil {
-		if slices.Contains(s.Protocols, proto) {
+		return slices.Contains(s.protocolsWithDefaults(), proto)
+	}
+
+	for _, lnProtocols := range s.ListenProtocols {
+		if slices.Contains(s.listenerProtocolsWithDefaults(lnProtocols), proto) {
 			return true
-		}
-	} else {
-		for _, lnProtocols := range s.ListenProtocols {
-			for _, lnProtocol := range lnProtocols {
-				if lnProtocol == "" && slices.Contains(s.Protocols, proto) || lnProtocol == proto {
-					return true
-				}
-			}
 		}
 	}
 
 	return false
+}
+
+func (s *Server) protocolsWithDefaults() []string {
+	if len(s.Protocols) == 0 {
+		return defaultProtocols
+	}
+	return s.Protocols
+}
+
+func (s *Server) listenerProtocolsWithDefaults(lnProtocols []string) []string {
+	serverProtocols := s.protocolsWithDefaults()
+	if len(lnProtocols) == 0 {
+		return serverProtocols
+	}
+
+	lnProtocolsDefault := false
+	lnProtocolsInclude := make([]string, 0, len(lnProtocols)+len(serverProtocols))
+	srvProtocolsInclude := make(map[string]struct{}, len(serverProtocols))
+	for _, srvProtocol := range serverProtocols {
+		srvProtocolsInclude[srvProtocol] = struct{}{}
+	}
+
+	for _, lnProtocol := range lnProtocols {
+		if lnProtocol == "" {
+			lnProtocolsDefault = true
+			continue
+		}
+		lnProtocolsInclude = append(lnProtocolsInclude, lnProtocol)
+		delete(srvProtocolsInclude, lnProtocol)
+	}
+
+	if lnProtocolsDefault {
+		for _, srvProtocol := range serverProtocols {
+			if _, ok := srvProtocolsInclude[srvProtocol]; ok {
+				lnProtocolsInclude = append(lnProtocolsInclude, srvProtocol)
+			}
+		}
+	}
+
+	return lnProtocolsInclude
 }
 
 // Listeners returns the server's listeners. These are active listeners,

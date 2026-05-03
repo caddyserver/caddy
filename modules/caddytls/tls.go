@@ -23,6 +23,7 @@ import (
 	"net"
 	"net/http"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -140,7 +141,7 @@ type TLS struct {
 	logger             *zap.Logger
 	events             *caddyevents.App
 
-	serverNames   map[string]struct{}
+	serverNames   map[string]serverNameRegistration
 	serverNamesMu *sync.Mutex
 
 	// set of subjects with managed certificates,
@@ -168,7 +169,7 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	t.logger = ctx.Logger()
 	repl := caddy.NewReplacer()
 	t.managing, t.loaded = make(map[string]string), make(map[string]string)
-	t.serverNames = make(map[string]struct{})
+	t.serverNames = make(map[string]serverNameRegistration)
 	t.serverNamesMu = new(sync.Mutex)
 
 	// set up default DNS module, if any, and make sure it implements all the
@@ -648,27 +649,109 @@ func (t *TLS) managingWildcardFor(subj string, otherSubjsToManage map[string]str
 	return false
 }
 
-// RegisterServerNames registers the provided DNS names with the TLS app.
-// This is currently used to auto-publish Encrypted ClientHello (ECH)
-// configurations, if enabled. Use of this function by apps using the TLS
-// app removes the need for the user to redundantly specify domain names
-// in their configuration. This function separates hostname and port
-// (keeping only the hotsname) and filters IP addresses, which can't be
-// used with ECH.
+// RegisterServerNames registers the provided DNS names with the TLS app and
+// associates them with the given HTTPS RR ALPN values, if any. This is
+// currently used to auto-publish Encrypted ClientHello (ECH) configurations,
+// if enabled. Use of this function by apps using the TLS app removes the need
+// for the user to redundantly specify domain names in their configuration.
+// This function separates hostname and port, keeping only the hostname, and
+// filters IP addresses which can't be used with ECH.
 //
 // EXPERIMENTAL: This function and its semantics/behavior are subject to change.
-func (t *TLS) RegisterServerNames(dnsNames []string) {
+func (t *TLS) RegisterServerNames(dnsNames, alpnValues []string) {
 	t.serverNamesMu.Lock()
+	defer t.serverNamesMu.Unlock()
+
 	for _, name := range dnsNames {
 		host, _, err := net.SplitHostPort(name)
 		if err != nil {
 			host = name
 		}
-		if strings.TrimSpace(host) != "" && !certmagic.SubjectIsIP(host) {
-			t.serverNames[strings.ToLower(host)] = struct{}{}
+		host = strings.ToLower(strings.TrimSpace(host))
+		if host == "" || certmagic.SubjectIsIP(host) {
+			continue
+		}
+
+		registration := t.serverNames[host]
+
+		if len(alpnValues) == 0 {
+			t.serverNames[host] = registration
+			continue
+		}
+
+		if registration.alpnValues == nil {
+			registration.alpnValues = make(map[string]struct{}, len(alpnValues))
+		}
+		for _, alpn := range alpnValues {
+			if alpn == "" {
+				continue
+			}
+			registration.alpnValues[alpn] = struct{}{}
+		}
+		t.serverNames[host] = registration
+	}
+}
+
+func (t *TLS) alpnValuesForServerNames(dnsNames []string) map[string][]string {
+	t.serverNamesMu.Lock()
+	defer t.serverNamesMu.Unlock()
+
+	result := make(map[string][]string, len(dnsNames))
+	for _, name := range dnsNames {
+		host, _, err := net.SplitHostPort(name)
+		if err != nil {
+			host = name
+		}
+		host = strings.ToLower(strings.TrimSpace(host))
+		if host == "" {
+			continue
+		}
+
+		registration, ok := t.serverNames[host]
+		if !ok || len(registration.alpnValues) == 0 {
+			continue
+		}
+		result[host] = OrderedHTTPSRRALPN(registration.alpnValues)
+	}
+
+	return result
+}
+
+// OrderedHTTPSRRALPN returns the HTTPS RR ALPN values in preferred order.
+func OrderedHTTPSRRALPN(alpnSet map[string]struct{}) []string {
+	if len(alpnSet) == 0 {
+		return nil
+	}
+
+	knownOrder := append([]string{"h3"}, defaultALPN...)
+	ordered := make([]string, 0, len(alpnSet))
+	seen := make(map[string]struct{}, len(alpnSet))
+
+	for _, alpn := range knownOrder {
+		if _, ok := alpnSet[alpn]; ok {
+			ordered = append(ordered, alpn)
+			seen[alpn] = struct{}{}
 		}
 	}
-	t.serverNamesMu.Unlock()
+
+	if len(ordered) == len(alpnSet) {
+		return ordered
+	}
+
+	var remaining []string
+	for alpn := range alpnSet {
+		if _, ok := seen[alpn]; ok {
+			continue
+		}
+		remaining = append(remaining, alpn)
+	}
+	slices.Sort(remaining)
+
+	return append(ordered, remaining...)
+}
+
+type serverNameRegistration struct {
+	alpnValues map[string]struct{}
 }
 
 // HandleHTTPChallenge ensures that the ACME HTTP challenge or ZeroSSL HTTP
