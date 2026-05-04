@@ -281,7 +281,7 @@ func (fsrv *FileServer) browseApplyQueryParams(w http.ResponseWriter, r *http.Re
 			sortParam = sortCookie.Value
 		}
 	case sortByName, sortByNameDirFirst, sortBySize, sortByTime:
-		http.SetCookie(w, &http.Cookie{
+		http.SetCookie(w, &http.Cookie{ //nolint:gosec // Secure depends on whether the request itself used TLS
 			Name:     "sort",
 			Value:    sortParam,
 			Secure:   r.TLS != nil,
@@ -298,7 +298,7 @@ func (fsrv *FileServer) browseApplyQueryParams(w http.ResponseWriter, r *http.Re
 			orderParam = orderCookie.Value
 		}
 	case sortOrderAsc, sortOrderDesc:
-		http.SetCookie(w, &http.Cookie{
+		http.SetCookie(w, &http.Cookie{ //nolint:gosec // Secure depends on whether the request itself used TLS
 			Name:     "order",
 			Value:    orderParam,
 			Secure:   r.TLS != nil,
