@@ -378,7 +378,7 @@ func (ctx Context) LoadModuleByID(id string, rawMsg json.RawMessage) (any, error
 	// value must be a pointer for unmarshaling into concrete type, even if
 	// the module's concrete type is a slice or map; New() *should* return
 	// a pointer, otherwise unmarshaling errors or panics will occur
-	if rv := reflect.ValueOf(val); rv.Kind() != reflect.Ptr {
+	if rv := reflect.ValueOf(val); rv.Kind() != reflect.Pointer {
 		log.Printf("[WARNING] ModuleInfo.New() for module '%s' did not return a pointer,"+
 			" so we are using reflection to make a pointer instead; please fix this by"+
 			" using new(Type) or &Type notation in your module's New() function.", id)
