@@ -1085,11 +1085,11 @@ func strictUntrustedClientIp(r *http.Request, headers []string, trusted []netip.
 	for _, headerName := range headers {
 		parts := strings.Split(strings.Join(r.Header.Values(headerName), ","), ",")
 
-		for i := len(parts) - 1; i >= 0; i-- {
+		for _, part := range slices.Backward(parts) {
 			// Some proxies may retain the port number, so split if possible
-			host, _, err := net.SplitHostPort(parts[i])
+			host, _, err := net.SplitHostPort(part)
 			if err != nil {
-				host = parts[i]
+				host = part
 			}
 
 			// Remove any zone identifier from the IP address
