@@ -28,6 +28,7 @@ import (
 // runWebTransportPump bridges two WebTransport sessions so that every
 // bidirectional stream, unidirectional stream, and datagram opened on one
 // side is mirrored onto the other. It blocks until both sessions end.
+// logger must be non-nil; callers pass either h.logger or zap.NewNop().
 //
 // Close propagation: when either session ends with a SessionError, the
 // error code and message are forwarded to the peer via CloseWithError.
@@ -38,9 +39,6 @@ import (
 // EXPERIMENTAL: this helper is an internal building block for the
 // WebTransport reverse-proxy transport and may change.
 func runWebTransportPump(clientSess, upstreamSess *webtransport.Session, logger *zap.Logger) {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
 	p := &webtransportPump{
 		client:   clientSess,
 		upstream: upstreamSess,
