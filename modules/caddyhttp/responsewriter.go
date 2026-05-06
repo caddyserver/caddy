@@ -68,7 +68,7 @@ func (rww *ResponseWriterWrapper) Unwrap() http.ResponseWriter {
 // own type assertions and cannot see past a wrapper.
 func UnwrapResponseWriterAs[T any](w http.ResponseWriter) (T, bool) {
 	var zero T
-	for w != nil {
+	for {
 		if t, ok := any(w).(T); ok {
 			return t, true
 		}
@@ -76,13 +76,8 @@ func UnwrapResponseWriterAs[T any](w http.ResponseWriter) (T, bool) {
 		if !ok {
 			return zero, false
 		}
-		next := u.Unwrap()
-		if next == w {
-			return zero, false
-		}
-		w = next
+		w = u.Unwrap()
 	}
-	return zero, false
 }
 
 // ErrNotImplemented is returned when an underlying
