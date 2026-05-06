@@ -141,21 +141,18 @@ func (p *webtransportPump) acceptBidi(src, dst *webtransport.Session, propagate 
 // sides observe EOF or an error.
 func (p *webtransportPump) spliceBidi(a, b *webtransport.Stream) {
 	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		if _, err := io.Copy(b, a); err != nil && !isExpectedEOF(err) {
 			p.logger.Debug("webtransport bidi splice a->b", zap.Error(err))
 		}
 		_ = b.Close()
-	}()
-	go func() {
-		defer wg.Done()
+	})
+	wg.Go(func() {
 		if _, err := io.Copy(a, b); err != nil && !isExpectedEOF(err) {
 			p.logger.Debug("webtransport bidi splice b->a", zap.Error(err))
 		}
 		_ = a.Close()
-	}()
+	})
 	wg.Wait()
 }
 
