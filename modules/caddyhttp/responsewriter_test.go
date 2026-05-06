@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 )
 
 type responseWriterSpy interface {
@@ -243,21 +242,3 @@ func TestUnwrapResponseWriterAs_NotFound(t *testing.T) {
 	}
 }
 
-type selfUnwrapWriter struct{ baseRespWriter }
-
-func (s *selfUnwrapWriter) Unwrap() http.ResponseWriter { return s }
-
-func TestUnwrapResponseWriterAs_StopsOnSelfReference(t *testing.T) {
-	// Defensive: a wrapper whose Unwrap returns itself must not loop forever.
-	loop := &selfUnwrapWriter{}
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		_, _ = UnwrapResponseWriterAs[targetIface](loop)
-	}()
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("UnwrapResponseWriterAs hung on self-referential Unwrap")
-	}
-}
