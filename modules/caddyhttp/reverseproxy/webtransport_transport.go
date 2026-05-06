@@ -51,6 +51,28 @@ func isWebTransportExtendedConnect(r *http.Request) bool {
 	return r.ProtoMajor == 3 && r.Method == http.MethodConnect && r.Proto == webtransportProtocol
 }
 
+// webTransportTransport is implemented by reverse-proxy transports that
+// can carry a WebTransport upstream dial. The handler type-asserts on
+// this interface (rather than a concrete *HTTPTransport) so a future
+// transport gaining HTTP/3 support can opt in. A nil return means the
+// transport is configured but HTTP/3 is not enabled on it.
+type webTransportTransport interface {
+	webTransportTLSConfig() *tls.Config
+}
+
+// webTransportTLSConfig satisfies the webTransportTransport capability
+// interface. Returns the HTTP/3 TLS config when HTTP/3 is enabled on
+// this transport, or nil otherwise (signaling that this transport
+// cannot dial WebTransport).
+//
+// EXPERIMENTAL: shape may change with the WebTransport feature.
+func (h *HTTPTransport) webTransportTLSConfig() *tls.Config {
+	if h.h3Transport == nil {
+		return nil
+	}
+	return h.h3Transport.TLSClientConfig
+}
+
 // webTransportHijack runs inside reverseProxy in place of RoundTrip when
 // the request is a WebTransport Extended CONNECT. The outer proxy loop
 // has already resolved the upstream set, selected an upstream, filled
@@ -90,12 +112,13 @@ func (h *Handler) webTransportHijack(rw http.ResponseWriter, req *http.Request, 
 	// A WT CONNECT reached this handler because the parent server has
 	// enable_webtransport=true. But the handler's transport still has to
 	// speak HTTP/3 to dial the WT upstream.
-	ht, ok := h.Transport.(*HTTPTransport)
+	wtt, ok := h.Transport.(webTransportTransport)
 	if !ok {
 		return terminalError{caddyhttp.Error(http.StatusBadGateway,
-			errors.New("webtransport: requires the 'http' transport with versions [\"3\"]"))}
+			errors.New("webtransport: requires a WebTransport-capable transport (the 'http' transport with versions [\"3\"])"))}
 	}
-	if ht.h3Transport == nil {
+	tlsCfg := wtt.webTransportTLSConfig()
+	if tlsCfg == nil {
 		return terminalError{caddyhttp.Error(http.StatusBadGateway,
 			errors.New("webtransport: transport does not include HTTP/3; set versions to [\"3\"]"))}
 	}
@@ -107,7 +130,7 @@ func (h *Handler) webTransportHijack(rw http.ResponseWriter, req *http.Request, 
 	// outer proxy loop can fail over to another upstream, same as any
 	// other dial failure.
 	upstreamURL := buildWebTransportUpstreamURL(di.Address, req)
-	upstreamResp, upstreamSess, err := dialUpstreamWebTransport(req.Context(), ht.h3Transport.TLSClientConfig, upstreamURL, req.Header)
+	upstreamResp, upstreamSess, err := dialUpstreamWebTransport(req.Context(), tlsCfg, upstreamURL, req.Header)
 	if err != nil {
 		return DialError{fmt.Errorf("webtransport upstream dial: %w", err)}
 	}
