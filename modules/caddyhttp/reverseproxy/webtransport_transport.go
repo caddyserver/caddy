@@ -106,8 +106,11 @@ func (h *Handler) webTransportHijack(rw http.ResponseWriter, req *http.Request, 
 	// an already-upgraded session closing immediately. DialError so the
 	// outer proxy loop can fail over to another upstream, same as any
 	// other dial failure.
-	upstreamURL := buildWebTransportUpstreamURL(di.Address, req)
-	upstreamResp, upstreamSess, err := dialUpstreamWebTransport(req.Context(), ht.h3Transport.TLSClientConfig, upstreamURL, req.Header)
+		//
+		// WebTransport over HTTP/3 always uses https; RequestURI preserves
+		// the request's encoded path and query.
+		upstreamURL := "https://" + di.Address + req.URL.RequestURI()
+		upstreamResp, upstreamSess, err := dialUpstreamWebTransport(req.Context(), ht.h3Transport.TLSClientConfig, upstreamURL, req.Header)
 	if err != nil {
 		return DialError{fmt.Errorf("webtransport upstream dial: %w", err)}
 	}
@@ -134,21 +137,6 @@ func (h *Handler) webTransportHijack(rw http.ResponseWriter, req *http.Request, 
 
 	runWebTransportPump(clientSess, upstreamSess, h.logger)
 	return nil
-}
-
-// buildWebTransportUpstreamURL constructs an https:// URL for the dialer
-// using the upstream's Dial address (host:port) and the request's path
-// + raw query. Scheme is fixed to https since WebTransport-over-H3
-// requires TLS.
-func buildWebTransportUpstreamURL(dial string, r *http.Request) string {
-	path := r.URL.Path
-	if path == "" {
-		path = "/"
-	}
-	if r.URL.RawQuery != "" {
-		return fmt.Sprintf("https://%s%s?%s", dial, path, r.URL.RawQuery)
-	}
-	return fmt.Sprintf("https://%s%s", dial, path)
 }
 
 // dialUpstreamWebTransport opens a WebTransport session to the upstream at
