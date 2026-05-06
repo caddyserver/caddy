@@ -57,28 +57,20 @@ type webtransportPump struct {
 
 func (p *webtransportPump) run() {
 	var wg sync.WaitGroup
+	closeClient := func(cause error) {
+		p.propagateClose(p.client, p.upstream, &p.closeClientOnce, cause)
+	}
+	closeUpstream := func(cause error) {
+		p.propagateClose(p.upstream, p.client, &p.closeUpstreamOnce, cause)
+	}
 
-	// Bidirectional streams in both directions.
-	wg.Go(func() { p.acceptBidi(p.client, p.upstream, p.closeUpstream) })
-	wg.Go(func() { p.acceptBidi(p.upstream, p.client, p.closeClient) })
-
-	// Unidirectional streams in both directions.
-	wg.Go(func() { p.acceptUni(p.client, p.upstream, p.closeUpstream) })
-	wg.Go(func() { p.acceptUni(p.upstream, p.client, p.closeClient) })
-
-	// Datagrams in both directions.
-	wg.Go(func() { p.pumpDatagrams(p.client, p.upstream, p.closeUpstream) })
-	wg.Go(func() { p.pumpDatagrams(p.upstream, p.client, p.closeClient) })
-
+	wg.Go(func() { p.acceptBidi(p.client, p.upstream, closeUpstream) })
+	wg.Go(func() { p.acceptBidi(p.upstream, p.client, closeClient) })
+	wg.Go(func() { p.acceptUni(p.client, p.upstream, closeUpstream) })
+	wg.Go(func() { p.acceptUni(p.upstream, p.client, closeClient) })
+	wg.Go(func() { p.pumpDatagrams(p.client, p.upstream, closeUpstream) })
+	wg.Go(func() { p.pumpDatagrams(p.upstream, p.client, closeClient) })
 	wg.Wait()
-}
-
-func (p *webtransportPump) closeClient(cause error) {
-	p.propagateClose(p.client, p.upstream, &p.closeClientOnce, cause)
-}
-
-func (p *webtransportPump) closeUpstream(cause error) {
-	p.propagateClose(p.upstream, p.client, &p.closeUpstreamOnce, cause)
 }
 
 // propagateClose closes target once with a code/message derived from
@@ -141,21 +133,18 @@ func (p *webtransportPump) acceptBidi(src, dst *webtransport.Session, propagate 
 // sides observe EOF or an error.
 func (p *webtransportPump) spliceBidi(a, b *webtransport.Stream) {
 	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		if _, err := io.Copy(b, a); err != nil && !isExpectedEOF(err) {
 			p.logger.Debug("webtransport bidi splice a->b", zap.Error(err))
 		}
 		_ = b.Close()
-	}()
-	go func() {
-		defer wg.Done()
+	})
+	wg.Go(func() {
 		if _, err := io.Copy(a, b); err != nil && !isExpectedEOF(err) {
 			p.logger.Debug("webtransport bidi splice b->a", zap.Error(err))
 		}
 		_ = a.Close()
-	}()
+	})
 	wg.Wait()
 }
 
