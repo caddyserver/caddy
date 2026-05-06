@@ -1044,7 +1044,8 @@ func (s *Server) Name() string { return s.name }
 // WebTransportServer returns the server's underlying WebTransport
 // serving state as an opaque value. Modules that import
 // github.com/quic-go/webtransport-go may type-assert it to
-// *webtransport.Server. Returns nil if HTTP/3 is not in use.
+// *webtransport.Server. Returns nil if WebTransport is not enabled
+// on this server (EnableWebTransport=false or HTTP/3 is not in use).
 //
 // This is exposed as any so caddyhttp's public API does not leak the
 // upstream webtransport-go type to packages that don't use it.
