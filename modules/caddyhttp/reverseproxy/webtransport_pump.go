@@ -57,19 +57,18 @@ type webtransportPump struct {
 
 func (p *webtransportPump) run() {
 	var wg sync.WaitGroup
-	wg.Add(6)
 
 	// Bidirectional streams in both directions.
-	go func() { defer wg.Done(); p.acceptBidi(p.client, p.upstream, p.closeUpstream) }()
-	go func() { defer wg.Done(); p.acceptBidi(p.upstream, p.client, p.closeClient) }()
+	wg.Go(func() { p.acceptBidi(p.client, p.upstream, p.closeUpstream) })
+	wg.Go(func() { p.acceptBidi(p.upstream, p.client, p.closeClient) })
 
 	// Unidirectional streams in both directions.
-	go func() { defer wg.Done(); p.acceptUni(p.client, p.upstream, p.closeUpstream) }()
-	go func() { defer wg.Done(); p.acceptUni(p.upstream, p.client, p.closeClient) }()
+	wg.Go(func() { p.acceptUni(p.client, p.upstream, p.closeUpstream) })
+	wg.Go(func() { p.acceptUni(p.upstream, p.client, p.closeClient) })
 
 	// Datagrams in both directions.
-	go func() { defer wg.Done(); p.pumpDatagrams(p.client, p.upstream, p.closeUpstream) }()
-	go func() { defer wg.Done(); p.pumpDatagrams(p.upstream, p.client, p.closeClient) }()
+	wg.Go(func() { p.pumpDatagrams(p.client, p.upstream, p.closeUpstream) })
+	wg.Go(func() { p.pumpDatagrams(p.upstream, p.client, p.closeClient) })
 
 	wg.Wait()
 }
