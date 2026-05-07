@@ -1053,7 +1053,7 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 					if !d.NextArg() {
 						return nil, d.ArgErr()
 					}
-					interval, err := time.ParseDuration(d.Val() + "ns")
+					interval, err := caddy.ParseDuration(d.Val())
 					if err != nil {
 						return nil, d.Errf("failed to parse interval: %v", err)
 					}
