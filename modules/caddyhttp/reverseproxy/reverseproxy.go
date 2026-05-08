@@ -574,6 +574,17 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	// get the updated list of upstreams
 	upstreams := h.Upstreams
 	if h.DynamicUpstreams != nil {
+		if retries > 0 {
+			// after a failure (and thus during a retry), give dynamic upstream modules an opportunity
+			// to purge their relevant cache entries so we don't keep retrying bad upstreams
+			if cachingDynamicUpstreams, ok := h.DynamicUpstreams.(CachingUpstreamSource); ok {
+				if err := cachingDynamicUpstreams.ResetCache(r); err != nil {
+					if c := h.logger.Check(zapcore.ErrorLevel, "failed clearing dynamic upstream source's cache"); c != nil {
+						c.Write(zap.Error(err))
+					}
+				}
+			}
+		}
 		dUpstreams, err := h.DynamicUpstreams.GetUpstreams(r)
 		if err != nil {
 			if c := h.logger.Check(zapcore.ErrorLevel, "failed getting dynamic upstreams; falling back to static upstreams"); c != nil {
@@ -1640,8 +1651,26 @@ type Selector interface {
 // may be called during each retry, multiple times per request, and as
 // such, needs to be instantaneous. The returned slice will not be
 // modified.
+//
+// For upstream sources that cache results, implement the
+// [CachingUpstreamSource] interface for optimal performance.
 type UpstreamSource interface {
 	GetUpstreams(*http.Request) ([]*Upstream, error)
+}
+
+// CachingUpstreamSource is an upstream source that caches its upstreams.
+// The relevant cache entry can be cleared/reset for a given request during
+// retries if a request fails. This can help ensure that failing backends
+// are not retried.
+//
+// EXPERIMENTAL: Subject to change.
+type CachingUpstreamSource interface {
+	UpstreamSource
+
+	// ResetCache clears any cache entry related to the given request.
+	// The next time GetUpstreams is called, it should have new upstream
+	// information for the given request.
+	ResetCache(*http.Request) error
 }
 
 // Hop-by-hop headers. These are removed when sent to the backend.

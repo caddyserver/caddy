@@ -15,9 +15,13 @@
 package caddy
 
 import (
+	"bytes"
 	"context"
+	"crypto"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"net/http"
@@ -52,6 +56,13 @@ var testCfg = []byte(`{
 			}
 		}
 		`)
+
+type testAdminPublicKey string
+
+func (k testAdminPublicKey) Equal(x crypto.PublicKey) bool {
+	other, ok := x.(testAdminPublicKey)
+	return ok && k == other
+}
 
 func TestUnsyncedConfigAccess(t *testing.T) {
 	// each test is performed in sequence, so
@@ -651,6 +662,99 @@ func TestAllowedOriginsUnixSocket(t *testing.T) {
 	}
 }
 
+func TestRemoteAdminAccessControlPathSegmentMatching(t *testing.T) {
+	const authorizedKey testAdminPublicKey = "authorized"
+	peerCert := &x509.Certificate{PublicKey: authorizedKey}
+
+	tests := []struct {
+		name        string
+		allowedPath string
+		requestPath string
+		wantErr     bool
+	}{
+		{
+			name:        "exact path",
+			allowedPath: "/pki/ca/prod",
+			requestPath: "/pki/ca/prod",
+			wantErr:     false,
+		},
+		{
+			name:        "subpath",
+			allowedPath: "/pki/ca/prod",
+			requestPath: "/pki/ca/prod/certificates",
+			wantErr:     false,
+		},
+		{
+			name:        "trailing slash subpath",
+			allowedPath: "/pki/ca/prod/",
+			requestPath: "/pki/ca/prod/certificates",
+			wantErr:     false,
+		},
+		{
+			name:        "sibling with shared prefix",
+			allowedPath: "/pki/ca/prod",
+			requestPath: "/pki/ca/prod-backup",
+			wantErr:     true,
+		},
+		{
+			name:        "same segment plus digit",
+			allowedPath: "/pki/ca/prod",
+			requestPath: "/pki/ca/prod1",
+			wantErr:     true,
+		},
+		{
+			name:        "root path",
+			allowedPath: "/",
+			requestPath: "/pki/ca/prod",
+			wantErr:     false,
+		},
+	}
+
+	for i, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			remote := RemoteAdmin{
+				AccessControl: []*AdminAccess{
+					{
+						Permissions: []AdminPermissions{
+							{
+								Methods: []string{http.MethodGet},
+								Paths:   []string{test.allowedPath},
+							},
+						},
+						publicKeys: []crypto.PublicKey{authorizedKey},
+					},
+				},
+			}
+
+			req := httptest.NewRequest(http.MethodGet, "https://localhost:2021"+test.requestPath, nil)
+			req.TLS = &tls.ConnectionState{
+				VerifiedChains: [][]*x509.Certificate{{peerCert}},
+			}
+
+			err := remote.enforceAccessControls(req)
+			if test.wantErr {
+				if err == nil {
+					t.Errorf("test %d (%s): allowed path %q, request path %q: expected forbidden error, got nil", i, test.name, test.allowedPath, test.requestPath)
+					return
+				}
+				var apiErr APIError
+				if !errors.As(err, &apiErr) {
+					t.Errorf("test %d (%s): allowed path %q, request path %q: expected APIError with HTTP status %d, got %T: %v", i, test.name, test.allowedPath, test.requestPath, http.StatusForbidden, err, err)
+					return
+				}
+				if apiErr.HTTPStatus != http.StatusForbidden {
+					t.Errorf("test %d (%s): allowed path %q, request path %q: expected HTTP status %d, got %d", i, test.name, test.allowedPath, test.requestPath, http.StatusForbidden, apiErr.HTTPStatus)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("test %d (%s): allowed path %q, request path %q: expected no error, got %v", i, test.name, test.allowedPath, test.requestPath, err)
+			}
+		})
+	}
+}
+
 func TestReplaceRemoteAdminServer(t *testing.T) {
 	const testCert = `MIIDCTCCAfGgAwIBAgIUXsqJ1mY8pKlHQtI3HJ23x2eZPqwwDQYJKoZIhvcNAQEL
 BQAwFDESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTIzMDEwMTAwMDAwMFoXDTI0MDEw
@@ -999,6 +1103,50 @@ MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDRS0LmTwUT0iwP
 
 			if test.checkState != nil {
 				test.checkState(t, test.cfg)
+			}
+		})
+	}
+}
+
+func TestUnsyncedConfigAccessCanonicalArrayIndices(t *testing.T) {
+	rawCfg = map[string]any{
+		rawConfigKey: map[string]any{
+			"list": []any{"zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"},
+		},
+	}
+
+	tests := []struct {
+		name       string
+		path       string
+		wantOutput string
+		wantErr    bool
+	}{
+		{name: "allow zero", path: "/" + rawConfigKey + "/list/0", wantOutput: "\"zero\"\n"},
+		{name: "allow one", path: "/" + rawConfigKey + "/list/1", wantOutput: "\"one\"\n"},
+		{name: "allow ten", path: "/" + rawConfigKey + "/list/10", wantOutput: "\"ten\"\n"},
+		{name: "reject leading zero", path: "/" + rawConfigKey + "/list/01", wantErr: true},
+		{name: "reject multiple leading zeros", path: "/" + rawConfigKey + "/list/002", wantErr: true},
+		{name: "reject plus sign", path: "/" + rawConfigKey + "/list/+1", wantErr: true},
+		{name: "reject negative zero", path: "/" + rawConfigKey + "/list/-0", wantErr: true},
+	}
+
+	for i, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotOutput bytes.Buffer
+			err := unsyncedConfigAccess(http.MethodGet, tc.path, nil, &gotOutput)
+
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("test %d (%s): input path %q: expected error, got nil with output %q", i, tc.name, tc.path, gotOutput.String())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("test %d (%s): input path %q: expected no error with output %q, got error %v with output %q", i, tc.name, tc.path, tc.wantOutput, err, gotOutput.String())
+			}
+			if gotOutput.String() != tc.wantOutput {
+				t.Errorf("test %d (%s): input path %q: expected output %q, got %q", i, tc.name, tc.path, tc.wantOutput, gotOutput.String())
 			}
 		})
 	}

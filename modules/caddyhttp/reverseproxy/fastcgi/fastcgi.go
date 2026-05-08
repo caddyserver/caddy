@@ -28,8 +28,6 @@ import (
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	"golang.org/x/text/language"
-	"golang.org/x/text/search"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -418,13 +416,18 @@ func (t Transport) buildEnv(r *http.Request) (envVars, error) {
 	return env, nil
 }
 
-var splitSearchNonASCII = search.New(language.Und, search.IgnoreCase)
-
 // splitPos returns the index where path should
 // be split based on t.SplitPath.
 //
 // example: if splitPath is [".php"]
 // "/path/to/script.php/some/path": ("/path/to/script.php", "/some/path")
+//
+// Matching is strictly ASCII case-insensitive. Bytes >= utf8.RuneSelf in path
+// never match any split entry: split strings are validated ASCII-only and
+// lower-cased in Provision(), so any Unicode equivalence (e.g. fullwidth or
+// mathematical letters folding to ASCII) would let an attacker upload a file
+// whose name contains such code points and have it served as PHP. See
+// FrankenPHP advisories GHSA-3g8v-8r37-cgjm and GHSA-v4h7-cj44-8fc8.
 //
 // Adapted from FrankenPHP's code (copyright 2026 Kévin Dunglas, MIT license)
 func (t Transport) splitPos(path string) int {
@@ -438,31 +441,18 @@ func (t Transport) splitPos(path string) int {
 
 	pathLen := len(path)
 
-	// We are sure that split strings are all ASCII-only and lower-case because of validation and normalization in Provision().
 	for _, split := range t.SplitPath {
 		splitLen := len(split)
+		if splitLen == 0 || splitLen > pathLen {
+			continue
+		}
 
-		for i := range pathLen {
-			if path[i] >= utf8.RuneSelf {
-				if _, end := splitSearchNonASCII.IndexString(path, split); end > -1 {
-					return end
-				}
-
-				break
-			}
-
-			if i+splitLen > pathLen {
-				continue
-			}
-
+		for i := 0; i <= pathLen-splitLen; i++ {
 			match := true
-			for j := range splitLen {
+			for j := 0; j < splitLen; j++ {
 				c := path[i+j]
-
 				if c >= utf8.RuneSelf {
-					if _, end := splitSearchNonASCII.IndexString(path, split); end > -1 {
-						return end
-					}
+					match = false
 
 					break
 				}

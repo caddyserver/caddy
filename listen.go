@@ -30,10 +30,6 @@ import (
 	"go.uber.org/zap"
 )
 
-func reuseUnixSocket(_, _ string) (any, error) {
-	return nil, nil
-}
-
 func listenReusable(ctx context.Context, lnKey string, network, address string, config net.ListenConfig) (any, error) {
 	var socketFile *os.File
 

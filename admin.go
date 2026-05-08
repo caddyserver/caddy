@@ -212,8 +212,8 @@ type AdminAccess struct {
 // AdminPermissions specifies what kinds of requests are allowed
 // to be made to the admin endpoint.
 type AdminPermissions struct {
-	// The API paths allowed. Paths are simple prefix matches.
-	// Any subpath of the specified paths will be allowed.
+	// The API paths allowed. A request path must either equal an
+	// allowed path or be a subpath with a path-segment boundary.
 	Paths []string `json:"paths,omitempty"`
 
 	// The HTTP methods allowed for the given paths.
@@ -718,7 +718,7 @@ func (remote RemoteAdmin) enforceAccessControls(r *http.Request) error {
 						// verify path
 						pathFound := accessPerm.Paths == nil
 						for _, allowedPath := range accessPerm.Paths {
-							if strings.HasPrefix(r.URL.Path, allowedPath) {
+							if adminPathAllowed(r.URL.Path, allowedPath) {
 								pathFound = true
 								break
 							}
@@ -745,6 +745,19 @@ func (remote RemoteAdmin) enforceAccessControls(r *http.Request) error {
 		HTTPStatus: http.StatusUnauthorized,
 		Message:    "client identity not authorized",
 	}
+}
+
+func adminPathAllowed(reqPath, allowedPath string) bool {
+	if allowedPath == "" || allowedPath == "/" {
+		return strings.HasPrefix(reqPath, allowedPath)
+	}
+	if reqPath == allowedPath {
+		return true
+	}
+	if strings.HasSuffix(allowedPath, "/") {
+		return strings.HasPrefix(reqPath, allowedPath)
+	}
+	return strings.HasPrefix(reqPath, allowedPath+"/")
 }
 
 func stopAdminServer(srv *http.Server) error {
@@ -1148,6 +1161,20 @@ func handleStop(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+func parseCanonicalArrayIndex(idx string) (int, error) {
+	if idx == "" {
+		return 0, fmt.Errorf("empty index")
+	}
+	i, err := strconv.Atoi(idx)
+	if err != nil {
+		return 0, err
+	}
+	if strconv.Itoa(i) != idx {
+		return 0, fmt.Errorf("non-canonical array index")
+	}
+	return i, nil
+}
+
 // unsyncedConfigAccess traverses into the current config and performs
 // the operation at path according to method, using body and out as
 // needed. This is a low-level, unsynchronized function; most callers
@@ -1209,11 +1236,12 @@ traverseLoop:
 				var idx int
 				if method != http.MethodPost {
 					idxStr := parts[len(parts)-1]
-					idx, err = strconv.Atoi(idxStr)
+					idx, err = parseCanonicalArrayIndex(idxStr)
 					if err != nil {
 						return fmt.Errorf("[%s] invalid array index '%s': %v",
 							path, idxStr, err)
 					}
+
 					if idx < 0 || (method != http.MethodPut && idx >= len(arr)) || idx > len(arr) {
 						return fmt.Errorf("[%s] array index out of bounds: %s", path, idxStr)
 					}
@@ -1313,7 +1341,7 @@ traverseLoop:
 			}
 
 		case []any:
-			partInt, err := strconv.Atoi(part)
+			partInt, err := parseCanonicalArrayIndex(part)
 			if err != nil {
 				return fmt.Errorf("[/%s] invalid array index '%s': %v",
 					strings.Join(parts[:i+1], "/"), part, err)
