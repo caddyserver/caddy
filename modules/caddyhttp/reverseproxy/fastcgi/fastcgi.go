@@ -449,7 +449,7 @@ func (t Transport) splitPos(path string) int {
 
 		for i := 0; i <= pathLen-splitLen; i++ {
 			match := true
-			for j := 0; j < splitLen; j++ {
+			for j := range splitLen {
 				c := path[i+j]
 				if c >= utf8.RuneSelf {
 					match = false
