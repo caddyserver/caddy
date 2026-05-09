@@ -643,6 +643,9 @@ func (t *TLS) managingWildcardFor(subj string, otherSubjsToManage map[string]str
 		if _, ok := otherSubjsToManage[candidate]; ok {
 			return true
 		}
+		if _, ok := t.automateNames[candidate]; ok {
+			return true
+		}
 	}
 
 	return false
