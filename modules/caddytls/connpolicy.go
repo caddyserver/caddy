@@ -153,9 +153,9 @@ func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) *tls.Config {
 			// in its config (remember, TLS connection policies are used by *other* apps to
 			// run TLS servers) -- we skip names with placeholders
 			if tlsApp.EncryptedClientHello.Publication == nil {
-				var echNames []string
 				repl := caddy.NewReplacer()
 				for _, p := range cp {
+					var echNames []string
 					for _, m := range p.matchers {
 						if sni, ok := m.(MatchServerName); ok {
 							for _, name := range sni {
@@ -164,8 +164,8 @@ func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) *tls.Config {
 							}
 						}
 					}
+					tlsApp.RegisterServerNames(echNames, p.ALPN)
 				}
-				tlsApp.RegisterServerNames(echNames)
 			}
 
 			tlsCfg.GetEncryptedClientHelloKeys = func(chi *tls.ClientHelloInfo) ([]tls.EncryptedClientHelloKey, error) {
