@@ -162,6 +162,25 @@ func init() {
 // {{listFiles "/mydir"}}
 // ```
 //
+// ##### `fileExists`
+//
+// Returns true if the given file name, relative to the template context's file root,
+// can be opened successfully.
+//
+// ```
+// {{fileExists "path/to/file.html"}}
+// ```
+//
+// ##### `fileStat`
+//
+// Returns [FileInfo](https://pkg.go.dev/io/fs#FileInfo) using [Stat](https://pkg.go.dev/io/fs#Stat)
+// on the given file name, relative to the template context's file root.
+//
+// ```
+// {{$css := fileStat "css/style.css" -}}
+// <link rel="stylesheet" href="/css/style.css?v={{ $css.ModTime.Unix }}">
+// ```
+//
 // ##### `markdown`
 //
 // Renders the given Markdown text as HTML and returns it. This uses the
