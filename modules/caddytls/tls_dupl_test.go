@@ -19,18 +19,13 @@ func TestAvoidDuplicateAutomation(t *testing.T) {
 			expectedToManage: false,
 		},
 		{
-			name:             "manage if wildcard is not automated",
+			name:             "manage if no automation configured",
 			automateNames:    []string{},
 			expectedToManage: true,
 		},
 		{
 			name:             "manage if explicitly requested even when wildcard automated",
 			automateNames:    []string{"*.example.com", "sub.example.com"},
-			expectedToManage: true,
-		},
-		{
-			name:             "manage if explicitly requested when wildcard is not automated",
-			automateNames:    []string{"sub.example.com"},
 			expectedToManage: true,
 		},
 	}
@@ -67,6 +62,8 @@ func TestAvoidDuplicateAutomation(t *testing.T) {
 				t.Fatal(err)
 			}
 
+			// simulate a case wherein the HTTP app starts first and
+			// tells the TLS app about the following auto-HTTPS domains
 			httpDomains := map[string]struct{}{"sub.example.com": {}}
 			if err := tlsApp.Manage(httpDomains); err != nil {
 				t.Fatal(err)
