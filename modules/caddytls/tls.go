@@ -613,8 +613,8 @@ func (t *TLS) Manage(subjects map[string]struct{}) error {
 
 // managingWildcardFor returns true if the app is managing a certificate that covers that
 // subject name (including consideration of wildcards), either from its internal list of
-// names that it IS managing certs for, or from the otherSubjsToManage which includes names
-// that WILL be managed.
+// names that it IS managing certs for, from the otherSubjsToManage which includes names
+// that WILL be managed, or from names configured in the 'automate' loader.
 func (t *TLS) managingWildcardFor(subj string, otherSubjsToManage map[string]struct{}) bool {
 	// TODO: we could also consider manually-loaded certs using t.HasCertificateForSubject(),
 	// but that does not account for how manually-loaded certs may be restricted as to which
@@ -629,7 +629,9 @@ func (t *TLS) managingWildcardFor(subj string, otherSubjsToManage map[string]str
 		return managing
 	}
 
-	// replace labels of the domain with wildcards until we get a match
+	// replace labels of the domain with wildcards until we get a match from names
+	// already being managed, those about to be managed in this batch, or those
+	// configured for automation
 	labels := strings.Split(subj, ".")
 	for i := range labels {
 		if labels[i] == "*" {
