@@ -14,13 +14,23 @@ func TestAvoidDuplicateAutomation(t *testing.T) {
 		expectedToManage bool
 	}{
 		{
-			name:             "with wildcard in automate",
+			name:             "do not manage if wildcard is automated",
 			automateNames:    []string{"*.example.com"},
 			expectedToManage: false,
 		},
 		{
-			name:             "without wildcard in automate",
+			name:             "manage if wildcard is not automated",
 			automateNames:    []string{},
+			expectedToManage: true,
+		},
+		{
+			name:             "manage if explicitly requested even when wildcard automated",
+			automateNames:    []string{"*.example.com", "sub.example.com"},
+			expectedToManage: true,
+		},
+		{
+			name:             "manage if explicitly requested when wildcard is not automated",
+			automateNames:    []string{"sub.example.com"},
 			expectedToManage: true,
 		},
 	}
