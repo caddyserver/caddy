@@ -174,6 +174,31 @@ If you've only got a minute, [the website has several quick-start tutorials](htt
 
 ## Overview
 
+## Why use the Caddyfile?
+
+The Caddyfile is the simplest way to configure Caddy. It is designed to be human-readable and reduces the need for complex JSON configuration.
+
+A typical Caddyfile example for serving a website with automatic HTTPS:
+
+example.com {
+    root * /var/www/html
+    file_server
+}
+
+## Reverse proxy example
+
+Caddy can also be used to forward requests to backend applications:
+
+example.com {
+    reverse_proxy localhost:3000
+}
+
+In this case, Caddy automatically handles HTTPS, certificate issuance, and renewal without additional configuration.
+
+## Key benefit
+
+Unlike traditional web servers, Caddy automatically manages TLS certificates, which removes the need for manual HTTPS setup.
+
 Caddy is most often used as an HTTPS server, but it is suitable for any long-running Go program. First and foremost, it is a platform to run Go applications. Caddy "apps" are just Go programs that are implemented as Caddy modules. Two apps -- `tls` and `http` -- ship standard with Caddy.
 
 Caddy apps instantly benefit from [automated documentation](https://caddyserver.com/docs/json/), graceful on-line [config changes via API](https://caddyserver.com/docs/api), and unification with other Caddy apps.
