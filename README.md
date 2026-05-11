@@ -80,6 +80,7 @@
 - **Dynamic configuration** with the [JSON API](https://caddyserver.com/docs/api)
 - [**Config adapters**](https://caddyserver.com/docs/config-adapters) if you don't like JSON
 - **Automatic HTTPS** by default
+This means you do not need to manually configure SSL certificates or renewals. Caddy handles this automatically in the background.
 	- [ZeroSSL](https://zerossl.com) and [Let's Encrypt](https://letsencrypt.org) for public names
 	- Fully-managed local CA for internal names & IPs
 	- Can coordinate with other Caddy instances in a cluster
@@ -173,7 +174,6 @@ If you've only got a minute, [the website has several quick-start tutorials](htt
 
 
 ## Overview
-
 ## Why use the Caddyfile?
 
 The Caddyfile is the simplest way to configure Caddy. It is designed to be human-readable and reduces the need for complex JSON configuration.
