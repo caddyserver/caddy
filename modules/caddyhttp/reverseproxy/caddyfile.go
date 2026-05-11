@@ -923,9 +923,8 @@ func (h *Handler) FinalizeUnmarshalCaddyfile(helper httpcaddyfile.Helper) error 
 		d.Next()
 		args := d.RemainingArgs()
 
-		// TODO: Remove this check at some point in the future
-		if len(args) == 2 {
-			return d.Errf("configuring 'handle_response' for status code replacement is no longer supported. Use 'replace_status' instead.")
+		if isStatusReplacementPattern(matcher, subroute) {
+    		return d.Errf("use 'replace_status' instead of 'handle_response' for status changes")
 		}
 
 		if len(args) > 1 {
@@ -984,6 +983,12 @@ func (h *Handler) FinalizeUnmarshalCaddyfile(helper httpcaddyfile.Helper) error 
 	h.responseMatchers = nil
 
 	return nil
+}
+
+func isStatusReplacementPattern(m caddyhttp.ResponseMatcher) bool {
+	// If the matcher only checks status codes, and does not
+	// check headers, it's basically a status-only matcher.
+	return len(m.StatusCode) > 0 && len(m.Headers) == 0
 }
 
 // UnmarshalCaddyfile deserializes Caddyfile tokens into h.
