@@ -730,3 +730,58 @@ func TestRetryMatchAllowsExpressionMixedWithOtherMatchers(t *testing.T) {
 		})
 	}
 }
+
+// TestSubrouteErrorFallbackWithBody is similar to TestDialErrorBodyRetry but
+// mimics Subroute's Error handler rather than testing retries specifically
+func TestSubrouteErrorFallbackWithBody(t *testing.T) {
+	// Good upstream: echoes the request body with 200 OK.
+	goodServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "read body: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, err = w.Write(body)
+		if err != nil {
+			t.Errorf("error writing in good server: %v", err)
+		}
+	}))
+	t.Cleanup(goodServer.Close)
+
+	// Handler which will dial error
+	badProxy := minimalHandler(0, &Upstream{Host: new(Host), Dial: deadUpstreamAddr(t)})
+
+	bodyReader := newCloseOnCloseReader("hello world")
+	req := httptest.NewRequest("POST", "http://localhost/", bodyReader)
+	// httptest.NewRequest wraps the reader in NopCloser; replace
+	// it with our close-aware reader so Close() is propagated.
+	req.Body = bodyReader
+
+	req = prepareTestRequest(req)
+	rec := httptest.NewRecorder()
+	err := badProxy.ServeHTTP(rec, req, caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+		return nil
+	}))
+	if err == nil {
+		t.Fatalf("Expected error from badProxy.ServeHTTP")
+	}
+
+	// Simulate the Subroute's Error handler by calling another handler with the
+	// same request and recorder
+	goodProxy := minimalHandler(0, &Upstream{Host: new(Host), Dial: goodServer.Listener.Addr().String()})
+	err = goodProxy.ServeHTTP(rec, req, caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+		return nil
+	}))
+
+	if err != nil {
+		t.Fatalf("Expected no error from goodProxy.ServeHTTP, got: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("status: got %d, want %d", rec.Code, http.StatusOK)
+	}
+	expectedBody := "hello world"
+	if rec.Body.String() != expectedBody {
+		t.Errorf("body: got %q, want %q", rec.Body.String(), expectedBody)
+	}
+}

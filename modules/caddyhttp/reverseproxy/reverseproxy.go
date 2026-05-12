@@ -488,20 +488,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	reqHost := clonedReq.Host
 	reqHeader := clonedReq.Header
 
-	// When retries are configured and there is a body, wrap it in
-	// io.NopCloser to prevent Go's transport from closing it on dial
-	// errors. cloneRequest does a shallow copy, so clonedReq.Body and
+	// If the request contained a body, wrap it in io.NopCloser
+	// to prevent Go's transport from closing it on dial errors.
+	// cloneRequest does a shallow copy, so clonedReq.Body and
 	// r.Body share the same io.ReadCloser — a dial-failure Close()
-	// would kill the original body for all subsequent retry attempts.
-	// The real body is closed by the HTTP server when the handler
-	// returns.
+	// would kill the original body for all subsequent retry
+	// attempts or subsequent handlers. The real body is closed by
+	// the HTTP server when the handler returns.
 	//
 	// If the body was already fully buffered (via request_buffers),
 	// we also extract the buffer so the retry loop can replay it
-	// from the beginning on each attempt. (see #6259, #7546)
+	// from the beginning on each attempt. (see #6259, #7546, #7713)
 	var bufferedReqBody *bytes.Buffer
-	if clonedReq.Body != nil && h.LoadBalancing != nil &&
-		(h.LoadBalancing.Retries > 0 || h.LoadBalancing.TryDuration > 0) {
+	if clonedReq.Body != nil {
 		if reqBodyBuf, ok := clonedReq.Body.(bodyReadCloser); ok && reqBodyBuf.body == nil && reqBodyBuf.buf != nil {
 			bufferedReqBody = reqBodyBuf.buf
 			reqBodyBuf.buf = nil
