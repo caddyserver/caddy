@@ -553,6 +553,29 @@ func (ctx Context) Storage() certmagic.Storage {
 	return ctx.cfg.storage
 }
 
+// LocalAdminAddress returns the effective local admin listener
+// address for this config context. The bool is false when the
+// local admin endpoint is disabled.
+func (ctx Context) LocalAdminAddress() (NetworkAddress, bool, error) {
+	if ctx.cfg == nil {
+		return NetworkAddress{}, false, nil
+	}
+	if ctx.cfg.Admin != nil && ctx.cfg.Admin.Disabled {
+		return NetworkAddress{}, false, nil
+	}
+
+	adminListen := DefaultAdminListen
+	if ctx.cfg.Admin != nil && ctx.cfg.Admin.Listen != "" {
+		adminListen = ctx.cfg.Admin.Listen
+	}
+
+	addr, err := parseAdminListenAddr(adminListen, DefaultAdminListen)
+	if err != nil {
+		return NetworkAddress{}, false, err
+	}
+	return addr, true, nil
+}
+
 // Logger returns a logger that is intended for use by the most
 // recent module associated with the context. Callers should not
 // pass in any arguments unless they want to associate with a
