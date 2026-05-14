@@ -33,6 +33,17 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 )
 
+// BuildTLSApp builds the TLS app from server block pairings and global options.
+// This is exported for use by xcaddyfile and other adapters.
+func BuildTLSApp(
+	pairings ServerBlockPairings,
+	options map[string]any,
+	warnings []caddyconfig.Warning,
+) (*caddytls.TLS, []caddyconfig.Warning, error) {
+	st := ServerType{}
+	return st.buildTLSApp(pairings, options, warnings)
+}
+
 func (st ServerType) buildTLSApp(
 	pairings []sbAddrAssociation,
 	options map[string]any,
@@ -57,14 +68,14 @@ func (st ServerType) buildTLSApp(
 	if !slices.Contains(autoHTTPS, "off") {
 		for _, pair := range pairings {
 			for _, sb := range pair.serverBlocks {
-				for _, addr := range sb.parsedKeys {
+				for _, addr := range sb.ParsedKeys {
 					if addr.Host != "" {
 						continue
 					}
 
 					// this server block has a hostless key, now
 					// go through and add all the hosts to the set
-					for _, otherAddr := range sb.parsedKeys {
+					for _, otherAddr := range sb.ParsedKeys {
 						if otherAddr.Original == addr.Original {
 							continue
 						}
@@ -123,34 +134,34 @@ func (st ServerType) buildTLSApp(
 			}
 
 			// on-demand tls
-			if _, ok := sblock.pile["tls.on_demand"]; ok {
+			if _, ok := sblock.Pile["tls.on_demand"]; ok {
 				ap.OnDemand = true
 			}
 
 			// collect hosts that are forced to have certs automated for their specific name
-			if _, ok := sblock.pile["tls.force_automate"]; ok {
+			if _, ok := sblock.Pile["tls.force_automate"]; ok {
 				for _, host := range sblockHosts {
 					forcedAutomatedNames[host] = struct{}{}
 				}
 			}
 
 			// reuse private keys tls
-			if _, ok := sblock.pile["tls.reuse_private_keys"]; ok {
+			if _, ok := sblock.Pile["tls.reuse_private_keys"]; ok {
 				ap.ReusePrivateKeys = true
 			}
 
-			if keyTypeVals, ok := sblock.pile["tls.key_type"]; ok {
+			if keyTypeVals, ok := sblock.Pile["tls.key_type"]; ok {
 				ap.KeyType = keyTypeVals[0].Value.(string)
 			}
 
-			if renewalWindowRatioVals, ok := sblock.pile["tls.renewal_window_ratio"]; ok {
+			if renewalWindowRatioVals, ok := sblock.Pile["tls.renewal_window_ratio"]; ok {
 				ap.RenewalWindowRatio = renewalWindowRatioVals[0].Value.(float64)
 			} else if globalRenewalWindowRatio, ok := options["renewal_window_ratio"]; ok {
 				ap.RenewalWindowRatio = globalRenewalWindowRatio.(float64)
 			}
 
 			// certificate issuers
-			if issuerVals, ok := sblock.pile["tls.cert_issuer"]; ok {
+			if issuerVals, ok := sblock.Pile["tls.cert_issuer"]; ok {
 				var issuers []certmagic.Issuer
 				for _, issuerVal := range issuerVals {
 					issuers = append(issuers, issuerVal.Value.(certmagic.Issuer))
@@ -175,14 +186,14 @@ func (st ServerType) buildTLSApp(
 			}
 
 			// certificate managers
-			if certManagerVals, ok := sblock.pile["tls.cert_manager"]; ok {
+			if certManagerVals, ok := sblock.Pile["tls.cert_manager"]; ok {
 				for _, certManager := range certManagerVals {
 					certGetterName := certManager.Value.(caddy.Module).CaddyModule().ID.Name()
 					ap.ManagersRaw = append(ap.ManagersRaw, caddyconfig.JSONModuleObject(certManager.Value, "via", certGetterName, &warnings))
 				}
 			}
 			// custom bind host
-			for _, cfgVal := range sblock.pile["bind"] {
+			for _, cfgVal := range sblock.Pile["bind"] {
 				for _, iss := range ap.Issuers {
 					// if an issuer was already configured and it is NOT an ACME issuer,
 					// skip, since we intend to adjust only ACME issuers; ensure we
@@ -285,7 +296,7 @@ func (st ServerType) buildTLSApp(
 			}
 
 			// certificate loaders
-			if clVals, ok := sblock.pile["tls.cert_loader"]; ok {
+			if clVals, ok := sblock.Pile["tls.cert_loader"]; ok {
 				for _, clVal := range clVals {
 					certLoaders = append(certLoaders, clVal.Value.(caddytls.CertificateLoader))
 				}
