@@ -99,6 +99,12 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //	    stream_buffer_size <size>
 //	    stream_timeout     <duration>
 //	    stream_close_delay <duration>
+//	    stream_detached
+//	    stream_logs {
+//	        level <debug|info|warn|error>
+//	        logger_name <name|access>
+//	        skip_handshake
+//	    }
 //	    verbose_logs
 //
 //	    # request manipulation
@@ -701,6 +707,49 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Errf("bad duration value '%s': %v", d.Val(), err)
 				}
 				h.StreamCloseDelay = caddy.Duration(dur)
+			}
+
+		case "stream_detached":
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+			h.StreamDetached = true
+
+		case "stream_logs":
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+			if h.StreamLogs == nil {
+				h.StreamLogs = new(StreamLogs)
+			}
+
+			nesting := d.Nesting()
+			for d.NextBlock(nesting) {
+				switch d.Val() {
+				case "level":
+					if !d.NextArg() {
+						return d.ArgErr()
+					}
+					h.StreamLogs.Level = d.Val()
+					if d.NextArg() {
+						return d.ArgErr()
+					}
+				case "logger_name":
+					if !d.NextArg() {
+						return d.ArgErr()
+					}
+					h.StreamLogs.LoggerName = d.Val()
+					if d.NextArg() {
+						return d.ArgErr()
+					}
+				case "skip_handshake":
+					if d.NextArg() {
+						return d.ArgErr()
+					}
+					h.StreamLogs.SkipHandshake = true
+				default:
+					return d.Errf("unrecognized stream_logs option: %s", d.Val())
+				}
 			}
 
 		case "trusted_proxies":

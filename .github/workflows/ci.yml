@@ -132,6 +132,8 @@ jobs:
     - name: Run tests
       # id: step_test
       # continue-on-error: true
+      env:
+        GODEBUG: http2xconnect=1
       run: |
         # (go test -v -coverprofile=cover-profile.out -race ./... 2>&1) > test-results/test-result.out
         go test -v -coverprofile="cover-profile.out" -short -race ./...
@@ -191,7 +193,7 @@ jobs:
           retries=3
           exit_code=0
           while ((retries > 0)); do
-            CGO_ENABLED=0 go test -p 1 -v ./...
+            GODEBUG=http2xconnect=1 CGO_ENABLED=0 go test -p 1 -v ./...
             exit_code=$?
             if ((exit_code == 0)); then
               break
