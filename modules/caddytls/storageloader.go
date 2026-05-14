@@ -72,17 +72,16 @@ func (sl *StorageLoader) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-// LoadCertificates returns the certificates to be loaded by sl.
-func (sl StorageLoader) LoadCertificates() ([]Certificate, error) {
+func (sl StorageLoader) Initialize(updateCertificates func(add []Certificate, remove []string) error) error {
 	certs := make([]Certificate, 0, len(sl.Pairs))
 	for _, pair := range sl.Pairs {
 		certData, err := sl.storage.Load(sl.ctx, pair.Certificate)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		keyData, err := sl.storage.Load(sl.ctx, pair.Key)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		var cert tls.Certificate
@@ -94,21 +93,21 @@ func (sl StorageLoader) LoadCertificates() ([]Certificate, error) {
 			// if the start of the key file looks like an encrypted private key,
 			// reject it with a helpful error message
 			if strings.Contains(string(keyData[:40]), "ENCRYPTED") {
-				return nil, fmt.Errorf("encrypted private keys are not supported; please decrypt the key first")
+				return fmt.Errorf("encrypted private keys are not supported; please decrypt the key first")
 			}
 
 			cert, err = tls.X509KeyPair(certData, keyData)
 
 		default:
-			return nil, fmt.Errorf("unrecognized certificate/key encoding format: %s", pair.Format)
+			return fmt.Errorf("unrecognized certificate/key encoding format: %s", pair.Format)
 		}
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		certs = append(certs, Certificate{Certificate: cert, Tags: pair.Tags})
 	}
-	return certs, nil
+	return updateCertificates(certs, []string{})
 }
 
 // Interface guard
