@@ -449,6 +449,39 @@ func (h *Handler) Cleanup() error {
 	return err
 }
 
+// bodyNopCloserIfNotRead wraps a request body to prevent closing if not read, i.e., when
+// dialing to upstream fails.
+// It will close the body as normal if the body is read.
+type bodyNopCloserIfNotRead struct {
+	io.ReadCloser
+	read int // tracks the number of bytes read, -1 when first Read returns 0, io.EOF
+}
+
+func (b *bodyNopCloserIfNotRead) Read(p []byte) (int, error) {
+	if b.read == -1 {
+		return 0, io.EOF
+	}
+	n, err := b.ReadCloser.Read(p)
+	// first Read returns 0, io.EOF
+	if b.read == 0 && n == 0 && err == io.EOF {
+		b.read = -1
+	} else {
+		b.read += n
+	}
+	return n, err
+}
+
+func (b *bodyNopCloserIfNotRead) Close() error {
+	// don't close the body
+	if b.read == 0 {
+		return nil
+	}
+	// close as usual, when -1, any read will return EOF as the original read will do
+	// in other cases, the read will fail as body is closed because we do not want partial bodies to be sent to the upstream
+	// users can buffer the entire request body to allow the request to be resent
+	return b.ReadCloser.Close()
+}
+
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
@@ -510,7 +543,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 				bufPool.Put(bufferedReqBody)
 			}()
 		} else {
-			clonedReq.Body = io.NopCloser(clonedReq.Body)
+			clonedReq.Body = &bodyNopCloserIfNotRead{ReadCloser: clonedReq.Body}
 		}
 	}
 
