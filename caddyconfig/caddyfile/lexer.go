@@ -155,7 +155,7 @@ func (l *lexer) next() (bool, error) {
 			// want to keep.
 			if ch == '\n' {
 				if len(val) == 2 {
-					return false, fmt.Errorf("missing opening heredoc marker on line #%d; must contain only alpha-numeric characters, dashes and underscores; got empty string", l.line)
+					return false, fmt.Errorf("missing opening heredoc marker on line #%d; must contain only alphanumeric characters, dashes and underscores; got empty string", l.line)
 				}
 
 				// check if there's too many <
@@ -165,7 +165,7 @@ func (l *lexer) next() (bool, error) {
 
 				heredocMarker = string(val[2:])
 				if !heredocMarkerRegexp.Match([]byte(heredocMarker)) {
-					return false, fmt.Errorf("heredoc marker on line #%d must contain only alpha-numeric characters, dashes and underscores; got '%s'", l.line, heredocMarker)
+					return false, fmt.Errorf("heredoc marker on line #%d must contain only alphanumeric characters, dashes and underscores; got '%s'", l.line, heredocMarker)
 				}
 
 				inHeredoc = true
