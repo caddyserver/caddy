@@ -17,7 +17,7 @@ func TestAddForwardedHeadersNonIP(t *testing.T) {
 
 	// Mock the context variables required by Caddy.
 	// We need to inject the variable map manually since we aren't running the full server.
-	vars := map[string]interface{}{
+	vars := map[string]any{
 		caddyhttp.TrustedProxyVarKey: false,
 	}
 	ctx := context.WithValue(req.Context(), caddyhttp.VarsCtxKey, vars)
@@ -42,7 +42,7 @@ func TestAddForwardedHeaders_UnixSocketTrusted(t *testing.T) {
 	req.Header.Set("X-Forwarded-Proto", "https")
 	req.Header.Set("X-Forwarded-Host", "original.example.com")
 
-	vars := map[string]interface{}{
+	vars := map[string]any{
 		caddyhttp.TrustedProxyVarKey: true,
 		caddyhttp.ClientIPVarKey:     "1.2.3.4",
 	}
@@ -74,7 +74,7 @@ func TestAddForwardedHeaders_UnixSocketUntrusted(t *testing.T) {
 	req.Header.Set("X-Forwarded-Proto", "https")
 	req.Header.Set("X-Forwarded-Host", "spoofed.example.com")
 
-	vars := map[string]interface{}{
+	vars := map[string]any{
 		caddyhttp.TrustedProxyVarKey: false,
 		caddyhttp.ClientIPVarKey:     "",
 	}
@@ -103,7 +103,7 @@ func TestAddForwardedHeaders_UnixSocketTrustedNoExistingHeaders(t *testing.T) {
 	req := httptest.NewRequest("GET", "http://example.com/", nil)
 	req.RemoteAddr = "@"
 
-	vars := map[string]interface{}{
+	vars := map[string]any{
 		caddyhttp.TrustedProxyVarKey: true,
 		caddyhttp.ClientIPVarKey:     "5.6.7.8",
 	}

@@ -191,6 +191,65 @@ func TestSplitPos(t *testing.T) {
 			splitPath: []string{".php"},
 			wantPos:   9,
 		},
+		// Regression tests adapted from FrankenPHP advisories
+		// GHSA-3g8v-8r37-cgjm and GHSA-v4h7-cj44-8fc8: search.IgnoreCase
+		// matched Unicode equivalents of ASCII letters as ".php", and an
+		// inner non-ASCII byte path could leave the match flag stale.
+		{
+			name:      "non-ascii byte after dot must not match",
+			path:      "/PoC-match-unset.¡.txt",
+			splitPath: []string{".php"},
+			wantPos:   -1,
+		},
+		{
+			name:      "non-ascii byte mid-extension must not match",
+			path:      "/script.p\xc2\xa1p",
+			splitPath: []string{".php"},
+			wantPos:   -1,
+		},
+		{
+			name:      "small full stop ﹒ in extension must not match",
+			path:      "/shell﹒php",
+			splitPath: []string{".php"},
+			wantPos:   -1,
+		},
+		{
+			name:      "fullwidth full stop ． in extension must not match",
+			path:      "/shell．php",
+			splitPath: []string{".php"},
+			wantPos:   -1,
+		},
+		{
+			name:      "fullwidth p in extension must not match",
+			path:      "/shell.ｐhp",
+			splitPath: []string{".php"},
+			wantPos:   -1,
+		},
+		{
+			name:      "circled php must not match",
+			path:      "/shell.ⓟⓗⓟ",
+			splitPath: []string{".php"},
+			wantPos:   -1,
+		},
+		{
+			name:      "mathematical sans-serif bold php must not match",
+			path:      "/shell.\U0001D5FD\U0001D5F5\U0001D5FD",
+			splitPath: []string{".php"},
+			wantPos:   -1,
+		},
+		{
+			name:      "mathematical script php must not match",
+			path:      "/shell.\U0001D4C5\U0001D4BD\U0001D4C5",
+			splitPath: []string{".php"},
+			wantPos:   -1,
+		},
+		{
+			name:      "circled php with later real php still picks the real one",
+			path:      "/shell.ⓟⓗⓟ.anything-after-payload.php",
+			splitPath: []string{".php"},
+			// "/shell." (7) + "ⓟⓗⓟ" (3*3 bytes) + ".anything-after-payload.php" (27) = 43
+			wantPos: 43,
+		},
 	}
 
 	for _, tt := range tests {
@@ -242,5 +301,33 @@ func TestSplitPosUnicodeSecurityRegression(t *testing.T) {
 
 		assert.Equal(t, "/ȺȺȺȺshell.php", scriptName, "script name should be the path up to first .php")
 		assert.Equal(t, ".txt.php", pathInfo, "path info should be the remainder after first .php")
+	}
+}
+
+// TestSplitPosSecurityRegressionUnicodeBypass guards against the FrankenPHP
+// advisories GHSA-3g8v-8r37-cgjm (uninitialized match flag on inner non-ASCII
+// byte) and GHSA-v4h7-cj44-8fc8 (Unicode equivalence via search.IgnoreCase
+// folding fullwidth/mathematical/circled letters onto ASCII). Every payload
+// below produced a false positive in the vulnerable implementation; none
+// must match here.
+func TestSplitPosSecurityRegressionUnicodeBypass(t *testing.T) {
+	t.Parallel()
+
+	tr := Transport{SplitPath: []string{".php"}}
+	payloads := []string{
+		"/PoC-match-unset.¡.txt",                // GHSA-3g8v: stale match=true on IndexString fallback
+		"/shell﹒php",                            // U+FE52 small full stop
+		"/shell．php",                            // U+FF0E fullwidth full stop
+		"/shell.ｐhp",                            // U+FF50 fullwidth p
+		"/shell.pｈp",                            // U+FF48 fullwidth h
+		"/shell.phｐ",                            // U+FF50 fullwidth p (trailing)
+		"/shell.\U0001D5C1\U0001D5B5\U0001D5C1", // mathematical sans-serif p/h
+		"/shell.\U0001D5FD\U0001D5F5\U0001D5FD", // mathematical sans-serif bold p/h
+		"/shell.\U0001D4C5\U0001D4BD\U0001D4C5", // mathematical script p/h
+		"/shell.ⓟⓗⓟ",                            // circled latin small
+	}
+
+	for _, p := range payloads {
+		assert.Equalf(t, -1, tr.splitPos(p), "payload %q must not be detected as .php", p)
 	}
 }

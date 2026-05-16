@@ -664,10 +664,12 @@ func (s CookieHashSelection) Select(pool UpstreamPool, req *http.Request, w http
 			return upstream
 		}
 		cookie := &http.Cookie{
-			Name:   s.Name,
-			Value:  sha,
-			Path:   "/",
-			Secure: false,
+			Name:     s.Name,
+			Value:    sha,
+			Path:     "/",
+			Secure:   false,
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
 		}
 		isProxyHttps := false
 		if trusted, ok := caddyhttp.GetVar(req.Context(), caddyhttp.TrustedProxyVarKey).(bool); ok && trusted {

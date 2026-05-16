@@ -21,7 +21,6 @@ import (
 )
 
 const (
-	webEngineName                = "Caddy"
 	defaultSpanName              = "handler"
 	nextCallCtxKey  caddy.CtxKey = "nextCall"
 )
@@ -58,7 +57,7 @@ func newOpenTelemetryWrapper(
 	}
 
 	version, _ := caddy.Version()
-	res, err := ot.newResource(webEngineName, version)
+	res, err := ot.newResource(caddyhttp.ServerHeader, version)
 	if err != nil {
 		return ot, fmt.Errorf("creating resource error: %w", err)
 	}

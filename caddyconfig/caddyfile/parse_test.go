@@ -930,6 +930,107 @@ func TestAcceptSiteImportWithBraces(t *testing.T) {
 	}
 }
 
+func TestGlobalOptionsAfterImportedSnippetsGivesHelpfulError(t *testing.T) {
+	tempDir := t.TempDir()
+	importFile1 := filepath.Join(tempDir, "matcher_snippet_1.caddy")
+	importFile2 := filepath.Join(tempDir, "matcher_snippet_2.caddy")
+
+	err := os.WriteFile(importFile1, []byte(`(matcher1)`), 0o644)
+	if err != nil {
+		t.Fatalf("writing first import file: %v", err)
+	}
+
+	err = os.WriteFile(importFile2, []byte(`(matcher2)`), 0o644)
+	if err != nil {
+		t.Fatalf("writing second import file: %v", err)
+	}
+
+	_, err = Parse("Testfile", []byte(`import `+importFile1+`
+import `+importFile2+`
+{
+	debug
+}`))
+	if err == nil {
+		t.Fatal("Expected an error, but got nil")
+	}
+
+	expected := "global options block must appear before import directives; move the global options block to the top of the Caddyfile"
+	if !strings.HasPrefix(err.Error(), expected) {
+		t.Errorf("Expected error to start with '%s' but got '%v'", expected, err)
+	}
+}
+
+func TestImportedSnippetDefinitionRetainsBlockPlaceholder(t *testing.T) {
+	tempDir := t.TempDir()
+	importFile := filepath.Join(tempDir, "snippets.caddy")
+
+	err := os.WriteFile(importFile, []byte(`
+		(site) {
+			http://{args[0]} {
+				respond "before"
+				{block}
+				respond "after"
+			}
+		}
+	`), 0o644)
+	if err != nil {
+		t.Fatalf("writing imported snippet file: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name               string
+		input              string
+		expectedDirectives []string
+	}{
+		{
+			name: "with nested block",
+			input: `
+				import ` + importFile + `
+
+				import site example.com {
+					redir https://example.net
+				}
+			`,
+			expectedDirectives: []string{"respond", "redir", "respond"},
+		},
+		{
+			name: "without nested block",
+			input: `
+				import ` + importFile + `
+
+				import site example.com
+			`,
+			expectedDirectives: []string{"respond", "respond"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := testParser(tc.input)
+			blocks, err := p.parseAll()
+			if err != nil {
+				t.Fatalf("parseAll: %v", err)
+			}
+
+			if len(blocks) != 1 {
+				t.Fatalf("expected exactly one server block, got %d", len(blocks))
+			}
+
+			if actual := blocks[0].GetKeysText(); len(actual) != 1 || actual[0] != "http://example.com" {
+				t.Fatalf("expected server block key http://example.com, got %v", actual)
+			}
+
+			if len(blocks[0].Segments) != len(tc.expectedDirectives) {
+				t.Fatalf("expected %d segments, got %d", len(tc.expectedDirectives), len(blocks[0].Segments))
+			}
+
+			for i, directive := range tc.expectedDirectives {
+				if actual := blocks[0].Segments[i].Directive(); actual != directive {
+					t.Fatalf("segment %d: expected directive %q, got %q", i, directive, actual)
+				}
+			}
+		})
+	}
+}
+
 func testParser(input string) parser {
 	return parser{Dispenser: NewTestDispenser(input)}
 }

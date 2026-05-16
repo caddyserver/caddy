@@ -174,6 +174,47 @@ func TestFileRotationPreserveMode(t *testing.T) {
 	}
 }
 
+func TestFileRotationPreserveModeWithUmask(t *testing.T) {
+	m := syscall.Umask(0o022)
+	defer syscall.Umask(m)
+
+	dir, err := os.MkdirTemp("", "caddytest")
+	if err != nil {
+		t.Fatalf("failed to create tempdir: %v", err)
+	}
+	defer os.RemoveAll(dir)
+
+	fpath := path.Join(dir, "test.log")
+
+	roll := true
+	mode := fileMode(0o660)
+	fw := FileWriter{
+		Filename:   fpath,
+		Mode:       mode,
+		Roll:       &roll,
+		RollSizeMB: 1,
+	}
+
+	logger, err := fw.OpenWriter()
+	if err != nil {
+		t.Fatalf("failed to create file: %v", err)
+	}
+	defer logger.Close()
+
+	b := make([]byte, 1024*1024-1000)
+	logger.Write(b)
+	logger.Write(b[0:2000])
+
+	st, err := os.Stat(fpath)
+	if err != nil {
+		t.Fatalf("failed to check file permissions: %v", err)
+	}
+
+	if got := st.Mode().Perm(); got != os.FileMode(mode) {
+		t.Errorf("file mode after rotation is %v, want %v", got, mode)
+	}
+}
+
 func TestFileModeConfig(t *testing.T) {
 	tests := []struct {
 		name    string
