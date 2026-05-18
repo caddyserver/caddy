@@ -568,7 +568,7 @@ func TestQueryHashPolicy(t *testing.T) {
 	pool[1].setHealthy(false)
 	h = queryPolicy.Select(pool, request, nil)
 	if h != nil {
-		t.Error("Expected query policy policy host to be nil.")
+		t.Error("Expected query policy host to be nil.")
 	}
 
 	request = httptest.NewRequest(http.MethodGet, "/?foo=aa11&foo=bb22", nil)
@@ -630,7 +630,7 @@ func TestURIHashPolicy(t *testing.T) {
 	pool[1].setHealthy(false)
 	h = uriPolicy.Select(pool, request, nil)
 	if h != nil {
-		t.Error("Expected uri policy policy host to be nil.")
+		t.Error("Expected uri policy host to be nil.")
 	}
 }
 

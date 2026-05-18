@@ -15,7 +15,7 @@ type connectionStater interface {
 
 // http2Listener wraps the listener to solve the following problems:
 // 1. prevent genuine h2c connections from succeeding if h2c is not enabled
-// and the connection doesn't implment connectionStater or the resulting NegotiatedProtocol
+// and the connection doesn't implement connectionStater or the resulting NegotiatedProtocol
 // isn't http2.
 // This does allow a connection to pass as tls enabled even if it's not, listener wrappers
 // can do this.

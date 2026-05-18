@@ -123,7 +123,7 @@ type FileServer struct {
 	// put "hidden" in the list. To hide only ./hidden, put "./hidden" in the list.
 	//
 	// When possible, all paths are resolved to their absolute form before
-	// comparisons are made. For maximum clarity and explictness, use complete,
+	// comparisons are made. For maximum clarity and explicitness, use complete,
 	// absolute paths; or, for greater portability, use relative paths instead.
 	//
 	// Note that hide comparisons are case-sensitive. On case-insensitive
