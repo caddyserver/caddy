@@ -28,6 +28,7 @@ import (
 	"github.com/caddyserver/certmagic"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"golang.org/x/net/idna"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -69,13 +70,43 @@ func (m MatchServerName) Match(hello *tls.ClientHelloInfo) bool {
 		repl = caddy.NewReplacer()
 	}
 
+	serverName := asciiServerNameForMatch(hello.ServerName)
 	for _, name := range m {
-		rs := repl.ReplaceAll(name, "")
-		if certmagic.MatchWildcard(hello.ServerName, rs) {
+		rs := asciiServerNameForMatch(repl.ReplaceAll(name, ""))
+		if certmagic.MatchWildcard(serverName, rs) {
 			return true
 		}
 	}
 	return false
+}
+
+func asciiServerNameForMatch(name string) string {
+	if name == "" {
+		return name
+	}
+
+	// SNI is ASCII on the wire, but config can use Unicode IDNs.
+	ascii, err := idna.ToASCII(name)
+	if err == nil {
+		return ascii
+	}
+
+	if !strings.Contains(name, "*") {
+		return name
+	}
+
+	labels := strings.Split(name, ".")
+	for i, label := range labels {
+		if label == "" || label == "*" {
+			continue
+		}
+		ascii, err := idna.ToASCII(label)
+		if err != nil {
+			return name
+		}
+		labels[i] = ascii
+	}
+	return strings.Join(labels, ".")
 }
 
 // UnmarshalCaddyfile sets up the MatchServerName from Caddyfile tokens. Syntax:

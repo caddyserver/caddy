@@ -79,6 +79,16 @@ func TestServerNameMatcher(t *testing.T) {
 			input:  "sub2.sub.example.com",
 			expect: true,
 		},
+		{
+			names:  []string{"つ.localhost"},
+			input:  "xn--k9j.localhost",
+			expect: true,
+		},
+		{
+			names:  []string{"*.つ.localhost"},
+			input:  "sub.xn--k9j.localhost",
+			expect: true,
+		},
 	} {
 		chi := &tls.ClientHelloInfo{ServerName: tc.input}
 		actual := MatchServerName(tc.names).Match(chi)
