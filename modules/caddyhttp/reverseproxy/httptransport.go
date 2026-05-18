@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/pires/go-proxyproto"
+	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -161,7 +162,8 @@ type HTTPTransport struct {
 	// `HTTPS_PROXY`, and `NO_PROXY` environment variables.
 	NetworkProxyRaw json.RawMessage `json:"network_proxy,omitempty" caddy:"namespace=caddy.network_proxy inline_key=from"`
 
-	h3Transport *http3.Transport // TODO: EXPERIMENTAL (May 2024)
+	h3Transport   *http3.Transport // TODO: EXPERIMENTAL (May 2024)
+	quicTransport *quic.Transport  // used by h3Transport if sni placeholder is used, otherwise nil
 }
 
 // CaddyModule returns the Caddy module information.
@@ -499,6 +501,25 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 			if err != nil {
 				return nil, fmt.Errorf("making TLS client config for HTTP/3 transport: %v", err)
 			}
+
+			if strings.Contains(h.TLS.ServerName, "{") {
+				// copied from quic-go
+				udpConn, err := net.ListenUDP("udp", nil)
+				if err != nil {
+					return nil, fmt.Errorf("making udp socket for HTTP/3 transport: %v", err)
+				}
+				h.quicTransport = &quic.Transport{Conn: udpConn}
+				h.h3Transport.Dial = func(ctx context.Context, addr string, tlsCfg *tls.Config, cfg *quic.Config) (*quic.Conn, error) {
+					// tlsCfg is already cloned from h3Transport.TLSClientConfig
+					repl := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+					tlsCfg.ServerName = repl.ReplaceAll(tlsCfg.ServerName, "")
+					udpAddr, err := resolveUDPAddr(ctx, "udp", addr)
+					if err != nil {
+						return nil, err
+					}
+					return h.quicTransport.DialEarly(ctx, udpAddr, tlsCfg, cfg)
+				}
+			}
 		}
 	} else if len(h.Versions) > 1 && slices.Contains(h.Versions, "3") {
 		return nil, fmt.Errorf("if HTTP/3 is enabled to the upstream, no other HTTP versions are supported")
@@ -523,6 +544,71 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 	}
 
 	return rt, nil
+}
+
+// TODO: EXPERIMENTAL (May 2025)
+// copied from quic-go
+func resolveUDPAddr(ctx context.Context, network, addr string) (*net.UDPAddr, error) {
+	host, portStr, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, err
+	}
+	port, err := net.LookupPort(network, portStr)
+	if err != nil {
+		return nil, err
+	}
+	resolver := net.DefaultResolver
+	ipAddrs, err := resolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	addrs := addrList(ipAddrs)
+	ip := addrs.forResolve(network, addr)
+	return &net.UDPAddr{IP: ip.IP, Port: port, Zone: ip.Zone}, nil
+}
+
+// TODO: EXPERIMENTAL (May 2025)
+// copied from quic-go
+// An addrList represents a list of network endpoint addresses.
+// Copy from [net.addrList] and change type from [net.Addr] to [net.IPAddr]
+type addrList []net.IPAddr
+
+// isIPv4 reports whether addr contains an IPv4 address.
+func isIPv4(addr net.IPAddr) bool {
+	return addr.IP.To4() != nil
+}
+
+// isNotIPv4 reports whether addr does not contain an IPv4 address.
+func isNotIPv4(addr net.IPAddr) bool { return !isIPv4(addr) }
+
+// forResolve returns the most appropriate address in address for
+// a call to ResolveTCPAddr, ResolveUDPAddr, or ResolveIPAddr.
+// IPv4 is preferred, unless addr contains an IPv6 literal.
+func (addrs addrList) forResolve(network, addr string) net.IPAddr {
+	var want6 bool
+	switch network {
+	case "ip":
+		// IPv6 literal (addr does NOT contain a port)
+		want6 = strings.ContainsRune(addr, ':')
+	case "tcp", "udp":
+		// IPv6 literal. (addr contains a port, so look for '[')
+		want6 = strings.ContainsRune(addr, '[')
+	}
+	if want6 {
+		return addrs.first(isNotIPv4)
+	}
+	return addrs.first(isIPv4)
+}
+
+// first returns the first address which satisfies strategy, or if
+// none do, then the first address of any kind.
+func (addrs addrList) first(strategy func(net.IPAddr) bool) net.IPAddr {
+	for _, addr := range addrs {
+		if strategy(addr) {
+			return addr
+		}
+	}
+	return addrs[0]
 }
 
 // RequestHeaderOps implements TransportHeaderOpsProvider. It returns header
@@ -623,6 +709,16 @@ func (h HTTPTransport) Cleanup() error {
 		return nil
 	}
 	h.Transport.CloseIdleConnections()
+	// h3 related cleanup, errors are ignored as nothing can be done.
+	// TODO: log these errors if any
+	if h.h3Transport != nil {
+		h.h3Transport.CloseIdleConnections()
+		_ = h.h3Transport.Close()
+		if h.quicTransport != nil {
+			_ = h.quicTransport.Close()
+			_ = h.quicTransport.Conn.Close()
+		}
+	}
 	return nil
 }
 
