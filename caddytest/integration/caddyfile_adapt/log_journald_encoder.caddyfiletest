@@ -1,0 +1,47 @@
+{
+	log {
+		format journald {
+			wrap console
+		}
+	}
+}
+
+:80 {
+	respond "Hello, World!"
+}
+----------
+{
+	"logging": {
+		"logs": {
+			"default": {
+				"encoder": {
+					"format": "journald",
+					"wrap": {
+						"format": "console"
+					}
+				}
+			}
+		}
+	},
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"body": "Hello, World!",
+									"handler": "static_response"
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

@@ -15,6 +15,7 @@
 package caddy
 
 import (
+	"crypto/tls"
 	"reflect"
 	"testing"
 
@@ -172,6 +173,63 @@ func TestJoinNetworkAddress(t *testing.T) {
 		if actual != tc.expect {
 			t.Errorf("Test %d: Expected '%s' but got '%s'", i, tc.expect, actual)
 		}
+	}
+}
+
+func TestSharedQUICStateGetEncryptedClientHelloKeys(t *testing.T) {
+	hello := &tls.ClientHelloInfo{ServerName: "example.com"}
+	initialKeys := []tls.EncryptedClientHelloKey{{Config: []byte("initial"), PrivateKey: []byte("initial-key")}}
+	updatedKeys := []tls.EncryptedClientHelloKey{{Config: []byte("updated"), PrivateKey: []byte("updated-key")}}
+
+	initialConfig := &tls.Config{
+		GetConfigForClient: func(*tls.ClientHelloInfo) (*tls.Config, error) {
+			return nil, nil
+		},
+		GetEncryptedClientHelloKeys: func(*tls.ClientHelloInfo) ([]tls.EncryptedClientHelloKey, error) {
+			return initialKeys, nil
+		},
+	}
+
+	sqs := newSharedQUICState(initialConfig)
+
+	keys, err := sqs.getEncryptedClientHelloKeys(hello)
+	if err != nil {
+		t.Fatalf("getting initial ECH keys: %v", err)
+	}
+	if !reflect.DeepEqual(keys, initialKeys) {
+		t.Fatalf("unexpected initial ECH keys: got %#v, want %#v", keys, initialKeys)
+	}
+
+	updatedConfig := &tls.Config{
+		GetConfigForClient: func(*tls.ClientHelloInfo) (*tls.Config, error) {
+			return nil, nil
+		},
+		GetEncryptedClientHelloKeys: func(*tls.ClientHelloInfo) ([]tls.EncryptedClientHelloKey, error) {
+			return updatedKeys, nil
+		},
+	}
+
+	_, cancel := sqs.addState(updatedConfig)
+	sqs.rmu.Lock()
+	sqs.activeTlsConf = updatedConfig
+	sqs.rmu.Unlock()
+
+	keys, err = sqs.getEncryptedClientHelloKeys(hello)
+	if err != nil {
+		t.Fatalf("getting updated ECH keys: %v", err)
+	}
+	if !reflect.DeepEqual(keys, updatedKeys) {
+		t.Fatalf("unexpected updated ECH keys: got %#v, want %#v", keys, updatedKeys)
+	}
+
+	cancel(nil)
+
+	keys, err = sqs.getEncryptedClientHelloKeys(hello)
+	if err != nil {
+		t.Fatalf("getting restored ECH keys: %v", err)
+	}
+	if !reflect.DeepEqual(keys, initialKeys) {
+		t.Fatalf("unexpected restored ECH keys: got %#v, want %#v", keys, initialKeys)
 	}
 }
 

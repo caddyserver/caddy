@@ -127,10 +127,9 @@ func Load(cfgJSON []byte, forceReload bool) error {
 					zap.Error(notifyErr),
 					zap.String("reload_err", err.Error()))
 			}
-			return
 		}
-		if err := notify.Ready(); err != nil {
-			Log().Error("unable to notify to service manager of ready state", zap.Error(err))
+		if notifyErr := notify.Ready(); notifyErr != nil {
+			Log().Error("unable to notify to service manager of ready state", zap.Error(notifyErr))
 		}
 	}()
 
@@ -440,13 +439,6 @@ func run(newCfg *Config, start bool) (Context, error) {
 			}
 		}
 	}()
-
-	// Provision any admin routers which may need to access
-	// some of the other apps at runtime
-	err = ctx.cfg.Admin.provisionAdminRouters(ctx)
-	if err != nil {
-		return ctx, err
-	}
 
 	// Start
 	err = func() error {
@@ -767,7 +759,7 @@ func Validate(cfg *Config) error {
 // code is emitted.
 func exitProcess(ctx context.Context, logger *zap.Logger) {
 	// let the rest of the program know we're quitting; only do it once
-	if !atomic.CompareAndSwapInt32(exiting, 0, 1) {
+	if !exiting.CompareAndSwap(false, true) {
 		return
 	}
 
@@ -846,11 +838,11 @@ func exitProcess(ctx context.Context, logger *zap.Logger) {
 	}()
 }
 
-var exiting = new(int32) // accessed atomically
+var exiting atomic.Bool
 
 // Exiting returns true if the process is exiting.
 // EXPERIMENTAL API: subject to change or removal.
-func Exiting() bool { return atomic.LoadInt32(exiting) == 1 }
+func Exiting() bool { return exiting.Load() }
 
 // OnExit registers a callback to invoke during process exit.
 // This registration is PROCESS-GLOBAL, meaning that each

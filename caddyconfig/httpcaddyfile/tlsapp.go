@@ -612,6 +612,289 @@ func fillInGlobalACMEDefaults(issuer certmagic.Issuer, options map[string]any) e
 	return nil
 }
 
+// implicitACMEIssuers returns the issuers to use for ACME-related tls
+// shortcuts such as ca, ca_root, and dns. If any global cert_issuer options
+// configure ACME issuers, those become the templates for the local shortcut
+// configuration; otherwise, default ACME issuers are used.
+func implicitACMEIssuers(h Helper, acmeIssuer *caddytls.ACMEIssuer) []certmagic.Issuer {
+	globalIssuers, _ := h.Option("cert_issuer").([]certmagic.Issuer)
+
+	var implicitIssuers []certmagic.Issuer
+	for _, issuer := range globalIssuers {
+		acmeWrapper, ok := issuer.(acmeCapable)
+		if !ok {
+			continue
+		}
+		baseIssuer := acmeWrapper.GetACMEIssuer()
+		if baseIssuer == nil {
+			continue
+		}
+		implicitIssuers = append(implicitIssuers, mergeACMEIssuers(baseIssuer, acmeIssuer))
+	}
+	if len(implicitIssuers) > 0 {
+		return implicitIssuers
+	}
+
+	// If an ACME CA endpoint was set locally, the user expects to use only that
+	// CA rather than the usual default fallback issuers.
+	defaultIssuers := caddytls.DefaultIssuers(acmeIssuer.Email)
+	if acmeIssuer.CA != "" {
+		defaultIssuers = []certmagic.Issuer{new(caddytls.ACMEIssuer)}
+	}
+
+	implicitIssuers = make([]certmagic.Issuer, 0, len(defaultIssuers))
+	for _, issuer := range defaultIssuers {
+		acmeWrapper, ok := issuer.(acmeCapable)
+		if !ok {
+			implicitIssuers = append(implicitIssuers, issuer)
+			continue
+		}
+		baseIssuer := acmeWrapper.GetACMEIssuer()
+		if baseIssuer == nil {
+			implicitIssuers = append(implicitIssuers, issuer)
+			continue
+		}
+		implicitIssuers = append(implicitIssuers, mergeACMEIssuers(baseIssuer, acmeIssuer))
+	}
+	return implicitIssuers
+}
+
+func mergeACMEIssuers(base, overrides *caddytls.ACMEIssuer) *caddytls.ACMEIssuer {
+	if base == nil {
+		return cloneACMEIssuer(overrides)
+	}
+
+	merged := cloneACMEIssuer(base)
+	if overrides == nil {
+		return merged
+	}
+
+	if overrides.CA != "" {
+		merged.CA = overrides.CA
+	}
+	if overrides.TestCA != "" {
+		merged.TestCA = overrides.TestCA
+	}
+	if overrides.Email != "" {
+		merged.Email = overrides.Email
+	}
+	if overrides.Profile != "" {
+		merged.Profile = overrides.Profile
+	}
+	if overrides.AccountKey != "" {
+		merged.AccountKey = overrides.AccountKey
+	}
+	if overrides.ExternalAccount != nil {
+		merged.ExternalAccount = cloneACMEEAB(overrides.ExternalAccount)
+	}
+	if overrides.ACMETimeout != 0 {
+		merged.ACMETimeout = overrides.ACMETimeout
+	}
+	if len(overrides.TrustedRootsPEMFiles) > 0 {
+		merged.TrustedRootsPEMFiles = appendUniqueStrings(merged.TrustedRootsPEMFiles, overrides.TrustedRootsPEMFiles...)
+	}
+	if overrides.PreferredChains != nil {
+		merged.PreferredChains = cloneChainPreference(overrides.PreferredChains)
+	}
+	if overrides.CertificateLifetime != 0 {
+		merged.CertificateLifetime = overrides.CertificateLifetime
+	}
+	if len(overrides.NetworkProxyRaw) > 0 {
+		merged.NetworkProxyRaw = slices.Clone(overrides.NetworkProxyRaw)
+	}
+	merged.Challenges = mergeChallengesConfig(merged.Challenges, overrides.Challenges)
+
+	return merged
+}
+
+func mergeChallengesConfig(base, overrides *caddytls.ChallengesConfig) *caddytls.ChallengesConfig {
+	if base == nil {
+		return cloneChallengesConfig(overrides)
+	}
+	merged := cloneChallengesConfig(base)
+	if overrides == nil {
+		return merged
+	}
+
+	merged.HTTP = mergeHTTPChallengeConfig(merged.HTTP, overrides.HTTP)
+	merged.TLSALPN = mergeTLSALPNChallengeConfig(merged.TLSALPN, overrides.TLSALPN)
+	merged.DNS = mergeDNSChallengeConfig(merged.DNS, overrides.DNS)
+	if overrides.BindHost != "" {
+		merged.BindHost = overrides.BindHost
+	}
+	if overrides.Distributed != nil {
+		value := *overrides.Distributed
+		merged.Distributed = &value
+	}
+
+	return merged
+}
+
+func mergeHTTPChallengeConfig(base, overrides *caddytls.HTTPChallengeConfig) *caddytls.HTTPChallengeConfig {
+	if base == nil {
+		return cloneHTTPChallengeConfig(overrides)
+	}
+	merged := cloneHTTPChallengeConfig(base)
+	if overrides == nil {
+		return merged
+	}
+
+	if overrides.Disabled {
+		merged.Disabled = true
+	}
+	if overrides.AlternatePort != 0 {
+		merged.AlternatePort = overrides.AlternatePort
+	}
+
+	return merged
+}
+
+func mergeTLSALPNChallengeConfig(base, overrides *caddytls.TLSALPNChallengeConfig) *caddytls.TLSALPNChallengeConfig {
+	if base == nil {
+		return cloneTLSALPNChallengeConfig(overrides)
+	}
+	merged := cloneTLSALPNChallengeConfig(base)
+	if overrides == nil {
+		return merged
+	}
+
+	if overrides.Disabled {
+		merged.Disabled = true
+	}
+	if overrides.AlternatePort != 0 {
+		merged.AlternatePort = overrides.AlternatePort
+	}
+
+	return merged
+}
+
+func mergeDNSChallengeConfig(base, overrides *caddytls.DNSChallengeConfig) *caddytls.DNSChallengeConfig {
+	if base == nil {
+		return cloneDNSChallengeConfig(overrides)
+	}
+	merged := cloneDNSChallengeConfig(base)
+	if overrides == nil {
+		return merged
+	}
+
+	if len(overrides.ProviderRaw) > 0 {
+		merged.ProviderRaw = slices.Clone(overrides.ProviderRaw)
+	}
+	if overrides.PropagationDelay != 0 {
+		merged.PropagationDelay = overrides.PropagationDelay
+	}
+	if overrides.PropagationTimeout != 0 {
+		merged.PropagationTimeout = overrides.PropagationTimeout
+	}
+	if overrides.Resolvers != nil {
+		merged.Resolvers = slices.Clone(overrides.Resolvers)
+	}
+	if overrides.OverrideDomain != "" {
+		merged.OverrideDomain = overrides.OverrideDomain
+	}
+	if overrides.TTL != 0 {
+		merged.TTL = overrides.TTL
+	}
+
+	return merged
+}
+
+func cloneACMEIssuer(iss *caddytls.ACMEIssuer) *caddytls.ACMEIssuer {
+	if iss == nil {
+		return nil
+	}
+
+	cloned := *iss
+	cloned.Challenges = cloneChallengesConfig(iss.Challenges)
+	cloned.ExternalAccount = cloneACMEEAB(iss.ExternalAccount)
+	cloned.TrustedRootsPEMFiles = slices.Clone(iss.TrustedRootsPEMFiles)
+	cloned.PreferredChains = cloneChainPreference(iss.PreferredChains)
+	cloned.NetworkProxyRaw = slices.Clone(iss.NetworkProxyRaw)
+
+	return &cloned
+}
+
+func cloneChallengesConfig(cfg *caddytls.ChallengesConfig) *caddytls.ChallengesConfig {
+	if cfg == nil {
+		return nil
+	}
+
+	cloned := *cfg
+	cloned.HTTP = cloneHTTPChallengeConfig(cfg.HTTP)
+	cloned.TLSALPN = cloneTLSALPNChallengeConfig(cfg.TLSALPN)
+	cloned.DNS = cloneDNSChallengeConfig(cfg.DNS)
+	if cfg.Distributed != nil {
+		value := *cfg.Distributed
+		cloned.Distributed = &value
+	}
+
+	return &cloned
+}
+
+func cloneHTTPChallengeConfig(cfg *caddytls.HTTPChallengeConfig) *caddytls.HTTPChallengeConfig {
+	if cfg == nil {
+		return nil
+	}
+
+	cloned := *cfg
+	return &cloned
+}
+
+func cloneTLSALPNChallengeConfig(cfg *caddytls.TLSALPNChallengeConfig) *caddytls.TLSALPNChallengeConfig {
+	if cfg == nil {
+		return nil
+	}
+
+	cloned := *cfg
+	return &cloned
+}
+
+func cloneDNSChallengeConfig(cfg *caddytls.DNSChallengeConfig) *caddytls.DNSChallengeConfig {
+	if cfg == nil {
+		return nil
+	}
+
+	cloned := *cfg
+	cloned.ProviderRaw = slices.Clone(cfg.ProviderRaw)
+	cloned.Resolvers = slices.Clone(cfg.Resolvers)
+
+	return &cloned
+}
+
+func cloneACMEEAB(eab *acme.EAB) *acme.EAB {
+	if eab == nil {
+		return nil
+	}
+
+	cloned := *eab
+	return &cloned
+}
+
+func cloneChainPreference(pref *caddytls.ChainPreference) *caddytls.ChainPreference {
+	if pref == nil {
+		return nil
+	}
+
+	cloned := *pref
+	cloned.RootCommonName = slices.Clone(pref.RootCommonName)
+	cloned.AnyCommonName = slices.Clone(pref.AnyCommonName)
+	if pref.Smallest != nil {
+		value := *pref.Smallest
+		cloned.Smallest = &value
+	}
+
+	return &cloned
+}
+
+func appendUniqueStrings(existing []string, additions ...string) []string {
+	for _, value := range additions {
+		if !slices.Contains(existing, value) {
+			existing = append(existing, value)
+		}
+	}
+	return existing
+}
+
 // newBaseAutomationPolicy returns a new TLS automation policy that gets
 // its values from the global options map. It should be used as the base
 // for any other automation policies. A nil policy (and no error) will be
@@ -698,14 +981,31 @@ func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) []*caddytls
 	emptyAPCount := 0
 	origLenAPs := len(aps)
 	// compute the number of empty policies (disregarding subjects) - see #4128
+	// while we're at it,
 	emptyAP := new(caddytls.AutomationPolicy)
 	for i := 0; i < len(aps); i++ {
 		emptyAP.SubjectsRaw = aps[i].SubjectsRaw
+		emptyAP.ManagersRaw = nil
 		if reflect.DeepEqual(aps[i], emptyAP) {
+			// AP is empty
 			emptyAPCount++
-			if !automationPolicyHasAllPublicNames(aps[i]) {
-				// if this automation policy has internal names, we might as well remove it
-				// so auto-https can implicitly use the internal issuer
+
+			// see if this AP shadows something later
+			shadowIdx := automationPolicyShadows(i, aps)
+			emptyAP.SubjectsRaw = nil
+			if shadowIdx >= 0 {
+				emptyAP.SubjectsRaw = aps[shadowIdx].SubjectsRaw
+				// allow the later policy, which is likely for a wildcard, to have cert
+				// managers ("get_certificate"), since wildcards now cover specific
+				// subdomains by default, when configured (see discussion in #7559)
+				emptyAP.ManagersRaw = aps[shadowIdx].ManagersRaw
+			}
+
+			// if this is the last AP, we can delete it, since auto-https should
+			// pick it up; if it shadows something later that is also empty, we
+			// can similarly delete this; but if it shadows something that is NOT
+			// empty, we must not delete it since the shadowing has a purpose
+			if i == len(aps)-1 || (shadowIdx >= 0 && reflect.DeepEqual(aps[shadowIdx], emptyAP)) {
 				aps = slices.Delete(aps, i, i+1)
 				i--
 			}

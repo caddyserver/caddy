@@ -475,6 +475,21 @@ Hope this helps.` + "`" + `
 }`,
 			expect: "https://localhost:8953 {\n\trespond `Here are some random numbers:\n\n{{randNumeric 16}}\n\nHope this helps.`\n}",
 		},
+		{
+			description: "imports before global options block keep standalone brace",
+			input: `import ./conf.d/matcher_my_subnet.caddy
+import ./conf.d/matcher_not_my_subnet.caddy
+{
+	order crowdsec first
+	order appsec after crowdsec
+}`,
+			expect: `import ./conf.d/matcher_my_subnet.caddy
+import ./conf.d/matcher_not_my_subnet.caddy
+{
+	order crowdsec first
+	order appsec after crowdsec
+}`,
+		},
 	} {
 		// the formatter should output a trailing newline,
 		// even if the tests aren't written to expect that

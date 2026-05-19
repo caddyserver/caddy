@@ -785,7 +785,7 @@ func redirect(w http.ResponseWriter, r *http.Request, toPath string) error {
 	if r.URL.RawQuery != "" {
 		toPath += "?" + r.URL.RawQuery
 	}
-	http.Redirect(w, r, toPath, http.StatusPermanentRedirect)
+	http.Redirect(w, r, toPath, http.StatusPermanentRedirect) //nolint:gosec // toPath is a same-origin path and leading // is stripped above
 	return nil
 }
 
