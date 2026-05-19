@@ -1562,6 +1562,14 @@ func ParseCaddyfileNestedMatcherSet(d *caddyfile.Dispenser) (caddy.ModuleMap, er
 	// instances of the matcher in this set
 	tokensByMatcherName := make(map[string][]caddyfile.Token)
 	for nesting := d.Nesting(); d.NextArg() || d.NextBlock(nesting); {
+		// if the token is quoted (backtick), treat it as a shorthand
+		// for an expression matcher, same as @named matcher parsing
+		if d.Token().Quoted() {
+			expressionToken := d.Token().Clone()
+			expressionToken.Text = "expression"
+			tokensByMatcherName["expression"] = append(tokensByMatcherName["expression"], expressionToken, d.Token())
+			continue
+		}
 		matcherName := d.Val()
 		tokensByMatcherName[matcherName] = append(tokensByMatcherName[matcherName], d.NextSegment()...)
 	}

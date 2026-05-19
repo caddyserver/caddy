@@ -190,7 +190,7 @@ func TestForwardAuthCopyHeadersAuthResponseWins(t *testing.T) {
 	// its own values. The backend must receive the auth service values.
 	req, _ := http.NewRequest(http.MethodGet, "http://localhost:9080/", nil)
 	req.Header.Set("Authorization", "Bearer token123")
-	req.Header.Set("X-User-Id", "forged-id")   // must be overwritten
+	req.Header.Set("X-User-Id", "forged-id")     // must be overwritten
 	req.Header.Set("X-User-Role", "forged-role") // must be overwritten
 	tester.AssertResponse(req, http.StatusOK, "ok")
 

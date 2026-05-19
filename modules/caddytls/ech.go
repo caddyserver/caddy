@@ -132,7 +132,10 @@ func (ech *ECH) Provision(ctx caddy.Context) ([]string, error) {
 		}
 	}
 
-	// ensure old keys are rotated out
+	// convert the configs into a structure ready for the std lib to use
+	ech.updateKeyList()
+
+	// ensure any old keys are rotated out
 	if err = ech.rotateECHKeys(ctx, logger, true); err != nil {
 		return nil, fmt.Errorf("rotating ECH configs: %w", err)
 	}
@@ -179,9 +182,11 @@ func (ech *ECH) setConfigsFromStorage(ctx caddy.Context, logger *zap.Logger) ([]
 	return outerNames, nil
 }
 
-// rotateECHKeys updates the ECH keys/configs that are outdated. It should be called
-// in a write lock on ech.configsMu. If a lock is already obtained in storage, then
-// pass true for storageSynced.
+// rotateECHKeys updates the ECH keys/configs that are outdated if rotation is needed.
+// It should be called in a write lock on ech.configsMu. If a lock is already obtained
+// in storage, then pass true for storageSynced.
+//
+// This function sets/updates the stdlib-ready key list only if a rotation occurs.
 func (ech *ECH) rotateECHKeys(ctx caddy.Context, logger *zap.Logger, storageSynced bool) error {
 	storage := ctx.Storage()
 
@@ -434,6 +439,10 @@ func (t *TLS) publishECHConfigs(logger *zap.Logger) error {
 				zap.String("publisher", publisherKey),
 				zap.Strings("domains", dnsNamesToPublish),
 				zap.Uint8s("config_ids", configIDs))
+
+			if dnsPublisher, ok := publisher.(*ECHDNSPublisher); ok {
+				dnsPublisher.alpnByDomain = t.alpnValuesForServerNames(dnsNamesToPublish)
+			}
 
 			// publish this ECH config list with this publisher
 			pubTime := time.Now()
@@ -771,7 +780,8 @@ type ECHDNSPublisher struct {
 	ProviderRaw json.RawMessage `json:"provider,omitempty" caddy:"namespace=dns.providers inline_key=name"`
 	provider    ECHDNSProvider
 
-	logger *zap.Logger
+	alpnByDomain map[string][]string
+	logger       *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -867,12 +877,7 @@ nextName:
 			continue
 		}
 		params := httpsRec.Params
-		if params == nil {
-			params = make(libdns.SvcParams)
-		}
-
-		// overwrite only the "ech" SvcParamKey
-		params["ech"] = []string{base64.StdEncoding.EncodeToString(configListBin)}
+		params = dnsPub.publishedSvcParams(domain, params, configListBin)
 
 		// publish record
 		_, err = dnsPub.provider.SetRecords(ctx, zone, []libdns.Record{
@@ -896,6 +901,25 @@ nextName:
 		return errs
 	}
 	return nil
+}
+
+func (dnsPub *ECHDNSPublisher) publishedSvcParams(domain string, existing libdns.SvcParams, configListBin []byte) libdns.SvcParams {
+	params := make(libdns.SvcParams, len(existing)+2)
+	for key, values := range existing {
+		params[key] = append([]string(nil), values...)
+	}
+
+	params["ech"] = []string{base64.StdEncoding.EncodeToString(configListBin)}
+
+	if len(dnsPub.alpnByDomain) == 0 {
+		return params
+	}
+
+	if alpn := dnsPub.alpnByDomain[strings.ToLower(domain)]; len(alpn) > 0 {
+		params["alpn"] = append([]string(nil), alpn...)
+	}
+
+	return params
 }
 
 // echConfig represents an ECHConfig from the specification,

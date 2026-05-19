@@ -171,6 +171,12 @@ type Handler struct {
 	// forcibly closed at the end of the timeout. Default: no timeout.
 	StreamTimeout caddy.Duration `json:"stream_timeout,omitempty"`
 
+	// The size of the buffer used for each direction of streaming
+	// requests such as WebSockets. If zero, the default size is 32 KiB.
+	// This only affects upgraded bidirectional streams, not normal
+	// request or response buffering.
+	StreamBufferSize int `json:"stream_buffer_size,omitempty"`
+
 	// If nonzero, streaming requests such as WebSockets will not be
 	// closed when the proxy config is unloaded, and instead the stream
 	// will remain open until the delay is complete. In other words,
@@ -482,20 +488,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	reqHost := clonedReq.Host
 	reqHeader := clonedReq.Header
 
-	// When retries are configured and there is a body, wrap it in
-	// io.NopCloser to prevent Go's transport from closing it on dial
-	// errors. cloneRequest does a shallow copy, so clonedReq.Body and
+	// If the request contained a body, wrap it in io.NopCloser
+	// to prevent Go's transport from closing it on dial errors.
+	// cloneRequest does a shallow copy, so clonedReq.Body and
 	// r.Body share the same io.ReadCloser — a dial-failure Close()
-	// would kill the original body for all subsequent retry attempts.
-	// The real body is closed by the HTTP server when the handler
-	// returns.
+	// would kill the original body for all subsequent retry
+	// attempts or subsequent handlers. The real body is closed by
+	// the HTTP server when the handler returns.
 	//
 	// If the body was already fully buffered (via request_buffers),
 	// we also extract the buffer so the retry loop can replay it
-	// from the beginning on each attempt. (see #6259, #7546)
+	// from the beginning on each attempt. (see #6259, #7546, #7713)
 	var bufferedReqBody *bytes.Buffer
-	if clonedReq.Body != nil && h.LoadBalancing != nil &&
-		(h.LoadBalancing.Retries > 0 || h.LoadBalancing.TryDuration > 0) {
+	if clonedReq.Body != nil {
 		if reqBodyBuf, ok := clonedReq.Body.(bodyReadCloser); ok && reqBodyBuf.body == nil && reqBodyBuf.buf != nil {
 			bufferedReqBody = reqBodyBuf.buf
 			reqBodyBuf.buf = nil
@@ -568,6 +573,17 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	// get the updated list of upstreams
 	upstreams := h.Upstreams
 	if h.DynamicUpstreams != nil {
+		if retries > 0 {
+			// after a failure (and thus during a retry), give dynamic upstream modules an opportunity
+			// to purge their relevant cache entries so we don't keep retrying bad upstreams
+			if cachingDynamicUpstreams, ok := h.DynamicUpstreams.(CachingUpstreamSource); ok {
+				if err := cachingDynamicUpstreams.ResetCache(r); err != nil {
+					if c := h.logger.Check(zapcore.ErrorLevel, "failed clearing dynamic upstream source's cache"); c != nil {
+						c.Write(zap.Error(err))
+					}
+				}
+			}
+		}
 		dUpstreams, err := h.DynamicUpstreams.GetUpstreams(r)
 		if err != nil {
 			if c := h.logger.Check(zapcore.ErrorLevel, "failed getting dynamic upstreams; falling back to static upstreams"); c != nil {
@@ -664,8 +680,12 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 		return true, succ.error
 	}
 
-	// remember this failure (if enabled)
-	h.countFailure(upstream)
+	// remember this failure (if enabled); response-based retries
+	// are not counted as failures since the upstream did respond
+	// successfully - only the response content triggered a retry
+	if _, isRetryableResponse := proxyErr.(retryableResponseError); !isRetryableResponse {
+		h.countFailure(upstream)
+	}
 
 	// if we've tried long enough, break
 	if !h.LoadBalancing.tryAgain(h.ctx, start, retries, proxyErr, r, h.logger) {
@@ -1052,6 +1072,45 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 		res.Body, _ = h.bufferedBody(res.Body, h.ResponseBuffers)
 	}
 
+	// set response placeholders so they can be used in retry match
+	// expressions and handle_response routes; clear stale header
+	// placeholders from a previous attempt first so they don't
+	// leak into the next retry evaluation
+	repl.DeleteByPrefix("http.reverse_proxy.header.")
+	for field, value := range res.Header {
+		repl.Set("http.reverse_proxy.header."+field, strings.Join(value, ","))
+	}
+	repl.Set("http.reverse_proxy.status_code", res.StatusCode)
+	repl.Set("http.reverse_proxy.status_text", res.Status)
+
+	// check if the response matches a retry match entry; if so,
+	// close the body and return a retryable error so the request
+	// is retried with the next upstream. Only evaluate matcher sets
+	// that contain at least one expression matcher, since those are
+	// the ones that can reference response data ({rp.status_code},
+	// {rp.header.*}). Pure request-only matchers (method, path, etc.)
+	// are skipped to avoid retrying every response that matches a
+	// request condition
+	if h.LoadBalancing != nil && len(h.LoadBalancing.RetryMatch) > 0 {
+		for _, matcherSet := range h.LoadBalancing.RetryMatch {
+			if !matcherSetHasExpressionMatcher(matcherSet) {
+				continue
+			}
+			match, err := matcherSet.MatchWithError(req)
+			if err != nil {
+				h.logger.Error("error matching request for retry", zap.Error(err))
+				break
+			}
+			if match {
+				res.Body.Close()
+				return retryableResponseError{
+					error:      fmt.Errorf("upstream response matched retry_match (status %d)", res.StatusCode),
+					statusCode: res.StatusCode,
+				}
+			}
+		}
+	}
+
 	// see if any response handler is configured for this response from the backend
 	for i, rh := range h.HandleResponse {
 		if rh.Match != nil && !rh.Match.Match(res.StatusCode, res.Header) {
@@ -1070,14 +1129,6 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 			}
 			break
 		}
-
-		// set up the replacer so that parts of the original response can be
-		// used for routing decisions
-		for field, value := range res.Header {
-			repl.Set("http.reverse_proxy.header."+field, strings.Join(value, ","))
-		}
-		repl.Set("http.reverse_proxy.status_code", res.StatusCode)
-		repl.Set("http.reverse_proxy.status_text", res.Status)
 
 		if c := logger.Check(zapcore.DebugLevel, "handling response"); c != nil {
 			c.Write(zap.Int("handler", i))
@@ -1263,16 +1314,27 @@ func (lb LoadBalancing) tryAgain(ctx caddy.Context, start time.Time, retries int
 	// specifically a dialer error, we need to be careful
 	if proxyErr != nil {
 		_, isDialError := proxyErr.(DialError)
+		_, isRetryableResponse := proxyErr.(retryableResponseError)
 		herr, isHandlerError := proxyErr.(caddyhttp.HandlerError)
 
 		// if the error occurred after a connection was established,
 		// we have to assume the upstream received the request, and
 		// retries need to be carefully decided, because some requests
-		// are not idempotent
-		if !isDialError && (!isHandlerError || !errors.Is(herr, errNoUpstream)) {
+		// are not idempotent; retryableResponseError is excluded here
+		// because its retry decision was already made in reverseProxy()
+		// when the response matchers were evaluated
+		if !isDialError && !isRetryableResponse && (!isHandlerError || !errors.Is(herr, errNoUpstream)) {
 			if lb.RetryMatch == nil && req.Method != "GET" {
 				// by default, don't retry requests if they aren't GET
 				return false
+			}
+
+			// set transport error flag so CEL expressions can use
+			// {rp.is_transport_error} to decide whether to retry
+			repl, _ := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+			if repl != nil {
+				repl.Set("http.reverse_proxy.is_transport_error", true)
+				defer repl.Delete("http.reverse_proxy.is_transport_error")
 			}
 
 			match, err := lb.RetryMatch.AnyMatchWithError(req)
@@ -1504,6 +1566,12 @@ func removeConnectionHeaders(h http.Header) {
 
 // statusError returns an error value that has a status code.
 func statusError(err error) error {
+	// if a response-based retry was exhausted, use the actual upstream
+	// status code instead of a generic 502
+	if rre, ok := err.(retryableResponseError); ok {
+		return caddyhttp.Error(rre.statusCode, err)
+	}
+
 	// errors proxying usually mean there is a problem with the upstream(s)
 	statusCode := http.StatusBadGateway
 
@@ -1555,13 +1623,15 @@ type LoadBalancing struct {
 	// to spin if all backends are down and latency is very low.
 	TryInterval caddy.Duration `json:"try_interval,omitempty"`
 
-	// A list of matcher sets that restricts with which requests retries are
-	// allowed. A request must match any of the given matcher sets in order
-	// to be retried if the connection to the upstream succeeded but the
-	// subsequent round-trip failed. If the connection to the upstream failed,
-	// a retry is always allowed. If unspecified, only GET requests will be
-	// allowed to be retried. Note that a retry is done with the next available
-	// host according to the load balancing policy.
+	// A list of matcher sets that controls retry behavior. Matcher sets
+	// without expression matchers (e.g. method, path) restrict which
+	// requests are retried on transport errors - if unspecified, only
+	// GET requests will be retried. Matcher sets with CEL expression
+	// matchers are evaluated against upstream responses and can
+	// reference {rp.status_code}, {rp.header.*}, and
+	// {rp.is_transport_error}. Dial errors are always retried
+	// regardless of this setting. Retries use the next available
+	// upstream per the load balancing policy
 	RetryMatchRaw caddyhttp.RawMatcherSets `json:"retry_match,omitempty" caddy:"namespace=http.matchers"`
 
 	SelectionPolicy Selector              `json:"-"`
@@ -1583,8 +1653,26 @@ type Selector interface {
 // may be called during each retry, multiple times per request, and as
 // such, needs to be instantaneous. The returned slice will not be
 // modified.
+//
+// For upstream sources that cache results, implement the
+// [CachingUpstreamSource] interface for optimal performance.
 type UpstreamSource interface {
 	GetUpstreams(*http.Request) ([]*Upstream, error)
+}
+
+// CachingUpstreamSource is an upstream source that caches its upstreams.
+// The relevant cache entry can be cleared/reset for a given request during
+// retries if a request fails. This can help ensure that failing backends
+// are not retried.
+//
+// EXPERIMENTAL: Subject to change.
+type CachingUpstreamSource interface {
+	UpstreamSource
+
+	// ResetCache clears any cache entry related to the given request.
+	// The next time GetUpstreams is called, it should have new upstream
+	// information for the given request.
+	ResetCache(*http.Request) error
 }
 
 // Hop-by-hop headers. These are removed when sent to the backend.
@@ -1659,9 +1747,33 @@ type RequestHeaderOpsTransport interface {
 	RequestHeaderOps() *headers.HeaderOps
 }
 
+// matcherSetHasExpressionMatcher reports whether a matcher set contains
+// at least one expression matcher. Expression matchers can reference
+// response data via placeholders like {rp.status_code}. Matcher sets
+// without expression matchers only test request properties and should
+// not be evaluated for response-based retry decisions
+func matcherSetHasExpressionMatcher(matcherSet caddyhttp.MatcherSet) bool {
+	for _, m := range matcherSet {
+		if _, ok := m.(*caddyhttp.MatchExpression); ok {
+			return true
+		}
+	}
+	return false
+}
+
 // roundtripSucceededError is an error type that is returned if the
 // roundtrip succeeded, but an error occurred after-the-fact.
 type roundtripSucceededError struct{ error }
+
+// retryableResponseError is returned when the upstream response matched
+// a retry_match entry, indicating the request should be retried with the
+// next upstream. It preserves the original status code so that if retries
+// are exhausted, the actual upstream status is reported instead of a
+// generic 502
+type retryableResponseError struct {
+	error
+	statusCode int
+}
 
 // bodyReadCloser is a reader that, upon closing, will return
 // its buffer to the pool and close the underlying body reader.

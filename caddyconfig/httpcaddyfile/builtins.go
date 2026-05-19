@@ -550,26 +550,11 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 		}
 
 	case acmeIssuer != nil:
-		// implicit ACME issuers (from various subdirectives) - use defaults; there might be more than one
-		defaultIssuers := caddytls.DefaultIssuers(acmeIssuer.Email)
-
-		// if an ACME CA endpoint was set, the user expects to use that specific one,
-		// not any others that may be defaults, so replace all defaults with that ACME CA
-		if acmeIssuer.CA != "" {
-			defaultIssuers = []certmagic.Issuer{acmeIssuer}
-		}
-
+		// implicit ACME issuers (from various subdirectives) should inherit from
+		// any globally-configured ACME issuer templates, then apply the local
+		// shortcut settings as overrides.
+		defaultIssuers := implicitACMEIssuers(h, acmeIssuer)
 		for _, issuer := range defaultIssuers {
-			// apply settings from the implicitly-configured ACMEIssuer to any
-			// default ACMEIssuers, but preserve each default issuer's CA endpoint,
-			// because, for example, if you configure the DNS challenge, it should
-			// apply to any of the default ACMEIssuers, but you don't want to trample
-			// out their unique CA endpoints
-			if iss, ok := issuer.(*caddytls.ACMEIssuer); ok && iss != nil {
-				acmeCopy := *acmeIssuer
-				acmeCopy.CA = iss.CA
-				issuer = &acmeCopy
-			}
 			configVals = append(configVals, ConfigValue{
 				Class: "tls.cert_issuer",
 				Value: issuer,
@@ -668,6 +653,8 @@ func parseRoot(h Helper) ([]ConfigValue, error) {
 		if !h.NextArg() {
 			return nil, h.ArgErr()
 		}
+		// store the unmatched root in block state so sibling directives can access it
+		h.BlockState["root"] = h.Val()
 		return h.NewRoute(nil, caddyhttp.VarsMiddleware{"root": h.Val()}), nil
 	}
 
@@ -681,6 +668,10 @@ func parseRoot(h Helper) ([]ConfigValue, error) {
 	// advance to the root path
 	if !h.NextArg() {
 		return nil, h.ArgErr()
+	}
+	// store the unmatched root in state so sibling/child directives can access it
+	if userMatcherSet == nil {
+		h.BlockState["root"] = h.Val()
 	}
 	// make the route with the matcher
 	return h.NewRoute(userMatcherSet, caddyhttp.VarsMiddleware{"root": h.Val()}), nil
@@ -1062,7 +1053,7 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 					if !d.NextArg() {
 						return nil, d.ArgErr()
 					}
-					interval, err := time.ParseDuration(d.Val() + "ns")
+					interval, err := caddy.ParseDuration(d.Val())
 					if err != nil {
 						return nil, d.Errf("failed to parse interval: %v", err)
 					}
