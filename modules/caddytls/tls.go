@@ -440,7 +440,7 @@ func (t *TLS) Start() error {
 					t.EncryptedClientHello.configsMu.Unlock()
 					if err != nil {
 						echLogger.Error("rotating ECH configs failed", zap.Error(err))
-						return
+						continue
 					}
 					err := t.publishECHConfigs(echLogger)
 					if err != nil {
