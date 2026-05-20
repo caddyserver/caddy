@@ -37,6 +37,12 @@ func init() {
 // `{http.auth.user.*}` placeholders may be set for any authentication
 // modules that provide user metadata.
 //
+// If authentication is rejected but a provider returns user information,
+// the placeholder `{http.auth.candidate.id}` will be set to the candidate
+// username, and also `{http.auth.candidate.*}` placeholders may be set
+// for candidate user metadata. Candidate placeholders do not represent a
+// successfully authenticated principal.
+//
 // In case of an error, the placeholder `{http.auth.<provider>.error}`
 // will be set to the error message returned by the authentication
 // provider.
@@ -78,6 +84,8 @@ func (a *Authentication) Provision(ctx caddy.Context) error {
 func (a Authentication) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	var user User
+	var candidate User
+	var hasCandidate bool
 	var authed bool
 	var err error
 	for provName, prov := range a.Providers {
@@ -94,17 +102,32 @@ func (a Authentication) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		if authed {
 			break
 		}
+		if userHasInfo(user) {
+			candidate = user
+			hasCandidate = true
+		}
 	}
 	if !authed {
+		if hasCandidate {
+			setAuthUserPlaceholders(repl, "http.auth.candidate", candidate)
+		}
 		return caddyhttp.Error(http.StatusUnauthorized, fmt.Errorf("not authenticated"))
 	}
 
-	repl.Set("http.auth.user.id", user.ID)
-	for k, v := range user.Metadata {
-		repl.Set("http.auth.user."+k, v)
-	}
+	setAuthUserPlaceholders(repl, "http.auth.user", user)
 
 	return next.ServeHTTP(w, r)
+}
+
+func userHasInfo(user User) bool {
+	return user.ID != "" || len(user.Metadata) > 0
+}
+
+func setAuthUserPlaceholders(repl *caddy.Replacer, namespace string, user User) {
+	repl.Set(namespace+".id", user.ID)
+	for k, v := range user.Metadata {
+		repl.Set(namespace+"."+k, v)
+	}
 }
 
 // Authenticator is a type which can authenticate a request.
