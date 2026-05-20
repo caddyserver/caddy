@@ -85,8 +85,18 @@ func TestServerNameMatcher(t *testing.T) {
 			expect: true,
 		},
 		{
+			names:  []string{"つ.Localhost"},
+			input:  "XN--K9J.LOCALHOST",
+			expect: true,
+		},
+		{
 			names:  []string{"*.つ.localhost"},
 			input:  "sub.xn--k9j.localhost",
+			expect: true,
+		},
+		{
+			names:  []string{"*.つ.Localhost"},
+			input:  "Sub.XN--K9J.LOCALHOST",
 			expect: true,
 		},
 	} {

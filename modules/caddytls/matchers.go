@@ -88,11 +88,11 @@ func asciiServerNameForMatch(name string) string {
 	// SNI is ASCII on the wire, but config can use Unicode IDNs.
 	ascii, err := idna.ToASCII(name)
 	if err == nil {
-		return ascii
+		return strings.ToLower(ascii)
 	}
 
 	if !strings.Contains(name, "*") {
-		return name
+		return strings.ToLower(name)
 	}
 
 	labels := strings.Split(name, ".")
@@ -102,9 +102,9 @@ func asciiServerNameForMatch(name string) string {
 		}
 		ascii, err := idna.ToASCII(label)
 		if err != nil {
-			return name
+			return strings.ToLower(name)
 		}
-		labels[i] = ascii
+		labels[i] = strings.ToLower(ascii)
 	}
 	return strings.Join(labels, ".")
 }

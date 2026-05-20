@@ -33,12 +33,13 @@ func TestConnectionPolicyIDNSNIMatcherFastPath(t *testing.T) {
 	targetTLSConfig := &tls.Config{ClientAuth: tls.RequireAnyClientCert}
 	policies := ConnectionPolicies{
 		{
-			matchers:  []ConnectionMatcher{MatchServerName{"つ.localhost"}},
+			matchers:  []ConnectionMatcher{MatchServerName{"つ.Localhost"}},
 			TLSConfig: targetTLSConfig,
 		},
 	}
 
-	for i := range 29 {
+	const sniFastPathThreshold = 30
+	for i := len(policies); i < sniFastPathThreshold; i++ {
 		policies = append(policies, &ConnectionPolicy{
 			matchers:  []ConnectionMatcher{MatchServerName{fmt.Sprintf("example-%d.localhost", i)}},
 			TLSConfig: &tls.Config{},
@@ -50,7 +51,7 @@ func TestConnectionPolicyIDNSNIMatcherFastPath(t *testing.T) {
 	})
 
 	tlsConfig := policies.TLSConfig(ctx)
-	got, err := tlsConfig.GetConfigForClient(&tls.ClientHelloInfo{ServerName: "xn--k9j.localhost"})
+	got, err := tlsConfig.GetConfigForClient(&tls.ClientHelloInfo{ServerName: "XN--K9J.LOCALHOST"})
 	if err != nil {
 		t.Fatalf("GetConfigForClient() error = %v", err)
 	}
