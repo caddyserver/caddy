@@ -656,11 +656,12 @@ func (s CookieHashSelection) Select(pool UpstreamPool, req *http.Request, w http
 			return upstream
 		}
 		http.SetCookie(w, &http.Cookie{
-			Name:   s.Name,
-			Value:  sha,
-			Path:   "/",
-			Secure: false,
-		})
+				Name:     s.Name,
+				Value:    sha,
+				Path:     "/",
+				Secure:   req.TLS != nil,
+				SameSite: http.SameSiteNoneMode,
+			})
 		return upstream
 	}
 
