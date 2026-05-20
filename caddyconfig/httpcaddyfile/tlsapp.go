@@ -1036,7 +1036,7 @@ outer:
 			// otherwise the one without any subjects (a catch-all) would be
 			// eaten up by the one with subjects; and if both have subjects, we
 			// need to combine their lists
-			if reflect.DeepEqual(aps[i].IssuersRaw, aps[j].IssuersRaw) &&
+			if automationPoliciesHaveSameIssuers(aps[i], aps[j]) &&
 				reflect.DeepEqual(aps[i].ManagersRaw, aps[j].ManagersRaw) &&
 				bytes.Equal(aps[i].StorageRaw, aps[j].StorageRaw) &&
 				aps[i].MustStaple == aps[j].MustStaple &&
@@ -1126,6 +1126,58 @@ func subjectQualifiesForPublicCert(ap *caddytls.AutomationPolicy, subj string) b
 	return !certmagic.SubjectIsIP(subj) &&
 		!certmagic.SubjectIsInternal(subj) &&
 		(strings.Count(subj, "*.") < 2 || ap.OnDemand)
+}
+
+func automationPoliciesHaveSameIssuers(a, b *caddytls.AutomationPolicy) bool {
+	if reflect.DeepEqual(a.IssuersRaw, b.IssuersRaw) {
+		return automationPoliciesHaveCompatibleImplicitIssuers(a, b)
+	}
+	return automationPolicyUsesDefaultInternalIssuer(a) && automationPolicyUsesDefaultInternalIssuer(b)
+}
+
+func automationPolicyUsesDefaultInternalIssuer(ap *caddytls.AutomationPolicy) bool {
+	if len(ap.IssuersRaw) == 0 && len(ap.Issuers) == 0 {
+		return automationPolicyImplicitIssuerClass(ap) == "internal"
+	}
+	return len(ap.IssuersRaw) == 1 &&
+		len(ap.Issuers) == 0 &&
+		string(bytes.TrimSpace(ap.IssuersRaw[0])) == `{"module":"internal"}`
+}
+
+// automationPoliciesHaveCompatibleImplicitIssuers returns whether two policies
+// without explicit issuers can be consolidated without changing default issuer
+// selection for their subjects.
+func automationPoliciesHaveCompatibleImplicitIssuers(a, b *caddytls.AutomationPolicy) bool {
+	if len(a.IssuersRaw) > 0 || len(a.Issuers) > 0 ||
+		len(b.IssuersRaw) > 0 || len(b.Issuers) > 0 {
+		return true
+	}
+
+	aClass := automationPolicyImplicitIssuerClass(a)
+	bClass := automationPolicyImplicitIssuerClass(b)
+	return aClass == "catch-all" || bClass == "catch-all" || aClass == bClass
+}
+
+func automationPolicyImplicitIssuerClass(ap *caddytls.AutomationPolicy) string {
+	if len(ap.SubjectsRaw) == 0 {
+		return "catch-all"
+	}
+
+	hasPublic := slices.ContainsFunc(ap.SubjectsRaw, func(subj string) bool {
+		return subjectQualifiesForPublicCert(ap, subj)
+	})
+	hasInternal := slices.ContainsFunc(ap.SubjectsRaw, func(subj string) bool {
+		return !subjectQualifiesForPublicCert(ap, subj)
+	})
+
+	switch {
+	case hasPublic && hasInternal:
+		return "mixed"
+	case hasPublic:
+		return "public"
+	default:
+		return "internal"
+	}
 }
 
 // automationPolicyHasAllPublicNames returns true if all the names on the policy

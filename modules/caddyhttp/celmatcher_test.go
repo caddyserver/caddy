@@ -79,7 +79,7 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			wantResult: true,
 		},
 		{
-			name: "header matches an placeholder replaced during the header matcher (MatchHeader)",
+			name: "header matches a placeholder replaced during the header matcher (MatchHeader)",
 			expression: &MatchExpression{
 				Expr: `header({'Field': '\{http.request.uri.path}'})`,
 			},
