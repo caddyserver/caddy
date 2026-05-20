@@ -879,6 +879,8 @@ func (t *TLS) getAutomationPolicyForName(name string) *AutomationPolicy {
 // AllMatchingCertificates returns the list of all certificates in
 // the cache which could be used to satisfy the given SAN.
 func AllMatchingCertificates(san string) []certmagic.Certificate {
+	certCacheMu.RLock()
+	defer certCacheMu.RUnlock()
 	return certCache.AllMatchingCertificates(san)
 }
 
