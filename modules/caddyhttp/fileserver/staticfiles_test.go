@@ -15,10 +15,17 @@
 package fileserver
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/caddyserver/caddy/v2"
 )
 
 func TestFileHidden(t *testing.T) {
@@ -125,6 +132,55 @@ func TestFileHidden(t *testing.T) {
 		if actual != tc.expect {
 			t.Errorf("Test %d: Does %v hide %s? Got %t but expected %t",
 				i, tc.inputHide, tc.inputPath, actual, tc.expect)
+		}
+	}
+}
+
+// Check to make sure that we don't serve ETag and Last-Modified headers
+// for files with invalid modification times
+func TestModTimeHeaders(t *testing.T) {
+	check_validator_headers(time.Now(), true, t)
+	check_validator_headers(time.Unix(0, 0), false, t)
+	check_validator_headers(time.Unix(1, 0), false, t)
+	check_validator_headers(time.Unix(2, 0), true, t)
+}
+
+func check_validator_headers(modTime time.Time, expect_headers bool, t *testing.T) {
+	f := false
+	fsrv := FileServer{
+		Root:          "./testdata",
+		CanonicalURIs: &f,
+	}
+	w := httptest.NewRecorder()
+	r, err := http.NewRequest("GET", "/modtime.txt", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repl := caddy.NewReplacer()
+	ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl)
+	r = r.WithContext(ctx)
+
+	ctx2, _ := caddy.NewContext(caddy.Context{Context: context.Background()}) // module will be nil by default
+	fsrv.Provision(ctx2)
+
+	path := "testdata/modtime.txt"
+	os.Chtimes(path, modTime, modTime)
+
+	fsrv.ServeHTTP(w, r, nil)
+
+	if expect_headers {
+		if w.Header().Get("ETag") == "" {
+			t.Errorf("Didn't get ETag header for file with valid mod time %s", modTime)
+		}
+		if w.Header().Get("Last-Modified") == "" {
+			t.Errorf("Didn't get Last-Modified header for file with valid mod time %s", modTime)
+		}
+	} else {
+		if w.Header().Get("ETag") != "" {
+			t.Errorf("Got ETag header for file with invalid mod time %s", modTime)
+		}
+		if w.Header().Get("Last-Modified") != "" {
+			t.Errorf("Got Last-Modified header for file with invalid mod time %s", modTime)
 		}
 	}
 }

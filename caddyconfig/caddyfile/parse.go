@@ -683,7 +683,7 @@ func (p *parser) directive() error {
 // openCurlyBrace expects the current token to be an
 // opening curly brace. This acts like an assertion
 // because it returns an error if the token is not
-// a opening curly brace. It does NOT advance the token.
+// an opening curly brace. It does NOT advance the token.
 func (p *parser) openCurlyBrace() error {
 	if p.Val() != "{" {
 		if p.valLooksLikeGlobalOptionsAfterImportedSnippets() {
