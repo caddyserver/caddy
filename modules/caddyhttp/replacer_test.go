@@ -266,3 +266,60 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 		}
 	}
 }
+
+func TestHTTPVarReplacementDynamicFallback(t *testing.T) {
+	req, _ := http.NewRequest(http.MethodGet, "/foo?a=1&with.dot=ok", nil)
+	repl := caddy.NewReplacer()
+	addHTTPVarsToReplacer(repl, req, nil)
+	repl.Map(func(key string) (any, bool) {
+		switch key {
+		case "http.request.header.x-custom-header.upper":
+			return "HEADER_FALLBACK", true
+		case "http.request.uri.query.missing.upper":
+			return "QUERY_FALLBACK", true
+		}
+		return nil, false
+	})
+
+	for _, tc := range []struct {
+		name   string
+		get    string
+		expect string
+	}{
+		{
+			name:   "missing header without suffix stays known empty",
+			get:    "http.request.header.x-custom-header",
+			expect: "",
+		},
+		{
+			name:   "missing query without suffix stays known empty",
+			get:    "http.request.uri.query.missing",
+			expect: "",
+		},
+		{
+			name:   "missing dotted header falls through",
+			get:    "http.request.header.x-custom-header.upper",
+			expect: "HEADER_FALLBACK",
+		},
+		{
+			name:   "missing dotted query falls through",
+			get:    "http.request.uri.query.missing.upper",
+			expect: "QUERY_FALLBACK",
+		},
+		{
+			name:   "present dotted query stays known",
+			get:    "http.request.uri.query.with.dot",
+			expect: "ok",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			actual, got := repl.GetString(tc.get)
+			if !got {
+				t.Fatalf("expected to recognize placeholder %s", tc.get)
+			}
+			if actual != tc.expect {
+				t.Fatalf("expected %s to be %q but got %q", tc.get, tc.expect, actual)
+			}
+		})
+	}
+}
