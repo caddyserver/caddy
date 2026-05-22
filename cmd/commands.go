@@ -566,7 +566,7 @@ argument of --directory. If the directory does not exist, it will be created.
 // following format:
 //
 //   - lowercase
-//   - alphanumeric and hyphen characters only
+//   - ASCII lowercase letters, digits and hyphens only
 //   - cannot start or end with a hyphen
 //   - hyphen cannot be adjacent to another hyphen
 //

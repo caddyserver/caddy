@@ -522,7 +522,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 		body = io.LimitReader(body, h.HealthChecks.Active.MaxSize)
 	}
 	defer func() {
-		// drain any remaining body so connection could be re-used
+		// drain any remaining body so connection could be reused
 		_, _ = io.Copy(io.Discard, body)
 		resp.Body.Close()
 	}()
