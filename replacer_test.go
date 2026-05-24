@@ -371,6 +371,27 @@ func TestReplacerMap(t *testing.T) {
 	}
 }
 
+func TestReplacerMapFirst(t *testing.T) {
+	rep := testReplacer()
+	rep.Map(func(key string) (any, bool) {
+		if key == "test" {
+			return "last", true
+		}
+		return nil, false
+	})
+	rep.MapFirst(func(key string) (any, bool) {
+		if key == "test" {
+			return "first", true
+		}
+		return nil, false
+	})
+
+	actual := rep.ReplaceAll("{test}", "")
+	if actual != "first" {
+		t.Errorf("Expected first mapped provider to win, got %s", actual)
+	}
+}
+
 func TestReplacerNew(t *testing.T) {
 	repl := NewReplacer()
 

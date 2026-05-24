@@ -64,10 +64,7 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 			// query string parameters
 			if strings.HasPrefix(key, reqURIQueryReplPrefix) {
 				param := key[len(reqURIQueryReplPrefix):]
-				vals, ok := req.URL.Query()[param]
-				if !ok && strings.Contains(param, ".") {
-					return nil, false
-				}
+				vals := req.URL.Query()[param]
 				// always return true, since the query param might
 				// be present only in some requests
 				return strings.Join(vals, ","), true
@@ -76,10 +73,7 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 			// request header fields
 			if strings.HasPrefix(key, reqHeaderReplPrefix) {
 				field := key[len(reqHeaderReplPrefix):]
-				vals, ok := req.Header[textproto.CanonicalMIMEHeaderKey(field)]
-				if !ok && strings.Contains(field, ".") {
-					return nil, false
-				}
+				vals := req.Header[textproto.CanonicalMIMEHeaderKey(field)]
 				// always return true, since the header field might
 				// be present only in some requests
 				return strings.Join(vals, ","), true

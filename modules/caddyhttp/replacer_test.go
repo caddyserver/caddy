@@ -267,11 +267,11 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 	}
 }
 
-func TestHTTPVarReplacementDynamicFallback(t *testing.T) {
+func TestHTTPVarReplacementCustomProviderPrecedence(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodGet, "/foo?a=1&with.dot=ok", nil)
 	repl := caddy.NewReplacer()
 	addHTTPVarsToReplacer(repl, req, nil)
-	repl.Map(func(key string) (any, bool) {
+	repl.MapFirst(func(key string) (any, bool) {
 		switch key {
 		case "http.request.header.x-custom-header.upper":
 			return "HEADER_FALLBACK", true
@@ -297,12 +297,12 @@ func TestHTTPVarReplacementDynamicFallback(t *testing.T) {
 			expect: "",
 		},
 		{
-			name:   "missing dotted header falls through",
+			name:   "custom provider handles dotted header extension",
 			get:    "http.request.header.x-custom-header.upper",
 			expect: "HEADER_FALLBACK",
 		},
 		{
-			name:   "missing dotted query falls through",
+			name:   "custom provider handles dotted query extension",
 			get:    "http.request.uri.query.missing.upper",
 			expect: "QUERY_FALLBACK",
 		},

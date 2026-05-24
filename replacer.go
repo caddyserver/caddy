@@ -88,6 +88,12 @@ func (r *Replacer) Map(mapFunc ReplacerFunc) {
 	r.providers = append(r.providers, mapFunc)
 }
 
+// MapFirst adds mapFunc to the front of the list of value providers.
+// mapFunc will be executed only at replace-time.
+func (r *Replacer) MapFirst(mapFunc ReplacerFunc) {
+	r.providers = append([]replacementProvider{mapFunc}, r.providers...)
+}
+
 // Set sets a custom variable to a static value.
 func (r *Replacer) Set(variable string, value any) {
 	r.mapMutex.Lock()
