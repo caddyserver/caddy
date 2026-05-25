@@ -1,7 +1,14 @@
 package integration
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"errors"
 	"fmt"
+	"math/big"
 	"net"
 	"net/http"
 	"os"
@@ -9,8 +16,10 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/caddyserver/caddy/v2/caddytest"
+	"github.com/quic-go/quic-go/http3"
 )
 
 func TestSRVReverseProxy(t *testing.T) {
@@ -794,40 +803,139 @@ func TestReverseProxyRetryMatchIsTransportError(t *testing.T) {
 	tester.AssertGetResponse("http://localhost:9080/", 200, "ok")
 }
 
-func TestReverseProxySNIPlaceHolder(t *testing.T) {
-	configTemplate := `
+func TestReverseProxyHTTP3SNIPlaceholderHost(t *testing.T) {
+	const expectedSNI = "app.test.local"
+
+	upstreamAddr, gotSNI := startHTTP3SNITestServer(t)
+
+	tester := caddytest.NewTester(t)
+	tester.InitServer(fmt.Sprintf(`
 	{
-        skip_install_trust
-        local_certs
-        admin localhost:2999
-        http_port 9080
-        https_port 9443
-        grace_period 1ns
+		skip_install_trust
+		admin localhost:2999
+		http_port 9080
+		grace_period 1ns
 	}
-	localhost example.com {
-		@proxied header X-Transport caddy
-		respond @proxied {http.request.tls.server_name}
-		reverse_proxy 127.0.0.1:9443 {
-			header_up X-Transport caddy
-			header_up Host {host}
+:9080 {
+		reverse_proxy https://%s {
 			transport http {
-				versions %s
-				tls_server_name {header.X-SNI}
+				versions 3
+				tls_server_name {host}
 				tls_insecure_skip_verify
 			}
 		}
 	}
-	`
-	for _, versions := range []string{"1.1 2", "3"} {
-		tester := caddytest.NewTester(t)
-		tester.InitServer(fmt.Sprintf(configTemplate, versions), "caddyfile")
-		req, err := http.NewRequest("GET", "https://localhost:9443", nil)
-		if err != nil {
-			t.Errorf("failed to create request %s", err)
-			return
-		}
+	`, upstreamAddr), "caddyfile")
 
-		req.Header.Set("X-SNI", "example.com")
-		tester.AssertResponse(req, 200, "example.com")
+	req, err := http.NewRequest(http.MethodGet, "http://127.0.0.1:9080/", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Host = expectedSNI
+
+	tester.AssertResponse(req, 200, "ok")
+
+	select {
+	case sni := <-gotSNI:
+		if sni != expectedSNI {
+			t.Fatalf("HTTP/3 upstream SNI = %q, want %q", sni, expectedSNI)
+		}
+		if sni == "{http.request.host}" {
+			t.Fatal("HTTP/3 upstream SNI was not expanded from the adapted placeholder")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for HTTP/3 upstream SNI")
+	}
+}
+
+func startHTTP3SNITestServer(t *testing.T) (string, <-chan string) {
+	t.Helper()
+
+	gotSNI := make(chan string, 1)
+	udpConn, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen for HTTP/3 upstream: %v", err)
+	}
+
+	server := &http3.Server{
+		TLSConfig: http3SNITestTLSConfig(t, func(sni string) {
+			select {
+			case gotSNI <- sni:
+			default:
+			}
+		}),
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			fmt.Fprint(w, "ok")
+		}),
+	}
+
+	done := make(chan struct{})
+	errs := make(chan error, 1)
+	go func() {
+		defer close(done)
+		err := server.Serve(udpConn)
+		if err != nil && !errors.Is(err, http.ErrServerClosed) && !errors.Is(err, net.ErrClosed) {
+			errs <- err
+		}
+	}()
+
+	t.Cleanup(func() {
+		_ = server.Close()
+		_ = udpConn.Close()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("timed out waiting for HTTP/3 upstream server to stop")
+		}
+		select {
+		case err := <-errs:
+			t.Errorf("HTTP/3 upstream server failed: %v", err)
+		default:
+		}
+	})
+
+	return udpConn.LocalAddr().String(), gotSNI
+}
+
+func http3SNITestTLSConfig(t *testing.T, recordSNI func(string)) *tls.Config {
+	t.Helper()
+
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate HTTP/3 upstream private key: %v", err)
+	}
+
+	certTemplate := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject: pkix.Name{
+			CommonName: "HTTP/3 SNI test upstream",
+		},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		DNSNames:              []string{"app.test.local"},
+		IPAddresses:           []net.IP{net.IPv4(127, 0, 0, 1)},
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+	}
+
+	certDER, err := x509.CreateCertificate(rand.Reader, certTemplate, certTemplate, publicKey, privateKey)
+	if err != nil {
+		t.Fatalf("failed to create HTTP/3 upstream certificate: %v", err)
+	}
+	cert := tls.Certificate{
+		Certificate: [][]byte{certDER},
+		PrivateKey:  privateKey,
+	}
+	baseConfig := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+	}
+
+	return &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		GetConfigForClient: func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+			recordSNI(hello.ServerName)
+			return baseConfig.Clone(), nil
+		},
 	}
 }
