@@ -85,7 +85,15 @@ func asciiServerNameForMatch(name string) string {
 		return name
 	}
 
-	// SNI is ASCII on the wire, but config can use Unicode IDNs.
+	// Fast path: if the name is pure ASCII, skip idna.ToASCII.
+	// SNI values on the wire are always ASCII (RFC 6066), and most
+	// config patterns are also ASCII. For pure ASCII input, idna.ToASCII
+	// only validates and lowercases, which is equivalent to our fallback.
+	if isPureASCII(name) {
+		return strings.ToLower(name)
+	}
+
+	// Config can use Unicode IDNs.
 	ascii, err := idna.ToASCII(name)
 	if err == nil {
 		return strings.ToLower(ascii)
@@ -107,6 +115,15 @@ func asciiServerNameForMatch(name string) string {
 		labels[i] = strings.ToLower(ascii)
 	}
 	return strings.Join(labels, ".")
+}
+
+func isPureASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
+			return false
+		}
+	}
+	return true
 }
 
 // UnmarshalCaddyfile sets up the MatchServerName from Caddyfile tokens. Syntax:
