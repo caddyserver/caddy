@@ -1,6 +1,7 @@
 package encode
 
 import (
+	"io"
 	"net/http"
 	"slices"
 	"sync"
@@ -49,7 +50,7 @@ func TestPreferOrder(t *testing.T) {
 			name:     "PreferOrder(): 4 accept (1 duplicate), 1 prefer",
 			accept:   "deflate, gzip, br, br",
 			prefer:   []string{"br"},
-			expected: []string{"br", "br", "gzip", "deflate"},
+			expected: []string{"br", "br", "deflate", "gzip"},
 		},
 		{
 			name:     "PreferOrder(): empty accept, 0 prefer",
@@ -97,7 +98,7 @@ func TestPreferOrder(t *testing.T) {
 			name:     "PreferOrder(): with invalid q-factor, no prefer",
 			accept:   "br, deflate, gzip;q=2, zstd;q=0.1",
 			prefer:   []string{},
-			expected: []string{"br", "gzip", "deflate", "zstd"},
+			expected: []string{"br", "deflate", "gzip", "zstd"},
 		},
 	}
 
@@ -293,5 +294,90 @@ func TestIsEncodeAllowed(t *testing.T) {
 					test.expected)
 			}
 		})
+	}
+}
+
+type mockEncoder struct{}
+
+func (mockEncoder) Write(p []byte) (n int, err error) { return len(p), nil }
+func (mockEncoder) Close() error                     { return nil }
+func (mockEncoder) Reset(w io.Writer)                {}
+func (mockEncoder) Flush() error                     { return nil }
+
+type mockResponseWriter struct {
+	header http.Header
+	status int
+}
+
+func (m *mockResponseWriter) Header() http.Header {
+	if m.header == nil {
+		m.header = make(http.Header)
+	}
+	return m.header
+}
+
+func (m *mockResponseWriter) Write(b []byte) (int, error) {
+	return len(b), nil
+}
+
+func (m *mockResponseWriter) WriteHeader(statusCode int) {
+	m.status = statusCode
+}
+
+func TestServeHTTPServedResponse(t *testing.T) {
+	enc := new(Encode)
+	enc.MinLength = 1 // compress everything
+	enc.writerPools = map[string]*sync.Pool{
+		"gzip": {
+			New: func() any { return mockEncoder{} },
+		},
+		"zstd": {
+			New: func() any { return mockEncoder{} },
+		},
+	}
+
+	// Simulate default Provision behaviour when user hasn't specified prefer
+	enc.Prefer = []string{}
+	for _, encName := range []string{"zstd", "br", "gzip"} {
+		if _, ok := enc.writerPools[encName]; ok {
+			enc.Prefer = append(enc.Prefer, encName)
+		}
+	}
+
+	// Test default preference: zstd preferred over gzip
+	r, _ := http.NewRequest("GET", "/", nil)
+	r.Header.Set("Accept-Encoding", "gzip, deflate, br, zstd")
+
+	w := &mockResponseWriter{header: http.Header{"Content-Type": []string{"text/plain"}}}
+
+	next := caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+		w.WriteHeader(http.StatusOK)
+		_, err := w.Write([]byte("Hello, world! This is a long enough string to satisfy min length if it wasn't 1."))
+		return err
+	})
+
+	err := enc.ServeHTTP(w, r, next)
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	// ETag suffix or Content-Encoding header should reflect zstd
+	contentEncoding := w.Header().Get("Content-Encoding")
+	if contentEncoding != "zstd" {
+		t.Errorf("Expected Content-Encoding to be 'zstd' by default, got '%s'", contentEncoding)
+	}
+
+	// Test explicit user preference: gzip over zstd
+	enc.Prefer = []string{"gzip", "zstd"}
+
+	w2 := &mockResponseWriter{header: http.Header{"Content-Type": []string{"text/plain"}}}
+	err = enc.ServeHTTP(w2, r, next)
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	contentEncoding2 := w2.Header().Get("Content-Encoding")
+	if contentEncoding2 != "gzip" {
+		t.Errorf("Expected Content-Encoding to be 'gzip' when explicitly preferred, got '%s'", contentEncoding2)
 	}
 }

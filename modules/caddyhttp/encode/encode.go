@@ -127,6 +127,14 @@ func (enc *Encode) Provision(ctx caddy.Context) error {
 		}
 	}
 
+	if len(enc.Prefer) == 0 {
+		for _, encName := range []string{"zstd", "br", "gzip"} {
+			if _, ok := enc.writerPools[encName]; ok {
+				enc.Prefer = append(enc.Prefer, encName)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -531,20 +539,15 @@ func AcceptedEncodings(r *http.Request, preferredOrder []string) []string {
 		}
 
 		prefs = append(prefs, encodingPreference{
-			encoding:           encName,
-			q:                  qFactor,
-			preferOrder:        prefOrder,
-			defaultPreferOrder: defaultEncodingPreferences[encName],
+			encoding:    encName,
+			q:           qFactor,
+			preferOrder: prefOrder,
 		})
 	}
 
-	// sort preferences by descending q-factor first, then by preferOrder,
-	// and finally by the hardcoded default server preferences
+	// sort preferences by descending q-factor first, then by preferOrder
 	sort.SliceStable(prefs, func(i, j int) bool {
 		if math.Abs(prefs[i].q-prefs[j].q) < 0.00001 {
-			if prefs[i].preferOrder == prefs[j].preferOrder {
-				return prefs[i].defaultPreferOrder > prefs[j].defaultPreferOrder
-			}
 			return prefs[i].preferOrder > prefs[j].preferOrder
 		}
 		return prefs[i].q > prefs[j].q
@@ -560,19 +563,9 @@ func AcceptedEncodings(r *http.Request, preferredOrder []string) []string {
 
 // encodingPreference pairs an encoding with its q-factor.
 type encodingPreference struct {
-	encoding           string
-	q                  float64
-	preferOrder        int
-	defaultPreferOrder int
-}
-
-// defaultEncodingPreferences assigns a default priority to encodings when
-// the client has no strong preference and the server doesn't specify one.
-var defaultEncodingPreferences = map[string]int{
-	"zstd":    4,
-	"br":      3,
-	"gzip":    2,
-	"deflate": 1,
+	encoding    string
+	q           float64
+	preferOrder int
 }
 
 // Encoder is a type which can encode a stream of data.
