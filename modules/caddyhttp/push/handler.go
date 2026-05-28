@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-
 	"sync"
 
 	"go.uber.org/zap"
@@ -86,34 +85,43 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 		return next.ServeHTTP(w, r)
 	}
 
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-	server := r.Context().Value(caddyhttp.ServerCtxKey).(*caddyhttp.Server)
-	shouldLogCredentials := server.Logs != nil && server.Logs.ShouldLogCredentials
+	var repl *caddy.Replacer
+	var hdr http.Header
 
-	// create header for push requests
-	hdr := h.initializePushHeaders(r, repl)
+	if len(h.Resources) > 0 {
+		repl = r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+		server := r.Context().Value(caddyhttp.ServerCtxKey).(*caddyhttp.Server)
+		shouldLogCredentials := server.Logs != nil && server.Logs.ShouldLogCredentials
 
-	// push first!
-	for _, resource := range h.Resources {
-		if c := h.logger.Check(zapcore.DebugLevel, "pushing resource"); c != nil {
-			c.Write(
-				zap.String("uri", r.RequestURI),
-				zap.String("push_method", resource.Method),
-				zap.String("push_target", resource.Target),
-				zap.Object("push_headers", caddyhttp.LoggableHTTPHeader{
-					Header:               hdr,
-					ShouldLogCredentials: shouldLogCredentials,
-				}),
-			)
-		}
-		err := pusher.Push(repl.ReplaceAll(resource.Target, "."), &http.PushOptions{
-			Method: resource.Method,
-			Header: hdr,
-		})
-		if err != nil {
-			// usually this means either that push is not
-			// supported or concurrent streams are full
-			break
+		for _, resource := range h.Resources {
+			if hdr == nil {
+				hdr = h.initializePushHeaders(r, repl)
+			}
+
+			if c := h.logger.Check(zapcore.DebugLevel, "pushing resource"); c != nil {
+				c.Write(
+					zap.String("uri", r.RequestURI),
+					zap.String("push_method", resource.Method),
+					zap.String("push_target", resource.Target),
+					zap.Object("push_headers", caddyhttp.LoggableHTTPHeader{
+						Header:               hdr,
+						ShouldLogCredentials: shouldLogCredentials,
+					}),
+				)
+			}
+
+			target := resource.Target
+			if strings.Contains(target, "{") {
+				target = repl.ReplaceAll(target, ".")
+			}
+
+			err := pusher.Push(target, &http.PushOptions{
+				Method: resource.Method,
+				Header: hdr,
+			})
+			if err != nil {
+				break
+			}
 		}
 	}
 
@@ -121,27 +129,26 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 	// described in Link header fields before the response is written
 	lp := linkPusherPool.Get().(*linkPusher)
 	lp.ResponseWriterWrapper.ResponseWriter = w
-	lp.handler = h
+	lp.handler = &h
 	lp.pusher = pusher
-	lp.header = hdr
+	lp.header = hdr // reuse header if already initialized
 	lp.request = r
+	lp.repl = repl
 
 	// clear references and return to pool after serving
 	defer func() {
 		caddyhttp.SetVar(r.Context(), pushedLink, nil)
 		lp.ResponseWriterWrapper.ResponseWriter = nil
+		lp.handler = nil
 		lp.pusher = nil
 		lp.header = nil
 		lp.request = nil
+		lp.repl = nil
 		linkPusherPool.Put(lp)
 	}()
 
 	// serve only after pushing!
-	if err := next.ServeHTTP(lp, r); err != nil {
-		return err
-	}
-
-	return nil
+	return next.ServeHTTP(lp, r)
 }
 
 func (h Handler) initializePushHeaders(r *http.Request, repl *caddy.Replacer) http.Header {
@@ -165,6 +172,9 @@ func (h Handler) initializePushHeaders(r *http.Request, repl *caddy.Replacer) ht
 
 	// user can customize the push request headers
 	if h.Headers != nil {
+		if repl == nil {
+			repl = r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+		}
 		h.Headers.ApplyTo(hdr, repl)
 	}
 
@@ -175,9 +185,9 @@ func (h Handler) initializePushHeaders(r *http.Request, repl *caddy.Replacer) ht
 // resources described by them. If a resource has the "nopush"
 // attribute or describes an external entity (meaning, the resource
 // URI includes a scheme), it will not be pushed.
-func (h Handler) servePreloadLinks(pusher http.Pusher, hdr http.Header, resources []string) {
-	for _, resource := range resources {
-		for _, resource := range parseLinkHeader(resource) {
+func (h Handler) servePreloadLinks(pusher http.Pusher, hdr http.Header, links []string) {
+	for _, linkHdr := range links {
+		for _, resource := range parseLinkHeader(linkHdr) {
 			if _, ok := resource.params["nopush"]; ok {
 				continue
 			}
@@ -215,12 +225,19 @@ type HeaderConfig struct {
 // the response is allowed to be written.
 type linkPusher struct {
 	caddyhttp.ResponseWriterWrapper
-	handler Handler
+	handler *Handler
 	pusher  http.Pusher
 	header  http.Header
 	request *http.Request
+	repl    *caddy.Replacer
 }
 
+// Push implements http.Pusher.
+func (lp *linkPusher) Push(target string, opts *http.PushOptions) error {
+	return lp.pusher.Push(target, opts)
+}
+
+// linkPusherPool minimizes allocations for the middleware wrapper.
 var linkPusherPool = sync.Pool{
 	New: func() any {
 		return new(linkPusher)
@@ -235,6 +252,11 @@ func (lp *linkPusher) WriteHeader(statusCode int) {
 				c.Write(zap.Strings("linked", links))
 			}
 			caddyhttp.SetVar(lp.request.Context(), pushedLink, true)
+
+			if lp.header == nil {
+				lp.header = lp.handler.initializePushHeaders(lp.request, lp.repl)
+			}
+
 			lp.handler.servePreloadLinks(lp.pusher, lp.header, links)
 		}
 	}

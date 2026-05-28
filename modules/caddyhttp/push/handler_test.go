@@ -35,18 +35,18 @@ func BenchmarkServeHTTP(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		req, _ := http.NewRequest("GET", "/", nil)
-		
+
 		// Setup Replacer and Server in context as required by ServeHTTP
 		repl := caddy.NewReplacer()
 		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
 		ctx = context.WithValue(ctx, caddyhttp.ServerCtxKey, &caddyhttp.Server{})
 		req = req.WithContext(ctx)
-		
+
 		rr := httptest.NewRecorder()
-		
+
 		// Wrap with a pusher
 		pusher := &mockPusher{ResponseWriter: rr}
-		
+
 		_ = h.ServeHTTP(pusher, req, caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 			w.Header().Set("Link", "</script.js>; rel=preload")
 			w.WriteHeader(http.StatusOK)
