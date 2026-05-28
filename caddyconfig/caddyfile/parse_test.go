@@ -601,6 +601,20 @@ func TestParseAll(t *testing.T) {
 		:80
 		import A
 		`, true, [][]string{}},
+
+		// regression: same snippet imported multiple times in one site block must
+		// produce separate segments, not a parse error. Previously isNextOnNewLine
+		// returned false at the boundary between two imports of the same snippet
+		// because their import-chain strings were identical and the fallback
+		// line-number comparison failed (snippet lines always reset to 1).
+		{`(mysnippet) {
+			respond "hello"
+		}
+		:80 {
+			import mysnippet
+			import mysnippet
+		}
+		`, false, [][]string{{":80"}}},
 	} {
 		p := testParser(test.input)
 		blocks, err := p.parseAll()
