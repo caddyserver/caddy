@@ -117,13 +117,22 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 
 	// wrap the response writer so that we can initiate push of any resources
 	// described in Link header fields before the response is written
-	lp := linkPusher{
+	lp := &linkPusher{
 		ResponseWriterWrapper: &caddyhttp.ResponseWriterWrapper{ResponseWriter: w},
 		handler:               h,
 		pusher:                pusher,
 		header:                hdr,
 		request:               r,
 	}
+
+	// clear references and context variables after serving to help GC
+	defer func() {
+		caddyhttp.SetVar(r.Context(), pushedLink, nil)
+		lp.ResponseWriterWrapper = nil
+		lp.pusher = nil
+		lp.header = nil
+		lp.request = nil
+	}()
 
 	// serve only after pushing!
 	if err := next.ServeHTTP(lp, r); err != nil {
@@ -209,7 +218,7 @@ type linkPusher struct {
 	request *http.Request
 }
 
-func (lp linkPusher) WriteHeader(statusCode int) {
+func (lp *linkPusher) WriteHeader(statusCode int) {
 	if links, ok := lp.ResponseWriter.Header()["Link"]; ok {
 		// only initiate these pushes if it hasn't been done yet
 		if val := caddyhttp.GetVar(lp.request.Context(), pushedLink); val == nil {
