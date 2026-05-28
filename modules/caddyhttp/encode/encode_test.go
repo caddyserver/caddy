@@ -344,7 +344,7 @@ func TestServeHTTPDefaultEncodingPreference(t *testing.T) {
 		return err
 	})
 
-	err := enc.ServeHTTP(w, r, next)
+	err = enc.ServeHTTP(w, r, next)
 	if err != nil {
 		t.Fatalf("ServeHTTP returned error: %v", err)
 	}
