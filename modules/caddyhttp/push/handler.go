@@ -19,6 +19,8 @@ import (
 	"net/http"
 	"strings"
 
+	"sync"
+
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
@@ -117,21 +119,21 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 
 	// wrap the response writer so that we can initiate push of any resources
 	// described in Link header fields before the response is written
-	lp := &linkPusher{
-		ResponseWriterWrapper: &caddyhttp.ResponseWriterWrapper{ResponseWriter: w},
-		handler:               h,
-		pusher:                pusher,
-		header:                hdr,
-		request:               r,
-	}
+	lp := linkPusherPool.Get().(*linkPusher)
+	lp.ResponseWriterWrapper.ResponseWriter = w
+	lp.handler = h
+	lp.pusher = pusher
+	lp.header = hdr
+	lp.request = r
 
-	// clear references and context variables after serving to help GC
+	// clear references and return to pool after serving
 	defer func() {
 		caddyhttp.SetVar(r.Context(), pushedLink, nil)
-		lp.ResponseWriterWrapper = nil
+		lp.ResponseWriterWrapper.ResponseWriter = nil
 		lp.pusher = nil
 		lp.header = nil
 		lp.request = nil
+		linkPusherPool.Put(lp)
 	}()
 
 	// serve only after pushing!
@@ -143,7 +145,8 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 }
 
 func (h Handler) initializePushHeaders(r *http.Request, repl *caddy.Replacer) http.Header {
-	hdr := make(http.Header)
+	// Pre-allocate capacity for safeHeaders + pushHeader
+	hdr := make(http.Header, len(safeHeaders)+1)
 
 	// prevent recursive pushes
 	hdr.Set(pushHeader, "1")
@@ -211,11 +214,17 @@ type HeaderConfig struct {
 // described by Link response headers get pushed before
 // the response is allowed to be written.
 type linkPusher struct {
-	*caddyhttp.ResponseWriterWrapper
+	caddyhttp.ResponseWriterWrapper
 	handler Handler
 	pusher  http.Pusher
 	header  http.Header
 	request *http.Request
+}
+
+var linkPusherPool = sync.Pool{
+	New: func() any {
+		return new(linkPusher)
+	},
 }
 
 func (lp *linkPusher) WriteHeader(statusCode int) {
