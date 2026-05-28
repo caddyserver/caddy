@@ -329,7 +329,10 @@ func TestServeHTTPDefaultEncodingPreference(t *testing.T) {
 	}
 
 	// Test default preference: zstd preferred over gzip
-	r, _ := http.NewRequest("GET", "/", nil)
+	r, err := http.NewRequest("GET", "/", nil)
+	if err != nil {
+		t.Fatalf("error creating request: %v", err)
+	}
 	r.Header.Set("Accept-Encoding", "gzip, deflate, br, zstd")
 
 	w := httptest.NewRecorder()

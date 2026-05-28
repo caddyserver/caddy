@@ -20,6 +20,7 @@
 package encode
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"math"
@@ -547,18 +548,9 @@ func AcceptedEncodings(r *http.Request, preferredOrder []string) []string {
 	// sort preferences by descending q-factor first, then by preferOrder
 	slices.SortStableFunc(prefs, func(a, b encodingPreference) int {
 		if math.Abs(a.q-b.q) < 0.00001 {
-			if a.preferOrder > b.preferOrder {
-				return -1
-			}
-			if a.preferOrder < b.preferOrder {
-				return 1
-			}
-			return 0
+			return cmp.Compare(b.preferOrder, a.preferOrder)
 		}
-		if a.q > b.q {
-			return -1
-		}
-		return 1
+		return cmp.Compare(b.q, a.q)
 	})
 
 	prefEncNames := make([]string, len(prefs))
