@@ -328,7 +328,7 @@ func (m *mockResponseWriter) WriteHeader(statusCode int) {
 	m.status = statusCode
 }
 
-func TestServeHTTPServedResponse(t *testing.T) {
+func TestServeHTTPDefaultEncodingPreference(t *testing.T) {
 	enc := new(Encode)
 	enc.MinLength = 1 // compress everything
 	enc.writerPools = map[string]*sync.Pool{
