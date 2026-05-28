@@ -41,9 +41,12 @@ import (
 type h2ReadWriteCloser struct {
 	io.ReadCloser
 	http.ResponseWriter
+	mu sync.Mutex
 }
 
-func (rwc h2ReadWriteCloser) Write(p []byte) (n int, err error) {
+func (rwc *h2ReadWriteCloser) Write(p []byte) (n int, err error) {
+	rwc.mu.Lock()
+	defer rwc.mu.Unlock()
 	n, err = rwc.ResponseWriter.Write(p)
 	if err != nil {
 		return 0, err
@@ -115,7 +118,7 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 			}
 			return
 		}
-		conn = h2ReadWriteCloser{req.Body, rw}
+		conn = &h2ReadWriteCloser{ReadCloser: req.Body, ResponseWriter: rw}
 		// bufio is not needed, use minimal buffer
 		brw = bufio.NewReadWriter(bufio.NewReaderSize(conn, 1), bufio.NewWriterSize(conn, 1))
 	} else {
@@ -390,10 +393,9 @@ func (h *Handler) registerConnection(conn io.ReadWriteCloser, gracefulClose func
 		// if there is no connection left before the connections close timer fires
 		if len(h.connections) == 0 && h.connectionsCloseTimer != nil {
 			// we release the timer that holds the reference to Handler
-			if (*h.connectionsCloseTimer).Stop() {
-				h.logger.Debug("stopped streaming connections close timer - all connections are already closed")
-			}
+			h.connectionsCloseTimer.Stop()
 			h.connectionsCloseTimer = nil
+			h.logger.Debug("stopped streaming connections close timer - all connections are already closed")
 		}
 		h.connectionsMu.Unlock()
 	}
