@@ -1,11 +1,15 @@
 package encode
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"slices"
 	"sync"
 	"testing"
+
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
 func BenchmarkOpenResponseWriter(b *testing.B) {
@@ -336,12 +340,11 @@ func TestServeHTTPServedResponse(t *testing.T) {
 		},
 	}
 
-	// Simulate default Provision behaviour when user hasn't specified prefer
-	enc.Prefer = []string{}
-	for _, encName := range []string{"zstd", "br", "gzip"} {
-		if _, ok := enc.writerPools[encName]; ok {
-			enc.Prefer = append(enc.Prefer, encName)
-		}
+	// Call Provision() with a valid caddy.Context to exercise the real path
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+	if err := enc.Provision(ctx); err != nil {
+		t.Fatalf("Provision failed: %v", err)
 	}
 
 	// Test default preference: zstd preferred over gzip
