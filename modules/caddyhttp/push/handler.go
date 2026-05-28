@@ -188,7 +188,7 @@ func (h Handler) initializePushHeaders(r *http.Request, repl *caddy.Replacer) ht
 func (h Handler) servePreloadLinks(pusher http.Pusher, hdr http.Header, links []string) {
 	for _, linkHdr := range links {
 		for _, resource := range parseLinkHeader(linkHdr) {
-			if _, ok := resource.params["nopush"]; ok {
+			if resource.noPush {
 				continue
 			}
 			if isRemoteResource(resource.uri) {

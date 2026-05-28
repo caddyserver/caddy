@@ -21,46 +21,48 @@ import (
 // linkResource contains the results of a parsed Link header.
 type linkResource struct {
 	uri    string
-	params map[string]string
+	noPush bool
 }
 
-// parseLinkHeader is responsible for parsing Link header
-// and returning list of found resources.
-//
-// Accepted formats are:
-//
-//	Link: <resource>; as=script
-//	Link: <resource>; as=script,<resource>; as=style
-//	Link: <resource>;<resource2>
-//
-// where <resource> begins with a forward slash (/).
 func parseLinkHeader(header string) []linkResource {
 	resources := []linkResource{}
 
-	if header == "" {
-		return resources
-	}
+	for len(header) > 0 {
+		var link string
+		idx := strings.IndexByte(header, ',')
+		if idx >= 0 {
+			link = header[:idx]
+			header = header[idx+1:]
+		} else {
+			link = header
+			header = ""
+		}
 
-	for link := range strings.SplitSeq(header, comma) {
-		l := linkResource{params: make(map[string]string)}
-
-		li, ri := strings.Index(link, "<"), strings.Index(link, ">")
+		li, ri := strings.IndexByte(link, '<'), strings.IndexByte(link, '>')
 		if li == -1 || ri == -1 {
 			continue
 		}
 
-		l.uri = strings.TrimSpace(link[li+1 : ri])
+		l := linkResource{
+			uri: strings.TrimSpace(link[li+1 : ri]),
+		}
 
-		for param := range strings.SplitSeq(strings.TrimSpace(link[ri+1:]), semicolon) {
-			before, after, isCut := strings.Cut(strings.TrimSpace(param), equal)
-			key := strings.TrimSpace(before)
-			if key == "" {
-				continue
-			}
-			if isCut {
-				l.params[key] = strings.TrimSpace(after)
+		paramsPart := strings.TrimSpace(link[ri+1:])
+		for len(paramsPart) > 0 {
+			var param string
+			pidx := strings.IndexByte(paramsPart, ';')
+			if pidx >= 0 {
+				param = paramsPart[:pidx]
+				paramsPart = paramsPart[pidx+1:]
 			} else {
-				l.params[key] = key
+				param = paramsPart
+				paramsPart = ""
+			}
+
+			before, _, _ := strings.Cut(strings.TrimSpace(param), "=")
+			if strings.TrimSpace(before) == "nopush" {
+				l.noPush = true
+				break
 			}
 		}
 
@@ -69,9 +71,3 @@ func parseLinkHeader(header string) []linkResource {
 
 	return resources
 }
-
-const (
-	comma     = ","
-	semicolon = ";"
-	equal     = "="
-)

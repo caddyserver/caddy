@@ -4,13 +4,14 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//	http://www.apache.org/licenses/LICENSE-2.0
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
 package push
 
 import (
@@ -25,32 +26,32 @@ func TestParseLinkHeader(t *testing.T) {
 	}{
 		{
 			header:            "</resource>; as=script",
-			expectedResources: []linkResource{{uri: "/resource", params: map[string]string{"as": "script"}}},
+			expectedResources: []linkResource{{uri: "/resource", noPush: false}},
 		},
 		{
 			header:            "</resource>",
-			expectedResources: []linkResource{{uri: "/resource", params: map[string]string{}}},
+			expectedResources: []linkResource{{uri: "/resource", noPush: false}},
 		},
 		{
 			header:            "</resource>; nopush",
-			expectedResources: []linkResource{{uri: "/resource", params: map[string]string{"nopush": "nopush"}}},
+			expectedResources: []linkResource{{uri: "/resource", noPush: true}},
 		},
 		{
 			header:            "</resource>;nopush;rel=next",
-			expectedResources: []linkResource{{uri: "/resource", params: map[string]string{"nopush": "nopush", "rel": "next"}}},
+			expectedResources: []linkResource{{uri: "/resource", noPush: true}},
 		},
 		{
 			header: "</resource>;nopush;rel=next,</resource2>;nopush",
 			expectedResources: []linkResource{
-				{uri: "/resource", params: map[string]string{"nopush": "nopush", "rel": "next"}},
-				{uri: "/resource2", params: map[string]string{"nopush": "nopush"}},
+				{uri: "/resource", noPush: true},
+				{uri: "/resource2", noPush: true},
 			},
 		},
 		{
 			header: "</resource>,</resource2>",
 			expectedResources: []linkResource{
-				{uri: "/resource", params: map[string]string{}},
-				{uri: "/resource2", params: map[string]string{}},
+				{uri: "/resource", noPush: false},
+				{uri: "/resource2", noPush: false},
 			},
 		},
 		{
@@ -71,7 +72,7 @@ func TestParseLinkHeader(t *testing.T) {
 		},
 		{
 			header:            "</resource> ; ",
-			expectedResources: []linkResource{{uri: "/resource", params: map[string]string{}}},
+			expectedResources: []linkResource{{uri: "/resource", noPush: false}},
 		},
 	}
 
