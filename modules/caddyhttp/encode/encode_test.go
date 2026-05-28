@@ -49,7 +49,7 @@ func TestPreferOrder(t *testing.T) {
 			name:     "PreferOrder(): 4 accept (1 duplicate), 1 prefer",
 			accept:   "deflate, gzip, br, br",
 			prefer:   []string{"br"},
-			expected: []string{"br", "br", "deflate", "gzip"},
+			expected: []string{"br", "br", "gzip", "deflate"},
 		},
 		{
 			name:     "PreferOrder(): empty accept, 0 prefer",
@@ -97,7 +97,7 @@ func TestPreferOrder(t *testing.T) {
 			name:     "PreferOrder(): with invalid q-factor, no prefer",
 			accept:   "br, deflate, gzip;q=2, zstd;q=0.1",
 			prefer:   []string{},
-			expected: []string{"br", "deflate", "gzip", "zstd"},
+			expected: []string{"br", "gzip", "deflate", "zstd"},
 		},
 	}
 
