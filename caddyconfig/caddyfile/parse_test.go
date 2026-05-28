@@ -607,14 +607,7 @@ func TestParseAll(t *testing.T) {
 		// returned false at the boundary between two imports of the same snippet
 		// because their import-chain strings were identical and the fallback
 		// line-number comparison failed (snippet lines always reset to 1).
-		{`(mysnippet) {
-			respond "hello"
-		}
-		:80 {
-			import mysnippet
-			import mysnippet
-		}
-		`, false, [][]string{{":80"}}},
+		{"(mysnippet) {\nrespond \"hello\"\n}\n:80 {\nimport mysnippet\nimport mysnippet\n}\n", false, [][]string{{":80"}}},
 	} {
 		p := testParser(test.input)
 		blocks, err := p.parseAll()
@@ -1047,4 +1040,36 @@ func TestImportedSnippetDefinitionRetainsBlockPlaceholder(t *testing.T) {
 
 func testParser(input string) parser {
 	return parser{Dispenser: NewTestDispenser(input)}
+}
+
+// TestDuplicateSnippetImport verifies that importing the same snippet twice in
+// a single site block produces two separate directive segments (one per import)
+// rather than merging them or returning a parse error. This is the regression
+// test for the isNextOnNewLine boundary-detection bug fixed by the importCount
+// mechanism in parse.go.
+func TestDuplicateSnippetImport(t *testing.T) {
+	input := "(mysnippet) {\nrespond \"hello\"\n}\n:80 {\nimport mysnippet\nimport mysnippet\n}\n"
+	p := testParser(input)
+	blocks, err := p.parseAll()
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+	if len(blocks) != 1 {
+		t.Fatalf("expected 1 server block, got %d", len(blocks))
+	}
+	if got := blocks[0].GetKeysText(); len(got) != 1 || got[0] != ":80" {
+		t.Fatalf("expected server block key ':80', got %v", got)
+	}
+	// Each `import mysnippet` should expand to one directive segment (respond "hello").
+	// Before the fix both imports collapsed into a single segment because
+	// isNextOnNewLine incorrectly returned false at the import boundary.
+	if len(blocks[0].Segments) != 2 {
+		t.Fatalf("expected 2 segments (one per import), got %d: %v",
+			len(blocks[0].Segments), blocks[0].Segments)
+	}
+	for i, seg := range blocks[0].Segments {
+		if seg.Directive() != "respond" {
+			t.Errorf("segment %d: expected directive 'respond', got %q", i, seg.Directive())
+		}
+	}
 }
