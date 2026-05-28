@@ -25,7 +25,6 @@ import (
 	"math"
 	"net/http"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -546,11 +545,20 @@ func AcceptedEncodings(r *http.Request, preferredOrder []string) []string {
 	}
 
 	// sort preferences by descending q-factor first, then by preferOrder
-	sort.SliceStable(prefs, func(i, j int) bool {
-		if math.Abs(prefs[i].q-prefs[j].q) < 0.00001 {
-			return prefs[i].preferOrder > prefs[j].preferOrder
+	slices.SortStableFunc(prefs, func(a, b encodingPreference) int {
+		if math.Abs(a.q-b.q) < 0.00001 {
+			if a.preferOrder > b.preferOrder {
+				return -1
+			}
+			if a.preferOrder < b.preferOrder {
+				return 1
+			}
+			return 0
 		}
-		return prefs[i].q > prefs[j].q
+		if a.q > b.q {
+			return -1
+		}
+		return 1
 	})
 
 	prefEncNames := make([]string, len(prefs))

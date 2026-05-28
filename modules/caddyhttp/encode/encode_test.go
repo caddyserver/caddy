@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"sync"
 	"testing"
@@ -308,26 +309,6 @@ func (mockEncoder) Close() error                     { return nil }
 func (mockEncoder) Reset(w io.Writer)                {}
 func (mockEncoder) Flush() error                     { return nil }
 
-type mockResponseWriter struct {
-	header http.Header
-	status int
-}
-
-func (m *mockResponseWriter) Header() http.Header {
-	if m.header == nil {
-		m.header = make(http.Header)
-	}
-	return m.header
-}
-
-func (m *mockResponseWriter) Write(b []byte) (int, error) {
-	return len(b), nil
-}
-
-func (m *mockResponseWriter) WriteHeader(statusCode int) {
-	m.status = statusCode
-}
-
 func TestServeHTTPDefaultEncodingPreference(t *testing.T) {
 	enc := new(Encode)
 	enc.MinLength = 1 // compress everything
@@ -351,7 +332,8 @@ func TestServeHTTPDefaultEncodingPreference(t *testing.T) {
 	r, _ := http.NewRequest("GET", "/", nil)
 	r.Header.Set("Accept-Encoding", "gzip, deflate, br, zstd")
 
-	w := &mockResponseWriter{header: http.Header{"Content-Type": []string{"text/plain"}}}
+	w := httptest.NewRecorder()
+	w.Header().Set("Content-Type", "text/plain")
 
 	next := caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 		w.WriteHeader(http.StatusOK)
@@ -373,7 +355,8 @@ func TestServeHTTPDefaultEncodingPreference(t *testing.T) {
 	// Test explicit user preference: gzip over zstd
 	enc.Prefer = []string{"gzip", "zstd"}
 
-	w2 := &mockResponseWriter{header: http.Header{"Content-Type": []string{"text/plain"}}}
+	w2 := httptest.NewRecorder()
+	w2.Header().Set("Content-Type", "text/plain")
 	err = enc.ServeHTTP(w2, r, next)
 	if err != nil {
 		t.Fatalf("ServeHTTP returned error: %v", err)
