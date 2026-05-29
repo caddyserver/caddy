@@ -117,6 +117,7 @@ type parser struct {
 	definedSnippets map[string][]Token
 	nesting         int
 	importGraph     importGraph
+	importCount     int
 }
 
 func (p *parser) parseAll() ([]ServerBlock, error) {
@@ -495,12 +496,13 @@ func (p *parser) doImport(nesting int) error {
 	// run the argument replacer on the tokens
 	// golang for range slice return a copy of value
 	// similarly, append also copy value
+	p.importCount++
 	for i, token := range importedTokens {
 		// update the token's imports to refer to import directive filename, line number and snippet name if there is one
 		if token.snippetName != "" {
-			token.imports = append(token.imports, fmt.Sprintf("%s:%d (import %s)", p.File(), p.Line(), token.snippetName))
+			token.imports = append(token.imports, fmt.Sprintf("%s:%d (import %s #%d)", p.File(), p.Line(), token.snippetName, p.importCount))
 		} else {
-			token.imports = append(token.imports, fmt.Sprintf("%s:%d (import)", p.File(), p.Line()))
+			token.imports = append(token.imports, fmt.Sprintf("%s:%d (import #%d)", p.File(), p.Line(), p.importCount))
 		}
 
 		// naive way of determine snippets, as snippets definition can only follow name + block
