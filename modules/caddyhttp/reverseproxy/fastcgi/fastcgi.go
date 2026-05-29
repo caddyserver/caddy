@@ -507,7 +507,7 @@ var tlsProtocolStrings = map[uint16]string{
 	tls.VersionTLS13: "TLSv1.3",
 }
 
-var headerNameReplacer = strings.NewReplacer(" ", "_", "-", "_")
+var headerNameReplacer = strings.NewReplacer("-", "_")
 
 // Interface guards
 var (

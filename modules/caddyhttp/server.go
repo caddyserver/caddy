@@ -494,6 +494,19 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
+	// Drop headers whose names contain `_`: once FastCGI/CGI/FrankenPHP etc. rewrites `-` to
+	// `_`, an underscore alias collides with the legitimate hyphenated header
+	// and can bypass `forward_auth copy_headers` (GHSA-f59h-q822-g45g).
+	for k := range r.Header {
+		if strings.ContainsRune(k, '_') {
+			delete(r.Header, k)
+
+			if c := s.logger.Check(zapcore.DebugLevel, "dropping header containing underscore"); c != nil {
+				c.Write(zap.String("header", k))
+			}
+		}
+	}
+
 	// execute the primary handler chain
 	return s.primaryHandlerChain.ServeHTTP(w, r)
 }
