@@ -266,3 +266,31 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 		}
 	}
 }
+
+func TestHTTPProtoNameNormalization(t *testing.T) {
+	for _, tc := range []struct {
+		proto      string
+		expectRaw  string
+		expectName string
+	}{
+		{proto: "HTTP/1.0", expectRaw: "HTTP/1.0", expectName: "HTTP/1.0"},
+		{proto: "HTTP/1.1", expectRaw: "HTTP/1.1", expectName: "HTTP/1.1"},
+		{proto: "HTTP/2.0", expectRaw: "HTTP/2.0", expectName: "HTTP/2"},
+		{proto: "HTTP/3.0", expectRaw: "HTTP/3.0", expectName: "HTTP/3"},
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Proto = tc.proto
+		repl := caddy.NewReplacer()
+		addHTTPVarsToReplacer(repl, req, nil)
+
+		gotRaw, okRaw := repl.GetString("http.request.proto")
+		if !okRaw || gotRaw != tc.expectRaw {
+			t.Errorf("proto=%s: expected http.request.proto to be %q, got %q (ok=%t)", tc.proto, tc.expectRaw, gotRaw, okRaw)
+		}
+
+		gotName, okName := repl.GetString("http.request.proto_name")
+		if !okName || gotName != tc.expectName {
+			t.Errorf("proto=%s: expected http.request.proto_name to be %q, got %q (ok=%t)", tc.proto, tc.expectName, gotName, okName)
+		}
+	}
+}

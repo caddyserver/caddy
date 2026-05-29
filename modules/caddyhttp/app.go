@@ -70,7 +70,8 @@ func init() {
 // `{http.request.orig_uri.query}` | The request's original query string (without `?`)
 // `{http.request.orig_uri.prefixed_query}` | The request's original query string with a `?` prefix, if non-empty
 // `{http.request.port}` | The port part of the request's Host header
-// `{http.request.proto}` | The protocol of the request
+// `{http.request.proto}` | The raw protocol of the request as returned by Go (e.g., HTTP/2.0 or HTTP/3.0)
+// `{http.request.proto_name}` | The spec-defined protocol of the request (e.g., HTTP/2 or HTTP/3)
 // `{http.request.local.host}` | The host (IP) part of the local address the connection arrived on
 // `{http.request.local.port}` | The port part of the local address the connection arrived on
 // `{http.request.local}` | The local address the connection arrived on
