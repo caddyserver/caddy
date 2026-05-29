@@ -246,7 +246,7 @@ func TestImportErrorLine(t *testing.T) {
 					import t1 true
 				}`,
 			errorFunc: func(err error) bool {
-				return err != nil && strings.Contains(err.Error(), "Caddyfile:6 (import t1)")
+				return err != nil && strings.Contains(err.Error(), "Caddyfile:6 (import t1 #2)")
 			},
 		},
 		{
@@ -257,7 +257,7 @@ func TestImportErrorLine(t *testing.T) {
 					import t1 true
 				}`,
 			errorFunc: func(err error) bool {
-				return err != nil && strings.Contains(err.Error(), "Caddyfile:5 (import t1)")
+				return err != nil && strings.Contains(err.Error(), "Caddyfile:5 (import t1 #1)")
 			},
 		},
 		{
