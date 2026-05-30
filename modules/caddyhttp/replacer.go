@@ -106,10 +106,10 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 			case "http.request.proto":
 				return req.Proto, true
 			case "http.request.proto_name":
-				if req.Proto == "HTTP/2.0" {
+				if req.ProtoMajor == 2 {
 					return "HTTP/2", true
 				}
-				if req.Proto == "HTTP/3.0" {
+				if req.ProtoMajor == 3 {
 					return "HTTP/3", true
 				}
 				return req.Proto, true

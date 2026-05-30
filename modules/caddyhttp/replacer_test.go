@@ -270,16 +270,18 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 func TestHTTPProtoNameNormalization(t *testing.T) {
 	for _, tc := range []struct {
 		proto      string
+		major      int
 		expectRaw  string
 		expectName string
 	}{
-		{proto: "HTTP/1.0", expectRaw: "HTTP/1.0", expectName: "HTTP/1.0"},
-		{proto: "HTTP/1.1", expectRaw: "HTTP/1.1", expectName: "HTTP/1.1"},
-		{proto: "HTTP/2.0", expectRaw: "HTTP/2.0", expectName: "HTTP/2"},
-		{proto: "HTTP/3.0", expectRaw: "HTTP/3.0", expectName: "HTTP/3"},
+		{proto: "HTTP/1.0", major: 1, expectRaw: "HTTP/1.0", expectName: "HTTP/1.0"},
+		{proto: "HTTP/1.1", major: 1, expectRaw: "HTTP/1.1", expectName: "HTTP/1.1"},
+		{proto: "HTTP/2.0", major: 2, expectRaw: "HTTP/2.0", expectName: "HTTP/2"},
+		{proto: "HTTP/3.0", major: 3, expectRaw: "HTTP/3.0", expectName: "HTTP/3"},
 	} {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.Proto = tc.proto
+		req.ProtoMajor = tc.major
 		repl := caddy.NewReplacer()
 		addHTTPVarsToReplacer(repl, req, nil)
 
