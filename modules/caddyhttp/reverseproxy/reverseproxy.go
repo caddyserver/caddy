@@ -695,6 +695,7 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 		if userOps != nil {
 			userOps.ApplyToRequest(r)
 		}
+		normalizeWebsocketHeaders(r.Header)
 	}
 
 	// proxy the request to that upstream
