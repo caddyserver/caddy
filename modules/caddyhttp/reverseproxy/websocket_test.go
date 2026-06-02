@@ -97,8 +97,9 @@ func TestNormalizeWebsocketHeadersSurvivesCopyHeader(t *testing.T) {
 	// The fix: call normalizeWebsocketHeaders after the rebuild.
 	normalizeWebsocketHeaders(rebuilt)
 
-	// RFC 6455 form must be present.
-	if v := rebuilt.Get("Sec-WebSocket-Key"); v == "" {
+	// RFC 6455 form must be present (direct map lookup — .Get() re-canonicalizes
+	// to "Sec-Websocket-Key" and would miss the corrected key).
+	if _, ok := rebuilt["Sec-WebSocket-Key"]; !ok {
 		t.Error("Sec-WebSocket-Key missing after normalize; WebSocket upgrade will fail")
 	}
 	// Lowercase form must be gone.
