@@ -28,7 +28,7 @@ func (c ACMEChallenge) validate() error {
 }
 
 // The unmarshaller first marshals the value into a string. Then it
-// trims any space around it and lowercase it for normaliztion. The
+// trims any space around it and lowercase it for normalization. The
 // method does not and should not validate the value within accepted enums.
 func (c *ACMEChallenge) UnmarshalJSON(b []byte) error {
 	var s string
