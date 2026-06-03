@@ -100,6 +100,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //	    stream_timeout     <duration>
 //	    stream_close_delay <duration>
 //	    verbose_logs
+//	    parse_response_body_json
 //
 //	    # request manipulation
 //	    trusted_proxies [private_ranges] <ranges...>
@@ -856,6 +857,12 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				h.HandleResponse,
 				responseHandler,
 			)
+
+		case "parse_response_body_json":
+			if h.ParseResponseBodyJSON {
+				return d.Err("parse_response_body_json already specified")
+			}
+			h.ParseResponseBodyJSON = true
 
 		case "verbose_logs":
 			if h.VerboseLogs {

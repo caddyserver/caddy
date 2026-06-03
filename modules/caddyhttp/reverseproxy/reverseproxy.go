@@ -97,6 +97,7 @@ func init() {
 // `{http.reverse_proxy.duration}` | Total time spent proxying, including selecting an upstream, retries, and writing response.
 // `{http.reverse_proxy.duration_ms}` | Same as 'duration', but in milliseconds.
 // `{http.reverse_proxy.retries}` | The number of retries actually performed to communicate with an upstream.
+// `{http.reverse_proxy.body.*}` | Fields from the upstream's JSON response body (requires parse_response_body_json).
 type Handler struct {
 	// Configures the method of transport for the proxy. A transport
 	// is what performs the actual "round trip" to the backend.
@@ -212,6 +213,17 @@ type Handler struct {
 	// - `{http.reverse_proxy.status_text}` The status text from the response
 	// - `{http.reverse_proxy.header.*}` The headers from the response
 	HandleResponse []caddyhttp.ResponseHandler `json:"handle_response,omitempty"`
+
+	// If enabled, the response body will be read (up to 4 MB) and parsed
+	// as JSON, exposing its fields as placeholders. For example, a response
+	// body of {"manage":true} sets {http.reverse_proxy.body.manage} to "true".
+	// Nested fields use dot notation: {http.reverse_proxy.body.user.role}.
+	// Parsing is skipped with a warning if the body is not valid JSON.
+	// Useful with forward_auth to expose auth service response fields for
+	// logging or header manipulation.
+	//
+	// EXPERIMENTAL: Subject to change or removal.
+	ParseResponseBodyJSON bool `json:"parse_response_body_json,omitempty"`
 
 	// If set, the proxy will write very detailed logs about its
 	// inner workings. Enable this only when debugging, as it
@@ -1113,6 +1125,20 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	repl.Set("http.reverse_proxy.status_code", res.StatusCode)
 	repl.Set("http.reverse_proxy.status_text", res.Status)
 
+	// if enabled, read and parse the response body as JSON to expose fields as placeholders
+	if h.ParseResponseBodyJSON {
+		lr := io.LimitReader(res.Body, 4<<20)
+		bodyBytes, err := io.ReadAll(lr)
+		if err != nil {
+			logger.Warn("failed to read response body for JSON placeholders", zap.Error(err))
+		} else {
+			// restore body so downstream handlers (handle_response, finalizeResponse) can still read it
+			res.Body = io.NopCloser(io.MultiReader(bytes.NewReader(bodyBytes), res.Body))
+			repl.DeleteByPrefix("http.reverse_proxy.body.")
+			h.setBodyJSONPlaceholders(repl, bodyBytes, logger)
+		}
+	}
+
 	// check if the response matches a retry match entry; if so,
 	// close the body and return a retryable error so the request
 	// is retried with the next upstream. Only evaluate matcher sets
@@ -1457,6 +1483,40 @@ func (h Handler) provisionUpstream(upstream *Upstream, dynamic bool) {
 	// run without access to h.
 	if h.HealthChecks != nil {
 		upstream.healthCheckPolicy = h.HealthChecks.Passive
+	}
+}
+
+// setBodyJSONPlaceholders parses bodyBytes as a JSON object and sets
+// {http.reverse_proxy.body.*} placeholders for each leaf field.
+func (h Handler) setBodyJSONPlaceholders(repl *caddy.Replacer, bodyBytes []byte, logger *zap.Logger) {
+	var raw map[string]any
+	dec := json.NewDecoder(bytes.NewReader(bodyBytes))
+	dec.UseNumber()
+	if err := dec.Decode(&raw); err != nil {
+		logger.Warn("response body is not valid JSON; skipping body placeholders", zap.Error(err))
+		return
+	}
+	flattenJSONPlaceholders(repl, "http.reverse_proxy.body.", raw)
+}
+
+// flattenJSONPlaceholders recursively walks a JSON object and sets a placeholder
+// for each leaf value using dot-notation keys under the given prefix.
+func flattenJSONPlaceholders(repl *caddy.Replacer, prefix string, data map[string]any) {
+	for k, v := range data {
+		key := prefix + k
+		switch val := v.(type) {
+		case map[string]any:
+			flattenJSONPlaceholders(repl, key+".", val)
+		case json.Number:
+			repl.Set(key, val.String())
+		case bool:
+			repl.Set(key, strconv.FormatBool(val))
+		case string:
+			repl.Set(key, val)
+		case nil:
+			repl.Set(key, "")
+		// arrays and other types are intentionally skipped — no unambiguous string representation
+		}
 	}
 }
 
