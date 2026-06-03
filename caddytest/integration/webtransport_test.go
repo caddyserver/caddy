@@ -425,6 +425,135 @@ func TestWebTransport_ReverseProxyForwardsHeaders(t *testing.T) {
 	}
 }
 
+// TestWebTransport_ReverseProxyExpandsSNIPlaceholder proves that a
+// placeholder in the transport's tls_server_name (here driven off a request
+// header) is expanded per session before the WebTransport upstream dial, so
+// the upstream observes the resolved SNI rather than the literal "{...}"
+// string. The normal HTTP/3 path handles this via a custom h3Transport.Dial
+// hook (#7737); the WebTransport path dials through its own Dialer and so
+// must expand the placeholder itself.
+func TestWebTransport_ReverseProxyExpandsSNIPlaceholder(t *testing.T) {
+	if testing.Short() {
+		t.Skip()
+	}
+
+	// Capture the SNI the upstream observed on its TLS handshake.
+	gotSNI := make(chan string, 1)
+	upstreamAddr, stopUpstream := startStandaloneWebTransport(t, func(sess *webtransport.Session, r *http.Request) {
+		sni := ""
+		if r.TLS != nil {
+			sni = r.TLS.ServerName
+		}
+		select {
+		case gotSNI <- sni:
+		default:
+		}
+		_ = sess.CloseWithError(0, "")
+	})
+	t.Cleanup(stopUpstream)
+
+	config := fmt.Sprintf(`{
+  "admin": {"listen": "localhost:2999"},
+  "apps": {
+    "http": {
+      "http_port": 9080,
+      "https_port": 9443,
+      "grace_period": 1,
+      "servers": {
+        "proxy": {
+          "listen": [":9443"],
+          "protocols": ["h3"],
+          "enable_webtransport": true,
+          "routes": [
+            {
+              "handle": [
+                {
+                  "handler": "reverse_proxy",
+                  "transport": {
+                    "protocol": "http",
+                    "versions": ["3"],
+                    "tls": {
+                      "insecure_skip_verify": true,
+                      "server_name": "{http.request.header.X-SNI}"
+                    }
+                  },
+                  "upstreams": [{"dial": "127.0.0.1:%d"}]
+                }
+              ]
+            }
+          ],
+          "tls_connection_policies": [
+            {
+              "certificate_selection": {"any_tag": ["cert0"]},
+              "default_sni": "a.caddy.localhost"
+            }
+          ]
+        }
+      }
+    },
+    "tls": {
+      "certificates": {
+        "load_files": [
+          {
+            "certificate": "/a.caddy.localhost.crt",
+            "key": "/a.caddy.localhost.key",
+            "tags": ["cert0"]
+          }
+        ]
+      }
+    },
+    "pki": {"certificate_authorities": {"local": {"install_trust": false}}}
+  }
+}`, upstreamAddr.Port)
+
+	tester := caddytest.NewTester(t)
+	tester.InitServer(config, "json")
+
+	dialer := &webtransport.Dialer{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true, //nolint:gosec // local CA
+			ServerName:         "a.caddy.localhost",
+			NextProtos:         []string{http3.NextProtoH3},
+		},
+		QUICConfig: &quic.Config{
+			EnableDatagrams:                  true,
+			EnableStreamResetPartialDelivery: true,
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// The client sends X-SNI on the Extended CONNECT; the proxy's
+	// {http.request.header.X-SNI} placeholder resolves to this value and
+	// becomes the SNI on the upstream dial.
+	reqHdr := http.Header{"X-Sni": []string{"sni.example.com"}}
+
+	var sess *webtransport.Session
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		_, s, err := dialer.Dial(ctx, "https://127.0.0.1:9443/", reqHdr)
+		if err == nil {
+			sess = s
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("webtransport dial through proxy failed: %v", err)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	defer sess.CloseWithError(0, "")
+
+	select {
+	case got := <-gotSNI:
+		if got != "sni.example.com" {
+			t.Errorf("upstream observed SNI %q; want the expanded placeholder value \"sni.example.com\"", got)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("upstream did not observe a WebTransport session in time")
+	}
+}
+
 // TestWebTransport_UpstreamDialFailureSurfaces5xx proves the WT path dials
 // the upstream BEFORE upgrading the client, so an unreachable upstream
 // returns a proper 5xx on the client's Dial call (webtransport-go surfaces
