@@ -107,7 +107,8 @@ func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) *tls.Config {
 				if sni, ok := m.(MatchServerName); ok {
 					for _, sniName := range sni {
 						// index for fast lookups during handshakes
-						indexedBySNI[sniName] = append(indexedBySNI[sniName], p)
+						indexName := asciiServerNameForMatch(sniName)
+						indexedBySNI[indexName] = append(indexedBySNI[indexName], p)
 					}
 				}
 			}
@@ -118,7 +119,7 @@ func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) *tls.Config {
 		// filter policies by SNI first, if possible, to speed things up
 		// when there may be lots of policies
 		possiblePolicies := cp
-		if indexedPolicies, ok := indexedBySNI[hello.ServerName]; ok {
+		if indexedPolicies, ok := indexedBySNI[asciiServerNameForMatch(hello.ServerName)]; ok {
 			possiblePolicies = indexedPolicies
 		}
 

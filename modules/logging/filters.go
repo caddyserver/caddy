@@ -149,10 +149,10 @@ func (f *ReplaceFilter) Filter(in zapcore.Field) zapcore.Field {
 // list of IP addresses, where all of the values
 // will be masked.
 type IPMaskFilter struct {
-	// The IPv4 mask, as an subnet size CIDR.
+	// The IPv4 mask, as a subnet size CIDR.
 	IPv4MaskRaw int `json:"ipv4_cidr,omitempty"`
 
-	// The IPv6 mask, as an subnet size CIDR.
+	// The IPv6 mask, as a subnet size CIDR.
 	IPv6MaskRaw int `json:"ipv6_cidr,omitempty"`
 
 	v4Mask net.IPMask

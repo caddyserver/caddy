@@ -435,12 +435,12 @@ func (m MatchPath) MatchWithError(r *http.Request) (bool, error) {
 	// can be used instead.
 	reqPath := strings.ToLower(r.URL.Path)
 
-	// See #2917; Windows ignores trailing dots and spaces
-	// when accessing files (sigh), potentially causing a
-	// security risk (cry) if PHP files end up being served
-	// as static files, exposing the source code, instead of
-	// being matched by *.php to be treated as PHP scripts.
 	if runtime.GOOS == "windows" { // issue #5613
+		// Windows treats backslashes as path separators and
+		// ignores trailing dots and spaces when accessing files
+		// (sigh), potentially causing a security risk (cry) if
+		// protected files are not matched as intended.
+		reqPath = strings.ReplaceAll(reqPath, `\`, "/")
 		reqPath = strings.TrimRight(reqPath, ". ")
 	}
 
@@ -478,7 +478,12 @@ func (m MatchPath) MatchWithError(r *http.Request) (bool, error) {
 		// the intent is to compare that part of the path in raw/escaped
 		// space; i.e. "%40"=="%40", not "@", and "%2F"=="%2F", not "/"
 		if strings.Contains(matchPattern, "%") {
-			reqPathForPattern := CleanPath(r.URL.EscapedPath(), mergeSlashes)
+			escapedPath := r.URL.EscapedPath()
+			if runtime.GOOS == "windows" {
+				escapedPath = windowsEscapedPathSeparatorRepl.Replace(escapedPath)
+				matchPattern = windowsEscapedPathSeparatorRepl.Replace(matchPattern)
+			}
+			reqPathForPattern := CleanPath(escapedPath, mergeSlashes)
 			if m.matchPatternWithEscapeSequence(reqPathForPattern, matchPattern) {
 				return true, nil
 			}
@@ -642,6 +647,14 @@ func (MatchPath) matchPatternWithEscapeSequence(escapedPath, matchPath string) b
 	matches, _ := path.Match(matchPath, strings.ToLower(sb.String()))
 	return matches
 }
+
+// windowsEscapedPathSeparatorRepl normalizes Windows backslash separators
+// while preserving escaped-path matching semantics.
+var windowsEscapedPathSeparatorRepl = strings.NewReplacer(
+	`\`, "%2f",
+	"%5c", "%2f",
+	"%5C", "%2f",
+)
 
 // CELLibrary produces options that expose this matcher for use in CEL
 // expression matchers.
