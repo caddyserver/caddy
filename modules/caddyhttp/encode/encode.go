@@ -20,12 +20,12 @@
 package encode
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"math"
 	"net/http"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -124,6 +124,14 @@ func (enc *Encode) Provision(ctx caddy.Context) error {
 					"text/*",
 				},
 			},
+		}
+	}
+
+	if len(enc.Prefer) == 0 {
+		for _, encName := range []string{"zstd", "br", "gzip"} {
+			if _, ok := enc.writerPools[encName]; ok {
+				enc.Prefer = append(enc.Prefer, encName)
+			}
 		}
 	}
 
@@ -538,11 +546,11 @@ func AcceptedEncodings(r *http.Request, preferredOrder []string) []string {
 	}
 
 	// sort preferences by descending q-factor first, then by preferOrder
-	sort.Slice(prefs, func(i, j int) bool {
-		if math.Abs(prefs[i].q-prefs[j].q) < 0.00001 {
-			return prefs[i].preferOrder > prefs[j].preferOrder
+	slices.SortStableFunc(prefs, func(a, b encodingPreference) int {
+		if math.Abs(a.q-b.q) < 0.00001 {
+			return cmp.Compare(b.preferOrder, a.preferOrder)
 		}
-		return prefs[i].q > prefs[j].q
+		return cmp.Compare(b.q, a.q)
 	})
 
 	prefEncNames := make([]string, len(prefs))

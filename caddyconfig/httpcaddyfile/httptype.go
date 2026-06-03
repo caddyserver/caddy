@@ -108,7 +108,7 @@ func (st ServerType) Setup(
 		matcherDefs := make(map[string]caddy.ModuleMap)
 		for _, segment := range sb.block.Segments {
 			if dir := segment.Directive(); strings.HasPrefix(dir, matcherPrefix) {
-				d := sb.block.DispenseDirective(dir)
+				d := caddyfile.NewDispenser(segment)
 				err := parseMatcherDefinitions(d, matcherDefs)
 				if err != nil {
 					return nil, warnings, err
