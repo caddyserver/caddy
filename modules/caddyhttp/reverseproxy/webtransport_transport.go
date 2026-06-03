@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
@@ -121,6 +122,16 @@ func (h *Handler) webTransportHijack(rw http.ResponseWriter, req *http.Request, 
 	if tlsCfg == nil {
 		return terminalError{caddyhttp.Error(http.StatusBadGateway,
 			errors.New("webtransport: transport does not include HTTP/3; set versions to [\"3\"]"))}
+	}
+
+	// Expand SNI placeholders (e.g. tls_server_name {http.request.host}) per
+	// session. The normal HTTP/3 path does this via a custom h3Transport.Dial
+	// hook (#7737); the WebTransport path dials through its own Dialer and
+	// bypasses that hook, so expand here. Clone first — the transport's TLS
+	// config is shared across sessions and must not be mutated in place.
+	if strings.Contains(tlsCfg.ServerName, "{") {
+		tlsCfg = tlsCfg.Clone()
+		tlsCfg.ServerName = repl.ReplaceAll(tlsCfg.ServerName, "")
 	}
 
 	// Dial the upstream BEFORE upgrading the client. If the upstream is
