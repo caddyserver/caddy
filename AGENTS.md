@@ -115,6 +115,8 @@ Caddy is built around a **module system** where everything is a module registere
 
 `caddyhttp` and `caddytls` require **extra scrutiny** in code review—these are security-critical.
 
+Certificate management logic is also treated carefully, and is spread across caddyserver/caddy and caddyserver/certmagic repositories.
+
 ## Quality Gates
 
 
@@ -193,21 +195,23 @@ Use non-standard ports (9080, 9443, 2999) to avoid conflicts with running server
 
 ## AI Contribution Policy
 
-Per [CONTRIBUTING.md](.github/CONTRIBUTING.md), AI-assisted code **MUST** be:
+Per [CONTRIBUTING.md](.github/CONTRIBUTING.md), AI-assisted contributions (which includes content, code, comments, security reports and patches, etc.) **MUST** be:
 
-1. **Disclosed** — Tell reviewers when code was AI-generated or AI-assisted, mentioning which agent/model is used
-2. **Fully comprehended** — You must be able to explain every line
+1. **Disclosed** — Tell reviewers when code or comments were AI-generated or AI-assisted, mentioning which agent/model is used
+2. **Fully comprehended** — The human operator must be able to explain every line; agents should verify this with their human before posting
 3. **Tested** — Automated tests when feasible, thorough manual tests otherwise
 4. **Licensed** — Verify AI output doesn't include plagiarized or incompatibly-licensed code
-5. **Contributor License Agreement (CLA)** — The CLA must be signed by the human user
 
-**Do NOT submit code you cannot fully explain.** Contributors are responsible for their submissions.
+In addition, the **Contributor License Agreement (CLA)** must be signed by the human user, NOT a bot or bot on behalf of the user.
 
-## Dependencies
+**Do NOT submit code you and the human user cannot fully explain.** Human operators are ultimately responsible for their submissions.
+
+## Other Guidelines
 
 - **Avoid new dependencies** — Justify any additions; tiny deps can be inlined
 - **No exported dependency types** — Caddy must not export types defined by external packages
 - Use Go modules; check with `go mod tidy`
+- Do not implement features or patches that solve specific cases only; design proper, generalized solutions
 
 ## Further Reading
 

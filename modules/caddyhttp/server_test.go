@@ -1,16 +1,20 @@
 package caddyhttp
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -476,6 +480,79 @@ func TestServer_DetermineTrustedProxy_MatchRightMostUntrustedSkippingTrusted(t *
 
 	assert.True(t, trusted)
 	assert.Equal(t, clientIP, "45.54.45.54")
+}
+
+// TestServer_serveHTTP_DropsUnderscoreHeader covers GHSA-f59h-q822-g45g: an
+// underscore-named alias (e.g. `Remote_user`) of a hyphenated header must be
+// dropped before any handler runs.
+func TestServer_serveHTTP_DropsUnderscoreHeader(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger: zap.NewNop(),
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["X-Real-Header"] = []string{"ok"}
+	req.Header["Remote_user"] = []string{"attacker"}
+	req.Header["Remote_groups"] = []string{"admin"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.NotContains(t, *got, "Remote_user")
+	assert.NotContains(t, *got, "Remote_groups")
+	assert.Equal(t, "ok", got.Get("X-Real-Header"))
+}
+
+// TestServer_serveHTTP_LogsDroppedUnderscoreHeader verifies each dropped
+// header is emitted at debug level so operators can diagnose unexpectedly
+// missing headers without spamming the log on adversarial traffic.
+func TestServer_serveHTTP_LogsDroppedUnderscoreHeader(t *testing.T) {
+	var buf bytes.Buffer
+	s := &Server{
+		logger: testLogger(buf.Write),
+		primaryHandlerChain: HandlerFunc(func(http.ResponseWriter, *http.Request) error {
+			return nil
+		}),
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["Remote_user"] = []string{"attacker"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.Contains(t, buf.String(), `"level":"debug"`)
+	assert.Contains(t, buf.String(), `"msg":"dropping header containing underscore"`)
+	assert.Contains(t, buf.String(), `"header":"Remote_user"`)
+}
+
+// TestServer_SpaceInHeaderNameReturnsBadRequest documents why the underscore
+// filter does not also strip space-named headers: Go's HTTP parser rejects a
+// space in a field name with 400 before any handler runs, so such a request
+// can never reach Caddy's pipeline.
+func TestServer_SpaceInHeaderNameReturnsBadRequest(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("handler must not be reached; got headers %v", r.Header)
+	}))
+	t.Cleanup(srv.Close)
+
+	addr := strings.TrimPrefix(srv.URL, "http://")
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+	require.NoError(t, conn.SetDeadline(time.Now().Add(5*time.Second)))
+
+	_, err = conn.Write([]byte("GET / HTTP/1.1\r\n" +
+		"Host: " + addr + "\r\n" +
+		"Remote User: attacker\r\n" +
+		"Connection: close\r\n\r\n"))
+	require.NoError(t, err)
+
+	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
 func TestServer_DetermineTrustedProxy_MatchRightMostUntrustedFirst(t *testing.T) {
