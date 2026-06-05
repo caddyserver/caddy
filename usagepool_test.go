@@ -216,7 +216,7 @@ func TestUsagePool_Delete_PanicOnNegativeRefs(t *testing.T) {
 	}
 
 	// Manually set refs to 1 to test the panic condition
-	atomic.StoreInt32(&upv.refs, 1)
+	upv.refs.Store(1)
 	pool.Unlock()
 
 	// Now delete twice - the second delete should cause refs to go negative

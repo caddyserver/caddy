@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -618,10 +617,9 @@ func TestExitProcess_ConcurrentCalls(t *testing.T) {
 	// Test that multiple concurrent calls to exitProcess are safe
 	// We can't test the actual exit, but we can test the atomic flag
 
-	// Reset the exiting flag
-	oldExiting := exiting
-	exiting = new(int32)
-	defer func() { exiting = oldExiting }()
+	// Reset the exiting flag before and after the test.
+	exiting.Store(false)
+	defer exiting.Store(false)
 
 	const numGoroutines = 10
 	var wg sync.WaitGroup
@@ -636,7 +634,7 @@ func TestExitProcess_ConcurrentCalls(t *testing.T) {
 
 			// This would call exitProcess, but we don't want to actually exit
 			// So we just test the atomic operation directly
-			results[index] = atomic.CompareAndSwapInt32(exiting, 0, 1)
+			results[index] = exiting.CompareAndSwap(false, true)
 
 			wasExitingAfter := Exiting()
 
