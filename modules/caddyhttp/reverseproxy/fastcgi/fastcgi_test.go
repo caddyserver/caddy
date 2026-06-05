@@ -304,6 +304,30 @@ func TestSplitPosUnicodeSecurityRegression(t *testing.T) {
 	}
 }
 
+// TestHeaderNameReplacer asserts the CGI header-to-env normalization rule:
+// hyphens are mapped to underscores while every other character (including
+// spaces) is passed through. Spaces are not RFC 7230 tokens, so they cannot
+// reach this function from the wire; the only header names that survive
+// untouched at the server layer are sanitized by the underscore filter in
+// caddyhttp.Server.serveHTTP (see GHSA-f59h-q822-g45g).
+func TestHeaderNameReplacer(t *testing.T) {
+	tests := []struct {
+		in, want string
+	}{
+		{"X-Forwarded-For", "X_Forwarded_For"},
+		{"Remote-User", "Remote_User"},
+		// Underscores are preserved (the server has already dropped any
+		// underscore-named headers when the filter is on).
+		{"Remote_User", "Remote_User"},
+		// Spaces are not rewritten because Go's HTTP parser rejects whitespace in
+		// header field names.
+		{"Foo Bar", "Foo Bar"},
+	}
+	for _, tt := range tests {
+		assert.Equal(t, tt.want, headerNameReplacer.Replace(tt.in), "input %q", tt.in)
+	}
+}
+
 // TestSplitPosSecurityRegressionUnicodeBypass guards against the FrankenPHP
 // advisories GHSA-3g8v-8r37-cgjm (uninitialized match flag on inner non-ASCII
 // byte) and GHSA-v4h7-cj44-8fc8 (Unicode equivalence via search.IgnoreCase

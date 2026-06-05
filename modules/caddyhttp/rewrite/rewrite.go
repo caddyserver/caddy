@@ -223,6 +223,15 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 			newPath, injectedQuery = before, after
 			// don't overwrite explicitly-configured query string
 			if query == "" {
+				// the injected query came from the first-pass placeholder
+				// expansion above, which means any '{' or '}' bytes in it
+				// must have come from replacement values (e.g. a request
+				// header), not from operator-written placeholder syntax.
+				// escape them so buildQueryString does not re-expand them,
+				// which would allow attacker input like {env.SECRET} to be
+				// evaluated (see GHSA-j8px-rmrx-76h9).
+				injectedQuery = strings.ReplaceAll(injectedQuery, "{", "%7B")
+				injectedQuery = strings.ReplaceAll(injectedQuery, "}", "%7D")
 				query = injectedQuery
 			}
 		}

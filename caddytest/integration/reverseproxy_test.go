@@ -793,3 +793,41 @@ func TestReverseProxyRetryMatchIsTransportError(t *testing.T) {
 	// Transport error on broken upstream should be retried to good upstream
 	tester.AssertGetResponse("http://localhost:9080/", 200, "ok")
 }
+
+func TestReverseProxySNIPlaceHolder(t *testing.T) {
+	configTemplate := `
+	{
+        skip_install_trust
+        local_certs
+        admin localhost:2999
+        http_port 9080
+        https_port 9443
+        grace_period 1ns
+	}
+	localhost example.com {
+		@proxied header X-Transport caddy
+		respond @proxied {http.request.tls.server_name}
+		reverse_proxy 127.0.0.1:9443 {
+			header_up X-Transport caddy
+			header_up Host {host}
+			transport http {
+				versions %s
+				tls_server_name {header.X-SNI}
+				tls_insecure_skip_verify
+			}
+		}
+	}
+	`
+	for _, versions := range []string{"1.1 2", "3"} {
+		tester := caddytest.NewTester(t)
+		tester.InitServer(fmt.Sprintf(configTemplate, versions), "caddyfile")
+		req, err := http.NewRequest("GET", "https://localhost:9443", nil)
+		if err != nil {
+			t.Errorf("failed to create request %s", err)
+			return
+		}
+
+		req.Header.Set("X-SNI", "example.com")
+		tester.AssertResponse(req, 200, "example.com")
+	}
+}

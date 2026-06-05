@@ -159,7 +159,7 @@ func testH2ToH2CStreamServeH2C(t *testing.T) *http.Server {
 		}
 		// We only accept HTTP/2!
 		if r.ProtoMajor != 2 {
-			t.Error("Not a HTTP/2 request, rejected!")
+			t.Error("Not an HTTP/2 request, rejected!")
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}

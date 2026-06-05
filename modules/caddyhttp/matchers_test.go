@@ -461,18 +461,61 @@ func TestPathMatcherWindows(t *testing.T) {
 		return
 	}
 
-	req := &http.Request{URL: &url.URL{Path: "/index.php . . .."}}
 	repl := caddy.NewReplacer()
-	ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
-	req = req.WithContext(ctx)
 
-	match := MatchPath{"*.php"}
-	matched, err := match.MatchWithError(req)
-	if err != nil {
-		t.Errorf("Expected no error, but got: %v", err)
-	}
-	if !matched {
-		t.Errorf("Expected to match; should ignore trailing dots and spaces")
+	for _, tc := range []struct {
+		name          string
+		path          string
+		requestTarget string
+		match         MatchPath
+	}{
+		{
+			name:  "trailing dots and spaces",
+			path:  "/index.php . . ..",
+			match: MatchPath{"*.php"},
+		},
+		{
+			name:          "encoded backslash path separator",
+			requestTarget: `/private%5csecret.txt`,
+			match:         MatchPath{"/private/*"},
+		},
+		{
+			name:          "encoded backslash path separator with escaped wildcard",
+			requestTarget: `/private%5csecret.txt`,
+			match:         MatchPath{"/private/%*"},
+		},
+		{
+			name:          "uppercase encoded backslash path separator with escaped wildcard",
+			requestTarget: `/private%5Csecret.txt`,
+			match:         MatchPath{"/private/%*"},
+		},
+		{
+			name:          "encoded backslash in escaped pattern",
+			requestTarget: `/private%5csecret.txt`,
+			match:         MatchPath{"/private%5c%*"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			u := &url.URL{Path: tc.path}
+			if tc.requestTarget != "" {
+				var err error
+				u, err = url.ParseRequestURI(tc.requestTarget)
+				if err != nil {
+					t.Fatalf("Parsing request target: %v", err)
+				}
+			}
+			req := &http.Request{URL: u}
+			ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+			req = req.WithContext(ctx)
+
+			matched, err := tc.match.MatchWithError(req)
+			if err != nil {
+				t.Errorf("Expected no error, but got: %v", err)
+			}
+			if !matched {
+				t.Errorf("Expected %q to match %v", req.URL.Path, tc.match)
+			}
+		})
 	}
 }
 
