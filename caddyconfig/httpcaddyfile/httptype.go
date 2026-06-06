@@ -886,12 +886,14 @@ func (st *ServerType) serversFromPairings(
 				if srv.Errors == nil {
 					srv.Errors = new(caddyhttp.HTTPErrorConfig)
 				}
+				// Move catch-all handle_errors (no matchers) to the end so
+				// status-specific blocks get a chance to match first; otherwise
+				// preserve the user's declaration order.
 				sort.SliceStable(errorSubrouteVals, func(i, j int) bool {
 					sri, srj := errorSubrouteVals[i].Value.(*caddyhttp.Subroute), errorSubrouteVals[j].Value.(*caddyhttp.Subroute)
-					if len(sri.Routes[0].MatcherSetsRaw) == 0 && len(srj.Routes[0].MatcherSetsRaw) != 0 {
-						return false
-					}
-					return true
+					iEmpty := len(sri.Routes[0].MatcherSetsRaw) == 0
+					jEmpty := len(srj.Routes[0].MatcherSetsRaw) == 0
+					return !iEmpty && jEmpty
 				})
 				errorsSubroute := &caddyhttp.Subroute{}
 				for _, val := range errorSubrouteVals {
