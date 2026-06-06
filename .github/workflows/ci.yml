@@ -227,36 +227,135 @@ jobs:
   
     - name: Run Caddy
       run: |
+        set -euo pipefail
         ./cmd/caddy/caddy environ
-        mkdir coverdir
-        export GOCOVERDIR=./coverdir
-        ./cmd/caddy/caddy start
-        sleep 5
+        mkdir -p coverdir
+        # GOCOVERDIR must be set in the same command that spawns the daemon
+        # so the background process inherits it and writes coverage atomic files
+        # there at shutdown. `caddy start` daemonizes via fork+exec; inheritance
+        # is reliable when the variable is in the command's own environment.
+        GOCOVERDIR="$PWD/coverdir" ./cmd/caddy/caddy start --pidfile=./caddy.pid
+
+        # Poll the admin API for readiness rather than sleeping a fixed time.
+        # Fails the step (set -e) if the API doesn't come up within ~15s.
+        for i in $(seq 1 30); do
+          if curl --silent --fail --max-time 1 http://localhost:2019/config/ >/dev/null; then
+            echo "Caddy admin API ready after ${i} probe(s)"
+            break
+          fi
+          if [ "$i" = "30" ]; then
+            echo "Caddy admin API did not become ready" >&2
+            exit 1
+          fi
+          sleep 0.5
+        done
+
+    - name: Warm local CA
+      run: |
+        # Force certmagic to generate the local CA root + intermediate and
+        # issue a leaf cert for `localhost` before the spec suite runs.
+        # Without this, the first spec that hits HTTPS races against the
+        # async cert issuance and may receive TLS alert 80 (internal_error)
+        # from a TLS app that has no cert to present yet.
+        set -euo pipefail
+        # Note: Caddyfile requires `{` to be followed by a newline, so the
+        # site block cannot be written inline.
+        curl --silent --show-error --fail -X POST http://localhost:2019/load \
+          -H "Content-Type: text/caddyfile" \
+          --data-binary $'{\n\tskip_install_trust\n\thttp_port 9080\n\thttps_port 9443\n\tlocal_certs\n}\nlocalhost {\n\trespond "warmup"\n}\n'
+        # Poll until HTTPS responds successfully, up to ~15s.
+        for i in $(seq 1 30); do
+          if curl --silent --insecure --fail --max-time 1 https://localhost:9443/ >/dev/null; then
+            echo "Local CA warm after ${i} probe(s)"
+            break
+          fi
+          if [ "$i" = "30" ]; then
+            echo "Local CA did not warm up in time" >&2
+            exit 1
+          fi
+          sleep 0.5
+        done
 
     - name: Run tests with Hurl
       run: |
-        mkdir hurl-report
-        find . -name *.hurl -exec hurl --jobs 1 --variables-file caddytest/spec/hurl_vars.properties --very-verbose --verbose --test --report-junit hurl-report/junit.xml --color {} \;
-    
+        # Intentionally NOT using `set -e` here so we can capture every spec
+        # file's exit code and continue running the rest of the suite; the
+        # final exit code reflects whether any file failed.
+        mkdir -p hurl-report
+        rc=0
+        # Hurl 7.x accumulates results into a single JUnit file across
+        # invocations: each new run appends to the existing report.
+        # Find produces a deterministic order; the quoted glob prevents
+        # shell expansion from biasing matches if cwd has *.hurl files.
+        #
+        # `--retry 3 --retry-interval 500` is a safety net for the residual
+        # TLS race after each `POST /load`: re-provisioning the TLS app
+        # briefly leaves the cert cache empty, which can produce a one-shot
+        # `tlsv1 alert internal error`. The retry only kicks in on failure,
+        # so passing requests pay no cost.
+        while IFS= read -r -d '' file; do
+          echo "::group::hurl $file"
+          if ! hurl --jobs 1 \
+                    --variables-file caddytest/spec/hurl_vars.properties \
+                    --retry 3 \
+                    --retry-interval 500 \
+                    --test \
+                    --report-junit hurl-report/junit.xml \
+                    --color \
+                    "$file"; then
+            rc=1
+            echo "::error file=$file::spec failed"
+          fi
+          echo "::endgroup::"
+        done < <(find caddytest/spec -name "*.hurl" -print0 | sort -z)
+        exit $rc
+
     - name: Publish Test Results
+      if: always()
       uses: EnricoMi/publish-unit-test-result-action@3a74b2957438d0b6e2e61d67b05318aa25c9e6c6 # v2.20.0
       with:
         files: |
           hurl-report/junit.xml
 
     - name: Generate Coverage Data
+      if: always()
       run: |
-        export GOCOVERDIR=./coverdir
-        ./cmd/caddy/caddy stop
+        set -euo pipefail
+        # `caddy stop` triggers the admin API shutdown path which calls the
+        # standard process exit, giving Go's coverage runtime a chance to
+        # flush atomic files to GOCOVERDIR. We still give it a moment to
+        # finish writing before invoking covdata.
+        ./cmd/caddy/caddy stop || true
+        # Wait for the pid to actually exit so coverage files are fully written.
+        if [ -f ./caddy.pid ]; then
+          pid=$(cat ./caddy.pid)
+          for i in $(seq 1 20); do
+            if ! kill -0 "$pid" 2>/dev/null; then break; fi
+            sleep 0.25
+          done
+          # If still alive, force it down so the step doesn't hang.
+          if kill -0 "$pid" 2>/dev/null; then
+            kill -TERM "$pid" || true
+            sleep 1
+          fi
+        fi
+        mkdir -p hurl-report
         go tool covdata textfmt -i=coverdir -o hurl-report/caddy_cover_${{ steps.vars.outputs.short_sha }}.txt
         go tool cover -html hurl-report/caddy_cover_${{ steps.vars.outputs.short_sha }}.txt -o hurl-report/caddy_cover_${{ steps.vars.outputs.short_sha }}.html
+        # Per-package summary to surface coverage trend in the job log.
+        go tool cover -func=hurl-report/caddy_cover_${{ steps.vars.outputs.short_sha }}.txt | tail -n 50
 
 
     - name: Publish Coverage Profile
+      if: always()
       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
-        path: hurl-report/caddy_cover_${{ steps.vars.outputs.short_sha }}.html
-        compression-level: 0
+        name: caddy-spec-coverage-${{ steps.vars.outputs.short_sha }}
+        path: |
+          hurl-report/caddy_cover_${{ steps.vars.outputs.short_sha }}.txt
+          hurl-report/caddy_cover_${{ steps.vars.outputs.short_sha }}.html
+        retention-days: 30
+        compression-level: 6
 
   s390x-test:
     name: test (s390x on IBM Z)
