@@ -305,9 +305,9 @@ func TestIsEncodeAllowed(t *testing.T) {
 type mockEncoder struct{}
 
 func (mockEncoder) Write(p []byte) (n int, err error) { return len(p), nil }
-func (mockEncoder) Close() error                     { return nil }
-func (mockEncoder) Reset(w io.Writer)                {}
-func (mockEncoder) Flush() error                     { return nil }
+func (mockEncoder) Close() error                      { return nil }
+func (mockEncoder) Reset(w io.Writer)                 {}
+func (mockEncoder) Flush() error                      { return nil }
 
 func TestServeHTTPDefaultEncodingPreference(t *testing.T) {
 	enc := new(Encode)
