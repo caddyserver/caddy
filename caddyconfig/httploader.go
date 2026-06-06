@@ -136,7 +136,7 @@ func (hl HTTPLoader) LoadConfig(ctx caddy.Context) ([]byte, error) {
 }
 
 func attemptHttpCall(client *http.Client, request *http.Request) (*http.Response, error) {
-	resp, err := client.Do(request)
+	resp, err := client.Do(request) //nolint:gosec // no SSRF; comes from trusted config
 	if err != nil {
 		return nil, fmt.Errorf("problem calling http loader url: %v", err)
 	} else if resp.StatusCode < 200 || resp.StatusCode > 499 {
@@ -151,7 +151,7 @@ func doHttpCallWithRetries(ctx caddy.Context, client *http.Client, request *http
 	var err error
 	const maxAttempts = 10
 
-	for i := 0; i < maxAttempts; i++ {
+	for i := range maxAttempts {
 		resp, err = attemptHttpCall(client, request)
 		if err != nil && i < maxAttempts-1 {
 			select {

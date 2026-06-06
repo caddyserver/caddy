@@ -20,13 +20,23 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/internal/filesystems"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp/rewrite"
 )
+
+type testCase struct {
+	path         string
+	expectedPath string
+	expectedType string
+	matched      bool
+}
 
 func TestFileMatcher(t *testing.T) {
 	// Windows doesn't like colons in files names
@@ -45,12 +55,7 @@ func TestFileMatcher(t *testing.T) {
 		f.Close()
 	}
 
-	for i, tc := range []struct {
-		path         string
-		expectedPath string
-		expectedType string
-		matched      bool
-	}{
+	for i, tc := range []testCase{
 		{
 			path:         "/foo.txt",
 			expectedPath: "/foo.txt",
@@ -116,44 +121,170 @@ func TestFileMatcher(t *testing.T) {
 			matched:      !isWindows,
 		},
 	} {
-		m := &MatchFile{
-			fsmap:    &filesystems.FileSystemMap{},
-			Root:     "./testdata",
-			TryFiles: []string{"{http.request.uri.path}", "{http.request.uri.path}/"},
-		}
+		fileMatcherTest(t, i, tc)
+	}
+}
 
-		u, err := url.Parse(tc.path)
-		if err != nil {
-			t.Errorf("Test %d: parsing path: %v", i, err)
-		}
+func TestFileMatcherNonWindows(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		return
+	}
 
-		req := &http.Request{URL: u}
-		repl := caddyhttp.NewTestReplacer(req)
+	// this is impossible to test on Windows, but tests a security patch for other platforms
+	tc := testCase{
+		path:         "/foodir/secr%5Cet.txt",
+		expectedPath: "/foodir/secr\\et.txt",
+		expectedType: "file",
+		matched:      true,
+	}
 
-		result, err := m.MatchWithError(req)
-		if err != nil {
-			t.Errorf("Test %d: unexpected error: %v", i, err)
-		}
-		if result != tc.matched {
-			t.Errorf("Test %d: expected match=%t, got %t", i, tc.matched, result)
-		}
+	f, err := os.Create(filepath.Join("testdata", strings.TrimPrefix(tc.expectedPath, "/")))
+	if err != nil {
+		t.Fatalf("could not create test file: %v", err)
+	}
+	defer f.Close()
+	defer os.Remove(f.Name())
 
-		rel, ok := repl.Get("http.matchers.file.relative")
-		if !ok && result {
-			t.Errorf("Test %d: expected replacer value", i)
-		}
-		if !result {
-			continue
-		}
+	fileMatcherTest(t, 0, tc)
+}
 
-		if rel != tc.expectedPath {
-			t.Errorf("Test %d: actual path: %v, expected: %v", i, rel, tc.expectedPath)
-		}
+func fileMatcherTest(t *testing.T, i int, tc testCase) {
+	m := &MatchFile{
+		fsmap:    &filesystems.FileSystemMap{},
+		Root:     "./testdata",
+		TryFiles: []string{"{http.request.uri.path}", "{http.request.uri.path}/"},
+	}
 
-		fileType, _ := repl.Get("http.matchers.file.type")
-		if fileType != tc.expectedType {
-			t.Errorf("Test %d: actual file type: %v, expected: %v", i, fileType, tc.expectedType)
-		}
+	u, err := url.Parse(tc.path)
+	if err != nil {
+		t.Errorf("Test %d: parsing path: %v", i, err)
+	}
+
+	req := &http.Request{URL: u}
+	repl := caddyhttp.NewTestReplacer(req)
+
+	result, err := m.MatchWithError(req)
+	if err != nil {
+		t.Errorf("Test %d: unexpected error: %v", i, err)
+	}
+	if result != tc.matched {
+		t.Errorf("Test %d: expected match=%t, got %t", i, tc.matched, result)
+	}
+
+	rel, ok := repl.Get("http.matchers.file.relative")
+	if !ok && result {
+		t.Errorf("Test %d: expected replacer value", i)
+	}
+	if !result {
+		return
+	}
+
+	if rel != tc.expectedPath {
+		t.Errorf("Test %d: actual path: %v, expected: %v", i, rel, tc.expectedPath)
+	}
+
+	fileType, _ := repl.Get("http.matchers.file.type")
+	if fileType != tc.expectedType {
+		t.Errorf("Test %d: actual file type: %v, expected: %v", i, fileType, tc.expectedType)
+	}
+}
+
+func TestTryFilesRewriteEscapesMatchedPath(t *testing.T) {
+	root := t.TempDir()
+
+	tests := []struct {
+		name           string
+		requestTarget  string
+		filename       string
+		extraFiles     []string
+		wantPath       string
+		wantRequestURI string
+		skipWindows    bool
+	}{
+		{
+			name:           "question mark in path",
+			requestTarget:  "/%3F.html",
+			filename:       "?.html",
+			wantPath:       "/?.html",
+			wantRequestURI: "/%3F.html",
+			skipWindows:    true,
+		},
+		{
+			name:           "percent in path",
+			requestTarget:  "/%25.html",
+			filename:       "%.html",
+			wantPath:       "/%.html",
+			wantRequestURI: "/%25.html",
+		},
+		{
+			name:           "encoded question mark remains percent-encoded",
+			requestTarget:  "/%253F.html",
+			filename:       "%3F.html",
+			wantPath:       "/%3F.html",
+			wantRequestURI: "/%253F.html",
+		},
+		{
+			name:           "question mark in nested path",
+			requestTarget:  "/nested/%3F.html",
+			filename:       filepath.Join("nested", "?.html"),
+			wantPath:       "/nested/?.html",
+			wantRequestURI: "/nested/%3F.html",
+			skipWindows:    true,
+		},
+		{
+			name:           "encoded slash in filename does not conflict with nesting",
+			requestTarget:  "/nested%252Ffile.html",
+			filename:       "nested%2Ffile.html",
+			extraFiles:     []string{filepath.Join("nested", "file.html")},
+			wantPath:       "/nested%2Ffile.html",
+			wantRequestURI: "/nested%252Ffile.html",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.skipWindows && runtime.GOOS == "windows" {
+				t.Skip("Windows file names cannot contain question marks")
+			}
+
+			for _, name := range append([]string{tc.filename}, tc.extraFiles...) {
+				filename := filepath.Join(root, name)
+				if err := os.MkdirAll(filepath.Dir(filename), 0o700); err != nil {
+					t.Fatalf("creating test file parent directory: %v", err)
+				}
+				if err := os.WriteFile(filename, []byte(name), 0o600); err != nil {
+					t.Fatalf("writing test file: %v", err)
+				}
+			}
+
+			m := &MatchFile{
+				fsmap:    &filesystems.FileSystemMap{},
+				Root:     root,
+				TryFiles: []string{"{http.request.uri.path}"},
+			}
+			req := httptest.NewRequest(http.MethodGet, "http://example.com"+tc.requestTarget, nil)
+			repl := caddyhttp.NewTestReplacer(req)
+
+			matched, err := m.MatchWithError(req)
+			if err != nil {
+				t.Fatalf("matching file: %v", err)
+			}
+			if !matched {
+				t.Fatalf("expected request %s to match %s", tc.requestTarget, tc.filename)
+			}
+
+			rewrite.Rewrite{URI: "{http.matchers.file.relative}"}.Rewrite(req, repl)
+
+			if req.URL.Path != tc.wantPath {
+				t.Errorf("rewritten path = %q, want %q", req.URL.Path, tc.wantPath)
+			}
+			if req.RequestURI != tc.wantRequestURI {
+				t.Errorf("rewritten request URI = %q, want %q", req.RequestURI, tc.wantRequestURI)
+			}
+			if req.URL.RawQuery != "" {
+				t.Errorf("rewritten raw query = %q, want empty", req.URL.RawQuery)
+			}
+		})
 	}
 }
 

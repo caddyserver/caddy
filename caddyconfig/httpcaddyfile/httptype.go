@@ -108,7 +108,7 @@ func (st ServerType) Setup(
 		matcherDefs := make(map[string]caddy.ModuleMap)
 		for _, segment := range sb.block.Segments {
 			if dir := segment.Directive(); strings.HasPrefix(dir, matcherPrefix) {
-				d := sb.block.DispenseDirective(dir)
+				d := caddyfile.NewDispenser(segment)
 				err := parseMatcherDefinitions(d, matcherDefs)
 				if err != nil {
 					return nil, warnings, err
@@ -143,6 +143,7 @@ func (st ServerType) Setup(
 				parentBlock:  sb.block,
 				groupCounter: gc,
 				State:        state,
+				BlockState:   state,
 			}
 
 			results, err := dirFunc(h)
@@ -504,6 +505,7 @@ func (ServerType) extractNamedRoutes(
 			parentBlock:  sb.block,
 			groupCounter: gc,
 			State:        state,
+			BlockState:   state,
 		}
 
 		handler, err := ParseSegmentAsSubroute(h)
@@ -521,7 +523,11 @@ func (ServerType) extractNamedRoutes(
 			route.HandlersRaw = []json.RawMessage{caddyconfig.JSONModuleObject(handler, "handler", subroute.CaddyModule().ID.Name(), h.warnings)}
 		}
 
-		namedRoutes[sb.block.GetKeysText()[0]] = &route
+		key := sb.block.GetKeysText()[0]
+		if _, exists := namedRoutes[key]; exists {
+			return nil, fmt.Errorf("cannot have duplicate named_routes: %s", key)
+		}
+		namedRoutes[key] = &route
 	}
 	options["named_routes"] = namedRoutes
 
@@ -822,7 +828,7 @@ func (st *ServerType) serversFromPairings(
 				// https://caddy.community/t/making-sense-of-auto-https-and-why-disabling-it-still-serves-https-instead-of-http/9761
 				createdTLSConnPolicies, ok := sblock.pile["tls.connection_policy"]
 				hasTLSEnabled := (ok && len(createdTLSConnPolicies) > 0) ||
-					(addr.Host != "" && srv.AutoHTTPS != nil && !slices.Contains(srv.AutoHTTPS.Skip, addr.Host))
+					(addr.Host != "" && (srv.AutoHTTPS == nil || !slices.Contains(srv.AutoHTTPS.Skip, addr.Host)))
 
 				// we'll need to remember if the address qualifies for auto-HTTPS, so we
 				// can add a TLS conn policy if necessary
@@ -849,6 +855,20 @@ func (st *ServerType) serversFromPairings(
 					listenerWrapper.(caddy.Module).CaddyModule().ID.Name(),
 					warnings)
 				srv.ListenerWrappersRaw = append(srv.ListenerWrappersRaw, jsonListenerWrapper)
+			}
+
+			// Look for any config values that provide packet conn wrappers on the server block
+			for _, listenerConfig := range sblock.pile["packet_conn_wrapper"] {
+				packetConnWrapper, ok := listenerConfig.Value.(caddy.PacketConnWrapper)
+				if !ok {
+					return nil, fmt.Errorf("config for a packet conn wrapper did not provide a value that implements caddy.PacketConnWrapper")
+				}
+				jsonPacketConnWrapper := caddyconfig.JSONModuleObject(
+					packetConnWrapper,
+					"wrapper",
+					packetConnWrapper.(caddy.Module).CaddyModule().ID.Name(),
+					warnings)
+				srv.PacketConnWrappersRaw = append(srv.PacketConnWrappersRaw, jsonPacketConnWrapper)
 			}
 
 			// set up each handler directive, making sure to honor directive order

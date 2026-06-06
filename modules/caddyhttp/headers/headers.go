@@ -161,11 +161,11 @@ func (ops *HeaderOps) Provision(_ caddy.Context) error {
 
 // containsPlaceholders checks if the string contains Caddy placeholder syntax {key}
 func containsPlaceholders(s string) bool {
-	openIdx := strings.Index(s, "{")
-	if openIdx == -1 {
+	_, after, ok := strings.Cut(s, "{")
+	if !ok {
 		return false
 	}
-	closeIdx := strings.Index(s[openIdx+1:], "}")
+	closeIdx := strings.Index(after, "}")
 	if closeIdx == -1 {
 		return false
 	}
@@ -217,7 +217,10 @@ type RespHeaderOps struct {
 }
 
 // ApplyTo applies ops to hdr using repl.
-func (ops HeaderOps) ApplyTo(hdr http.Header, repl *caddy.Replacer) {
+func (ops *HeaderOps) ApplyTo(hdr http.Header, repl *caddy.Replacer) {
+	if ops == nil {
+		return
+	}
 	// before manipulating headers in other ways, check if there
 	// is configuration to delete all headers, and do that first
 	// because if a header is to be added, we don't want to delete

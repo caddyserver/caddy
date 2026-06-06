@@ -140,6 +140,42 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 		iss.Email = email
 	}
 
+	// expand CA endpoint, if non-empty
+	if iss.CA != "" {
+		ca, err := repl.ReplaceOrErr(iss.CA, true, true)
+		if err != nil {
+			return fmt.Errorf("expanding CA endpoint '%s': %v", iss.CA, err)
+		}
+		iss.CA = ca
+	}
+
+	// expand TestCA endpoint, if non-empty
+	if iss.TestCA != "" {
+		testca, err := repl.ReplaceOrErr(iss.TestCA, true, true)
+		if err != nil {
+			return fmt.Errorf("expanding TestCA endpoint '%s': %v", iss.TestCA, err)
+		}
+		iss.TestCA = testca
+	}
+
+	// expand EAB credentials, if non-empty
+	if iss.ExternalAccount != nil {
+		if iss.ExternalAccount.KeyID != "" {
+			keyID, err := repl.ReplaceOrErr(iss.ExternalAccount.KeyID, true, true)
+			if err != nil {
+				return fmt.Errorf("expanding EAB key ID '%s': %v", iss.ExternalAccount.KeyID, err)
+			}
+			iss.ExternalAccount.KeyID = keyID
+		}
+		if iss.ExternalAccount.MACKey != "" {
+			macKey, err := repl.ReplaceOrErr(iss.ExternalAccount.MACKey, true, true)
+			if err != nil {
+				return fmt.Errorf("expanding EAB MAC key (redacted): %v", err)
+			}
+			iss.ExternalAccount.MACKey = macKey
+		}
+	}
+
 	// expand account key, if non-empty
 	if iss.AccountKey != "" {
 		accountKey, err := repl.ReplaceOrErr(iss.AccountKey, true, true)
@@ -147,6 +183,15 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("expanding account key PEM '%s': %v", iss.AccountKey, err)
 		}
 		iss.AccountKey = accountKey
+	}
+
+	// expand DNS override domain, if non-empty
+	if iss.Challenges != nil && iss.Challenges.DNS != nil && iss.Challenges.DNS.OverrideDomain != "" {
+		overrideDomain, err := repl.ReplaceOrErr(iss.Challenges.DNS.OverrideDomain, true, true)
+		if err != nil {
+			return fmt.Errorf("expanding DNS override domain '%s': %v", iss.Challenges.DNS.OverrideDomain, err)
+		}
+		iss.Challenges.DNS.OverrideDomain = overrideDomain
 	}
 
 	// DNS challenge provider, if not already established
@@ -178,6 +223,7 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 				PropagationTimeout: time.Duration(iss.Challenges.DNS.PropagationTimeout),
 				Resolvers:          iss.Challenges.DNS.Resolvers,
 				OverrideDomain:     iss.Challenges.DNS.OverrideDomain,
+				Logger:             iss.logger.Named("dns_manager"),
 			},
 		}
 	}
@@ -336,7 +382,7 @@ func (iss *ACMEIssuer) generateZeroSSLEABCredentials(ctx context.Context, acct a
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("User-Agent", certmagic.UserAgent)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec // no SSRF since URL is from trusted config
 	if err != nil {
 		return nil, acct, fmt.Errorf("performing EAB credentials request: %v", err)
 	}
@@ -671,7 +717,7 @@ func ParseCaddyfilePreferredChainsOptions(d *caddyfile.Dispenser) (*ChainPrefere
 		switch d.Val() {
 		case "root_common_name":
 			rootCommonNameOpt := d.RemainingArgs()
-			chainPref.RootCommonName = rootCommonNameOpt
+			chainPref.RootCommonName = append(chainPref.RootCommonName, rootCommonNameOpt...)
 			if rootCommonNameOpt == nil {
 				return nil, d.ArgErr()
 			}
@@ -681,7 +727,7 @@ func ParseCaddyfilePreferredChainsOptions(d *caddyfile.Dispenser) (*ChainPrefere
 
 		case "any_common_name":
 			anyCommonNameOpt := d.RemainingArgs()
-			chainPref.AnyCommonName = anyCommonNameOpt
+			chainPref.AnyCommonName = append(chainPref.AnyCommonName, anyCommonNameOpt...)
 			if anyCommonNameOpt == nil {
 				return nil, d.ArgErr()
 			}

@@ -51,6 +51,18 @@ app.example.com {
 																		{
 																			"handler": "headers",
 																			"request": {
+																				"delete": [
+																					"Remote-Email"
+																				]
+																			}
+																		}
+																	]
+																},
+																{
+																	"handle": [
+																		{
+																			"handler": "headers",
+																			"request": {
 																				"set": {
 																					"Remote-Email": [
 																						"{http.reverse_proxy.header.Remote-Email}"
@@ -70,6 +82,18 @@ app.example.com {
 																					}
 																				}
 																			]
+																		}
+																	]
+																},
+																{
+																	"handle": [
+																		{
+																			"handler": "headers",
+																			"request": {
+																				"delete": [
+																					"Remote-Groups"
+																				]
+																			}
 																		}
 																	]
 																},
@@ -105,6 +129,18 @@ app.example.com {
 																		{
 																			"handler": "headers",
 																			"request": {
+																				"delete": [
+																					"Remote-Name"
+																				]
+																			}
+																		}
+																	]
+																},
+																{
+																	"handle": [
+																		{
+																			"handler": "headers",
+																			"request": {
 																				"set": {
 																					"Remote-Name": [
 																						"{http.reverse_proxy.header.Remote-Name}"
@@ -124,6 +160,18 @@ app.example.com {
 																					}
 																				}
 																			]
+																		}
+																	]
+																},
+																{
+																	"handle": [
+																		{
+																			"handler": "headers",
+																			"request": {
+																				"delete": [
+																					"Remote-User"
+																				]
+																			}
 																		}
 																	]
 																},

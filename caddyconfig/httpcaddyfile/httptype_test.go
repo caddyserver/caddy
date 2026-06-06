@@ -1,15 +1,19 @@
 package httpcaddyfile
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
 func TestMatcherSyntax(t *testing.T) {
 	for i, tc := range []struct {
-		input       string
-		expectError bool
+		input          string
+		expectError    bool
+		expectContains string
 	}{
 		{
 			input: `http://localhost
@@ -52,6 +56,34 @@ func TestMatcherSyntax(t *testing.T) {
 			expectError: false,
 		},
 		{
+			input: `http://localhost {
+				@test {
+					path /test
+				}
+				@test {
+					path /other
+				}
+				respond @test "hello"
+			}
+			`,
+			expectError:    true,
+			expectContains: "is defined more than once",
+		},
+		{
+			input: `(snippet) {
+				@{args[0]} {
+					path /{args[0]}
+				}
+				respond @{args[0]} "hello"
+			}
+			http://localhost {
+				import snippet foo
+				import snippet bar
+			}
+			`,
+			expectError: false,
+		},
+		{
 			input: `@matcher {
 				path /matcher-not-allowed/outside-of-site-block/*
 			}
@@ -70,6 +102,13 @@ func TestMatcherSyntax(t *testing.T) {
 		if err != nil != tc.expectError {
 			t.Errorf("Test %d error expectation failed Expected: %v, got %s", i, tc.expectError, err)
 			continue
+		}
+
+		if err != nil && tc.expectContains != "" {
+			if !strings.Contains(err.Error(), tc.expectContains) {
+				t.Errorf("Test %d error message mismatch: expected to contain %q, got %q",
+					i, tc.expectContains, err.Error())
+			}
 		}
 	}
 }
@@ -207,5 +246,55 @@ func TestGlobalOptions(t *testing.T) {
 			t.Errorf("Test %d error expectation failed Expected: %v, got %s", i, tc.expectError, err)
 			continue
 		}
+	}
+}
+
+func TestDefaultSNIWithoutHTTPS(t *testing.T) {
+	caddyfileStr := `{
+		default_sni my-sni.com
+	}
+	example.com {
+	}`
+
+	adapter := caddyfile.Adapter{
+		ServerType: ServerType{},
+	}
+
+	result, _, err := adapter.Adapt([]byte(caddyfileStr), nil)
+	if err != nil {
+		t.Fatalf("Failed to adapt Caddyfile: %v", err)
+	}
+
+	var config struct {
+		Apps struct {
+			HTTP struct {
+				Servers map[string]*caddyhttp.Server `json:"servers"`
+			} `json:"http"`
+		} `json:"apps"`
+	}
+
+	if err := json.Unmarshal(result, &config); err != nil {
+		t.Fatalf("Failed to unmarshal JSON config: %v", err)
+	}
+
+	server, ok := config.Apps.HTTP.Servers["srv0"]
+	if !ok {
+		t.Fatalf("Expected server 'srv0' to be created")
+	}
+
+	if len(server.TLSConnPolicies) == 0 {
+		t.Fatalf("Expected TLS connection policies to be generated, got none")
+	}
+
+	found := false
+	for _, policy := range server.TLSConnPolicies {
+		if policy.DefaultSNI == "my-sni.com" {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Errorf("Expected default_sni 'my-sni.com' in TLS connection policies, but it was missing. Generated JSON: %s", string(result))
 	}
 }

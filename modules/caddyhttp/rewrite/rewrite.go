@@ -211,12 +211,7 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 		var newPath, newQuery, newFrag string
 
 		if path != "" {
-			// replace the `path` placeholder to escaped path
-			pathPlaceholder := "{http.request.uri.path}"
-			if strings.Contains(path, pathPlaceholder) {
-				path = strings.ReplaceAll(path, pathPlaceholder, r.URL.EscapedPath())
-			}
-
+			path = escapePathPlaceholders(path, r, repl)
 			newPath = repl.ReplaceAll(path, "")
 		}
 
@@ -228,6 +223,15 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 			newPath, injectedQuery = before, after
 			// don't overwrite explicitly-configured query string
 			if query == "" {
+				// the injected query came from the first-pass placeholder
+				// expansion above, which means any '{' or '}' bytes in it
+				// must have come from replacement values (e.g. a request
+				// header), not from operator-written placeholder syntax.
+				// escape them so buildQueryString does not re-expand them,
+				// which would allow attacker input like {env.SECRET} to be
+				// evaluated (see GHSA-j8px-rmrx-76h9).
+				injectedQuery = strings.ReplaceAll(injectedQuery, "{", "%7B")
+				injectedQuery = strings.ReplaceAll(injectedQuery, "}", "%7D")
 				query = injectedQuery
 			}
 		}
@@ -247,6 +251,7 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 			} else {
 				r.URL.Path = path
 			}
+			r.URL.RawPath = "" // force recomputing when EscapedPath() is called
 		}
 		if qsStart >= 0 {
 			r.URL.RawQuery = newQuery
@@ -297,6 +302,31 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 
 	// return true if anything changed
 	return r.Method != oldMethod || r.RequestURI != oldURI
+}
+
+func escapePathPlaceholders(path string, r *http.Request, repl *caddy.Replacer) string {
+	// Replace path-valued placeholders in escaped form before the URI is parsed,
+	// otherwise literal '?' and '%' bytes from the path can be interpreted as URI
+	// delimiters or percent-escape sequences during the rewrite.
+	pathPlaceholder := "{http.request.uri.path}"
+	if strings.Contains(path, pathPlaceholder) {
+		path = strings.ReplaceAll(path, pathPlaceholder, r.URL.EscapedPath())
+	}
+
+	fileMatchRelativePlaceholder := "{http.matchers.file.relative}"
+	if strings.Contains(path, fileMatchRelativePlaceholder) {
+		if val, ok := repl.Get("http.matchers.file.relative"); ok {
+			if relativePath, ok := val.(string); ok {
+				path = strings.ReplaceAll(path, fileMatchRelativePlaceholder, escapePathPreservingSlashes(relativePath))
+			}
+		}
+	}
+
+	return path
+}
+
+func escapePathPreservingSlashes(path string) string {
+	return strings.ReplaceAll(url.PathEscape(path), "%2F", "/")
 }
 
 // buildQueryString takes an input query string and
@@ -528,7 +558,14 @@ func (q *queryOps) do(r *http.Request, repl *caddy.Replacer) {
 		if key == "" || val == "" {
 			continue
 		}
-		query[val] = query[key]
+		if key == val {
+			continue
+		}
+		originalValues, ok := query[key]
+		if !ok {
+			continue
+		}
+		query[val] = originalValues
 		delete(query, key)
 	}
 

@@ -20,12 +20,12 @@
 package encode
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"math"
 	"net/http"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -127,6 +127,14 @@ func (enc *Encode) Provision(ctx caddy.Context) error {
 		}
 	}
 
+	if len(enc.Prefer) == 0 {
+		for _, encName := range []string{"zstd", "br", "gzip"} {
+			if _, ok := enc.writerPools[encName]; ok {
+				enc.Prefer = append(enc.Prefer, encName)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -162,14 +170,14 @@ func (enc *Encode) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 
 			// to comply with RFC 9110 section 8.8.3(.3), we modify the Etag when encoding
 			// by appending a hyphen and the encoder name; the problem is, the client will
-			// send back that Etag in a If-None-Match header, but upstream handlers that set
+			// send back that Etag in an If-None-Match header, but upstream handlers that set
 			// the Etag in the first place don't know that we appended to their Etag! so here
 			// we have to strip our addition so the upstream handlers can still honor client
 			// caches without knowing about our changes...
 			if etag := r.Header.Get("If-None-Match"); etag != "" && !strings.HasPrefix(etag, "W/") {
 				ourSuffix := "-" + encName + `"`
-				if strings.HasSuffix(etag, ourSuffix) {
-					etag = strings.TrimSuffix(etag, ourSuffix) + `"`
+				if before, ok := strings.CutSuffix(etag, ourSuffix); ok {
+					etag = before + `"`
 					r.Header.Set("If-None-Match", etag)
 				}
 			}
@@ -369,7 +377,7 @@ const sniffLen = 512
 
 // ReadFrom will try to use sendfile to copy from the reader to the response writer.
 // It's only used if the response writer implements io.ReaderFrom and the data can't be compressed.
-// It's based on stdlin http1.1 response writer implementation.
+// It's based on the standard library HTTP/1.1 response writer implementation.
 // https://github.com/golang/go/blob/f4e3ec3dbe3b8e04a058d266adf8e048bab563f2/src/net/http/server.go#L586
 func (rw *responseWriter) ReadFrom(r io.Reader) (int64, error) {
 	rf, ok := rw.ResponseWriter.(io.ReaderFrom)
@@ -538,11 +546,11 @@ func AcceptedEncodings(r *http.Request, preferredOrder []string) []string {
 	}
 
 	// sort preferences by descending q-factor first, then by preferOrder
-	sort.Slice(prefs, func(i, j int) bool {
-		if math.Abs(prefs[i].q-prefs[j].q) < 0.00001 {
-			return prefs[i].preferOrder > prefs[j].preferOrder
+	slices.SortStableFunc(prefs, func(a, b encodingPreference) int {
+		if math.Abs(a.q-b.q) < 0.00001 {
+			return cmp.Compare(b.preferOrder, a.preferOrder)
 		}
-		return prefs[i].q > prefs[j].q
+		return cmp.Compare(b.q, a.q)
 	})
 
 	prefEncNames := make([]string, len(prefs))

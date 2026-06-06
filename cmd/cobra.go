@@ -9,9 +9,14 @@ import (
 )
 
 var defaultFactory = newRootCommandFactory(func() *cobra.Command {
-	return &cobra.Command{
-		Use: "caddy",
-		Long: `Caddy is an extensible server platform written in Go.
+	bin := caddy.CustomBinaryName
+	if bin == "" {
+		bin = "caddy"
+	}
+
+	long := caddy.CustomLongDescription
+	if long == "" {
+		long = `Caddy is an extensible server platform written in Go.
 
 At its core, Caddy merely manages configuration. Modules are plugged
 in statically at compile-time to provide useful functionality. Caddy's
@@ -91,7 +96,12 @@ package installers: https://caddyserver.com/docs/install
 
 Instructions for running Caddy in production are also available:
 https://caddyserver.com/docs/running
-`,
+`
+	}
+
+	return &cobra.Command{
+		Use:  bin,
+		Long: long,
 		Example: `  $ caddy run
   $ caddy run --config caddy.json
   $ caddy reload --config caddy.json
@@ -139,8 +149,14 @@ func caddyCmdToCobra(caddyCmd Command) *cobra.Command {
 func WrapCommandFuncForCobra(f CommandFunc) func(cmd *cobra.Command, _ []string) error {
 	return func(cmd *cobra.Command, _ []string) error {
 		status, err := f(Flags{cmd.Flags()})
-		if status > 1 {
+		if err != nil {
+			// Route the error through Caddy's logger so it receives the same
+			// colored, structured formatting as INFO/WARN output, rather than
+			// cobra's plain "Error: ..." line which lacks any highlighting.
+			caddy.Log().Error(err.Error())
 			cmd.SilenceErrors = true
+		}
+		if status > 1 {
 			return &exitError{ExitCode: status, Err: err}
 		}
 		return err

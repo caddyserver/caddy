@@ -36,12 +36,21 @@ func init() {
 // Templates is a middleware which executes response bodies as Go templates.
 // The syntax is documented in the Go standard library's
 // [text/template package](https://golang.org/pkg/text/template/).
+// Note that ANY response body that matches and qualifies may be evaluated,
+// even if it comes from a proxied backend.
 //
-// ⚠️ Template functions/actions are still experimental, so they are subject to change.
+// ⚠️ Template functions/actions can access the environment, files on disk,
+// and make HTTP requests. This is extremely useful, but you need to make
+// sure templates are only evaluated on content that you trust, control, or
+// at least sanitize properly.
 //
-// Custom template functions can be registered by creating a plugin module under the `http.handlers.templates.functions.*` namespace that implements the `CustomFunctions` interface.
+// ⚠️ Templates are still experimental, so they are subject to change.
 //
 // [All Sprig functions](https://masterminds.github.io/sprig/) are supported.
+//
+// Custom template functions can be registered by creating a plugin module
+// under the `http.handlers.templates.functions.*` namespace that implements
+// the `CustomFunctions` interface.
 //
 // In addition to the standard functions and the Sprig library, Caddy adds
 // extra functions and data that are available to a template:
@@ -160,6 +169,25 @@ func init() {
 //
 // ```
 // {{listFiles "/mydir"}}
+// ```
+//
+// ##### `fileExists`
+//
+// Returns true if the given file name, relative to the template context's file root,
+// can be opened successfully.
+//
+// ```
+// {{fileExists "path/to/file.html"}}
+// ```
+//
+// ##### `fileStat`
+//
+// Returns [FileInfo](https://pkg.go.dev/io/fs#FileInfo) using [Stat](https://pkg.go.dev/io/fs#Stat)
+// on the given file name, relative to the template context's file root.
+//
+// ```
+// {{$css := fileStat "css/style.css" -}}
+// <link rel="stylesheet" href="/css/style.css?v={{ $css.ModTime.Unix }}">
 // ```
 //
 // ##### `markdown`
@@ -306,6 +334,13 @@ func init() {
 // find the documentation on time layouts [in Go's docs](https://pkg.go.dev/time#pkg-constants).
 // The default time layout is `RFC1123Z`, i.e. `Mon, 02 Jan 2006 15:04:05 -0700`.
 //
+// ```
+// {{humanize "size" "2048000"}}
+// {{placeholder "http.response.header.Content-Length" | humanize "size"}}
+// {{humanize "time" "Fri, 05 May 2022 15:04:05 +0200"}}
+// {{humanize "time:2006-Jan-02" "2022-May-05"}}
+// ```
+//
 // ##### `pathEscape`
 //
 // Passes a string through `url.PathEscape`, replacing characters that have
@@ -318,11 +353,22 @@ func init() {
 // {{pathEscape "50%_valid_filename?.jpg"}}
 // ```
 //
+// ##### `maybe`
+//
+// Invokes a custom template function only if it is registered (plugged-in)
+// in the `http.handlers.templates.functions.*` namespace.
+//
+// The first argument is the function name, and any subsequent arguments
+// are forwarded to that function. If the named function is not available,
+// the invocation is ignored and a log message is emitted.
+//
+// This is useful for templates that optionally use components which may
+// not be present in every build or environment.
+//
+// NOTE: This function is EXPERIMENTAL and subject to change or removal.
+//
 // ```
-// {{humanize "size" "2048000"}}
-// {{placeholder "http.response.header.Content-Length" | humanize "size"}}
-// {{humanize "time" "Fri, 05 May 2022 15:04:05 +0200"}}
-// {{humanize "time:2006-Jan-02" "2022-May-05"}}
+// {{ maybe "myOptionalFunc" "arg1" 2 }}
 // ```
 type Templates struct {
 	// The root path from which to load files. Required if template functions

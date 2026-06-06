@@ -17,7 +17,7 @@ package acmeserver
 import (
 	"context"
 	"fmt"
-	weakrand "math/rand"
+	weakrand "math/rand/v2"
 	"net"
 	"net/http"
 	"os"
@@ -40,6 +40,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddypki"
+	"github.com/caddyserver/caddy/v2/modules/caddytls"
 )
 
 func init() {
@@ -140,6 +141,8 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 		}
 	}
 
+	ash.warnIfPolicyAllowsAll()
+
 	// get a reference to the configured CA
 	appModule, err := ctx.App("pki")
 	if err != nil {
@@ -212,6 +215,21 @@ func (ash *Handler) Provision(ctx caddy.Context) error {
 	ash.acmeEndpoints = r
 
 	return nil
+}
+
+func (ash *Handler) warnIfPolicyAllowsAll() {
+	allow := ash.Policy.normalizeAllowRules()
+	deny := ash.Policy.normalizeDenyRules()
+	if allow != nil || deny != nil {
+		return
+	}
+
+	allowWildcardNames := ash.Policy != nil && ash.Policy.AllowWildcardNames
+	ash.logger.Warn(
+		"acme_server policy has no allow/deny rules; order identifiers are unrestricted (allow-all)",
+		zap.String("ca", ash.CA),
+		zap.Bool("allow_wildcard_names", allowWildcardNames),
+	)
 }
 
 func (ash Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
@@ -287,7 +305,19 @@ func (ash Handler) openDatabase() (*db.AuthDB, error) {
 // makeClient creates an ACME client which will use a custom
 // resolver instead of net.DefaultResolver.
 func (ash Handler) makeClient() (acme.Client, error) {
-	for _, v := range ash.Resolvers {
+	// If no local resolvers are configured, check for global resolvers from TLS app
+	resolversToUse := ash.Resolvers
+	if len(resolversToUse) == 0 {
+		tlsAppIface, err := ash.ctx.App("tls")
+		if err == nil {
+			tlsApp := tlsAppIface.(*caddytls.TLS)
+			if len(tlsApp.Resolvers) > 0 {
+				resolversToUse = tlsApp.Resolvers
+			}
+		}
+	}
+
+	for _, v := range resolversToUse {
 		addr, err := caddy.ParseNetworkAddressWithDefaults(v, "udp", 53)
 		if err != nil {
 			return nil, err
@@ -307,7 +337,7 @@ func (ash Handler) makeClient() (acme.Client, error) {
 			PreferGo: true,
 			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
 				//nolint:gosec
-				addr := ash.resolvers[weakrand.Intn(len(ash.resolvers))]
+				addr := ash.resolvers[weakrand.IntN(len(ash.resolvers))]
 				return dialer.DialContext(ctx, addr.Network, addr.JoinHostPort(0))
 			},
 		}

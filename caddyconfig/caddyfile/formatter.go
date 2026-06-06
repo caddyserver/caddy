@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"io"
 	"slices"
+	"strings"
 	"unicode"
 )
 
@@ -62,7 +63,32 @@ func Format(input []byte) []byte {
 		heredocClosingMarker []rune
 
 		nesting int // indentation level
+
+		currentToken                  strings.Builder
+		currentLineFirstToken         string
+		previousLineWasTopLevelImport bool
+		openBraceOwnLine              bool
 	)
+
+	finishToken := func() {
+		if currentToken.Len() == 0 {
+			return
+		}
+		if currentLineFirstToken == "" {
+			currentLineFirstToken = currentToken.String()
+		}
+		currentToken.Reset()
+	}
+
+	finishLine := func() {
+		finishToken()
+		if currentLineFirstToken != "" {
+			previousLineWasTopLevelImport = nesting == 0 && currentLineFirstToken == "import"
+		} else if !openBrace || !openBraceOwnLine || openBraceWritten {
+			previousLineWasTopLevelImport = false
+		}
+		currentLineFirstToken = ""
+	}
 
 	write := func(ch rune) {
 		out.WriteRune(ch)
@@ -209,10 +235,21 @@ func Format(input []byte) []byte {
 			}
 		}
 
+		if strings.Contains(quotes, "`") {
+			if ch == '`' && space && !beginningOfLine {
+				write(' ')
+			}
+			write(ch)
+			space = false
+			continue
+		}
+
 		if unicode.IsSpace(ch) {
+			finishToken()
 			space = true
 			heredocEscaped = false
 			if ch == '\n' {
+				finishLine()
 				newLines++
 			}
 			continue
@@ -239,13 +276,19 @@ func Format(input []byte) []byte {
 			}
 
 			openBrace = false
-			if beginningOfLine {
+			if openBraceOwnLine && previousLineWasTopLevelImport {
+				if last != '\n' {
+					nextLine()
+				}
+				indent()
+			} else if beginningOfLine {
 				indent()
 			} else if !openBraceSpace || !unicode.IsSpace(last) {
 				write(' ')
 			}
 			write('{')
 			openBraceWritten = true
+			openBraceOwnLine = false
 			nextLine()
 			newLines = 0
 			// prevent infinite nesting from ridiculous inputs (issue #4169)
@@ -256,8 +299,10 @@ func Format(input []byte) []byte {
 
 		switch {
 		case ch == '{':
+			finishToken()
 			openBrace = true
 			openBraceSpace = spacePrior && !beginningOfLine
+			openBraceOwnLine = newLines > 0
 			if openBraceSpace && newLines == 0 {
 				write(' ')
 			}
@@ -265,11 +310,13 @@ func Format(input []byte) []byte {
 			if quotes == "`" {
 				write('{')
 				openBraceWritten = true
+				openBraceOwnLine = false
 				continue
 			}
 			continue
 
 		case ch == '}' && (spacePrior || !openBrace):
+			finishToken()
 			if quotes == "`" {
 				write('}')
 				continue
@@ -314,6 +361,7 @@ func Format(input []byte) []byte {
 			space = true
 		}
 
+		currentToken.WriteRune(ch)
 		write(ch)
 
 		beginningOfLine = false

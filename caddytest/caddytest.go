@@ -187,7 +187,7 @@ func (tc *Tester) initServer(rawConfig string, configType string) error {
 		req.Header.Add("Content-Type", "text/"+configType)
 	}
 
-	res, err := client.Do(req)
+	res, err := client.Do(req) //nolint:gosec // no SSRF because URL is hard-coded to localhost, and port comes from config
 	if err != nil {
 		tc.t.Errorf("unable to contact caddy server. %s", err)
 		return err
@@ -279,7 +279,7 @@ func validateTestPrerequisites(tc *Tester) error {
 			return err
 		}
 		tc.t.Cleanup(func() {
-			os.Remove(f.Name())
+			os.Remove(f.Name()) //nolint:gosec // false positive, filename comes from std lib, no path traversal
 		})
 		if _, err := fmt.Fprintf(f, initConfig, tc.config.AdminPort); err != nil {
 			return err
@@ -362,6 +362,8 @@ func CreateTestingTransport() *http.Transport {
 
 // AssertLoadError will load a config and expect an error
 func AssertLoadError(t *testing.T, rawConfig string, configType string, expectedError string) {
+	t.Helper()
+
 	tc := NewTester(t)
 
 	err := tc.initServer(rawConfig, configType)
@@ -372,6 +374,8 @@ func AssertLoadError(t *testing.T, rawConfig string, configType string, expected
 
 // AssertRedirect makes a request and asserts the redirection happens
 func (tc *Tester) AssertRedirect(requestURI string, expectedToLocation string, expectedStatusCode int) *http.Response {
+	tc.t.Helper()
+
 	redirectPolicyFunc := func(req *http.Request, via []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
@@ -409,6 +413,8 @@ func (tc *Tester) AssertRedirect(requestURI string, expectedToLocation string, e
 
 // CompareAdapt adapts a config and then compares it against an expected result
 func CompareAdapt(t testing.TB, filename, rawConfig string, adapterName string, expectedResponse string) bool {
+	t.Helper()
+
 	cfgAdapter := caddyconfig.GetAdapter(adapterName)
 	if cfgAdapter == nil {
 		t.Logf("unrecognized config adapter '%s'", adapterName)
@@ -468,6 +474,8 @@ func CompareAdapt(t testing.TB, filename, rawConfig string, adapterName string, 
 
 // AssertAdapt adapts a config and then tests it against an expected result
 func AssertAdapt(t testing.TB, rawConfig string, adapterName string, expectedResponse string) {
+	t.Helper()
+
 	ok := CompareAdapt(t, "Caddyfile", rawConfig, adapterName, expectedResponse)
 	if !ok {
 		t.Fail()
@@ -496,7 +504,9 @@ func applyHeaders(t testing.TB, req *http.Request, requestHeaders []string) {
 
 // AssertResponseCode will execute the request and verify the status code, returns a response for additional assertions
 func (tc *Tester) AssertResponseCode(req *http.Request, expectedStatusCode int) *http.Response {
-	resp, err := tc.Client.Do(req)
+	tc.t.Helper()
+
+	resp, err := tc.Client.Do(req) //nolint:gosec // no SSRFs demonstrated
 	if err != nil {
 		tc.t.Fatalf("failed to call server %s", err)
 	}
@@ -508,8 +518,10 @@ func (tc *Tester) AssertResponseCode(req *http.Request, expectedStatusCode int) 
 	return resp
 }
 
-// AssertResponse request a URI and assert the status code and the body contains a string
+// AssertResponse requests a URI and asserts the status code and body.
 func (tc *Tester) AssertResponse(req *http.Request, expectedStatusCode int, expectedBody string) (*http.Response, string) {
+	tc.t.Helper()
+
 	resp := tc.AssertResponseCode(req, expectedStatusCode)
 
 	defer resp.Body.Close()
@@ -529,8 +541,10 @@ func (tc *Tester) AssertResponse(req *http.Request, expectedStatusCode int, expe
 
 // Verb specific test functions
 
-// AssertGetResponse GET a URI and expect a statusCode and body text
+// AssertGetResponse requests a URI with GET and expects a status code and body text.
 func (tc *Tester) AssertGetResponse(requestURI string, expectedStatusCode int, expectedBody string) (*http.Response, string) {
+	tc.t.Helper()
+
 	req, err := http.NewRequest("GET", requestURI, nil)
 	if err != nil {
 		tc.t.Fatalf("unable to create request %s", err)
@@ -539,8 +553,10 @@ func (tc *Tester) AssertGetResponse(requestURI string, expectedStatusCode int, e
 	return tc.AssertResponse(req, expectedStatusCode, expectedBody)
 }
 
-// AssertDeleteResponse request a URI and expect a statusCode and body text
+// AssertDeleteResponse requests a URI with DELETE and expects a status code and body text.
 func (tc *Tester) AssertDeleteResponse(requestURI string, expectedStatusCode int, expectedBody string) (*http.Response, string) {
+	tc.t.Helper()
+
 	req, err := http.NewRequest("DELETE", requestURI, nil)
 	if err != nil {
 		tc.t.Fatalf("unable to create request %s", err)
@@ -549,8 +565,10 @@ func (tc *Tester) AssertDeleteResponse(requestURI string, expectedStatusCode int
 	return tc.AssertResponse(req, expectedStatusCode, expectedBody)
 }
 
-// AssertPostResponseBody POST to a URI and assert the response code and body
+// AssertPostResponseBody requests a URI with POST and asserts the response code and body.
 func (tc *Tester) AssertPostResponseBody(requestURI string, requestHeaders []string, requestBody *bytes.Buffer, expectedStatusCode int, expectedBody string) (*http.Response, string) {
+	tc.t.Helper()
+
 	req, err := http.NewRequest("POST", requestURI, requestBody)
 	if err != nil {
 		tc.t.Errorf("failed to create request %s", err)
@@ -562,8 +580,10 @@ func (tc *Tester) AssertPostResponseBody(requestURI string, requestHeaders []str
 	return tc.AssertResponse(req, expectedStatusCode, expectedBody)
 }
 
-// AssertPutResponseBody PUT to a URI and assert the response code and body
+// AssertPutResponseBody requests a URI with PUT and asserts the response code and body.
 func (tc *Tester) AssertPutResponseBody(requestURI string, requestHeaders []string, requestBody *bytes.Buffer, expectedStatusCode int, expectedBody string) (*http.Response, string) {
+	tc.t.Helper()
+
 	req, err := http.NewRequest("PUT", requestURI, requestBody)
 	if err != nil {
 		tc.t.Errorf("failed to create request %s", err)
@@ -575,8 +595,10 @@ func (tc *Tester) AssertPutResponseBody(requestURI string, requestHeaders []stri
 	return tc.AssertResponse(req, expectedStatusCode, expectedBody)
 }
 
-// AssertPatchResponseBody PATCH to a URI and assert the response code and body
+// AssertPatchResponseBody requests a URI with PATCH and asserts the response code and body.
 func (tc *Tester) AssertPatchResponseBody(requestURI string, requestHeaders []string, requestBody *bytes.Buffer, expectedStatusCode int, expectedBody string) (*http.Response, string) {
+	tc.t.Helper()
+
 	req, err := http.NewRequest("PATCH", requestURI, requestBody)
 	if err != nil {
 		tc.t.Errorf("failed to create request %s", err)

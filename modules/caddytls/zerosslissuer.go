@@ -40,7 +40,7 @@ func init() {
 type ZeroSSLIssuer struct {
 	// The API key (or "access key") for using the ZeroSSL API.
 	// REQUIRED.
-	APIKey string `json:"api_key,omitempty"`
+	APIKey string `json:"api_key,omitempty"` //nolint:gosec // false positive... yes this is exported, for JSON interop
 
 	// How many days the certificate should be valid for.
 	// Only certain values are accepted; see ZeroSSL docs.

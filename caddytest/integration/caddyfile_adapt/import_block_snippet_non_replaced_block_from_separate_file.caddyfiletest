@@ -1,0 +1,52 @@
+import testdata/issue_7518_unused_block_panic_snippets.conf
+
+example.com {
+	import snippet
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "headers",
+													"response": {
+														"set": {
+															"Reverse_proxy": [
+																"localhost:3000"
+															]
+														}
+													}
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		}
+	}
+}

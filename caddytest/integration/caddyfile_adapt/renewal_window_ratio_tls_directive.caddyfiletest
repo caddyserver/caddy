@@ -1,0 +1,63 @@
+{
+	renewal_window_ratio 0.1666
+}
+
+a.example.com {
+	tls {
+		renewal_window_ratio 0.25
+	}
+}
+
+b.example.com {
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"a.example.com"
+									]
+								}
+							],
+							"terminal": true
+						},
+						{
+							"match": [
+								{
+									"host": [
+										"b.example.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"subjects": [
+							"a.example.com"
+						],
+						"renewal_window_ratio": 0.25
+					},
+					{
+						"renewal_window_ratio": 0.1666
+					}
+				]
+			}
+		}
+	}
+}

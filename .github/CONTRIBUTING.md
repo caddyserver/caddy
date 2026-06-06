@@ -7,6 +7,7 @@ For starters, we invite you to join [the Caddy forum](https://caddy.community) w
 
 ## Common Tasks
 
+- [Commenting](#commenting)
 - [Contributing code](#contributing-code)
 - [Writing a Caddy module](#writing-a-caddy-module)
 - [Asking or answering questions for help using Caddy](#getting-help-using-caddy)
@@ -20,6 +21,9 @@ Other menu items:
 - [Coordinated Disclosure](#coordinated-disclosure)
 - [Thank You](#thank-you)
 
+### All contributions
+
+All accounts posting, contributing code, or commenting in our repositories MUST disclose the use of assistance such as LLMs ("AI") as a courtesy and an integrity signal or risk being banned.
 
 ### Contributing code
 

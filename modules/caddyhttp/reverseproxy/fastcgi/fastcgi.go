@@ -16,6 +16,7 @@ package fastcgi
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -23,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -33,7 +35,11 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 )
 
-var noopLogger = zap.NewNop()
+var (
+	ErrInvalidSplitPath = errors.New("split path contains non-ASCII characters")
+
+	noopLogger = zap.NewNop()
+)
 
 func init() {
 	caddy.RegisterModule(Transport{})
@@ -49,6 +55,9 @@ type Transport struct {
 	// with the value of SplitPath. The first piece will be assumed as the
 	// actual resource (CGI script) name, and the second piece will be set to
 	// PATH_INFO for the CGI script to use.
+	//
+	// Split paths can only contain ASCII characters.
+	// Comparison is case-insensitive.
 	//
 	// Future enhancements should be careful to avoid CVE-2019-11043,
 	// which can be mitigated with use of a try_files-like behavior
@@ -109,7 +118,43 @@ func (t *Transport) Provision(ctx caddy.Context) error {
 		t.DialTimeout = caddy.Duration(3 * time.Second)
 	}
 
+	var b strings.Builder
+
+	for i, split := range t.SplitPath {
+		b.Grow(len(split))
+
+		for j := 0; j < len(split); j++ {
+			c := split[j]
+			if c >= utf8.RuneSelf {
+				return ErrInvalidSplitPath
+			}
+
+			if 'A' <= c && c <= 'Z' {
+				b.WriteByte(c + 'a' - 'A')
+			} else {
+				b.WriteByte(c)
+			}
+		}
+
+		t.SplitPath[i] = b.String()
+		b.Reset()
+	}
+
 	return nil
+}
+
+// DefaultBufferSizes enables request buffering for fastcgi if not configured.
+// This is because most fastcgi servers are php-fpm that require the content length to be set to read the body, golang
+// std has fastcgi implementation that doesn't need this value to process the body, but we can safely assume that's
+// not used.
+// http3 requests have a negative content length for GET and HEAD requests, if that header is not sent.
+// see: https://github.com/caddyserver/caddy/issues/6678#issuecomment-2472224182
+// Though it appears even if CONTENT_LENGTH is invalid, php-fpm can handle just fine if the body is empty (no Stdin records sent).
+// php-fpm will hang if there is any data in the body though, https://github.com/caddyserver/caddy/issues/5420#issuecomment-2415943516
+
+// TODO: better default buffering for fastcgi requests without content length, in theory a value of 1 should be enough, make it bigger anyway
+func (t Transport) DefaultBufferSizes() (int64, int64) {
+	return 4096, 0
 }
 
 // RoundTrip implements http.RoundTripper.
@@ -373,6 +418,18 @@ func (t Transport) buildEnv(r *http.Request) (envVars, error) {
 
 // splitPos returns the index where path should
 // be split based on t.SplitPath.
+//
+// example: if splitPath is [".php"]
+// "/path/to/script.php/some/path": ("/path/to/script.php", "/some/path")
+//
+// Matching is strictly ASCII case-insensitive. Bytes >= utf8.RuneSelf in path
+// never match any split entry: split strings are validated ASCII-only and
+// lower-cased in Provision(), so any Unicode equivalence (e.g. fullwidth or
+// mathematical letters folding to ASCII) would let an attacker upload a file
+// whose name contains such code points and have it served as PHP. See
+// FrankenPHP advisories GHSA-3g8v-8r37-cgjm and GHSA-v4h7-cj44-8fc8.
+//
+// Adapted from FrankenPHP's code (copyright 2026 Kévin Dunglas, MIT license)
 func (t Transport) splitPos(path string) int {
 	// TODO: from v1...
 	// if httpserver.CaseSensitivePath {
@@ -382,12 +439,41 @@ func (t Transport) splitPos(path string) int {
 		return 0
 	}
 
-	lowerPath := strings.ToLower(path)
+	pathLen := len(path)
+
 	for _, split := range t.SplitPath {
-		if idx := strings.Index(lowerPath, strings.ToLower(split)); idx > -1 {
-			return idx + len(split)
+		splitLen := len(split)
+		if splitLen == 0 || splitLen > pathLen {
+			continue
+		}
+
+		for i := 0; i <= pathLen-splitLen; i++ {
+			match := true
+			for j := range splitLen {
+				c := path[i+j]
+				if c >= utf8.RuneSelf {
+					match = false
+
+					break
+				}
+
+				if 'A' <= c && c <= 'Z' {
+					c += 'a' - 'A'
+				}
+
+				if c != split[j] {
+					match = false
+
+					break
+				}
+			}
+
+			if match {
+				return i + splitLen
+			}
 		}
 	}
+
 	return -1
 }
 
@@ -421,12 +507,13 @@ var tlsProtocolStrings = map[uint16]string{
 	tls.VersionTLS13: "TLSv1.3",
 }
 
-var headerNameReplacer = strings.NewReplacer(" ", "_", "-", "_")
+var headerNameReplacer = strings.NewReplacer("-", "_")
 
 // Interface guards
 var (
 	_ zapcore.ObjectMarshaler = (*loggableEnv)(nil)
 
-	_ caddy.Provisioner = (*Transport)(nil)
-	_ http.RoundTripper = (*Transport)(nil)
+	_ caddy.Provisioner              = (*Transport)(nil)
+	_ http.RoundTripper              = (*Transport)(nil)
+	_ reverseproxy.BufferedTransport = (*Transport)(nil)
 )

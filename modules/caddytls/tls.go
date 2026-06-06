@@ -23,6 +23,7 @@ import (
 	"net"
 	"net/http"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -123,8 +124,15 @@ type TLS struct {
 	//
 	// EXPERIMENTAL: Subject to change.
 	DNSRaw json.RawMessage `json:"dns,omitempty" caddy:"namespace=dns.providers inline_key=name"`
-	dns    any             // technically, it should be any/all of the libdns interfaces (RecordSetter, RecordAppender, etc.)
 
+	// The default DNS resolvers to use for TLS-related DNS operations, specifically
+	// for ACME DNS challenges and ACME server DNS validations.
+	// If not specified, the system default resolvers will be used.
+	//
+	// EXPERIMENTAL: Subject to change.
+	Resolvers []string `json:"resolvers,omitempty"`
+
+	dns                any // technically, it should be any/all of the libdns interfaces (RecordSetter, RecordAppender, etc.)
 	certificateLoaders []CertificateLoader
 	automateNames      map[string]struct{}
 	ctx                caddy.Context
@@ -133,7 +141,7 @@ type TLS struct {
 	logger             *zap.Logger
 	events             *caddyevents.App
 
-	serverNames   map[string]struct{}
+	serverNames   map[string]serverNameRegistration
 	serverNamesMu *sync.Mutex
 
 	// set of subjects with managed certificates,
@@ -161,7 +169,7 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	t.logger = ctx.Logger()
 	repl := caddy.NewReplacer()
 	t.managing, t.loaded = make(map[string]string), make(map[string]string)
-	t.serverNames = make(map[string]struct{})
+	t.serverNames = make(map[string]serverNameRegistration)
 	t.serverNamesMu = new(sync.Mutex)
 
 	// set up default DNS module, if any, and make sure it implements all the
@@ -335,7 +343,6 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 
 	// ECH (Encrypted ClientHello) initialization
 	if t.EncryptedClientHello != nil {
-		t.EncryptedClientHello.configs = make(map[string][]echConfig)
 		outerNames, err := t.EncryptedClientHello.Provision(ctx)
 		if err != nil {
 			return fmt.Errorf("provisioning Encrypted ClientHello components: %v", err)
@@ -411,12 +418,37 @@ func (t *TLS) Start() error {
 		return fmt.Errorf("automate: managing %v: %v", t.automateNames, err)
 	}
 
-	// publish ECH configs in the background; does not need to block
-	// server startup, as it could take a while
 	if t.EncryptedClientHello != nil {
+		echLogger := t.logger.Named("ech")
+
+		// publish ECH configs in the background; does not need to block
+		// server startup, as it could take a while; then keep keys rotated
 		go func() {
-			if err := t.publishECHConfigs(); err != nil {
-				t.logger.Named("ech").Error("publication(s) failed", zap.Error(err))
+			// publish immediately first
+			if err := t.publishECHConfigs(echLogger); err != nil {
+				echLogger.Error("publication(s) failed", zap.Error(err))
+			}
+
+			// then every so often, rotate and publish if needed
+			// (both of these functions only do something if needed)
+			for {
+				select {
+				case <-time.After(1 * time.Hour):
+					// ensure old keys are rotated out
+					t.EncryptedClientHello.configsMu.Lock()
+					err = t.EncryptedClientHello.rotateECHKeys(t.ctx, echLogger, false)
+					t.EncryptedClientHello.configsMu.Unlock()
+					if err != nil {
+						echLogger.Error("rotating ECH configs failed", zap.Error(err))
+						continue
+					}
+					err := t.publishECHConfigs(echLogger)
+					if err != nil {
+						echLogger.Error("publication(s) failed", zap.Error(err))
+					}
+				case <-t.ctx.Done():
+					return
+				}
 			}
 		}()
 	}
@@ -582,8 +614,8 @@ func (t *TLS) Manage(subjects map[string]struct{}) error {
 
 // managingWildcardFor returns true if the app is managing a certificate that covers that
 // subject name (including consideration of wildcards), either from its internal list of
-// names that it IS managing certs for, or from the otherSubjsToManage which includes names
-// that WILL be managed.
+// names that it IS managing certs for, from the otherSubjsToManage which includes names
+// that WILL be managed, or from names configured in the 'automate' loader.
 func (t *TLS) managingWildcardFor(subj string, otherSubjsToManage map[string]struct{}) bool {
 	// TODO: we could also consider manually-loaded certs using t.HasCertificateForSubject(),
 	// but that does not account for how manually-loaded certs may be restricted as to which
@@ -598,7 +630,9 @@ func (t *TLS) managingWildcardFor(subj string, otherSubjsToManage map[string]str
 		return managing
 	}
 
-	// replace labels of the domain with wildcards until we get a match
+	// replace labels of the domain with wildcards until we get a match from names
+	// already being managed, those about to be managed in this batch, or those
+	// configured for automation
 	labels := strings.Split(subj, ".")
 	for i := range labels {
 		if labels[i] == "*" {
@@ -612,32 +646,117 @@ func (t *TLS) managingWildcardFor(subj string, otherSubjsToManage map[string]str
 		if _, ok := otherSubjsToManage[candidate]; ok {
 			return true
 		}
+		if _, ok := t.automateNames[candidate]; ok {
+			return true
+		}
 	}
 
 	return false
 }
 
-// RegisterServerNames registers the provided DNS names with the TLS app.
-// This is currently used to auto-publish Encrypted ClientHello (ECH)
-// configurations, if enabled. Use of this function by apps using the TLS
-// app removes the need for the user to redundantly specify domain names
-// in their configuration. This function separates hostname and port
-// (keeping only the hotsname) and filters IP addresses, which can't be
-// used with ECH.
+// RegisterServerNames registers the provided DNS names with the TLS app and
+// associates them with the given HTTPS RR ALPN values, if any. This is
+// currently used to auto-publish Encrypted ClientHello (ECH) configurations,
+// if enabled. Use of this function by apps using the TLS app removes the need
+// for the user to redundantly specify domain names in their configuration.
+// This function separates hostname and port, keeping only the hostname, and
+// filters IP addresses which can't be used with ECH.
 //
 // EXPERIMENTAL: This function and its semantics/behavior are subject to change.
-func (t *TLS) RegisterServerNames(dnsNames []string) {
+func (t *TLS) RegisterServerNames(dnsNames, alpnValues []string) {
 	t.serverNamesMu.Lock()
+	defer t.serverNamesMu.Unlock()
+
 	for _, name := range dnsNames {
 		host, _, err := net.SplitHostPort(name)
 		if err != nil {
 			host = name
 		}
-		if strings.TrimSpace(host) != "" && !certmagic.SubjectIsIP(host) {
-			t.serverNames[strings.ToLower(host)] = struct{}{}
+		host = strings.ToLower(strings.TrimSpace(host))
+		if host == "" || certmagic.SubjectIsIP(host) {
+			continue
+		}
+
+		registration := t.serverNames[host]
+
+		if len(alpnValues) == 0 {
+			t.serverNames[host] = registration
+			continue
+		}
+
+		if registration.alpnValues == nil {
+			registration.alpnValues = make(map[string]struct{}, len(alpnValues))
+		}
+		for _, alpn := range alpnValues {
+			if alpn == "" {
+				continue
+			}
+			registration.alpnValues[alpn] = struct{}{}
+		}
+		t.serverNames[host] = registration
+	}
+}
+
+func (t *TLS) alpnValuesForServerNames(dnsNames []string) map[string][]string {
+	t.serverNamesMu.Lock()
+	defer t.serverNamesMu.Unlock()
+
+	result := make(map[string][]string, len(dnsNames))
+	for _, name := range dnsNames {
+		host, _, err := net.SplitHostPort(name)
+		if err != nil {
+			host = name
+		}
+		host = strings.ToLower(strings.TrimSpace(host))
+		if host == "" {
+			continue
+		}
+
+		registration, ok := t.serverNames[host]
+		if !ok || len(registration.alpnValues) == 0 {
+			continue
+		}
+		result[host] = OrderedHTTPSRRALPN(registration.alpnValues)
+	}
+
+	return result
+}
+
+// OrderedHTTPSRRALPN returns the HTTPS RR ALPN values in preferred order.
+func OrderedHTTPSRRALPN(alpnSet map[string]struct{}) []string {
+	if len(alpnSet) == 0 {
+		return nil
+	}
+
+	knownOrder := append([]string{"h3"}, defaultALPN...)
+	ordered := make([]string, 0, len(alpnSet))
+	seen := make(map[string]struct{}, len(alpnSet))
+
+	for _, alpn := range knownOrder {
+		if _, ok := alpnSet[alpn]; ok {
+			ordered = append(ordered, alpn)
+			seen[alpn] = struct{}{}
 		}
 	}
-	t.serverNamesMu.Unlock()
+
+	if len(ordered) == len(alpnSet) {
+		return ordered
+	}
+
+	var remaining []string
+	for alpn := range alpnSet {
+		if _, ok := seen[alpn]; ok {
+			continue
+		}
+		remaining = append(remaining, alpn)
+	}
+	slices.Sort(remaining)
+
+	return append(ordered, remaining...)
+}
+
+type serverNameRegistration struct {
+	alpnValues map[string]struct{}
 }
 
 // HandleHTTPChallenge ensures that the ACME HTTP challenge or ZeroSSL HTTP
@@ -760,6 +879,8 @@ func (t *TLS) getAutomationPolicyForName(name string) *AutomationPolicy {
 // AllMatchingCertificates returns the list of all certificates in
 // the cache which could be used to satisfy the given SAN.
 func AllMatchingCertificates(san string) []certmagic.Certificate {
+	certCacheMu.RLock()
+	defer certCacheMu.RUnlock()
 	return certCache.AllMatchingCertificates(san)
 }
 

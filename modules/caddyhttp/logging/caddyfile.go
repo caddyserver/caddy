@@ -15,6 +15,8 @@
 package logging
 
 import (
+	"strings"
+
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -26,7 +28,7 @@ func init() {
 
 // parseCaddyfile sets up the log_append handler from Caddyfile tokens. Syntax:
 //
-//	log_append [<matcher>] <key> <value>
+//	log_append [<matcher>] [<]<key> <value>
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
 	handler := new(LogAppend)
 	err := handler.UnmarshalCaddyfile(h.Dispenser)
@@ -42,6 +44,10 @@ func (h *LogAppend) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	h.Key = d.Val()
 	if !d.NextArg() {
 		return d.ArgErr()
+	}
+	if strings.HasPrefix(h.Key, "<") && len(h.Key) > 1 {
+		h.Early = true
+		h.Key = h.Key[1:]
 	}
 	h.Value = d.Val()
 	return nil

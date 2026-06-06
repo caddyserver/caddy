@@ -231,7 +231,10 @@ func loadConfigWithLogger(logger *zap.Logger, configFile, adapterName string) ([
 		// validate that the config is at least valid JSON
 		err = json.Unmarshal(config, new(any))
 		if err != nil {
-			return nil, "", "", fmt.Errorf("config is not valid JSON: %v; did you mean to use a config adapter (the --adapter flag)?", err)
+			if jsonErr, ok := err.(*json.SyntaxError); ok {
+				return nil, "", "", fmt.Errorf("config is not valid JSON: %w, at offset %d; did you mean to use a config adapter (the --adapter flag)?", err, jsonErr.Offset)
+			}
+			return nil, "", "", fmt.Errorf("config is not valid JSON: %w; did you mean to use a config adapter (the --adapter flag)?", err)
 		}
 	}
 
@@ -481,7 +484,13 @@ func setResourceLimits(logger *zap.Logger) func() {
 	// See https://pkg.go.dev/runtime/debug#SetMemoryLimit
 	_, _ = memlimit.SetGoMemLimitWithOpts(
 		memlimit.WithLogger(
-			slog.New(zapslog.NewHandler(logger.Core())),
+			slog.New(zapslog.NewHandler(
+				logger.Core(),
+				zapslog.WithName("memlimit"),
+				// the default enables traces at ERROR level, this disables
+				// them by setting it to a level higher than any other level
+				zapslog.AddStacktraceAt(slog.Level(127)),
+			)),
 		),
 		memlimit.WithProvider(
 			memlimit.ApplyFallback(

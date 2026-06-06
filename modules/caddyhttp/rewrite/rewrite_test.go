@@ -16,7 +16,9 @@ package rewrite
 
 import (
 	"net/http"
+	"reflect"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
@@ -224,6 +226,11 @@ func TestRewrite(t *testing.T) {
 			input:  newRequest(t, "GET", "/foo#fragFirst?c=d"),
 			expect: newRequest(t, "GET", "/bar#fragFirst?c=d"),
 		},
+		{
+			rule:   Rewrite{URI: "/api/admin/panel"},
+			input:  newRequest(t, "GET", "/api/admin%2Fpanel"),
+			expect: newRequest(t, "GET", "/api/admin/panel"),
+		},
 
 		{
 			rule:   Rewrite{StripPathPrefix: "/prefix"},
@@ -344,6 +351,32 @@ func TestRewrite(t *testing.T) {
 			input:  newRequest(t, "GET", "/foo//bar///baz?a=b//c"),
 			expect: newRequest(t, "GET", "/foo/bar/baz?a=b//c"),
 		},
+
+		// regression tests for GHSA-j8px-rmrx-76h9: when the rewrite URI
+		// ends with a literal '?', the first-pass placeholder expansion
+		// may produce a path containing attacker-controlled bytes that
+		// then get split at '?' and fed into buildQueryString, which runs
+		// a SECOND placeholder pass. Bytes injected via a header value (or
+		// any other client-controlled placeholder) must not be treated as
+		// placeholder syntax during this second pass.
+		{
+			// literal header value containing placeholder syntax is not re-expanded into query
+			rule:   Rewrite{URI: "/serve/{http.request.header.X-Fwd}?"},
+			input:  newRequestWithHeader(t, "GET", "/anything", "X-Fwd", "foo?{env.CADDY_REWRITE_TEST_SECRET}=leak"),
+			expect: newRequest(t, "GET", "/serve/foo?%7Benv.CADDY_REWRITE_TEST_SECRET%7D=leak"),
+		},
+		{
+			// literal header value with placeholder syntax in query position is not re-expanded
+			rule:   Rewrite{URI: "/serve/{http.request.header.X-Fwd}?"},
+			input:  newRequestWithHeader(t, "GET", "/anything", "X-Fwd", "ok?key={env.CADDY_REWRITE_TEST_SECRET}"),
+			expect: newRequest(t, "GET", "/serve/ok?key=%7Benv.CADDY_REWRITE_TEST_SECRET%7D"),
+		},
+		{
+			// literal header value with embedded file placeholder is not re-expanded
+			rule:   Rewrite{URI: "/serve/{http.request.header.X-Fwd}?"},
+			input:  newRequestWithHeader(t, "GET", "/anything", "X-Fwd", "ok?path={file./etc/passwd}"),
+			expect: newRequest(t, "GET", "/serve/ok?path=%7Bfile./etc/passwd%7D"),
+		},
 	} {
 		// copy the original input just enough so that we can
 		// compare it after the rewrite to see if it changed
@@ -358,6 +391,9 @@ func TestRewrite(t *testing.T) {
 		repl.Set("http.request.uri", tc.input.RequestURI)
 		repl.Set("http.request.uri.path", tc.input.URL.Path)
 		repl.Set("http.request.uri.query", tc.input.URL.RawQuery)
+		for field, vals := range tc.input.Header {
+			repl.Set("http.request.header."+field, strings.Join(vals, ","))
+		}
 
 		// we can't directly call Provision() without a valid caddy.Context
 		// (TODO: fix that) so here we ad-hoc compile the regex
@@ -392,12 +428,67 @@ func TestRewrite(t *testing.T) {
 	}
 }
 
+func TestQueryOpsRenameNoOpCases(t *testing.T) {
+	repl := caddy.NewReplacer()
+
+	for i, tc := range []struct {
+		input  *http.Request
+		expect map[string][]string
+		ops    *queryOps
+	}{
+		{
+			ops: &queryOps{
+				Rename: []queryOpsArguments{{Key: "ID", Val: "id"}},
+			},
+			input:  newRequest(t, "GET", "/?page=test&id=5&test=100"),
+			expect: map[string][]string{"id": {"5"}, "page": {"test"}, "test": {"100"}},
+		},
+		{
+			ops: &queryOps{
+				Rename: []queryOpsArguments{{Key: "id", Val: "id"}},
+			},
+			input:  newRequest(t, "GET", "/?page=test&id=5&test=100"),
+			expect: map[string][]string{"id": {"5"}, "page": {"test"}, "test": {"100"}},
+		},
+		{
+			ops: &queryOps{
+				Rename: []queryOpsArguments{{Key: "ID", Val: "id"}},
+			},
+			input:  newRequest(t, "GET", "/?page=test&ID=5&test=100"),
+			expect: map[string][]string{"id": {"5"}, "page": {"test"}, "test": {"100"}},
+		},
+		{
+			ops: &queryOps{
+				Rename: []queryOpsArguments{{Key: "ID", Val: "id"}},
+			},
+			input:  newRequest(t, "GET", "/?page=test&ID=5&id=7&test=100"),
+			expect: map[string][]string{"id": {"5"}, "page": {"test"}, "test": {"100"}},
+		},
+	} {
+		repl.Set("http.request.uri", tc.input.RequestURI)
+		repl.Set("http.request.uri.path", tc.input.URL.Path)
+		repl.Set("http.request.uri.query", tc.input.URL.RawQuery)
+
+		tc.ops.do(tc.input, repl)
+
+		if actual := tc.input.URL.Query(); !reflect.DeepEqual(tc.expect, map[string][]string(actual)) {
+			t.Errorf("Test %d: Expected query=%v but got %v", i, tc.expect, actual)
+		}
+	}
+}
+
 func newRequest(t *testing.T, method, uri string) *http.Request {
 	req, err := http.NewRequest(method, uri, nil)
 	if err != nil {
 		t.Fatalf("error creating request: %v", err)
 	}
 	req.RequestURI = req.URL.RequestURI() // simulate incoming request
+	return req
+}
+
+func newRequestWithHeader(t *testing.T, method, uri, headerKey, headerVal string) *http.Request {
+	req := newRequest(t, method, uri)
+	req.Header.Set(headerKey, headerVal)
 	return req
 }
 

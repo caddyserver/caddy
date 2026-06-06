@@ -15,6 +15,8 @@
 package logging
 
 import (
+	"bytes"
+	"encoding/base64"
 	"net/http"
 	"strings"
 
@@ -42,6 +44,12 @@ type LogAppend struct {
 	// map, the value of that key will be used. Otherwise
 	// the value will be used as-is as a constant string.
 	Value string `json:"value,omitempty"`
+
+	// Early, if true, adds the log field before calling
+	// the next handler in the chain. By default, the log
+	// field is added on the way back up the middleware chain,
+	// after all subsequent handlers have completed.
+	Early bool `json:"early,omitempty"`
 }
 
 // CaddyModule returns the Caddy module information.
@@ -53,13 +61,63 @@ func (LogAppend) CaddyModule() caddy.ModuleInfo {
 }
 
 func (h LogAppend) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	// Run the next handler in the chain first.
+	// Determine if we need to add the log field early.
+	// We do if the Early flag is set, or for convenience,
+	// if the value is a special placeholder for the request body.
+	needsEarly := h.Early || h.Value == placeholderRequestBody || h.Value == placeholderRequestBodyBase64
+
+	// Check if we need to buffer the response for special placeholders
+	needsResponseBody := h.Value == placeholderResponseBody || h.Value == placeholderResponseBodyBase64
+
+	if needsEarly && !needsResponseBody {
+		// Add the log field before calling the next handler
+		// (but not if we need the response body, which isn't available yet)
+		h.addLogField(r, nil)
+	}
+
+	var rec caddyhttp.ResponseRecorder
+	var buf *bytes.Buffer
+
+	if needsResponseBody {
+		// Wrap the response writer with a recorder to capture the response body
+		buf = new(bytes.Buffer)
+		rec = caddyhttp.NewResponseRecorder(w, buf, func(status int, header http.Header) bool {
+			// Always buffer the response when we need to log the body
+			return true
+		})
+		w = rec
+	}
+
+	// Run the next handler in the chain.
 	// If an error occurs, we still want to add
 	// any extra log fields that we can, so we
 	// hold onto the error and return it later.
 	handlerErr := next.ServeHTTP(w, r)
 
-	// On the way back up the chain, add the extra log field
+	if needsResponseBody {
+		// Write the buffered response to the client
+		if rec.Buffered() {
+			h.addLogField(r, buf)
+			err := rec.WriteResponse()
+			if err != nil {
+				return err
+			}
+		}
+		return handlerErr
+	}
+
+	if !h.Early {
+		// Add the log field after the handler completes
+		h.addLogField(r, buf)
+	}
+
+	return handlerErr
+}
+
+// addLogField adds the log field to the request's extra log fields.
+// If buf is not nil, it contains the buffered response body for special
+// response body placeholders.
+func (h LogAppend) addLogField(r *http.Request, buf *bytes.Buffer) {
 	ctx := r.Context()
 
 	vars := ctx.Value(caddyhttp.VarsCtxKey).(map[string]any)
@@ -67,7 +125,21 @@ func (h LogAppend) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 	extra := ctx.Value(caddyhttp.ExtraLogFieldsCtxKey).(*caddyhttp.ExtraLogFields)
 
 	var varValue any
-	if strings.HasPrefix(h.Value, "{") &&
+
+	// Handle special case placeholders for response body
+	if h.Value == placeholderResponseBody {
+		if buf != nil {
+			varValue = buf.String()
+		} else {
+			varValue = ""
+		}
+	} else if h.Value == placeholderResponseBodyBase64 {
+		if buf != nil {
+			varValue = base64.StdEncoding.EncodeToString(buf.Bytes())
+		} else {
+			varValue = ""
+		}
+	} else if strings.HasPrefix(h.Value, "{") &&
 		strings.HasSuffix(h.Value, "}") &&
 		strings.Count(h.Value, "{") == 1 {
 		// the value looks like a placeholder, so get its value
@@ -84,9 +156,16 @@ func (h LogAppend) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 	// We use zap.Any because it will reflect
 	// to the correct type for us.
 	extra.Add(zap.Any(h.Key, varValue))
-
-	return handlerErr
 }
+
+const (
+	// Special placeholder values that are handled by log_append
+	// rather than by the replacer.
+	placeholderRequestBody        = "{http.request.body}"
+	placeholderRequestBodyBase64  = "{http.request.body_base64}"
+	placeholderResponseBody       = "{http.response.body}"
+	placeholderResponseBodyBase64 = "{http.response.body_base64}"
+)
 
 // Interface guards
 var (

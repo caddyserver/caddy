@@ -15,17 +15,27 @@
 package caddyhttp
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/exp/zapslog"
 	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 )
+
+func init() {
+	caddy.RegisterSlogHandlerFactory(func(handler slog.Handler, core zapcore.Core, moduleID string) slog.Handler {
+		return &extraFieldsSlogHandler{defaultHandler: handler, core: core, moduleID: moduleID}
+	})
+}
 
 // ServerLogConfig describes a server's logging configuration. If
 // enabled without customization, all requests to this server are
@@ -223,17 +233,21 @@ func errLogValues(err error) (status int, msg string, fields func() []zapcore.Fi
 
 // ExtraLogFields is a list of extra fields to log with every request.
 type ExtraLogFields struct {
-	fields []zapcore.Field
+	fields   []zapcore.Field
+	handlers sync.Map
 }
 
 // Add adds a field to the list of extra fields to log.
 func (e *ExtraLogFields) Add(field zap.Field) {
+	e.handlers.Clear()
 	e.fields = append(e.fields, field)
 }
 
 // Set sets a field in the list of extra fields to log.
 // If the field already exists, it is replaced.
 func (e *ExtraLogFields) Set(field zap.Field) {
+	e.handlers.Clear()
+
 	for i := range e.fields {
 		if e.fields[i].Key == field.Key {
 			e.fields[i] = field
@@ -241,6 +255,29 @@ func (e *ExtraLogFields) Set(field zap.Field) {
 		}
 	}
 	e.fields = append(e.fields, field)
+}
+
+func (e *ExtraLogFields) getSloggerHandler(handler *extraFieldsSlogHandler) (h slog.Handler) {
+	if existing, ok := e.handlers.Load(handler); ok {
+		return existing.(slog.Handler)
+	}
+
+	if handler.moduleID == "" {
+		h = zapslog.NewHandler(handler.core.With(e.fields))
+	} else {
+		h = zapslog.NewHandler(handler.core.With(e.fields), zapslog.WithName(handler.moduleID))
+	}
+
+	if handler.group != "" {
+		h = h.WithGroup(handler.group)
+	}
+	if handler.attrs != nil {
+		h = h.WithAttrs(handler.attrs)
+	}
+
+	e.handlers.Store(handler, h)
+
+	return h
 }
 
 const (
@@ -254,3 +291,43 @@ const (
 	// Variable name used to indicate the logger to be used
 	AccessLoggerNameVarKey string = "access_logger_names"
 )
+
+type extraFieldsSlogHandler struct {
+	defaultHandler slog.Handler
+	core           zapcore.Core
+	moduleID       string
+	group          string
+	attrs          []slog.Attr
+}
+
+func (e *extraFieldsSlogHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return e.defaultHandler.Enabled(ctx, level)
+}
+
+func (e *extraFieldsSlogHandler) Handle(ctx context.Context, record slog.Record) error {
+	if elf, ok := ctx.Value(ExtraLogFieldsCtxKey).(*ExtraLogFields); ok {
+		return elf.getSloggerHandler(e).Handle(ctx, record)
+	}
+
+	return e.defaultHandler.Handle(ctx, record)
+}
+
+func (e *extraFieldsSlogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &extraFieldsSlogHandler{
+		e.defaultHandler.WithAttrs(attrs),
+		e.core,
+		e.moduleID,
+		e.group,
+		append(e.attrs, attrs...),
+	}
+}
+
+func (e *extraFieldsSlogHandler) WithGroup(name string) slog.Handler {
+	return &extraFieldsSlogHandler{
+		e.defaultHandler.WithGroup(name),
+		e.core,
+		e.moduleID,
+		name,
+		e.attrs,
+	}
+}

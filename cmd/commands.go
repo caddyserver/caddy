@@ -229,12 +229,13 @@ documentation: https://go.dev/doc/modules/version-numbers
 
 	RegisterCommand(Command{
 		Name:  "list-modules",
-		Usage: "[--packages] [--versions] [--skip-standard]",
+		Usage: "[--packages] [--versions] [--skip-standard] [--json]",
 		Short: "Lists the installed Caddy modules",
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().BoolP("packages", "", false, "Print package paths")
 			cmd.Flags().BoolP("versions", "", false, "Print version information")
 			cmd.Flags().BoolP("skip-standard", "s", false, "Skip printing standard modules")
+			cmd.Flags().BoolP("json", "", false, "Print modules in JSON format")
 			cmd.RunE = WrapCommandFuncForCobra(cmdListModules)
 		},
 	})
@@ -565,7 +566,7 @@ argument of --directory. If the directory does not exist, it will be created.
 // following format:
 //
 //   - lowercase
-//   - alphanumeric and hyphen characters only
+//   - ASCII lowercase letters, digits and hyphens only
 //   - cannot start or end with a hyphen
 //   - hyphen cannot be adjacent to another hyphen
 //

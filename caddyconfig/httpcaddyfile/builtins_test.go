@@ -66,14 +66,14 @@ func TestLogDirectiveSyntax(t *testing.T) {
 			input: `:8080 {
 				log {
 					sampling {
-						interval 2
+						interval 2s
 						first 3
 						thereafter 4
 					}
 				}
 			}
 			`,
-			output:      `{"logging":{"logs":{"default":{"exclude":["http.log.access.log0"]},"log0":{"sampling":{"interval":2,"first":3,"thereafter":4},"include":["http.log.access.log0"]}}},"apps":{"http":{"servers":{"srv0":{"listen":[":8080"],"logs":{"default_logger_name":"log0"}}}}}}`,
+			output:      `{"logging":{"logs":{"default":{"exclude":["http.log.access.log0"]},"log0":{"sampling":{"interval":2000000000,"first":3,"thereafter":4},"include":["http.log.access.log0"]}}},"apps":{"http":{"servers":{"srv0":{"listen":[":8080"],"logs":{"default_logger_name":"log0"}}}}}}`,
 			expectError: false,
 		},
 	} {

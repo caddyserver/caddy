@@ -1,0 +1,146 @@
+:8080
+
+forward_auth 127.0.0.1:9091 {
+	uri /
+	copy_headers X-User-Id X-User-Role
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8080"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handle_response": [
+										{
+											"match": {
+												"status_code": [
+													2
+												]
+											},
+											"routes": [
+												{
+													"handle": [
+														{
+															"handler": "vars"
+														}
+													]
+												},
+												{
+													"handle": [
+														{
+															"handler": "headers",
+															"request": {
+																"delete": [
+																	"X-User-Id"
+																]
+															}
+														}
+													]
+												},
+												{
+													"handle": [
+														{
+															"handler": "headers",
+															"request": {
+																"set": {
+																	"X-User-Id": [
+																		"{http.reverse_proxy.header.X-User-Id}"
+																	]
+																}
+															}
+														}
+													],
+													"match": [
+														{
+															"not": [
+																{
+																	"vars": {
+																		"{http.reverse_proxy.header.X-User-Id}": [
+																			""
+																		]
+																	}
+																}
+															]
+														}
+													]
+												},
+												{
+													"handle": [
+														{
+															"handler": "headers",
+															"request": {
+																"delete": [
+																	"X-User-Role"
+																]
+															}
+														}
+													]
+												},
+												{
+													"handle": [
+														{
+															"handler": "headers",
+															"request": {
+																"set": {
+																	"X-User-Role": [
+																		"{http.reverse_proxy.header.X-User-Role}"
+																	]
+																}
+															}
+														}
+													],
+													"match": [
+														{
+															"not": [
+																{
+																	"vars": {
+																		"{http.reverse_proxy.header.X-User-Role}": [
+																			""
+																		]
+																	}
+																}
+															]
+														}
+													]
+												}
+											]
+										}
+									],
+									"handler": "reverse_proxy",
+									"headers": {
+										"request": {
+											"set": {
+												"X-Forwarded-Method": [
+													"{http.request.method}"
+												],
+												"X-Forwarded-Uri": [
+													"{http.request.uri}"
+												]
+											}
+										}
+									},
+									"rewrite": {
+										"method": "GET",
+										"uri": "/"
+									},
+									"upstreams": [
+										{
+											"dial": "127.0.0.1:9091"
+										}
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

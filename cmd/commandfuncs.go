@@ -58,7 +58,7 @@ func cmdStart(fl Flags) (int, error) {
 
 	// open a listener to which the child process will connect when
 	// it is ready to confirm that it has successfully started
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := listenTCPForPingback(net.Listen)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup,
 			fmt.Errorf("opening listener for success confirmation: %v", err)
@@ -74,7 +74,7 @@ func cmdStart(fl Flags) (int, error) {
 	// ensure it's the process we're expecting - we can be
 	// sure by giving it some random bytes and having it echo
 	// them back to us)
-	cmd := exec.Command(os.Args[0], "run", "--pingback", ln.Addr().String())
+	cmd := exec.Command(os.Args[0], "run", "--pingback", ln.Addr().String()) //nolint:gosec // no command injection that I can determine...
 	// we should be able to run caddy in relative paths
 	if errors.Is(cmd.Err, exec.ErrDot) {
 		cmd.Err = nil
@@ -167,6 +167,22 @@ func cmdStart(fl Flags) (int, error) {
 	}
 
 	return caddy.ExitCodeSuccess, nil
+}
+
+type tcpListenFunc func(network, address string) (net.Listener, error)
+
+func listenTCPForPingback(listen tcpListenFunc) (net.Listener, error) {
+	ln, ipv4Err := listen("tcp4", "127.0.0.1:0")
+	if ipv4Err == nil {
+		return ln, nil
+	}
+
+	ln, ipv6Err := listen("tcp6", "[::1]:0")
+	if ipv6Err == nil {
+		return ln, nil
+	}
+
+	return nil, fmt.Errorf("listen on 127.0.0.1:0: %v; listen on [::1]:0: %v", ipv4Err, ipv6Err)
 }
 
 func cmdRun(fl Flags) (int, error) {
@@ -372,7 +388,7 @@ func cmdReload(fl Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("no config file to load")
 	}
 
-	adminAddr, err := DetermineAdminAPIAddress(addressFlag, config, configFlag, configAdapterFlag)
+	adminAddr, err := DetermineAdminAPIAddress(addressFlag, config, configFile, configAdapterFlag)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("couldn't determine admin API address: %v", err)
 	}
@@ -411,11 +427,65 @@ func cmdBuildInfo(_ Flags) (int, error) {
 	return caddy.ExitCodeSuccess, nil
 }
 
+// jsonModuleInfo holds metadata about a Caddy module for JSON output.
+type jsonModuleInfo struct {
+	ModuleName string `json:"module_name"`
+	ModuleType string `json:"module_type"`
+	Version    string `json:"version,omitempty"`
+	PackageURL string `json:"package_url,omitempty"`
+}
+
 func cmdListModules(fl Flags) (int, error) {
 	packages := fl.Bool("packages")
 	versions := fl.Bool("versions")
 	skipStandard := fl.Bool("skip-standard")
+	jsonOutput := fl.Bool("json")
 
+	// Organize modules by whether they come with the standard distribution
+	standard, nonstandard, unknown, err := getModules()
+	if err != nil {
+		// If module info can't be fetched, just print the IDs and exit
+		for _, m := range caddy.Modules() {
+			fmt.Println(m)
+		}
+		return caddy.ExitCodeSuccess, nil
+	}
+
+	// Logic for JSON output
+	if jsonOutput {
+		output := []jsonModuleInfo{}
+
+		// addToOutput is a helper to convert internal module info to the JSON-serializable struct
+		addToOutput := func(list []moduleInfo, moduleType string) {
+			for _, mi := range list {
+				item := jsonModuleInfo{
+					ModuleName: mi.caddyModuleID,
+					ModuleType: moduleType, // Mapping the type here
+				}
+				if mi.goModule != nil {
+					item.Version = mi.goModule.Version
+					item.PackageURL = mi.goModule.Path
+				}
+				output = append(output, item)
+			}
+		}
+
+		// Pass the respective type for each category
+		if !skipStandard {
+			addToOutput(standard, "standard")
+		}
+		addToOutput(nonstandard, "non-standard")
+		addToOutput(unknown, "unknown")
+
+		jsonBytes, err := json.MarshalIndent(output, "", "  ")
+		if err != nil {
+			return caddy.ExitCodeFailedQuit, err
+		}
+		fmt.Println(string(jsonBytes))
+		return caddy.ExitCodeSuccess, nil
+	}
+
+	// Logic for Text output (Fallback)
 	printModuleInfo := func(mi moduleInfo) {
 		fmt.Print(mi.caddyModuleID)
 		if versions && mi.goModule != nil {
@@ -431,16 +501,6 @@ func cmdListModules(fl Flags) (int, error) {
 			fmt.Printf(" [%v]", mi.err)
 		}
 		fmt.Println()
-	}
-
-	// organize modules by whether they come with the standard distribution
-	standard, nonstandard, unknown, err := getModules()
-	if err != nil {
-		// oh well, just print the module IDs and exit
-		for _, m := range caddy.Modules() {
-			fmt.Println(m)
-		}
-		return caddy.ExitCodeSuccess, nil
 	}
 
 	// Standard modules (always shipped with Caddy)
@@ -461,8 +521,8 @@ func cmdListModules(fl Flags) (int, error) {
 		for _, mod := range nonstandard {
 			printModuleInfo(mod)
 		}
+		fmt.Printf("\n  Non-standard modules: %d\n", len(nonstandard))
 	}
-	fmt.Printf("\n  Non-standard modules: %d\n", len(nonstandard))
 
 	// Unknown modules (couldn't get Caddy module info)
 	if len(unknown) > 0 {
@@ -472,8 +532,8 @@ func cmdListModules(fl Flags) (int, error) {
 		for _, mod := range unknown {
 			printModuleInfo(mod)
 		}
+		fmt.Printf("\n  Unknown modules: %d\n", len(unknown))
 	}
-	fmt.Printf("\n  Unknown modules: %d\n", len(unknown))
 
 	return caddy.ExitCodeSuccess, nil
 }
@@ -653,7 +713,7 @@ func cmdFmt(fl Flags) (int, error) {
 	output := caddyfile.Format(input)
 
 	if fl.Bool("overwrite") {
-		if err := os.WriteFile(configFile, output, 0o600); err != nil {
+		if err := os.WriteFile(configFile, output, 0o600); err != nil { //nolint:gosec // path traversal is not really a thing here, this is either "Caddyfile" or admin-controlled
 			return caddy.ExitCodeFailedStartup, fmt.Errorf("overwriting formatted file: %v", err)
 		}
 		return caddy.ExitCodeSuccess, nil
@@ -776,7 +836,7 @@ func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io
 		},
 	}
 
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // the only SSRF here would be self-sabatoge I think
 	if err != nil {
 		return nil, fmt.Errorf("performing request: %v", err)
 	}

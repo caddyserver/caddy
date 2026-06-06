@@ -21,7 +21,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	weakrand "math/rand"
+	weakrand "math/rand/v2"
 	"net"
 	"net/http"
 	"net/url"
@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/pires/go-proxyproto"
+	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -40,6 +41,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 	"github.com/caddyserver/caddy/v2/modules/internal/network"
 )
@@ -160,7 +162,8 @@ type HTTPTransport struct {
 	// `HTTPS_PROXY`, and `NO_PROXY` environment variables.
 	NetworkProxyRaw json.RawMessage `json:"network_proxy,omitempty" caddy:"namespace=caddy.network_proxy inline_key=from"`
 
-	h3Transport *http3.Transport // TODO: EXPERIMENTAL (May 2024)
+	h3Transport   *http3.Transport // TODO: EXPERIMENTAL (May 2024)
+	quicTransport *quic.Transport  // used by h3Transport if sni placeholder is used, otherwise nil
 }
 
 // CaddyModule returns the Caddy module information.
@@ -265,7 +268,7 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 			PreferGo: true,
 			Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
 				//nolint:gosec
-				addr := h.Resolver.netAddrs[weakrand.Intn(len(h.Resolver.netAddrs))]
+				addr := h.Resolver.netAddrs[weakrand.IntN(len(h.Resolver.netAddrs))]
 				return d.DialContext(ctx, addr.Network, addr.JoinHostPort(0))
 			},
 		}
@@ -383,6 +386,9 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 	}
 	// we need to keep track if a proxy is used for a request
 	proxyWrapper := func(req *http.Request) (*url.URL, error) {
+		if proxy == nil {
+			return nil, nil
+		}
 		u, err := proxy(req)
 		if u == nil || err != nil {
 			return u, err
@@ -411,8 +417,13 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 			return nil, fmt.Errorf("making TLS client config: %v", err)
 		}
 
-		// servername has a placeholder, so we need to replace it
-		if strings.Contains(h.TLS.ServerName, "{") {
+		serverNameHasPlaceholder := strings.Contains(h.TLS.ServerName, "{")
+
+		// We need to use custom DialTLSContext if:
+		// 1. ServerName has a placeholder that needs to be replaced at request-time, OR
+		// 2. ProxyProtocol is enabled, because req.URL.Host is modified to include
+		//    client address info with "->" separator which breaks Go's address parsing
+		if serverNameHasPlaceholder || h.ProxyProtocol != "" {
 			rt.DialTLSContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 				// reuses the dialer from above to establish a plaintext connection
 				conn, err := dialContext(ctx, network, addr)
@@ -421,9 +432,11 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 				}
 
 				// but add our own handshake logic
-				repl := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 				tlsConfig := rt.TLSClientConfig.Clone()
-				tlsConfig.ServerName = repl.ReplaceAll(tlsConfig.ServerName, "")
+				if serverNameHasPlaceholder {
+					repl := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+					tlsConfig.ServerName = repl.ReplaceAll(tlsConfig.ServerName, "")
+				}
 
 				// h1 only
 				if caddyhttp.GetVar(ctx, tlsH1OnlyVarKey) == true {
@@ -437,7 +450,7 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 				// complete the handshake before returning the connection
 				if rt.TLSHandshakeTimeout != 0 {
 					var cancel context.CancelFunc
-					ctx, cancel = context.WithTimeout(ctx, rt.TLSHandshakeTimeout)
+					ctx, cancel = context.WithTimeoutCause(ctx, rt.TLSHandshakeTimeout, fmt.Errorf("HTTP transport TLS handshake %ds timeout", int(rt.TLSHandshakeTimeout.Seconds())))
 					defer cancel()
 				}
 				err = tlsConn.HandshakeContext(ctx)
@@ -488,6 +501,25 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 			if err != nil {
 				return nil, fmt.Errorf("making TLS client config for HTTP/3 transport: %v", err)
 			}
+
+			if strings.Contains(h.TLS.ServerName, "{") {
+				// copied from quic-go
+				udpConn, err := net.ListenUDP("udp", nil)
+				if err != nil {
+					return nil, fmt.Errorf("making udp socket for HTTP/3 transport: %v", err)
+				}
+				h.quicTransport = &quic.Transport{Conn: udpConn}
+				h.h3Transport.Dial = func(ctx context.Context, addr string, tlsCfg *tls.Config, cfg *quic.Config) (*quic.Conn, error) {
+					// tlsCfg is already cloned from h3Transport.TLSClientConfig
+					repl := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+					tlsCfg.ServerName = repl.ReplaceAll(tlsCfg.ServerName, "")
+					udpAddr, err := resolveUDPAddr(ctx, "udp", addr)
+					if err != nil {
+						return nil, err
+					}
+					return h.quicTransport.DialEarly(ctx, udpAddr, tlsCfg, cfg)
+				}
+			}
 		}
 	} else if len(h.Versions) > 1 && slices.Contains(h.Versions, "3") {
 		return nil, fmt.Errorf("if HTTP/3 is enabled to the upstream, no other HTTP versions are supported")
@@ -512,6 +544,93 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 	}
 
 	return rt, nil
+}
+
+// TODO: EXPERIMENTAL (May 2025)
+// copied from quic-go
+func resolveUDPAddr(ctx context.Context, network, addr string) (*net.UDPAddr, error) {
+	host, portStr, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, err
+	}
+	port, err := net.LookupPort(network, portStr)
+	if err != nil {
+		return nil, err
+	}
+	resolver := net.DefaultResolver
+	ipAddrs, err := resolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	addrs := addrList(ipAddrs)
+	ip := addrs.forResolve(network, addr)
+	return &net.UDPAddr{IP: ip.IP, Port: port, Zone: ip.Zone}, nil
+}
+
+// TODO: EXPERIMENTAL (May 2025)
+// copied from quic-go
+// An addrList represents a list of network endpoint addresses.
+// Copy from [net.addrList] and change type from [net.Addr] to [net.IPAddr]
+type addrList []net.IPAddr
+
+// isIPv4 reports whether addr contains an IPv4 address.
+func isIPv4(addr net.IPAddr) bool {
+	return addr.IP.To4() != nil
+}
+
+// isNotIPv4 reports whether addr does not contain an IPv4 address.
+func isNotIPv4(addr net.IPAddr) bool { return !isIPv4(addr) }
+
+// forResolve returns the most appropriate address in address for
+// a call to ResolveTCPAddr, ResolveUDPAddr, or ResolveIPAddr.
+// IPv4 is preferred, unless addr contains an IPv6 literal.
+func (addrs addrList) forResolve(network, addr string) net.IPAddr {
+	var want6 bool
+	switch network {
+	case "ip":
+		// IPv6 literal (addr does NOT contain a port)
+		want6 = strings.ContainsRune(addr, ':')
+	case "tcp", "udp":
+		// IPv6 literal. (addr contains a port, so look for '[')
+		want6 = strings.ContainsRune(addr, '[')
+	}
+	if want6 {
+		return addrs.first(isNotIPv4)
+	}
+	return addrs.first(isIPv4)
+}
+
+// first returns the first address which satisfies strategy, or if
+// none do, then the first address of any kind.
+func (addrs addrList) first(strategy func(net.IPAddr) bool) net.IPAddr {
+	for _, addr := range addrs {
+		if strategy(addr) {
+			return addr
+		}
+	}
+	return addrs[0]
+}
+
+// RequestHeaderOps implements TransportHeaderOpsProvider. It returns header
+// operations for requests when the transport's configuration indicates they
+// should be applied. In particular, when TLS is enabled for this transport,
+// return an operation to set the Host header to the upstream host:port
+// placeholder so HTTPS upstreams get the proper Host by default.
+//
+// Note: this is a provision-time hook; the Handler will call this during
+// its Provision and cache the resulting HeaderOps. The HeaderOps are
+// applied per-request (so placeholders are expanded at request time).
+func (h *HTTPTransport) RequestHeaderOps() *headers.HeaderOps {
+	// If TLS is not configured for this transport, don't inject Host
+	// defaults. TLS being non-nil indicates HTTPS to the upstream.
+	if h.TLS == nil {
+		return nil
+	}
+	return &headers.HeaderOps{
+		Set: http.Header{
+			"Host": []string{"{http.reverse_proxy.upstream.hostport}"},
+		},
+	}
 }
 
 // RoundTrip implements http.RoundTripper.
@@ -564,12 +683,42 @@ func (h *HTTPTransport) EnableTLS(base *TLSConfig) error {
 	return nil
 }
 
+// EnableH2C enables H2C (HTTP/2 over Cleartext) on the transport.
+func (h *HTTPTransport) EnableH2C() error {
+	h.Versions = []string{"h2c", "2"}
+	return nil
+}
+
+// OverrideHealthCheckScheme overrides the scheme of the given URL
+// used for health checks.
+func (h HTTPTransport) OverrideHealthCheckScheme(base *url.URL, port string) {
+	// if tls is enabled and the port isn't in the except list, use HTTPs
+	if h.TLSEnabled() && !slices.Contains(h.TLS.ExceptPorts, port) {
+		base.Scheme = "https"
+	}
+}
+
+// ProxyProtocolEnabled returns true if proxy protocol is enabled.
+func (h HTTPTransport) ProxyProtocolEnabled() bool {
+	return h.ProxyProtocol != ""
+}
+
 // Cleanup implements caddy.CleanerUpper and closes any idle connections.
 func (h HTTPTransport) Cleanup() error {
 	if h.Transport == nil {
 		return nil
 	}
 	h.Transport.CloseIdleConnections()
+	// h3 related cleanup, errors are ignored as nothing can be done.
+	// TODO: log these errors if any
+	if h.h3Transport != nil {
+		h.h3Transport.CloseIdleConnections()
+		_ = h.h3Transport.Close()
+		if h.quicTransport != nil {
+			_ = h.quicTransport.Close()
+			_ = h.quicTransport.Conn.Close()
+		}
+	}
 	return nil
 }
 
@@ -820,8 +969,11 @@ func decodeBase64DERCert(certStr string) (*x509.Certificate, error) {
 
 // Interface guards
 var (
-	_ caddy.Provisioner  = (*HTTPTransport)(nil)
-	_ http.RoundTripper  = (*HTTPTransport)(nil)
-	_ caddy.CleanerUpper = (*HTTPTransport)(nil)
-	_ TLSTransport       = (*HTTPTransport)(nil)
+	_ caddy.Provisioner                   = (*HTTPTransport)(nil)
+	_ http.RoundTripper                   = (*HTTPTransport)(nil)
+	_ caddy.CleanerUpper                  = (*HTTPTransport)(nil)
+	_ TLSTransport                        = (*HTTPTransport)(nil)
+	_ H2CTransport                        = (*HTTPTransport)(nil)
+	_ HealthCheckSchemeOverriderTransport = (*HTTPTransport)(nil)
+	_ ProxyProtocolTransport              = (*HTTPTransport)(nil)
 )
