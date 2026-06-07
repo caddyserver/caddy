@@ -131,6 +131,53 @@ func TestWeightedRoundRobinPolicy(t *testing.T) {
 	}
 }
 
+func TestWeightedRoundRobinSelection_Validate(t *testing.T) {
+	tests := []struct {
+		name        string
+		weights     []int
+		totalWeight int
+		wantErr     bool
+	}{
+		{
+			name:        "Valid 0 2 1 case",
+			weights:     []int{0, 2, 1},
+			totalWeight: 3,
+			wantErr:     false,
+		},
+		{
+			name:        "Invalid 0 case (single)",
+			weights:     []int{0},
+			totalWeight: 0,
+			wantErr:     true,
+		},
+		{
+			name:        "Invalid 0 0 case (multiple)",
+			weights:     []int{0, 0},
+			totalWeight: 0,
+			wantErr:     true,
+		},
+		{
+			name:        "Valid weights",
+			weights:     []int{1, 1, 1},
+			totalWeight: 3,
+			wantErr:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &WeightedRoundRobinSelection{
+				Weights:     tt.weights,
+				totalWeight: tt.totalWeight,
+			}
+			err := s.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestWeightedRoundRobinPolicyWithZeroWeight(t *testing.T) {
 	pool := testPool()
 	wrrPolicy := WeightedRoundRobinSelection{
