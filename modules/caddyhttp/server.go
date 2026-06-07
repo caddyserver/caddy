@@ -124,6 +124,15 @@ type Server struct {
 	// TODO: This is an EXPERIMENTAL feature. Subject to change or removal.
 	EnableFullDuplex bool `json:"enable_full_duplex,omitempty"`
 
+	// If true, incoming HTTP request headers containing underscores
+	// in their names are preserved instead of being dropped. By
+	// default, Caddy drops these headers to prevent ambiguity with
+	// CGI/FastCGI backends that map hyphens to underscores
+	// (GHSA-f59h-q822-g45g). Enable this only if your backends
+	// require underscore-named headers and you understand the
+	// associated security implications.
+	InsecureAllowUnderscoreInHeaders bool `json:"insecure_allow_underscore_in_headers,omitempty"`
+
 	// Routes describes how this server will handle requests.
 	// Routes are executed sequentially. First a route's matchers
 	// are evaluated, then its grouping. If it matches and has
@@ -497,12 +506,14 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) error {
 	// Drop headers whose names contain `_`: once FastCGI/CGI/FrankenPHP etc. rewrites `-` to
 	// `_`, an underscore alias collides with the legitimate hyphenated header
 	// and can bypass `forward_auth copy_headers` (GHSA-f59h-q822-g45g).
-	for k := range r.Header {
-		if strings.ContainsRune(k, '_') {
-			delete(r.Header, k)
+	if !s.InsecureAllowUnderscoreInHeaders {
+		for k := range r.Header {
+			if strings.ContainsRune(k, '_') {
+				delete(r.Header, k)
 
-			if c := s.logger.Check(zapcore.DebugLevel, "dropping header containing underscore"); c != nil {
-				c.Write(zap.String("header", k))
+				if c := s.logger.Check(zapcore.DebugLevel, "dropping header containing underscore"); c != nil {
+					c.Write(zap.String("header", k))
+				}
 			}
 		}
 	}

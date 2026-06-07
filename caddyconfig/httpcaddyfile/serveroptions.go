@@ -36,27 +36,28 @@ type serverOptions struct {
 	ListenerAddress string
 
 	// These will all map 1:1 to the caddyhttp.Server struct
-	Name                  string
-	ListenerWrappersRaw   []json.RawMessage
-	PacketConnWrappersRaw []json.RawMessage
-	ReadTimeout           caddy.Duration
-	ReadHeaderTimeout     caddy.Duration
-	WriteTimeout          caddy.Duration
-	IdleTimeout           caddy.Duration
-	KeepAliveInterval     caddy.Duration
-	KeepAliveIdle         caddy.Duration
-	KeepAliveCount        int
-	MaxHeaderBytes        int
-	EnableFullDuplex      bool
-	Protocols             []string
-	StrictSNIHost         *bool
-	TrustedProxiesRaw     json.RawMessage
-	TrustedProxiesStrict  int
-	TrustedProxiesUnix    bool
-	ClientIPHeaders       []string
-	ShouldLogCredentials  bool
-	Metrics               *caddyhttp.Metrics
-	Trace                 bool // TODO: EXPERIMENTAL
+	Name                             string
+	ListenerWrappersRaw              []json.RawMessage
+	PacketConnWrappersRaw            []json.RawMessage
+	ReadTimeout                      caddy.Duration
+	ReadHeaderTimeout                caddy.Duration
+	WriteTimeout                     caddy.Duration
+	IdleTimeout                      caddy.Duration
+	KeepAliveInterval                caddy.Duration
+	KeepAliveIdle                    caddy.Duration
+	KeepAliveCount                   int
+	MaxHeaderBytes                   int
+	EnableFullDuplex                 bool
+	InsecureAllowUnderscoreInHeaders bool
+	Protocols                        []string
+	StrictSNIHost                    *bool
+	TrustedProxiesRaw                json.RawMessage
+	TrustedProxiesStrict             int
+	TrustedProxiesUnix               bool
+	ClientIPHeaders                  []string
+	ShouldLogCredentials             bool
+	Metrics                          *caddyhttp.Metrics
+	Trace                            bool // TODO: EXPERIMENTAL
 	// If set, overrides whether QUIC listeners allow 0-RTT (early data).
 	// If nil, the default behavior is used (currently allowed).
 	Allow0RTT *bool
@@ -217,6 +218,12 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 				return nil, d.ArgErr()
 			}
 			serverOpts.EnableFullDuplex = true
+
+		case "insecure_allow_underscore_in_headers":
+			if d.NextArg() {
+				return nil, d.ArgErr()
+			}
+			serverOpts.InsecureAllowUnderscoreInHeaders = true
 
 		case "log_credentials":
 			if d.NextArg() {
@@ -380,6 +387,7 @@ func applyServerOptions(
 		server.KeepAliveCount = opts.KeepAliveCount
 		server.MaxHeaderBytes = opts.MaxHeaderBytes
 		server.EnableFullDuplex = opts.EnableFullDuplex
+		server.InsecureAllowUnderscoreInHeaders = opts.InsecureAllowUnderscoreInHeaders
 		server.Protocols = opts.Protocols
 		server.StrictSNIHost = opts.StrictSNIHost
 		server.TrustedProxiesRaw = opts.TrustedProxiesRaw
