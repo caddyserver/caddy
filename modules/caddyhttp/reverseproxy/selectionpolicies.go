@@ -127,6 +127,19 @@ func (r *WeightedRoundRobinSelection) Provision(ctx caddy.Context) error {
 	return nil
 }
 
+// Validate ensures that r's configuration is valid
+func (r *WeightedRoundRobinSelection) Validate() error {
+	if r.totalWeight <= 0 {
+		return fmt.Errorf("weighted_round_robin requires at least one upstream with a positive weight")
+	}
+	for _, weight := range r.Weights {
+		if weight < 0 {
+			return fmt.Errorf("weight of an upstream cannot be negative")
+		}
+	}
+	return nil
+}
+
 // Select returns an available host, if any.
 func (r *WeightedRoundRobinSelection) Select(pool UpstreamPool, _ *http.Request, _ http.ResponseWriter) *Upstream {
 	if len(pool) == 0 {
@@ -891,6 +904,7 @@ var (
 	_ Selector = (*CookieHashSelection)(nil)
 
 	_ caddy.Validator = (*RandomChoiceSelection)(nil)
+	_ caddy.Validator = (*WeightedRoundRobinSelection)(nil)
 
 	_ caddy.Provisioner = (*RandomChoiceSelection)(nil)
 	_ caddy.Provisioner = (*WeightedRoundRobinSelection)(nil)
