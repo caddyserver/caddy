@@ -132,6 +132,11 @@ func (r *WeightedRoundRobinSelection) Validate() error {
 	if r.totalWeight <= 0 {
 		return fmt.Errorf("weighted_round_robin requires at least one upstream with a positive weight")
 	}
+	for _, weight := range r.Weights {
+		if weight < 0 {
+			return fmt.Errorf("weight of an upstream cannot be negative")
+		}
+	}
 	return nil
 }
 
