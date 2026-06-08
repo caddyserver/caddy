@@ -90,10 +90,22 @@ func TestAdminHandlerOriginAllowed(t *testing.T) {
 			want:           true,
 		},
 		{
-			// Per RFC 3986 section 3.2.2, host names are case-insensitive.
-			name:           "case-sensitive host comparison (potential RFC 3986 deviation)",
+			// Per RFC 3986 §3.2.2, host names are case-insensitive.
+			name:           "host comparison is case-insensitive (allow-list uppercase)",
 			allowedOrigins: []*url.URL{mustParseURL(t, "http://Example.com:8080")},
 			origin:         mustParseURL(t, "http://example.com:8080"),
+			want:           true,
+		},
+		{
+			name:           "host comparison is case-insensitive (origin uppercase)",
+			allowedOrigins: []*url.URL{mustParseURL(t, "http://example.com:8080")},
+			origin:         mustParseURL(t, "http://EXAMPLE.com:8080"),
+			want:           true,
+		},
+		{
+			name:           "host comparison is case-insensitive (mixed case)",
+			allowedOrigins: []*url.URL{mustParseURL(t, "http://Foo.Bar.Example.com:8080")},
+			origin:         mustParseURL(t, "http://foo.bar.example.COM:8080"),
 			want:           true,
 		},
 	}
