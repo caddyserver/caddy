@@ -97,8 +97,6 @@ var bufPool = sync.Pool{
 	},
 }
 
-// TODO: handle status code replacement
-//
 // EXPERIMENTAL: Subject to change or removal.
 type interceptedResponseHandler struct {
 	caddyhttp.ResponseRecorder
@@ -106,17 +104,6 @@ type interceptedResponseHandler struct {
 	handler      caddyhttp.ResponseHandler
 	handlerIndex int
 	statusCode   int
-}
-
-// EXPERIMENTAL: Subject to change or removal.
-func (irh interceptedResponseHandler) WriteHeader(statusCode int) {
-	if irh.statusCode != 0 && (statusCode < 100 || statusCode >= 200) {
-		irh.ResponseRecorder.WriteHeader(irh.statusCode)
-
-		return
-	}
-
-	irh.ResponseRecorder.WriteHeader(statusCode)
 }
 
 // EXPERIMENTAL: Subject to change or removal.
