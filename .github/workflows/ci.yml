@@ -138,6 +138,19 @@ jobs:
         go test -v -coverprofile="cover-profile.out" -short -race ./...
         # echo "status=$?" >> $GITHUB_OUTPUT
 
+    # Only upload from linux: mac and windows runs would produce overlapping
+    # profiles for the same packages, and the coverage-report job's simple
+    # concat-merge can't deduplicate. The artifact name must match the
+    # `caddy-*-coverage-*` pattern consumed by coverage-report.
+    - name: Publish Coverage Profile
+      if: always() && matrix.os == 'linux'
+      uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+      with:
+        name: caddy-unit-coverage-${{ steps.vars.outputs.short_sha }}
+        path: cover-profile.out
+        retention-days: 30
+        compression-level: 6
+
     # Relevant step if we reinvestigate publishing test/coverage reports
     # - name: Prepare coverage reports
     #   run: |
@@ -356,6 +369,134 @@ jobs:
           hurl-report/caddy_cover_${{ steps.vars.outputs.short_sha }}.html
         retention-days: 30
         compression-level: 6
+
+  # coverage-report:
+  #   name: "Coverage report"
+  #   # Always runs once the producer jobs finish, even if some failed: each
+  #   # producer publishes its coverage artifact under `if: always()`, so a
+  #   # partial failure still yields a usable profile to summarize.
+  #   if: ${{ always() }}
+  #   runs-on: ubuntu-latest
+  #   needs:
+  #     - test
+  #     - spec-test
+  #     # TODO: once `s390x-test` publishes its own coverage artifact
+  #     # matching `caddy-*-coverage-*`, add it here so this job merges
+  #     # all sources before reporting.
+  #   permissions:
+  #     contents: read
+  #     pull-requests: write
+  #   steps:
+  #     - name: Harden the runner (Audit all outbound calls)
+  #       uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
+  #       with:
+  #         egress-policy: audit
+
+  #     # `go tool cover -func` needs the source tree to map profile line
+  #     # ranges back to function names, so the repo must be checked out
+  #     # even though this job doesn't run any tests itself.
+  #     - name: Checkout code
+  #       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+  #     - name: Install Go
+  #       uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+  #       with:
+  #         go-version: '~1.25.0'
+  #         check-latest: true
+
+  #     # Pulls every artifact whose name matches the pattern into a flat
+  #     # directory. Today this just grabs spec-test's `caddy-spec-coverage-*`;
+  #     # additional producers will be picked up automatically.
+  #     - name: Download coverage artifacts
+  #       uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+  #       with:
+  #         path: cov-in
+  #         pattern: caddy-*-coverage-*
+  #         merge-multiple: true
+
+  #     - name: Merge coverage profiles
+  #       id: merge
+  #       run: |
+  #         set -euo pipefail
+  #         shopt -s nullglob
+  #         # Producers use different extensions: spec-test publishes
+  #         # `*.txt` (from `go tool covdata textfmt`), the unit `test` job
+  #         # publishes `cover-profile.out` (from `go test -coverprofile`).
+  #         # Both are Go text-format profiles. Exclude `.html` reports.
+  #         profiles=(cov-in/*.txt cov-in/*.out)
+  #         if [[ ${#profiles[@]} -eq 0 ]]; then
+  #           echo "No coverage profiles found; nothing to report."
+  #           exit 0
+  #         fi
+  #         # Concatenate Go text-format profiles: keep the first `mode:`
+  #         # line and append every other line from every profile. Safe
+  #         # because all producers use the same coverage mode.
+  #         head -n 1 "${profiles[0]}" > merged.txt
+  #         for f in "${profiles[@]}"; do
+  #           tail -n +2 "$f" >> merged.txt
+  #         done
+  #         echo "profile=merged.txt" >> "$GITHUB_OUTPUT"
+  #         echo "sources=${#profiles[@]}" >> "$GITHUB_OUTPUT"
+
+  #     - name: Build coverage summary
+  #       if: steps.merge.outputs.profile != ''
+  #       run: |
+  #         set -euo pipefail
+  #         COVER_FILE=merged.txt
+  #         TOTAL=$(go tool cover -func="$COVER_FILE" | awk '/^total:/ {print $NF}')
+
+  #         # Per-package aggregation: average coverage across all functions in a package, lowest first.
+  #         go tool cover -func="$COVER_FILE" \
+  #           | awk -v root='github.com/caddyserver/caddy/v2/' '
+  #               /^total:/ {next}
+  #               {
+  #                 file=$1; sub(/:.*/, "", file); sub(root, "", file)
+  #                 n=split(file, parts, "/")
+  #                 pkg=(n>1) ? substr(file, 1, length(file)-length(parts[n])-1) : "(root)"
+  #                 pct=$NF; sub(/%/, "", pct)
+  #                 sum[pkg]+=pct; cnt[pkg]++
+  #               }
+  #               END { for (p in sum) printf "%s\t%.1f\n", p, sum[p]/cnt[p] }
+  #           ' | sort -t$'\t' -k2,2n > /tmp/pkg-cov.tsv
+
+  #         {
+  #           echo "## Coverage report"
+  #           echo
+  #           echo "**Total coverage:** \`$TOTAL\` &nbsp;·&nbsp; merged from ${{ steps.merge.outputs.sources }} profile(s)"
+  #           echo
+  #           echo "<details><summary>Lowest-covered packages (up to 15)</summary>"
+  #           echo
+  #           echo "| Package | Coverage |"
+  #           echo "|---|---:|"
+  #           head -n 15 /tmp/pkg-cov.tsv \
+  #             | awk -F'\t' '{printf "| `%s` | %.1f%% |\n", $1, $2}'
+  #           echo
+  #           echo "</details>"
+  #           echo
+  #           echo "<details><summary>Lowest-covered functions (up to 30)</summary>"
+  #           echo
+  #           echo '```'
+  #           # `awk` does the "head + cut" atomically so we don't trigger
+  #           # SIGPIPE on `sort` when `head -n 30` closes its input early
+  #           # (which `set -o pipefail` would then surface as an error).
+  #           go tool cover -func="$COVER_FILE" \
+  #             | grep -v '^total:' \
+  #             | awk '{ pct=$NF; sub(/%/,"",pct); if (pct+0 < 100) print pct"\t"$0 }' \
+  #             | sort -n \
+  #             | awk -F'\t' 'NR<=30 { print $2 }'
+  #           echo '```'
+  #           echo
+  #           echo "</details>"
+  #         } > coverage-summary.md
+
+  #         cat coverage-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+  #     - name: Post coverage summary as sticky PR comment
+  #       if: github.event_name == 'pull_request' && hashFiles('coverage-summary.md') != ''
+  #       uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
+  #       with:
+  #         header: coverage-report
+  #         path: coverage-summary.md
 
   s390x-test:
     name: test (s390x on IBM Z)
