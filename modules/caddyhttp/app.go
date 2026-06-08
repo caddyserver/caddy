@@ -384,6 +384,10 @@ func (app *App) Provision(ctx caddy.Context) error {
 		if srv.ReadHeaderTimeout == 0 {
 			srv.ReadHeaderTimeout = defaultReadHeaderTimeout // see #6663
 		}
+
+		if srv.MaxHeaderBytes == 0 {
+			srv.MaxHeaderBytes = defaultMaxHeaderBytes
+		}
 	}
 	ctx.Context = oldContext
 	return nil
@@ -838,6 +842,12 @@ const (
 	// long time even on legitimately slow connections or
 	// busy servers to read it.
 	defaultReadHeaderTimeout = caddy.Duration(time.Minute)
+
+	// defaultMaxHeaderBytes is the default maximum size of HTTP headers.
+	// net/http uses 1MB as default, which is historically very lenient.
+	// 64 KB is a more reasonable default for modern web traffic.
+	// this mainly hardens the server against header-based DOS.
+	defaultMaxHeaderBytes = 64 * 1024 // 64KB
 )
 
 // Interface guards
