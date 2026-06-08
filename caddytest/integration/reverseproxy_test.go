@@ -199,7 +199,7 @@ func TestReverseProxyWithPlaceholderDialAddress(t *testing.T) {
 								],
 								"handle": [
 									{
-	
+
 										"handler": "reverse_proxy",
 										"upstreams": [
 											{
@@ -293,7 +293,7 @@ func TestReverseProxyWithPlaceholderTCPDialAddress(t *testing.T) {
 								],
 								"handle": [
 									{
-	
+
 										"handler": "reverse_proxy",
 										"upstreams": [
 											{
@@ -374,7 +374,7 @@ func TestReverseProxyHealthCheck(t *testing.T) {
 	http://localhost:9080 {
 		reverse_proxy {
 			to localhost:2020
-	
+
 			health_uri /health
 			health_port 2021
 			health_interval 10ms
@@ -495,7 +495,7 @@ func TestReverseProxyHealthCheckUnixSocket(t *testing.T) {
 	http://localhost:9080 {
 		reverse_proxy {
 			to unix/%s
-	
+
 			health_uri /health
 			health_port 2021
 			health_interval 2s
@@ -553,7 +553,7 @@ func TestReverseProxyHealthCheckUnixSocketWithoutPort(t *testing.T) {
 	http://localhost:9080 {
 		reverse_proxy {
 			to unix/%s
-	
+
 			health_uri /health
 			health_interval 2s
 			health_timeout 5s
@@ -829,5 +829,67 @@ func TestReverseProxySNIPlaceHolder(t *testing.T) {
 
 		req.Header.Set("X-SNI", "example.com")
 		tester.AssertResponse(req, 200, "example.com")
+	}
+}
+
+func TestWeightedRoundRobinSelectionValidation(t *testing.T) {
+	configTemplate := `
+	{
+		"apps": {
+			"http": {
+				"servers": {
+					"srv0": {
+						"listen": [":18080"],
+						"routes": [
+							{
+								"handle": [
+									{
+										"handler": "reverse_proxy",
+										"load_balancing": {
+											"selection_policy": {
+												"policy": "weighted_round_robin",
+												"weights": %s
+											}
+										},
+										"upstreams": [
+											{"dial": "localhost:18081"},
+											{"dial": "localhost:18082"}
+										]
+									}
+								]
+							}
+						]
+					}
+				}
+			}
+		}
+	}`
+
+	tests := []struct {
+		name    string
+		weights string
+		errMsg  string
+	}{
+		{
+			name:    "negative weight",
+			weights: "[-1, 2]",
+			errMsg:  "weight of an upstream cannot be negative",
+		},
+		{
+			name:    "zero total weight",
+			weights: "[0, 0]",
+			errMsg:  "requires at least one upstream with a positive weight",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			caddytest.AssertLoadError(
+				t,
+				fmt.Sprintf(configTemplate, tc.weights),
+				"json",
+				tc.errMsg,
+			)
+		})
 	}
 }
