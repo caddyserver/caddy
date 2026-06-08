@@ -142,7 +142,7 @@ func (ir Intercept) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 			rec.handlerIndex = i
 
 			// if configured to only change the status code,
-			// do that then stream
+			// buffer the response so we can substitute the status
 			if statusCodeStr := rh.StatusCode.String(); statusCodeStr != "" {
 				sc, err := strconv.Atoi(repl.ReplaceAll(statusCodeStr, ""))
 				if err != nil {
@@ -150,6 +150,7 @@ func (ir Intercept) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 				} else {
 					rec.statusCode = sc
 				}
+				return true
 			}
 
 			return rec.statusCode == 0
@@ -174,6 +175,20 @@ func (ir Intercept) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 
 	if c := ir.logger.Check(zapcore.DebugLevel, "handling response"); c != nil {
 		c.Write(zap.Int("handler", rec.handlerIndex))
+	}
+
+	// replace_status only: no routes to execute, just substitute status and write body
+	if rec.handler.Routes == nil {
+		if rec.statusCode != 0 {
+			w.WriteHeader(rec.statusCode)
+		} else {
+			w.WriteHeader(rec.Status())
+		}
+		if buf.Len() > 0 {
+			_, err := io.Copy(w, buf)
+			return err
+		}
+		return nil
 	}
 
 	// response recorder doesn't create a new copy of the original headers, they're
