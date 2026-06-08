@@ -137,6 +137,7 @@ func (ir Intercept) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 				} else {
 					rec.statusCode = sc
 				}
+
 				return true
 			}
 
@@ -166,15 +167,18 @@ func (ir Intercept) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 
 	// replace_status only: no routes to execute, just substitute status and write body
 	if rec.handler.Routes == nil {
-		if rec.statusCode != 0 {
-			w.WriteHeader(rec.statusCode)
-		} else {
+		if rec.statusCode == 0 {
 			w.WriteHeader(rec.Status())
+		} else {
+			w.WriteHeader(rec.statusCode)
 		}
+
 		if buf.Len() > 0 {
 			_, err := io.Copy(w, buf)
+
 			return err
 		}
+
 		return nil
 	}
 
