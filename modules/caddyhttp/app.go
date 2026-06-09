@@ -845,8 +845,10 @@ const (
 
 	// defaultMaxHeaderBytes is the default maximum size of HTTP headers.
 	// net/http uses 1MB as default, which is historically very lenient.
-	// 64 KB is a more reasonable default for modern web traffic.
-	// this mainly hardens the server against header-based DOS.
+	// this mainly hardens the server against header-based DOS (like H2 Bombs).
+	// see also: 
+	// https://github.com/caddyserver/caddy/pull/7811
+	// https://github.com/php/frankenphp/issues/2459
 	defaultMaxHeaderBytes = 64 * 1024 // 64KB
 )
 
