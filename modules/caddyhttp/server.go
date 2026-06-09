@@ -131,6 +131,8 @@ type Server struct {
 	// (GHSA-f59h-q822-g45g). Enable this only if your backends
 	// require underscore-named headers and you understand the
 	// associated security implications.
+	//
+	// TODO: This is an EXPERIMENTAL feature. Subject to change or removal.
 	InsecureAllowUnderscoreInHeaders bool `json:"insecure_allow_underscore_in_headers,omitempty"`
 
 	// Routes describes how this server will handle requests.
