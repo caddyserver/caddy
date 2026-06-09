@@ -257,6 +257,12 @@ func (app *App) Provision(ctx caddy.Context) error {
 			}
 		}
 
+		// limit max header bytes to a more reasonable default than 1MB from Go std lib
+		// (see https://github.com/php/frankenphp/issues/2459#issuecomment-4655612909)
+		if srv.MaxHeaderBytes <= 0 {
+			srv.MaxHeaderBytes = 16 * 1024
+		}
+
 		// if not explicitly configured by the user, disallow TLS
 		// client auth bypass (domain fronting) which could
 		// otherwise be exploited by sending an unprotected SNI

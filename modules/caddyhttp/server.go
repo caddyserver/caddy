@@ -101,7 +101,7 @@ type Server struct {
 	KeepAliveCount int `json:"keepalive_count,omitempty"`
 
 	// MaxHeaderBytes is the maximum size to parse from a client's
-	// HTTP request headers.
+	// HTTP request headers. Default: 16 KiB.
 	MaxHeaderBytes int `json:"max_header_bytes,omitempty"`
 
 	// Enable full-duplex communication for HTTP/1 requests.
