@@ -131,7 +131,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 				}
 				uri := dispenser.Val()
 				if rpHandler.Rewrite.URI != "" {
-					return nil, dispenser.Errf("cannot have duplicate uri: %s", uri)
+					return nil, dispenser.Errf("cannot re-declare uri: %s", uri)
 				}
 				rpHandler.Rewrite.URI = uri
 				dispenser.DeleteN(2)
