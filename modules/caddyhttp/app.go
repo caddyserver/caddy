@@ -287,6 +287,11 @@ func (app *App) Provision(ctx caddy.Context) error {
 			srv.ClientIPHeaders = []string{"X-Forwarded-For"}
 		}
 
+		// precompute underscore header allowlist rules
+		if err := srv.provisionUnderscoreHeaders(); err != nil {
+			return fmt.Errorf("server %s: %v", srvName, err)
+		}
+
 		// process each listener address
 		for i := range srv.Listen {
 			lnOut, err := repl.ReplaceOrErr(srv.Listen[i], true, true)

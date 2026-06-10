@@ -48,7 +48,7 @@ type serverOptions struct {
 	KeepAliveCount                   int
 	MaxHeaderBytes                   int
 	EnableFullDuplex                 bool
-	InsecureAllowUnderscoreInHeaders bool
+	ExpectedUnderscoreHeaders        []string
 	Protocols                        []string
 	StrictSNIHost                    *bool
 	TrustedProxiesRaw                json.RawMessage
@@ -219,11 +219,12 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 			}
 			serverOpts.EnableFullDuplex = true
 
-		case "insecure_allow_underscore_in_headers":
-			if d.NextArg() {
+		case "expected_underscore_headers":
+			args := d.RemainingArgs()
+			if len(args) == 0 {
 				return nil, d.ArgErr()
 			}
-			serverOpts.InsecureAllowUnderscoreInHeaders = true
+			serverOpts.ExpectedUnderscoreHeaders = args
 
 		case "log_credentials":
 			if d.NextArg() {
@@ -387,7 +388,7 @@ func applyServerOptions(
 		server.KeepAliveCount = opts.KeepAliveCount
 		server.MaxHeaderBytes = opts.MaxHeaderBytes
 		server.EnableFullDuplex = opts.EnableFullDuplex
-		server.InsecureAllowUnderscoreInHeaders = opts.InsecureAllowUnderscoreInHeaders
+		server.ExpectedUnderscoreHeaders = opts.ExpectedUnderscoreHeaders
 		server.Protocols = opts.Protocols
 		server.StrictSNIHost = opts.StrictSNIHost
 		server.TrustedProxiesRaw = opts.TrustedProxiesRaw

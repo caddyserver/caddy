@@ -527,6 +527,342 @@ func TestServer_serveHTTP_LogsDroppedUnderscoreHeader(t *testing.T) {
 	assert.Contains(t, buf.String(), `"header":"Remote_user"`)
 }
 
+// --- Allowlist: exact match ---
+
+func TestServer_serveHTTP_AllowlistKeepsExactMatch(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:                   zap.NewNop(),
+		ExpectedUnderscoreHeaders: []string{"user_id"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionUnderscoreHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["User_id"] = []string{"zeus"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.Equal(t, "zeus", got.Get("User_id"))
+}
+
+func TestServer_serveHTTP_AllowlistDropsHyphenatedVariant(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:                   zap.NewNop(),
+		ExpectedUnderscoreHeaders: []string{"user_id"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionUnderscoreHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["User_id"] = []string{"zeus"}
+	req.Header.Set("User-Id", "attacker")
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.Equal(t, "zeus", got.Get("User_id"))
+	assert.NotContains(t, *got, "User-Id")
+}
+
+func TestServer_serveHTTP_AllowlistDropsUnlisted(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:                   zap.NewNop(),
+		ExpectedUnderscoreHeaders: []string{"user_id"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionUnderscoreHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["User_id"] = []string{"zeus"}
+	req.Header["Remote_user"] = []string{"attacker"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.Equal(t, "zeus", got.Get("User_id"))
+	assert.NotContains(t, *got, "Remote_user")
+}
+
+func TestServer_serveHTTP_AllowlistPassesThroughNormalHeaders(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:                   zap.NewNop(),
+		ExpectedUnderscoreHeaders: []string{"user_id"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionUnderscoreHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header.Set("X-Real-Header", "ok")
+	req.Header.Set("Content-Type", "text/plain")
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.Equal(t, "ok", got.Get("X-Real-Header"))
+	assert.Equal(t, "text/plain", got.Get("Content-Type"))
+}
+
+// --- Allowlist: mixed underscore/hyphen entry ---
+
+func TestServer_serveHTTP_MixedEntryKeepsOriginal(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:                   zap.NewNop(),
+		ExpectedUnderscoreHeaders: []string{"__user-id"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionUnderscoreHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["__user-Id"] = []string{"zeus"} // canonical form of __user-id
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.Equal(t, "zeus", got.Get("__user-Id"))
+}
+
+func TestServer_serveHTTP_MixedEntryDropsFullyHyphenated(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:                   zap.NewNop(),
+		ExpectedUnderscoreHeaders: []string{"__user-id"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionUnderscoreHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["--User-Id"] = []string{"attacker"} // fully hyphenated variant
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.NotContains(t, *got, "--User-Id")
+}
+
+func TestServer_serveHTTP_MixedEntryDropsPartialVariants(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:                   zap.NewNop(),
+		ExpectedUnderscoreHeaders: []string{"__user-id"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionUnderscoreHeaders())
+
+	// All partial variants still contain underscores and don't match
+	// the allowlist, so they are dropped by the normal underscore filter.
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["-_user-Id"] = []string{"attacker1"} // canonical of -_user-id
+	req.Header["_-User-Id"] = []string{"attacker2"} // canonical of _-user-id
+	req.Header["__user_id"] = []string{"attacker3"} // all underscores variant
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.NotContains(t, *got, "-_user-Id")
+	assert.NotContains(t, *got, "_-User-Id")
+	assert.NotContains(t, *got, "__user_id")
+}
+
+// --- Allowlist: prefix glob ---
+
+func TestServer_serveHTTP_PrefixGlobKeepsMatch(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:                   zap.NewNop(),
+		ExpectedUnderscoreHeaders: []string{"webhook_*"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionUnderscoreHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["Webhook_event"] = []string{"push"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.Equal(t, "push", got.Get("Webhook_event"))
+}
+
+func TestServer_serveHTTP_PrefixGlobDropsHyphenatedVariant(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:                   zap.NewNop(),
+		ExpectedUnderscoreHeaders: []string{"webhook_*"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionUnderscoreHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header.Set("Webhook-Event", "push")
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.NotContains(t, *got, "Webhook-Event")
+}
+
+func TestServer_serveHTTP_PrefixGlobDropsNonMatching(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:                   zap.NewNop(),
+		ExpectedUnderscoreHeaders: []string{"webhook_*"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionUnderscoreHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["Other_header"] = []string{"val"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.NotContains(t, *got, "Other_header")
+}
+
+func TestServer_serveHTTP_PrefixGlobDropsMixedVariant(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:                   zap.NewNop(),
+		ExpectedUnderscoreHeaders: []string{"webhook_*"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionUnderscoreHeaders())
+
+	// "Webhook-Event_type" has underscores but starts with "Webhook-Event_",
+	// which does NOT match the allow prefix "Webhook_", so it is dropped.
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["Webhook-Event_type"] = []string{"push"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.NotContains(t, *got, "Webhook-Event_type")
+}
+
+func TestServer_serveHTTP_LiteralAsteriskInHeader(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:                   zap.NewNop(),
+		ExpectedUnderscoreHeaders: []string{"webhook_*"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionUnderscoreHeaders())
+
+	// A header literally named "Webhook_*" matches the prefix rule
+	// because "Webhook_" is a prefix of "Webhook_*".
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["Webhook_*"] = []string{"val"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.Equal(t, "val", got.Get("Webhook_*"))
+}
+
+// --- Combined allowlist ---
+
+func TestServer_serveHTTP_ExactAndPrefixCoexist(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:                   zap.NewNop(),
+		ExpectedUnderscoreHeaders: []string{"user_id", "webhook_*"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionUnderscoreHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["User_id"] = []string{"zeus"}             // exact match → keep
+	req.Header["Webhook_event"] = []string{"push"}        // prefix match → keep
+	req.Header["Other_field"] = []string{"bad"}           // unlisted → drop
+	req.Header.Set("User-Id", "attacker")                 // hyphenated exact → drop
+	req.Header.Set("Webhook-Event", "attacker")           // hyphenated prefix → drop
+	req.Header.Set("X-Normal-Header", "ok")               // no underscore, not a variant → pass through
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.Equal(t, "zeus", got.Get("User_id"))
+	assert.Equal(t, "push", got.Get("Webhook_event"))
+	assert.Equal(t, "ok", got.Get("X-Normal-Header"))
+	assert.NotContains(t, *got, "Other_field")
+	assert.NotContains(t, *got, "User-Id")
+	assert.NotContains(t, *got, "Webhook-Event")
+}
+
+// --- Validation ---
+
+func TestServer_provisionUnderscoreHeaders_EmptyListIsNoOp(t *testing.T) {
+	s := &Server{ExpectedUnderscoreHeaders: []string{}}
+	// Empty slice is treated as "no allowlist" — provisionUnderscoreHeaders
+	// returns nil (no error) because len == 0 is a no-op.
+	assert.NoError(t, s.provisionUnderscoreHeaders())
+}
+
+func TestServer_provisionUnderscoreHeaders_RejectsNoUnderscore(t *testing.T) {
+	s := &Server{ExpectedUnderscoreHeaders: []string{"content-type"}}
+	assert.Error(t, s.provisionUnderscoreHeaders())
+}
+
+func TestServer_provisionUnderscoreHeaders_RejectsBareWildcard(t *testing.T) {
+	s := &Server{ExpectedUnderscoreHeaders: []string{"*"}}
+	assert.Error(t, s.provisionUnderscoreHeaders())
+}
+
+func TestServer_provisionUnderscoreHeaders_RejectsMidGlob(t *testing.T) {
+	s := &Server{ExpectedUnderscoreHeaders: []string{"f*oo_bar"}}
+	assert.Error(t, s.provisionUnderscoreHeaders())
+}
+
+func TestServer_provisionUnderscoreHeaders_RejectsLeadingGlob(t *testing.T) {
+	s := &Server{ExpectedUnderscoreHeaders: []string{"*_foo"}}
+	assert.Error(t, s.provisionUnderscoreHeaders())
+}
+
+func TestServer_provisionUnderscoreHeaders_RejectsNonASCII(t *testing.T) {
+	s := &Server{ExpectedUnderscoreHeaders: []string{"uşer_id"}}
+	assert.Error(t, s.provisionUnderscoreHeaders())
+}
+
+func TestServer_provisionUnderscoreHeaders_ValidExact(t *testing.T) {
+	s := &Server{ExpectedUnderscoreHeaders: []string{"user_id"}}
+	assert.NoError(t, s.provisionUnderscoreHeaders())
+}
+
+func TestServer_provisionUnderscoreHeaders_ValidGlob(t *testing.T) {
+	s := &Server{ExpectedUnderscoreHeaders: []string{"webhook_*"}}
+	assert.NoError(t, s.provisionUnderscoreHeaders())
+}
+
+func TestServer_provisionUnderscoreHeaders_ValidMixed(t *testing.T) {
+	s := &Server{ExpectedUnderscoreHeaders: []string{"__user-id"}}
+	assert.NoError(t, s.provisionUnderscoreHeaders())
+}
+
+func TestServer_provisionUnderscoreHeaders_DeduplicatesSilently(t *testing.T) {
+	s := &Server{ExpectedUnderscoreHeaders: []string{"user_id", "user_id"}}
+	require.NoError(t, s.provisionUnderscoreHeaders())
+	assert.Len(t, s.underscoreExactAllow, 1)
+}
+
 // TestServer_SpaceInHeaderNameReturnsBadRequest documents why the underscore
 // filter does not also strip space-named headers: Go's HTTP parser rejects a
 // space in a field name with 400 before any handler runs, so such a request
