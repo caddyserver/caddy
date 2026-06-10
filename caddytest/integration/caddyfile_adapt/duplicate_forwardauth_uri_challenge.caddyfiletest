@@ -1,0 +1,12 @@
+localhost:9080 {
+	forward_auth :9091 {
+		uri /first
+		uri /second
+		copy_headers Remote-User
+	}
+
+	respond "ok" 200
+}
+
+----------
+parsing caddyfile tokens for 'forward_auth': cannot have duplicate uri: /second

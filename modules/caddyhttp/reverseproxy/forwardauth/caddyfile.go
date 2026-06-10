@@ -16,6 +16,7 @@ package forwardauth
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -129,7 +130,11 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 				if !dispenser.NextArg() {
 					return nil, dispenser.ArgErr()
 				}
-				rpHandler.Rewrite.URI = dispenser.Val()
+				uri := dispenser.Val()
+				if rpHandler.Rewrite.URI != "" {
+					return nil, fmt.Errorf("cannot have duplicate uri: %s", uri)
+				}
+				rpHandler.Rewrite.URI = uri
 				dispenser.DeleteN(2)
 
 			case "copy_headers":
