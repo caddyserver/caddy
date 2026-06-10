@@ -36,28 +36,28 @@ type serverOptions struct {
 	ListenerAddress string
 
 	// These will all map 1:1 to the caddyhttp.Server struct
-	Name                             string
-	ListenerWrappersRaw              []json.RawMessage
-	PacketConnWrappersRaw            []json.RawMessage
-	ReadTimeout                      caddy.Duration
-	ReadHeaderTimeout                caddy.Duration
-	WriteTimeout                     caddy.Duration
-	IdleTimeout                      caddy.Duration
-	KeepAliveInterval                caddy.Duration
-	KeepAliveIdle                    caddy.Duration
-	KeepAliveCount                   int
-	MaxHeaderBytes                   int
-	EnableFullDuplex                 bool
-	ExpectedUnderscoreHeaders        []string
-	Protocols                        []string
-	StrictSNIHost                    *bool
-	TrustedProxiesRaw                json.RawMessage
-	TrustedProxiesStrict             int
-	TrustedProxiesUnix               bool
-	ClientIPHeaders                  []string
-	ShouldLogCredentials             bool
-	Metrics                          *caddyhttp.Metrics
-	Trace                            bool // TODO: EXPERIMENTAL
+	Name                      string
+	ListenerWrappersRaw       []json.RawMessage
+	PacketConnWrappersRaw     []json.RawMessage
+	ReadTimeout               caddy.Duration
+	ReadHeaderTimeout         caddy.Duration
+	WriteTimeout              caddy.Duration
+	IdleTimeout               caddy.Duration
+	KeepAliveInterval         caddy.Duration
+	KeepAliveIdle             caddy.Duration
+	KeepAliveCount            int
+	MaxHeaderBytes            int
+	EnableFullDuplex          bool
+	ExpectedUnderscoreHeaders []string
+	Protocols                 []string
+	StrictSNIHost             *bool
+	TrustedProxiesRaw         json.RawMessage
+	TrustedProxiesStrict      int
+	TrustedProxiesUnix        bool
+	ClientIPHeaders           []string
+	ShouldLogCredentials      bool
+	Metrics                   *caddyhttp.Metrics
+	Trace                     bool // TODO: EXPERIMENTAL
 	// If set, overrides whether QUIC listeners allow 0-RTT (early data).
 	// If nil, the default behavior is used (currently allowed).
 	Allow0RTT *bool
