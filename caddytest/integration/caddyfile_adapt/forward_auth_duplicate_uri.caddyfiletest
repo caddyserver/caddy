@@ -9,4 +9,4 @@ localhost:9080 {
 }
 
 ----------
-parsing caddyfile tokens for 'forward_auth': cannot have duplicate uri: /second
+parsing caddyfile tokens for 'forward_auth': cannot re-declare uri: /second
