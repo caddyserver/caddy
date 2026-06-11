@@ -251,13 +251,16 @@ type responseWriter struct {
 	statusCode   int
 	wroteHeader  bool
 	isConnect    bool
-	disabled     bool // disable encoding (for error responses)
+	disabled     bool // disable encoding for this response
 }
 
 // WriteHeader stores the status to write when the time comes
 // to actually write the header.
 func (rw *responseWriter) WriteHeader(status int) {
 	rw.statusCode = status
+	if status == http.StatusPartialContent {
+		rw.disabled = true // partial representations must not be dynamically re-encoded
+	}
 
 	// See #5849 and RFC 9110 section 15.4.5 (https://www.rfc-editor.org/rfc/rfc9110.html#section-15.4.5) - 304
 	// Not Modified must have certain headers set as if it was a 200 response, and according to the issue
@@ -444,8 +447,7 @@ func (rw *responseWriter) Unwrap() http.ResponseWriter {
 
 // init should be called before we write a response, if rw.buf has contents.
 func (rw *responseWriter) init() {
-	// Don't initialize encoder for error responses
-	// This prevents response corruption when handle_errors is used
+	// Don't initialize encoder for responses that must not be encoded.
 	if rw.disabled {
 		return
 	}
