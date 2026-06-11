@@ -133,7 +133,9 @@ type Server struct {
 	// actively dropped to prevent confusion. Entries are
 	// case-insensitive. A trailing "*" acts as a prefix glob
 	// (e.g., "webhook_*" matches any header starting with
-	// "webhook_").
+	// "webhook_"). If an allowlisted header arrives with
+	// multiple values (repeated field), all values are dropped
+	// as a safeguard against header injection.
 	//
 	// TODO: This is an EXPERIMENTAL feature. Subject to change or removal.
 	ExpectedUnderscoreHeaders []string `json:"expected_underscore_headers,omitempty"`
@@ -626,6 +628,12 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) error {
 
 					if c := s.logger.Check(zapcore.DebugLevel, "dropping header containing underscore"); c != nil {
 						c.Write(zap.String("header", k))
+					}
+				} else if n := len(r.Header[k]); n > 1 {
+					delete(r.Header, k)
+
+					if c := s.logger.Check(zapcore.WarnLevel, "dropping allowlisted underscore header with repeated values (possible spoofing)"); c != nil {
+						c.Write(zap.String("header", k), zap.Int("count", n))
 					}
 				}
 			} else if s.isHyphenatedVariant(k) {
