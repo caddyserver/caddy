@@ -16,6 +16,7 @@ package caddyhttp
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -153,6 +154,46 @@ func TestMatchVarsREDoesNotExpandResolvedValues(t *testing.T) {
 
 			if actual != tc.expect {
 				t.Fatalf("MatchWithError() = %t, want %t", actual, tc.expect)
+			}
+		})
+	}
+}
+
+func TestVarsMatchersPropagateErrors(t *testing.T) {
+	placeholderErr := Error(http.StatusRequestEntityTooLarge, errors.New("request body too large"))
+	req, _ := newVarsTestRequest(t, "", nil, map[string]any{"body": placeholderErr})
+
+	for _, tc := range []struct {
+		name  string
+		match RequestMatcherWithError
+	}{
+		{
+			name:  "vars",
+			match: VarsMatcher{"body": []string{"anything"}},
+		},
+		{
+			name:  "vars_regexp",
+			match: MatchVarsRE{"body": &MatchRegexp{Pattern: ".*"}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if provisioner, ok := tc.match.(caddy.Provisioner); ok {
+				if err := provisioner.Provision(caddy.Context{}); err != nil {
+					t.Fatalf("Provision() error = %v", err)
+				}
+			}
+
+			_, err := tc.match.MatchWithError(req)
+			if err == nil {
+				t.Fatal("MatchWithError() error = nil, want placeholder error")
+			}
+
+			var handlerErr HandlerError
+			if !errors.As(err, &handlerErr) {
+				t.Fatalf("MatchWithError() error = %T, want HandlerError", err)
+			}
+			if handlerErr.StatusCode != http.StatusRequestEntityTooLarge {
+				t.Fatalf("MatchWithError() status = %d, want %d", handlerErr.StatusCode, http.StatusRequestEntityTooLarge)
 			}
 		})
 	}
