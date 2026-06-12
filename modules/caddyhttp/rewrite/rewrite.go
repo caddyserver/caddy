@@ -432,7 +432,7 @@ func trimPathPrefix(escapedPath, prefix string) string {
 	}
 
 	// if we iterated through the entire prefix, we found it, so trim it
-	if iPath >= len(prefix) {
+	if iPrefix >= len(prefix) {
 		return escapedPath[iPath:]
 	}
 

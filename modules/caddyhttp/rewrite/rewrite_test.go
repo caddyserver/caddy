@@ -268,6 +268,12 @@ func TestRewrite(t *testing.T) {
 			expect: newRequest(t, "GET", "/foo/prefix/bar"),
 		},
 		{
+			// shorter (percent-encoded) path that is not the prefix must be left alone
+			rule:   Rewrite{StripPathPrefix: "/aaaaaa"},
+			input:  newRequest(t, "GET", "/%61%61"),
+			expect: newRequest(t, "GET", "/%61%61"),
+		},
+		{
 			rule: Rewrite{StripPathPrefix: "//prefix"},
 			// scheme and host needed for URL parser to succeed in setting up test
 			input:  newRequest(t, "GET", "http://host//prefix/foo/bar"),
