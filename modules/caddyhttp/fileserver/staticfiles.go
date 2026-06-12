@@ -309,7 +309,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	if err != nil {
 		err = fsrv.mapDirOpenError(fileSystem, err, filename)
 		if errors.Is(err, fs.ErrNotExist) {
-			return fsrv.notFound(w, r, next)
+			return fsrv.notFound(w, r, next, err)
 		} else if errors.Is(err, fs.ErrInvalid) {
 			return caddyhttp.Error(http.StatusBadRequest, err)
 		} else if errors.Is(err, fs.ErrPermission) {
@@ -371,7 +371,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		if fsrv.Browse != nil && !fileHidden(filename, filesToHide) {
 			return fsrv.serveBrowse(fileSystem, root, filename, w, r, next)
 		}
-		return fsrv.notFound(w, r, next)
+		return fsrv.notFound(w, r, next, fmt.Errorf("directory without index file or browse enabled"))
 	}
 
 	// one last check to ensure the file isn't hidden (we might
@@ -383,7 +383,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 				zap.Strings("files_to_hide", filesToHide),
 			)
 		}
-		return fsrv.notFound(w, r, next)
+		return fsrv.notFound(w, r, next, fmt.Errorf("file is hidden"))
 	}
 
 	// if URL canonicalization is enabled, we need to enforce trailing
@@ -501,7 +501,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		if err != nil {
 			if herr, ok := err.(caddyhttp.HandlerError); ok &&
 				herr.StatusCode == http.StatusNotFound {
-				return fsrv.notFound(w, r, next)
+				return fsrv.notFound(w, r, next, herr.Err)
 			}
 			return err // error is already structured
 		}
@@ -730,11 +730,11 @@ func fileHidden(filename string, hide []string) bool {
 
 // notFound returns a 404 error or, if pass-thru is enabled,
 // it calls the next handler in the chain.
-func (fsrv *FileServer) notFound(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+func (fsrv *FileServer) notFound(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler, err error) error {
 	if fsrv.PassThru {
 		return next.ServeHTTP(w, r)
 	}
-	return caddyhttp.Error(http.StatusNotFound, nil)
+	return caddyhttp.Error(http.StatusNotFound, err)
 }
 
 // Indicates whether a file's modification time is useful for validator
