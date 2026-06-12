@@ -532,7 +532,7 @@ func TestServer_serveHTTP_LogsDroppedUnderscoreHeader(t *testing.T) {
 func TestServer_serveHTTP_AllowlistKeepsExactMatch(t *testing.T) {
 	got := &http.Header{}
 	s := &Server{
-		logger:                   zap.NewNop(),
+		logger:                    zap.NewNop(),
 		ExpectedUnderscoreHeaders: []string{"user_id"},
 		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 			*got = r.Header.Clone()
@@ -551,7 +551,7 @@ func TestServer_serveHTTP_AllowlistKeepsExactMatch(t *testing.T) {
 func TestServer_serveHTTP_AllowlistDropsHyphenatedVariant(t *testing.T) {
 	got := &http.Header{}
 	s := &Server{
-		logger:                   zap.NewNop(),
+		logger:                    zap.NewNop(),
 		ExpectedUnderscoreHeaders: []string{"user_id"},
 		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 			*got = r.Header.Clone()
@@ -572,7 +572,7 @@ func TestServer_serveHTTP_AllowlistDropsHyphenatedVariant(t *testing.T) {
 func TestServer_serveHTTP_AllowlistDropsUnlisted(t *testing.T) {
 	got := &http.Header{}
 	s := &Server{
-		logger:                   zap.NewNop(),
+		logger:                    zap.NewNop(),
 		ExpectedUnderscoreHeaders: []string{"user_id"},
 		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 			*got = r.Header.Clone()
@@ -593,7 +593,7 @@ func TestServer_serveHTTP_AllowlistDropsUnlisted(t *testing.T) {
 func TestServer_serveHTTP_AllowlistPassesThroughNormalHeaders(t *testing.T) {
 	got := &http.Header{}
 	s := &Server{
-		logger:                   zap.NewNop(),
+		logger:                    zap.NewNop(),
 		ExpectedUnderscoreHeaders: []string{"user_id"},
 		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 			*got = r.Header.Clone()
@@ -616,7 +616,7 @@ func TestServer_serveHTTP_AllowlistPassesThroughNormalHeaders(t *testing.T) {
 func TestServer_serveHTTP_MixedEntryKeepsOriginal(t *testing.T) {
 	got := &http.Header{}
 	s := &Server{
-		logger:                   zap.NewNop(),
+		logger:                    zap.NewNop(),
 		ExpectedUnderscoreHeaders: []string{"__user-id"},
 		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 			*got = r.Header.Clone()
@@ -635,7 +635,7 @@ func TestServer_serveHTTP_MixedEntryKeepsOriginal(t *testing.T) {
 func TestServer_serveHTTP_MixedEntryDropsFullyHyphenated(t *testing.T) {
 	got := &http.Header{}
 	s := &Server{
-		logger:                   zap.NewNop(),
+		logger:                    zap.NewNop(),
 		ExpectedUnderscoreHeaders: []string{"__user-id"},
 		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 			*got = r.Header.Clone()
@@ -654,7 +654,7 @@ func TestServer_serveHTTP_MixedEntryDropsFullyHyphenated(t *testing.T) {
 func TestServer_serveHTTP_MixedEntryDropsPartialVariants(t *testing.T) {
 	got := &http.Header{}
 	s := &Server{
-		logger:                   zap.NewNop(),
+		logger:                    zap.NewNop(),
 		ExpectedUnderscoreHeaders: []string{"__user-id"},
 		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 			*got = r.Header.Clone()
@@ -681,7 +681,7 @@ func TestServer_serveHTTP_MixedEntryDropsPartialVariants(t *testing.T) {
 func TestServer_serveHTTP_PrefixGlobKeepsMatch(t *testing.T) {
 	got := &http.Header{}
 	s := &Server{
-		logger:                   zap.NewNop(),
+		logger:                    zap.NewNop(),
 		ExpectedUnderscoreHeaders: []string{"webhook_*"},
 		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 			*got = r.Header.Clone()
@@ -700,7 +700,7 @@ func TestServer_serveHTTP_PrefixGlobKeepsMatch(t *testing.T) {
 func TestServer_serveHTTP_PrefixGlobDropsHyphenatedVariant(t *testing.T) {
 	got := &http.Header{}
 	s := &Server{
-		logger:                   zap.NewNop(),
+		logger:                    zap.NewNop(),
 		ExpectedUnderscoreHeaders: []string{"webhook_*"},
 		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 			*got = r.Header.Clone()
@@ -719,7 +719,7 @@ func TestServer_serveHTTP_PrefixGlobDropsHyphenatedVariant(t *testing.T) {
 func TestServer_serveHTTP_PrefixGlobDropsNonMatching(t *testing.T) {
 	got := &http.Header{}
 	s := &Server{
-		logger:                   zap.NewNop(),
+		logger:                    zap.NewNop(),
 		ExpectedUnderscoreHeaders: []string{"webhook_*"},
 		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 			*got = r.Header.Clone()
@@ -738,7 +738,7 @@ func TestServer_serveHTTP_PrefixGlobDropsNonMatching(t *testing.T) {
 func TestServer_serveHTTP_PrefixGlobDropsMixedVariant(t *testing.T) {
 	got := &http.Header{}
 	s := &Server{
-		logger:                   zap.NewNop(),
+		logger:                    zap.NewNop(),
 		ExpectedUnderscoreHeaders: []string{"webhook_*"},
 		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 			*got = r.Header.Clone()
@@ -759,7 +759,7 @@ func TestServer_serveHTTP_PrefixGlobDropsMixedVariant(t *testing.T) {
 func TestServer_serveHTTP_LiteralAsteriskInHeader(t *testing.T) {
 	got := &http.Header{}
 	s := &Server{
-		logger:                   zap.NewNop(),
+		logger:                    zap.NewNop(),
 		ExpectedUnderscoreHeaders: []string{"webhook_*"},
 		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 			*got = r.Header.Clone()
@@ -782,7 +782,7 @@ func TestServer_serveHTTP_LiteralAsteriskInHeader(t *testing.T) {
 func TestServer_serveHTTP_ExactAndPrefixCoexist(t *testing.T) {
 	got := &http.Header{}
 	s := &Server{
-		logger:                   zap.NewNop(),
+		logger:                    zap.NewNop(),
 		ExpectedUnderscoreHeaders: []string{"user_id", "webhook_*"},
 		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 			*got = r.Header.Clone()
@@ -792,12 +792,12 @@ func TestServer_serveHTTP_ExactAndPrefixCoexist(t *testing.T) {
 	require.NoError(t, s.provisionUnderscoreHeaders())
 
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
-	req.Header["User_id"] = []string{"zeus"}             // exact match → keep
-	req.Header["Webhook_event"] = []string{"push"}        // prefix match → keep
-	req.Header["Other_field"] = []string{"bad"}           // unlisted → drop
-	req.Header.Set("User-Id", "attacker")                 // hyphenated exact → drop
-	req.Header.Set("Webhook-Event", "attacker")           // hyphenated prefix → drop
-	req.Header.Set("X-Normal-Header", "ok")               // no underscore, not a variant → pass through
+	req.Header["User_id"] = []string{"zeus"}       // exact match → keep
+	req.Header["Webhook_event"] = []string{"push"} // prefix match → keep
+	req.Header["Other_field"] = []string{"bad"}    // unlisted → drop
+	req.Header.Set("User-Id", "attacker")          // hyphenated exact → drop
+	req.Header.Set("Webhook-Event", "attacker")    // hyphenated prefix → drop
+	req.Header.Set("X-Normal-Header", "ok")        // no underscore, not a variant → pass through
 
 	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
 	assert.Equal(t, "zeus", got.Get("User_id"))
@@ -806,6 +806,97 @@ func TestServer_serveHTTP_ExactAndPrefixCoexist(t *testing.T) {
 	assert.NotContains(t, *got, "Other_field")
 	assert.NotContains(t, *got, "User-Id")
 	assert.NotContains(t, *got, "Webhook-Event")
+}
+
+// --- Allowlist: repeated values ---
+
+// TestServer_serveHTTP_AllowlistDropsRepeatedExact verifies that an
+// allowlisted header arriving with multiple values (repeated field)
+// is dropped entirely as a safeguard against header injection.
+func TestServer_serveHTTP_AllowlistDropsRepeatedExact(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:                    zap.NewNop(),
+		ExpectedUnderscoreHeaders: []string{"user_id"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionUnderscoreHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["User_id"] = []string{"zeus", "injected"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.NotContains(t, *got, "User_id")
+}
+
+// TestServer_serveHTTP_AllowlistDropsRepeatedPrefixGlob verifies that a
+// glob-matched header arriving with multiple values is dropped entirely.
+func TestServer_serveHTTP_AllowlistDropsRepeatedPrefixGlob(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:                    zap.NewNop(),
+		ExpectedUnderscoreHeaders: []string{"webhook_*"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionUnderscoreHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["Webhook_event"] = []string{"push", "injected"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.NotContains(t, *got, "Webhook_event")
+}
+
+// TestServer_serveHTTP_LogsRepeatedValueDrop verifies that dropping an
+// allowlisted header with repeated values emits a warn-level log with
+// the header name and value count.
+func TestServer_serveHTTP_LogsRepeatedValueDrop(t *testing.T) {
+	var buf bytes.Buffer
+	s := &Server{
+		logger:                    testLogger(buf.Write),
+		ExpectedUnderscoreHeaders: []string{"user_id"},
+		primaryHandlerChain: HandlerFunc(func(http.ResponseWriter, *http.Request) error {
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionUnderscoreHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["User_id"] = []string{"zeus", "injected"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.Contains(t, buf.String(), `"level":"warn"`)
+	assert.Contains(t, buf.String(), `"msg":"dropping allowlisted underscore header with repeated values (possible spoofing)"`)
+	assert.Contains(t, buf.String(), `"header":"User_id"`)
+	assert.Contains(t, buf.String(), `"count":2`)
+}
+
+// TestServer_serveHTTP_LogsHyphenatedVariantDrop verifies that dropping a
+// hyphenated variant of an allowlisted header emits a debug-level log.
+func TestServer_serveHTTP_LogsHyphenatedVariantDrop(t *testing.T) {
+	var buf bytes.Buffer
+	s := &Server{
+		logger:                    testLogger(buf.Write),
+		ExpectedUnderscoreHeaders: []string{"user_id"},
+		primaryHandlerChain: HandlerFunc(func(http.ResponseWriter, *http.Request) error {
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionUnderscoreHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header.Set("User-Id", "attacker")
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.Contains(t, buf.String(), `"level":"debug"`)
+	assert.Contains(t, buf.String(), `"msg":"dropping hyphenated variant of expected underscore header"`)
+	assert.Contains(t, buf.String(), `"header":"User-Id"`)
 }
 
 // --- Validation ---
