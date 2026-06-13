@@ -133,42 +133,45 @@ func (na NetworkAddress) ListenAll(ctx context.Context, config net.ListenConfig)
 // Listen synchronizes binds to unix domain sockets to avoid race conditions
 // while an existing socket is unlinked.
 func (na NetworkAddress) Listen(ctx context.Context, portOffset uint, config net.ListenConfig) (any, error) {
-	if na.IsUnixNetwork() {
-		unixSocketsMu.Lock()
-		defer unixSocketsMu.Unlock()
-	}
+	var (
+		ln  any
+		err error
+	)
 
-	// check to see if plugin provides listener
-	if ln, err := getListenerFromPlugin(ctx, na.Network, na.Host, na.port(), portOffset, config); ln != nil || err != nil {
+	// check to see if plugin provides a listener
+	if ln, err = getListenerFromPlugin(ctx, na.Network, na.Host, na.port(), portOffset, config); ln != nil || err != nil {
 		return ln, err
 	}
 
 	// create (or reuse) the listener ourselves
-	return na.listen(ctx, portOffset, config)
-}
-
-func (na NetworkAddress) listen(ctx context.Context, portOffset uint, config net.ListenConfig) (any, error) {
 	var (
-		ln           any
-		err          error
 		address      string
 		unixFileMode fs.FileMode
 	)
 
+	// lock other unix sockets from being bound and
 	// split unix socket addr early so lnKey
 	// is independent of permissions bits
 	if na.IsUnixNetwork() {
+		unixSocketsMu.Lock()
+		defer unixSocketsMu.Unlock()
+
 		address, unixFileMode, err = internal.SplitUnixSocketPermissionsBits(na.Host)
 		if err != nil {
 			return nil, err
 		}
-	} else if na.IsFdNetwork() {
-		address = na.Host
+	} else if na.IsFDNetwork() {
+		socketFd, err := strconv.ParseUint(na.Host, 0, strconv.IntSize)
+		if err != nil {
+			return nil, fmt.Errorf("invalid file descriptor: %v", err)
+		}
+
+		address = strconv.FormatUint(uint64(uint(socketFd)+portOffset), 10)
 	} else {
 		address = na.JoinHostPort(portOffset)
 	}
 
-	if strings.HasPrefix(na.Network, "ip") {
+	if na.IsIPNetwork() {
 		ln, err = config.ListenPacket(ctx, na.Network, address)
 	} else {
 		if na.IsUnixNetwork() {
@@ -205,21 +208,39 @@ func (na NetworkAddress) listen(ctx context.Context, portOffset uint, config net
 }
 
 // IsUnixNetwork returns true if na.Network is
-// unix, unixgram, or unixpacket.
+// unix, unixgram, unixpacket, or unix+h2c.
 func (na NetworkAddress) IsUnixNetwork() bool {
 	return IsUnixNetwork(na.Network)
 }
 
-// IsFdNetwork returns true if na.Network is
+// IsTCPNetwork returns true if na.Network is
+// tcp, tcp4, or tcp6.
+func (na NetworkAddress) IsTCPNetwork() bool {
+	return IsTCPNetwork(na.Network)
+}
+
+// IsUDPNetwork returns true if na.Network is
+// udp, udp4, or udp6.
+func (na NetworkAddress) IsUDPNetwork() bool {
+	return IsUDPNetwork(na.Network)
+}
+
+// IsIPNetwork returns true if na.Network starts with
+// ip: ip4: or ip6:
+func (na NetworkAddress) IsIPNetwork() bool {
+	return IsIPNetwork(na.Network)
+}
+
+// IsFDNetwork returns true if na.Network is
 // fd or fdgram.
-func (na NetworkAddress) IsFdNetwork() bool {
-	return IsFdNetwork(na.Network)
+func (na NetworkAddress) IsFDNetwork() bool {
+	return IsFDNetwork(na.Network)
 }
 
 // JoinHostPort is like net.JoinHostPort, but where the port
 // is StartPort + offset.
 func (na NetworkAddress) JoinHostPort(offset uint) string {
-	if na.IsUnixNetwork() || na.IsFdNetwork() {
+	if na.IsUnixNetwork() || na.IsFDNetwork() {
 		return na.Host
 	}
 	return net.JoinHostPort(na.Host, strconv.FormatUint(uint64(na.StartPort+offset), 10))
@@ -256,7 +277,7 @@ func (na NetworkAddress) PortRangeSize() uint {
 }
 
 func (na NetworkAddress) isLoopback() bool {
-	if na.IsUnixNetwork() || na.IsFdNetwork() {
+	if na.IsUnixNetwork() || na.IsFDNetwork() {
 		return true
 	}
 	if na.Host == "localhost" {
@@ -289,20 +310,10 @@ func (na NetworkAddress) port() string {
 // The output can be parsed by ParseNetworkAddress(). If the
 // address is a unix socket, any non-zero port will be dropped.
 func (na NetworkAddress) String() string {
-	if na.Network == "tcp" && (na.Host != "" || na.port() != "") {
+	if na.Network == TCP && (na.Host != "" || na.port() != "") {
 		na.Network = "" // omit default network value for brevity
 	}
 	return JoinNetworkAddress(na.Network, na.Host, na.port())
-}
-
-// IsUnixNetwork returns true if the netw is a unix network.
-func IsUnixNetwork(netw string) bool {
-	return strings.HasPrefix(netw, "unix")
-}
-
-// IsFdNetwork returns true if the netw is a fd network.
-func IsFdNetwork(netw string) bool {
-	return strings.HasPrefix(netw, "fd")
 }
 
 // ParseNetworkAddress parses addr into its individual
@@ -335,7 +346,7 @@ func ParseNetworkAddressWithDefaults(addr, defaultNetwork string, defaultPort ui
 			Host:    host,
 		}, err
 	}
-	if IsFdNetwork(network) {
+	if IsFDNetwork(network) {
 		return NetworkAddress{
 			Network: network,
 			Host:    host,
@@ -380,7 +391,7 @@ func SplitNetworkAddress(a string) (network, host, port string, err error) {
 	if slashFound {
 		network = strings.ToLower(strings.TrimSpace(beforeSlash))
 		a = afterSlash
-		if IsUnixNetwork(network) || IsFdNetwork(network) {
+		if IsUnixNetwork(network) || IsFDNetwork(network) {
 			host = a
 			return network, host, port, err
 		}
@@ -415,7 +426,7 @@ func JoinNetworkAddress(network, host, port string) string {
 	if network != "" {
 		a = network + "/"
 	}
-	if (host != "" && port == "") || IsUnixNetwork(network) || IsFdNetwork(network) {
+	if (host != "" && port == "") || IsUnixNetwork(network) || IsFDNetwork(network) {
 		a += host
 	} else if port != "" {
 		a += net.JoinHostPort(host, port)
@@ -657,54 +668,11 @@ func (fcql *fakeCloseQuicListener) Close() error {
 	return nil
 }
 
-// RegisterNetwork registers a network type with Caddy so that if a listener is
-// created for that network type, getListener will be invoked to get the listener.
-// This should be called during init() and will panic if the network type is standard
-// or reserved, or if it is already registered. EXPERIMENTAL and subject to change.
-func RegisterNetwork(network string, getListener ListenerFunc) {
-	network = strings.TrimSpace(strings.ToLower(network))
-
-	if network == "tcp" || network == "tcp4" || network == "tcp6" ||
-		network == "udp" || network == "udp4" || network == "udp6" ||
-		network == "unix" || network == "unixpacket" || network == "unixgram" ||
-		strings.HasPrefix(network, "ip:") || strings.HasPrefix(network, "ip4:") || strings.HasPrefix(network, "ip6:") ||
-		network == "fd" || network == "fdgram" {
-		panic("network type " + network + " is reserved")
-	}
-
-	if _, ok := networkTypes[strings.ToLower(network)]; ok {
-		panic("network type " + network + " is already registered")
-	}
-
-	networkTypes[network] = getListener
-}
-
 var unixSocketsMu sync.Mutex
-
-// getListenerFromPlugin returns a listener on the given network and address
-// if a plugin has registered the network name. It may return (nil, nil) if
-// no plugin can provide a listener.
-func getListenerFromPlugin(ctx context.Context, network, host, port string, portOffset uint, config net.ListenConfig) (any, error) {
-	// get listener from plugin if network type is registered
-	if getListener, ok := networkTypes[network]; ok {
-		Log().Debug("getting listener from plugin", zap.String("network", network))
-		return getListener(ctx, network, host, port, portOffset, config)
-	}
-
-	return nil, nil
-}
 
 func listenerKey(network, addr string) string {
 	return network + "/" + addr
 }
-
-// ListenerFunc is a function that can return a listener given a network and address.
-// The listeners must be capable of overlapping: with Caddy, new configs are loaded
-// before old ones are unloaded, so listeners may overlap briefly if the configs
-// both need the same listener. EXPERIMENTAL and subject to change.
-type ListenerFunc func(ctx context.Context, network, host, portRange string, portOffset uint, cfg net.ListenConfig) (any, error)
-
-var networkTypes = map[string]ListenerFunc{}
 
 // ListenerWrapper is a type that wraps a listener
 // so it can modify the input listener's methods.
