@@ -483,6 +483,52 @@ func TestQueryOpsRenameNoOpCases(t *testing.T) {
 	}
 }
 
+func TestQueryOpsReplaceScopedToKey(t *testing.T) {
+	repl := caddy.NewReplacer()
+
+	for i, tc := range []struct {
+		input  *http.Request
+		expect map[string][]string
+		ops    *queryOps
+	}{
+		{
+			// a keyed replace must only touch the named key, even when
+			// other keys hold the same value
+			ops: &queryOps{
+				Replace: []*queryOpsReplacement{{Key: "a", Search: "foo", Replace: "bar"}},
+			},
+			input:  newRequest(t, "GET", "/?a=foo&b=foo"),
+			expect: map[string][]string{"a": {"bar"}, "b": {"foo"}},
+		},
+		{
+			// "*" still replaces across every key
+			ops: &queryOps{
+				Replace: []*queryOpsReplacement{{Key: "*", Search: "foo", Replace: "bar"}},
+			},
+			input:  newRequest(t, "GET", "/?a=foo&b=foo"),
+			expect: map[string][]string{"a": {"bar"}, "b": {"bar"}},
+		},
+		{
+			// a keyed replace against a missing key is a no-op
+			ops: &queryOps{
+				Replace: []*queryOpsReplacement{{Key: "missing", Search: "foo", Replace: "bar"}},
+			},
+			input:  newRequest(t, "GET", "/?a=foo&b=foo"),
+			expect: map[string][]string{"a": {"foo"}, "b": {"foo"}},
+		},
+	} {
+		repl.Set("http.request.uri", tc.input.RequestURI)
+		repl.Set("http.request.uri.path", tc.input.URL.Path)
+		repl.Set("http.request.uri.query", tc.input.URL.RawQuery)
+
+		tc.ops.do(tc.input, repl)
+
+		if actual := tc.input.URL.Query(); !reflect.DeepEqual(tc.expect, map[string][]string(actual)) {
+			t.Errorf("Test %d: Expected query=%v but got %v", i, tc.expect, actual)
+		}
+	}
+}
+
 func newRequest(t *testing.T, method, uri string) *http.Request {
 	req, err := http.NewRequest(method, uri, nil)
 	if err != nil {
