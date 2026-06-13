@@ -1,15 +1,20 @@
 package reverseproxy
 
 import (
+	"context"
 	"net/http"
+	"net/http/httptest"
 	"testing"
+
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
 )
 
 func TestNormalizeWebsocketHeaders(t *testing.T) {
 	tests := []struct {
-		name   string
-		input  http.Header
-		want   http.Header
+		name  string
+		input http.Header
+		want  http.Header
 	}{
 		{
 			name: "canonicalized headers are renamed to RFC 6455 form",
@@ -74,36 +79,92 @@ func TestNormalizeWebsocketHeaders(t *testing.T) {
 	}
 }
 
-// TestNormalizeWebsocketHeadersSurvivesCopyHeader is a regression test for
+// TestRebuildRequestHeadersPreservesWebsocketCasing is a regression test for
 // https://github.com/caddyserver/caddy/issues/7784.
 //
 // proxyLoopIteration rebuilds r.Header with copyHeader when transport or header
 // ops are configured. copyHeader uses http.Header.Add internally, which calls
 // http.CanonicalHeaderKey and lowercases the 'S' in "WebSocket" to produce
-// "Sec-Websocket-*". The fix calls normalizeWebsocketHeaders after the rebuild
-// so the RFC 6455 casing is restored before the request is forwarded.
-func TestNormalizeWebsocketHeadersSurvivesCopyHeader(t *testing.T) {
-	// Simulate the state of r.Header after copyHeader re-canonicalizes it.
-	rebuilt := make(http.Header)
-	// http.Header.Add canonicalizes to "Sec-Websocket-Key" (lowercase 's').
-	rebuilt.Add("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
-	rebuilt.Add("Sec-WebSocket-Version", "13")
+// "Sec-Websocket-*". The rebuild path must restore the RFC 6455 casing before
+// the request is forwarded.
+func TestRebuildRequestHeadersPreservesWebsocketCasing(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		handler Handler
+	}{
+		{
+			name: "user header_ops only",
+			handler: Handler{
+				Headers: &headers.Handler{
+					Request: &headers.HeaderOps{
+						Add: http.Header{"X-Custom": {"v"}},
+					},
+				},
+			},
+		},
+		{
+			name: "transport-injected Host op only",
+			handler: Handler{
+				transportHeaderOps: &headers.HeaderOps{
+					Set: http.Header{"Host": {"upstream.example.com"}},
+				},
+			},
+		},
+		{
+			name: "transport and user ops together",
+			handler: Handler{
+				transportHeaderOps: &headers.HeaderOps{
+					Set: http.Header{"Host": {"upstream.example.com"}},
+				},
+				Headers: &headers.Handler{
+					Request: &headers.HeaderOps{
+						Add: http.Header{"X-Custom": {"v"}},
+					},
+				},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reqHeader := http.Header{}
+			reqHeader["Sec-WebSocket-Key"] = []string{"dGhlIHNhbXBsZSBub25jZQ=="}
+			reqHeader["Sec-WebSocket-Version"] = []string{"13"}
+			reqHeader.Set("Connection", "Upgrade")
+			reqHeader.Set("Upgrade", "websocket")
 
-	// At this point the map contains the lowercase form.
-	if _, ok := rebuilt["Sec-Websocket-Key"]; !ok {
-		t.Fatal("test setup: expected canonical (lowercase) key to be present after Add")
+			req := httptest.NewRequest("GET", "http://example.com/", nil)
+			ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer())
+			req = req.WithContext(ctx)
+
+			tc.handler.rebuildRequestHeaders(req, reqHeader, "upstream.example.com")
+
+			for _, key := range []string{"Sec-WebSocket-Key", "Sec-WebSocket-Version"} {
+				if _, ok := req.Header[key]; !ok {
+					t.Errorf("%q missing after rebuild; header = %v", key, req.Header)
+				}
+				canonical := http.CanonicalHeaderKey(key)
+				if canonical == key {
+					continue
+				}
+				if _, ok := req.Header[canonical]; ok {
+					t.Errorf("%q leaked after rebuild; header = %v", canonical, req.Header)
+				}
+			}
+		})
 	}
+}
 
-	// The fix: call normalizeWebsocketHeaders after the rebuild.
-	normalizeWebsocketHeaders(rebuilt)
+func TestRebuildRequestHeadersIsNoOpWithoutOps(t *testing.T) {
+	h := Handler{}
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Original", "stays")
+	otherHeader := http.Header{"Different": {"should-not-appear"}}
 
-	// RFC 6455 form must be present (direct map lookup — .Get() re-canonicalizes
-	// to "Sec-Websocket-Key" and would miss the corrected key).
-	if _, ok := rebuilt["Sec-WebSocket-Key"]; !ok {
-		t.Error("Sec-WebSocket-Key missing after normalize; WebSocket upgrade will fail")
+	h.rebuildRequestHeaders(req, otherHeader, "ignored")
+
+	if got := req.Header.Get("Original"); got != "stays" {
+		t.Errorf("header rebuilt despite no ops; Original = %q, want %q", got, "stays")
 	}
-	// Lowercase form must be gone.
-	if _, ok := rebuilt["Sec-Websocket-Key"]; ok {
-		t.Error("canonical (lowercase) Sec-Websocket-Key still present after normalize")
+	if got := req.Header.Get("Different"); got != "" {
+		t.Errorf("reqHeader leaked despite no ops; Different = %q, want empty", got)
 	}
 }

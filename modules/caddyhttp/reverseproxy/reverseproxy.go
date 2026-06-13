@@ -677,26 +677,8 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	// mutate request headers according to this upstream;
 	// because we're in a retry loop, we have to copy headers
 	// (and the r.Host value) from the original so that each
-	// retry is identical to the first. If either transport or
-	// user ops exist, apply them in order (transport first,
-	// then user, so user's config wins).
-	var userOps *headers.HeaderOps
-	if h.Headers != nil {
-		userOps = h.Headers.Request
-	}
-	transportOps := h.transportHeaderOps
-	if transportOps != nil || userOps != nil {
-		r.Header = make(http.Header)
-		copyHeader(r.Header, reqHeader)
-		r.Host = reqHost
-		if transportOps != nil {
-			transportOps.ApplyToRequest(r)
-		}
-		if userOps != nil {
-			userOps.ApplyToRequest(r)
-		}
-		normalizeWebsocketHeaders(r.Header)
-	}
+	// retry is identical to the first.
+	h.rebuildRequestHeaders(r, reqHeader, reqHost)
 
 	// proxy the request to that upstream
 	proxyErr = h.reverseProxy(w, r, origReq, repl, dialInfo, next)
@@ -727,6 +709,32 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	}
 
 	return false, proxyErr
+}
+
+// rebuildRequestHeaders rebuilds r.Header from reqHeader and applies any
+// transport- and user-configured request header operations, so that each
+// iteration of the proxy loop starts from the same base. If neither set of
+// operations is configured, r.Header is left unchanged. Transport operations
+// are applied before user operations, so the user's config wins.
+func (h *Handler) rebuildRequestHeaders(r *http.Request, reqHeader http.Header, reqHost string) {
+	var userOps *headers.HeaderOps
+	if h.Headers != nil {
+		userOps = h.Headers.Request
+	}
+	transportOps := h.transportHeaderOps
+	if transportOps == nil && userOps == nil {
+		return
+	}
+	r.Header = make(http.Header)
+	copyHeader(r.Header, reqHeader)
+	r.Host = reqHost
+	if transportOps != nil {
+		transportOps.ApplyToRequest(r)
+	}
+	if userOps != nil {
+		userOps.ApplyToRequest(r)
+	}
+	normalizeWebsocketHeaders(r.Header)
 }
 
 // Mapping of the canonical form of the headers, to the RFC 6455 form,
