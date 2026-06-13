@@ -1224,18 +1224,28 @@ func (h *Handler) finalizeResponse(
 	start time.Time,
 	logger *zap.Logger,
 ) error {
+	// Strip hop-by-hop headers from the upstream response.
+	// For 101 Switching Protocols, save the Upgrade value
+	// first (handleUpgradeResponse needs it for validation)
+	// and restore it with a canonical Connection header.
+	upgradeVal := res.Header.Get("Upgrade")
+
+	removeConnectionHeaders(res.Header)
+	for _, h := range hopHeaders {
+		res.Header.Del(h)
+	}
+
+	if res.StatusCode == http.StatusSwitchingProtocols && upgradeVal != "" {
+		res.Header.Set("Upgrade", upgradeVal)
+		res.Header.Set("Connection", "Upgrade")
+	}
+
 	// deal with 101 Switching Protocols responses: (WebSocket, h2c, etc)
 	if res.StatusCode == http.StatusSwitchingProtocols {
 		var wg sync.WaitGroup
 		h.handleUpgradeResponse(logger, &wg, rw, req, res)
 		wg.Wait()
 		return nil
-	}
-
-	removeConnectionHeaders(res.Header)
-
-	for _, h := range hopHeaders {
-		res.Header.Del(h)
 	}
 
 	// delete our Server header and use Via instead (see #6275)

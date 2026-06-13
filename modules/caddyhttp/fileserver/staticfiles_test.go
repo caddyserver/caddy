@@ -15,7 +15,10 @@
 package fileserver
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -26,6 +29,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp/encode"
 )
 
 func TestFileHidden(t *testing.T) {
@@ -183,4 +187,123 @@ func check_validator_headers(modTime time.Time, expect_headers bool, t *testing.
 			t.Errorf("Got Last-Modified header for file with invalid mod time %s", modTime)
 		}
 	}
+}
+
+func TestPrecompressedRangeResponse(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "range.txt"), []byte("original response body"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	sidecar := gzipBytes(t, []byte("original response body"))
+	if err := os.WriteFile(filepath.Join(root, "range.txt.gz"), sidecar, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	fsrv := FileServer{
+		Root:               root,
+		CanonicalURIs:      new(bool),
+		PrecompressedOrder: []string{"gzip"},
+	}
+
+	ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+	if err := fsrv.Provision(ctx); err != nil {
+		t.Fatal(err)
+	}
+	fsrv.precompressors = map[string]encode.Precompressed{
+		"gzip": testPrecompressed{encoding: "gzip", suffix: ".gz"},
+	}
+
+	t.Run("full response", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r := newPrecompressedRequest(t, "/range.txt")
+		r.Header.Set("Accept-Encoding", "gzip")
+
+		if err := fsrv.ServeHTTP(w, r, nil); err != nil {
+			t.Fatal(err)
+		}
+
+		if got := w.Code; got != http.StatusOK {
+			t.Fatalf("status = %d, want %d", got, http.StatusOK)
+		}
+		if got := w.Header().Get("Content-Encoding"); got != "gzip" {
+			t.Fatalf("Content-Encoding = %q, want gzip", got)
+		}
+		if got := w.Header().Get("Content-Length"); got != fmt.Sprintf("%d", len(sidecar)) {
+			t.Fatalf("Content-Length = %q, want %d", got, len(sidecar))
+		}
+		if got := w.Header().Get("Vary"); got != "Accept-Encoding" {
+			t.Fatalf("Vary = %q, want Accept-Encoding", got)
+		}
+		if got := w.Body.Bytes(); !bytes.Equal(got, sidecar) {
+			t.Fatalf("body len = %d, want len = %d", len(got), len(sidecar))
+		}
+	})
+
+	t.Run("range response", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r := newPrecompressedRequest(t, "/range.txt")
+		r.Header.Set("Accept-Encoding", "gzip")
+		r.Header.Set("Range", "bytes=2-5")
+
+		if err := fsrv.ServeHTTP(w, r, nil); err != nil {
+			t.Fatal(err)
+		}
+
+		if got := w.Code; got != http.StatusPartialContent {
+			t.Fatalf("status = %d, want %d", got, http.StatusPartialContent)
+		}
+		if got := w.Header().Get("Content-Encoding"); got != "gzip" {
+			t.Fatalf("Content-Encoding = %q, want gzip", got)
+		}
+		wantContentRange := fmt.Sprintf("bytes 2-5/%d", len(sidecar))
+		if got := w.Header().Get("Content-Range"); got != wantContentRange {
+			t.Fatalf("Content-Range = %q, want %q", got, wantContentRange)
+		}
+		if got := w.Header().Get("Content-Length"); got != "4" {
+			t.Fatalf("Content-Length = %q, want 4", got)
+		}
+		if got := w.Header().Get("Vary"); got != "Accept-Encoding" {
+			t.Fatalf("Vary = %q, want Accept-Encoding", got)
+		}
+		if got, want := w.Body.Bytes(), sidecar[2:6]; !bytes.Equal(got, want) {
+			t.Fatalf("body = %x, want %x", got, want)
+		}
+	})
+}
+
+func gzipBytes(t *testing.T, data []byte) []byte {
+	t.Helper()
+
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	if _, err := zw.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func newPrecompressedRequest(t *testing.T, target string) *http.Request {
+	t.Helper()
+
+	r := httptest.NewRequest(http.MethodGet, target, nil)
+	repl := caddy.NewReplacer()
+	ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl)
+	return r.WithContext(ctx)
+}
+
+type testPrecompressed struct {
+	encoding string
+	suffix   string
+}
+
+func (p testPrecompressed) AcceptEncoding() string {
+	return p.encoding
+}
+
+func (p testPrecompressed) Suffix() string {
+	return p.suffix
 }

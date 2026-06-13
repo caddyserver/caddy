@@ -523,7 +523,11 @@ func (ServerType) extractNamedRoutes(
 			route.HandlersRaw = []json.RawMessage{caddyconfig.JSONModuleObject(handler, "handler", subroute.CaddyModule().ID.Name(), h.warnings)}
 		}
 
-		namedRoutes[sb.block.GetKeysText()[0]] = &route
+		key := sb.block.GetKeysText()[0]
+		if _, exists := namedRoutes[key]; exists {
+			return nil, fmt.Errorf("cannot have duplicate named_routes: %s", key)
+		}
+		namedRoutes[key] = &route
 	}
 	options["named_routes"] = namedRoutes
 
