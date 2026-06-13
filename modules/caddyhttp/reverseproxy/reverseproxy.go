@@ -716,6 +716,8 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 // iteration of the proxy loop starts from the same base. If neither set of
 // operations is configured, r.Header is left unchanged. Transport operations
 // are applied before user operations, so the user's config wins.
+// normalizeWebsocketHeaders is a no-op unless Go-canonical WebSocket header
+// names are present, so it is safe to call for ordinary non-WebSocket requests.
 func (h *Handler) rebuildRequestHeaders(r *http.Request, reqHeader http.Header, reqHost string) {
 	var userOps *headers.HeaderOps
 	if h.Headers != nil {
