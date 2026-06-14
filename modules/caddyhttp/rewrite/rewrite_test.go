@@ -516,10 +516,30 @@ func TestQueryOpsReplaceScopedToKey(t *testing.T) {
 			input:  newRequest(t, "GET", "/?a=foo&b=foo"),
 			expect: map[string][]string{"a": {"foo"}, "b": {"foo"}},
 		},
+		{
+			// the regexp branch must also stay scoped to the named key
+			ops: &queryOps{
+				Replace: []*queryOpsReplacement{{Key: "a", SearchRegexp: "f.o", Replace: "bar"}},
+			},
+			input:  newRequest(t, "GET", "/?a=foo&b=foo"),
+			expect: map[string][]string{"a": {"bar"}, "b": {"foo"}},
+		},
 	} {
 		repl.Set("http.request.uri", tc.input.RequestURI)
 		repl.Set("http.request.uri.path", tc.input.URL.Path)
 		repl.Set("http.request.uri.query", tc.input.URL.RawQuery)
+
+		// we can't directly call Provision() without a valid caddy.Context
+		// so here we ad-hoc compile the regex
+		for _, rep := range tc.ops.Replace {
+			if rep.SearchRegexp != "" {
+				re, err := regexp.Compile(rep.SearchRegexp)
+				if err != nil {
+					t.Fatal(err)
+				}
+				rep.re = re
+			}
+		}
 
 		tc.ops.do(tc.input, repl)
 
