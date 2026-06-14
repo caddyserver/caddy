@@ -342,7 +342,11 @@ outer:
 		}
 
 		host = repl.ReplaceAll(host, "")
-		if strings.Contains(host, "*") {
+		
+		// a single * always match
+		if host == "*" {
+			return true, nil
+		} else if strings.Contains(host, "*") {
 			patternParts := strings.Split(host, ".")
 			incomingParts := strings.Split(reqHost, ".")
 			if len(patternParts) != len(incomingParts) {
