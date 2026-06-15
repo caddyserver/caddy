@@ -128,8 +128,10 @@ type AutomationPolicy struct {
 	// you may wish to increase the ratio to ~1/2.
 	RenewalWindowRatio float64 `json:"renewal_window_ratio,omitempty"`
 
-	// The type of key to generate for certificates.
+	// The type of key to generate for new certificates.
 	// Supported values: `ed25519`, `p256`, `p384`, `rsa2048`, `rsa4096`.
+	// Changing this setting does not affect existing certificates until they are
+	// renewed, because their private keys have already been generated.
 	KeyType string `json:"key_type,omitempty"`
 
 	// Optionally configure a separate storage module associated with this
