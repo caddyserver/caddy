@@ -529,15 +529,9 @@ func TestQueryOpsReplaceScopedToKey(t *testing.T) {
 		repl.Set("http.request.uri.path", tc.input.URL.Path)
 		repl.Set("http.request.uri.query", tc.input.URL.RawQuery)
 
-		// we can't directly call Provision() without a valid caddy.Context
-		// so here we ad-hoc compile the regex
 		for _, rep := range tc.ops.Replace {
-			if rep.SearchRegexp != "" {
-				re, err := regexp.Compile(rep.SearchRegexp)
-				if err != nil {
-					t.Fatal(err)
-				}
-				rep.re = re
+			if err := rep.Provision(caddy.Context{}); err != nil {
+				t.Fatal(err)
 			}
 		}
 
