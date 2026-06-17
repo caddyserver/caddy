@@ -21,6 +21,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+
+	"github.com/caddyserver/caddy/v2"
 )
 
 // ResponseWriterWrapper wraps an underlying ResponseWriter and
@@ -70,6 +72,8 @@ type responseRecorder struct {
 	size         int
 	wroteHeader  bool
 	stream       bool
+	hijacked     bool
+	detached     bool
 
 	readSize *int
 }
@@ -144,7 +148,8 @@ func NewResponseRecorder(w http.ResponseWriter, buf *bytes.Buffer, shouldBuffer 
 
 // WriteHeader writes the headers with statusCode to the wrapped
 // ResponseWriter unless the response is to be buffered instead.
-// 1xx responses are never buffered.
+// 1xx responses are never buffered, except 101 which is treated
+// as a final upgrade response.
 func (rr *responseRecorder) WriteHeader(statusCode int) {
 	if rr.wroteHeader {
 		return
@@ -161,12 +166,12 @@ func (rr *responseRecorder) WriteHeader(statusCode int) {
 		rr.stream = !rr.shouldBuffer(rr.statusCode, rr.ResponseWriterWrapper.Header())
 	}
 
-	// 1xx responses aren't final; just informational
-	if statusCode < 100 || statusCode > 199 {
+	// 1xx responses except 101 aren't final; just informational
+	if statusCode < 100 || statusCode > 199 || statusCode == http.StatusSwitchingProtocols {
 		rr.wroteHeader = true
 	}
 
-	// if informational or not buffered, immediately write header
+	// if 1xx or not buffered, immediately write header
 	if rr.stream || (100 <= statusCode && statusCode <= 199) {
 		rr.ResponseWriterWrapper.WriteHeader(statusCode)
 	}
@@ -222,7 +227,18 @@ func (rr *responseRecorder) Buffered() bool {
 	return !rr.stream
 }
 
+func (rr *responseRecorder) DetachAfterHijack(detached bool) bool {
+	if rr.hijacked {
+		return false
+	}
+	rr.detached = detached
+	return true
+}
+
 func (rr *responseRecorder) WriteResponse() error {
+	if rr.hijacked {
+		return nil
+	}
 	if rr.statusCode == 0 {
 		// could happen if no handlers actually wrote anything,
 		// and this prevents a panic; status must be > 0
@@ -253,10 +269,24 @@ func (rr *responseRecorder) setReadSize(size *int) {
 }
 
 func (rr *responseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if !rr.wroteHeader {
+		// hijacking without writing status code first works as long as
+		// subsequent writes follows http1.1 wire format, but it will
+		// show up with a status code of 0 in the access log and bytes
+		// written will include response headers. Response headers won't
+		// be present in the log if not set on the response writer.
+		caddy.Log().Warn("hijacking without writing status code first")
+	}
 	//nolint:bodyclose
 	conn, brw, err := http.NewResponseController(rr.ResponseWriterWrapper).Hijack()
 	if err != nil {
 		return nil, nil, err
+	}
+	rr.hijacked = true
+	rr.stream = true
+	rr.wroteHeader = true
+	if rr.detached {
+		return conn, brw, nil
 	}
 	// Per http documentation, returned bufio.Writer is empty, but bufio.Read maybe not
 	conn = &hijackedConn{conn, rr}
@@ -311,6 +341,29 @@ func (hc *hijackedConn) ReadFrom(r io.Reader) (int64, error) {
 	return n, err
 }
 
+// DetachResponseWriterAfterHijack detaches w or one of its wrapped
+// response writers when it's hijacked. Returns true if not already
+// hijacked. When detached, bytes read or written stats will not be
+// recorded for the hijacked connection, and it's safe to use the
+// connection after http middleware returns.
+func DetachResponseWriterAfterHijack(w http.ResponseWriter, detached bool) bool {
+	for w != nil {
+		if detacher, ok := w.(interface{ DetachAfterHijack(bool) bool }); ok {
+			return detacher.DetachAfterHijack(detached)
+		}
+		unwrapper, ok := w.(interface{ Unwrap() http.ResponseWriter })
+		if !ok {
+			return false
+		}
+		next := unwrapper.Unwrap()
+		if next == w {
+			return false
+		}
+		w = next
+	}
+	return false
+}
+
 // ResponseRecorder is a http.ResponseWriter that records
 // responses instead of writing them to the client. See
 // docs for NewResponseRecorder for proper usage.
@@ -319,6 +372,7 @@ type ResponseRecorder interface {
 	Status() int
 	Buffer() *bytes.Buffer
 	Buffered() bool
+	DetachAfterHijack(bool) bool
 	Size() int
 	WriteResponse() error
 }

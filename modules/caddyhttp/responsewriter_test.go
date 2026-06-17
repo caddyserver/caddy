@@ -1,11 +1,14 @@
 package caddyhttp
 
 import (
+	"bufio"
 	"bytes"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 type responseWriterSpy interface {
@@ -43,6 +46,50 @@ func (rf *readFromRespWriter) ReadFrom(r io.Reader) (int64, error) {
 }
 
 func (rf *readFromRespWriter) CalledReadFrom() bool { return rf.called }
+
+type hijackRespWriter struct {
+	baseRespWriter
+	header http.Header
+	status int
+	conn   net.Conn
+}
+
+func newHijackRespWriter() *hijackRespWriter {
+	return &hijackRespWriter{
+		header: make(http.Header),
+		conn:   stubConn{},
+	}
+}
+
+func (hrw *hijackRespWriter) Header() http.Header {
+	return hrw.header
+}
+
+func (hrw *hijackRespWriter) WriteHeader(statusCode int) {
+	hrw.status = statusCode
+}
+
+func (hrw *hijackRespWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	br := bufio.NewReader(hrw.conn)
+	bw := bufio.NewWriter(hrw.conn)
+	return hrw.conn, bufio.NewReadWriter(br, bw), nil
+}
+
+type stubConn struct{}
+
+func (stubConn) Read(_ []byte) (int, error)       { return 0, io.EOF }
+func (stubConn) Write(p []byte) (int, error)      { return len(p), nil }
+func (stubConn) Close() error                     { return nil }
+func (stubConn) LocalAddr() net.Addr              { return stubAddr("local") }
+func (stubConn) RemoteAddr() net.Addr             { return stubAddr("remote") }
+func (stubConn) SetDeadline(time.Time) error      { return nil }
+func (stubConn) SetReadDeadline(time.Time) error  { return nil }
+func (stubConn) SetWriteDeadline(time.Time) error { return nil }
+
+type stubAddr string
+
+func (a stubAddr) Network() string { return "tcp" }
+func (a stubAddr) String() string  { return string(a) }
 
 func TestResponseWriterWrapperReadFrom(t *testing.T) {
 	tests := map[string]struct {
@@ -167,5 +214,51 @@ func TestResponseRecorderReadFrom(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestResponseRecorderSwitchingProtocolsIsHijackAware(t *testing.T) {
+	w := newHijackRespWriter()
+	var buf bytes.Buffer
+
+	rr := NewResponseRecorder(w, &buf, func(status int, header http.Header) bool {
+		return true
+	})
+	rr.WriteHeader(http.StatusSwitchingProtocols)
+
+	if rr.Status() != http.StatusSwitchingProtocols {
+		t.Fatalf("status = %d, want %d", rr.Status(), http.StatusSwitchingProtocols)
+	}
+	if w.status != http.StatusSwitchingProtocols {
+		t.Fatalf("underlying status = %d, want %d", w.status, http.StatusSwitchingProtocols)
+	}
+
+	hj, ok := rr.(http.Hijacker)
+	if !ok {
+		t.Fatal("response recorder does not implement http.Hijacker")
+	}
+	conn, _, err := hj.Hijack()
+	if err != nil {
+		t.Fatalf("Hijack() error = %v", err)
+	}
+	defer conn.Close()
+
+	if rr.Buffered() {
+		t.Fatal("hijacked response should not remain buffered")
+	}
+	if rr.DetachAfterHijack(true) {
+		t.Fatal("response recorder should report hijacked state by returning false")
+	}
+	if DetachResponseWriterAfterHijack(rr, true) {
+		t.Fatal("DetachResponseWriterAfterHijack() should report false after hijack")
+	}
+	if err := rr.WriteResponse(); err != nil {
+		t.Fatalf("WriteResponse() after hijack returned error: %v", err)
+	}
+	if rr.Size() != 0 {
+		t.Fatalf("size = %d, want 0 after hijack handshake", rr.Size())
+	}
+	if got := w.Written(); got != "" {
+		t.Fatalf("unexpected buffered body write after hijack: %q", got)
 	}
 }
