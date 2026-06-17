@@ -18,10 +18,26 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"os"
+	"strconv"
+	"sync"
 
 	"github.com/caddyserver/certmagic"
 	"github.com/klauspost/cpuid/v2"
 )
+
+// AllowInsecureCipherSuitesEnv, when set to a truthy value, lets the
+// cipher suites Go considers insecure (tls.InsecureCipherSuites, e.g. the
+// static-RSA suites) be configured by name. They are never used unless
+// named explicitly; this trades away forward secrecy for legacy clients
+// that offer no ECDHE suites.
+const AllowInsecureCipherSuitesEnv = "CADDY_TLS_ALLOW_INSECURE_CIPHER_SUITES"
+
+// evaluated once: a feature flag should not change during the process.
+var insecureCipherSuitesAllowed = sync.OnceValue(func() bool {
+	allowed, _ := strconv.ParseBool(os.Getenv(AllowInsecureCipherSuitesEnv))
+	return allowed
+})
 
 // CipherSuiteNameSupported returns true if name is
 // a supported cipher suite.
@@ -42,8 +58,17 @@ func CipherSuiteID(name string) uint16 {
 
 // SupportedCipherSuites returns a list of all the cipher suites
 // Caddy supports. The list is NOT ordered by security preference.
+//
+// This is Go's secure set (tls.CipherSuites), plus the insecure suites
+// when AllowInsecureCipherSuitesEnv is set. The insecure suites are never
+// in the defaults (see getOptimalDefaultCipherSuites); the flag only
+// permits configuring them by name.
 func SupportedCipherSuites() []*tls.CipherSuite {
-	return tls.CipherSuites()
+	suites := tls.CipherSuites()
+	if insecureCipherSuitesAllowed() {
+		suites = append(suites, tls.InsecureCipherSuites()...)
+	}
+	return suites
 }
 
 // defaultCipherSuites is the ordered list of all the cipher
