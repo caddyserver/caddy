@@ -640,6 +640,20 @@ func (MatchPath) matchPatternWithEscapeSequence(escapedPath, matchPath string) b
 		iPattern++
 	}
 
+	// if the pattern was fully consumed before the path, the remaining path
+	// bytes still have to be part of the string we match against; otherwise a
+	// pattern with no trailing wildcard (e.g. "/foo%2fbar") would behave like a
+	// prefix match and incorrectly match longer paths (e.g. "/foo%2fbarbaz").
+	// the pattern has no more escape hints here, so compare in normalised space.
+	if iPath < len(escapedPath) {
+		remaining := escapedPath[iPath:]
+		if unescaped, err := url.PathUnescape(remaining); err == nil {
+			sb.WriteString(unescaped)
+		} else {
+			sb.WriteString(remaining)
+		}
+	}
+
 	// we can now treat rawpath globs (%*) as regular globs (*)
 	matchPath = strings.ReplaceAll(matchPath, "%*", "*")
 
