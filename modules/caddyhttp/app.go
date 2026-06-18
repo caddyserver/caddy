@@ -46,6 +46,13 @@ func init() {
 // only on the HTTPS port but which do not have any TLS connection policies
 // defined by adding a good, default TLS connection policy.
 //
+// Similar to how other popular web servers work, incoming request header fields
+// with underscores are ignored/dropped implicitly to mitigate security risks.
+// Specific headers to allow can be explicitly configured using
+// `expected_underscore_headers`.
+//
+// ### Placeholders
+//
 // In HTTP routes, additional placeholders are available (replace any `*`):
 //
 // Placeholder | Description
