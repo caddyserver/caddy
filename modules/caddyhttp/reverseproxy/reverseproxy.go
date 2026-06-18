@@ -699,9 +699,15 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 
 	// proxy the request to that upstream
 	proxyErr = h.reverseProxy(w, r, origReq, repl, dialInfo, next)
-	if proxyErr == nil || errors.Is(proxyErr, context.Canceled) {
-		// context.Canceled happens when the downstream client
-		// cancels the request, which is not our failure
+	if proxyErr == nil {
+		return true, nil
+	}
+	if errors.Is(proxyErr, context.Canceled) {
+		// context.Canceled happens when the downstream client cancels the
+		// request, which is not our failure; don't retry or ding the upstream.
+		// Record a 499 (client closed request) so the access log reflects the
+		// disconnect instead of a misleading 0 status (see #7396).
+		w.WriteHeader(499)
 		return true, nil
 	}
 
