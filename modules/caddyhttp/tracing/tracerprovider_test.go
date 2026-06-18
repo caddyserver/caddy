@@ -1,6 +1,7 @@
 package tracing
 
 import (
+	"errors"
 	"testing"
 
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -72,5 +73,30 @@ func Test_tracersProvider_buildOptsOnlyOnCreate(t *testing.T) {
 	}
 	if tp.tracerProvidersCounter != 6 {
 		t.Errorf("Tracer providers counter should equal to 6, got %d", tp.tracerProvidersCounter)
+	}
+}
+
+// Test_tracersProvider_buildOptsError verifies that an error from buildOpts is
+// propagated and that no provider is created nor the counter incremented, so a
+// failed build leaves the tracerProvider in its initial state.
+func Test_tracersProvider_buildOptsError(t *testing.T) {
+	tp := tracerProvider{}
+
+	wantErr := errors.New("build failed")
+	build := func() ([]sdktrace.TracerProviderOption, error) {
+		return nil, wantErr
+	}
+
+	_, err := tp.getTracerProvider(build)
+	if !errors.Is(err, wantErr) {
+		t.Errorf("Expected error %v, got %v", wantErr, err)
+	}
+
+	if tp.tracerProvider != nil {
+		t.Errorf("There should be no tracer provider when buildOpts fails")
+	}
+
+	if tp.tracerProvidersCounter != 0 {
+		t.Errorf("Tracer providers counter should equal to 0, got %d", tp.tracerProvidersCounter)
 	}
 }
