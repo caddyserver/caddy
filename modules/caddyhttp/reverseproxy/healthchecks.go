@@ -476,7 +476,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 		if upstream.Host.activeHealthFails() >= h.HealthChecks.Active.Fails {
 			// dispatch an event that the host newly became unhealthy
 			if upstream.setHealthy(false) {
-				h.events.Emit(h.ctx, "unhealthy", map[string]any{"host": hostAddr})
+				h.events.Emit(h.ctx, "unhealthy", map[string]any{"host": hostAddr, "addr": networkAddr})
 				upstream.Host.resetHealth()
 			}
 		}
@@ -499,7 +499,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 				if c := h.HealthChecks.Active.logger.Check(zapcore.InfoLevel, "host is up"); c != nil {
 					c.Write(zap.String("host", hostAddr))
 				}
-				h.events.Emit(h.ctx, "healthy", map[string]any{"host": hostAddr})
+				h.events.Emit(h.ctx, "healthy", map[string]any{"host": hostAddr, "addr": networkAddr})
 				upstream.Host.resetHealth()
 			}
 		}
