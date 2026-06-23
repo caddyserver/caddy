@@ -288,6 +288,7 @@ func downloadBuild(qs url.Values) (*http.Response, error) {
 		return nil, fmt.Errorf("secure request failed: %v", err)
 	}
 	if resp.StatusCode >= 400 {
+		defer resp.Body.Close()
 		var details struct {
 			StatusCode int `json:"status_code"`
 			Error      struct {
