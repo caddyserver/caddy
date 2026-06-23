@@ -63,6 +63,7 @@ jobs:
       contents: read
       pull-requests: read
       actions: write # to allow uploading artifacts and cache
+      checks: write
     steps:
     - name: Harden the runner (Audit all outbound calls)
       uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
@@ -137,6 +138,19 @@ jobs:
         go test -coverprofile="cover-profile.out" -short -race ./...
         # echo "status=$?" >> $GITHUB_OUTPUT
 
+    # Only upload from linux: mac and windows runs would produce overlapping
+    # profiles for the same packages, and the coverage-report job's simple
+    # concat-merge can't deduplicate. The artifact name must match the
+    # `caddy-*-coverage-*` pattern consumed by coverage-report.
+    - name: Publish Coverage Profile
+      if: always() && matrix.os == 'linux'
+      uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+      with:
+        name: caddy-unit-coverage-${{ steps.vars.outputs.short_sha }}
+        path: cover-profile.out
+        retention-days: 30
+        compression-level: 6
+
     # Relevant step if we reinvestigate publishing test/coverage reports
     # - name: Prepare coverage reports
     #   run: |
@@ -151,6 +165,338 @@ jobs:
     #   run: |
     #     echo "step_test ${{ steps.step_test.outputs.status }}\n"
     #     exit 1
+
+  spec-test:
+    permissions:
+      checks: write
+      pull-requests: write
+    strategy:
+      matrix:
+        os: 
+          - linux
+        go: 
+          - '1.25'
+
+        include:
+        # Set the minimum Go patch version for the given Go minor
+        # Usable via ${{ matrix.GO_SEMVER }}
+        - go: '1.25'
+          GO_SEMVER: '~1.25.0'
+
+        # Set some variables per OS, usable via ${{ matrix.VAR }}
+        # OS_LABEL: the VM label from GitHub Actions (see https://docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners/about-github-hosted-runners#standard-github-hosted-runners-for-public-repositories)
+        # CADDY_BIN_PATH: the path to the compiled Caddy binary, for artifact publishing
+        # SUCCESS: the typical value for $? per OS (Windows/pwsh returns 'True')
+        - os: linux
+          OS_LABEL: ubuntu-latest
+          CADDY_BIN_PATH: ./cmd/caddy/caddy
+          SUCCESS: 0
+
+    runs-on: ${{ matrix.OS_LABEL }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+    - name: Install Go
+      uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+      with:
+        go-version: ${{ matrix.GO_SEMVER }}
+        check-latest: true
+
+    - name: Print Go version and environment
+      id: vars
+      shell: bash
+      run: |
+        printf "curl version: $(curl --version)\n"
+        printf "Using go at: $(which go)\n"
+        printf "Go version: $(go version)\n"
+        printf "\n\nGo environment:\n\n"
+        go env
+        printf "\n\nSystem environment:\n\n"
+        env
+        printf "Git version: $(git version)\n\n"
+        # Calculate the short SHA1 hash of the git commit
+        echo "short_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+    - name: Get dependencies
+      run: |
+        go get -v -t ./...
+        # mkdir test-results
+    - name: Build Caddy
+      working-directory: ./cmd/caddy
+      env:
+        CGO_ENABLED: 0
+      run: |
+        go build -cover -tags nobadger,nopgx,nomysql -trimpath -ldflags="-w -s" -v
+      
+    - name: Install Hurl
+      env:
+        HURL_VERSION: "7.0.0"
+      run: |
+        curl --location --remote-name https://github.com/Orange-OpenSource/hurl/releases/download/${HURL_VERSION}/hurl_${HURL_VERSION}_amd64.deb
+        sudo dpkg -i hurl_${HURL_VERSION}_amd64.deb
+        hurl --version
+  
+    - name: Run Caddy
+      run: |
+        set -euo pipefail
+        ./cmd/caddy/caddy environ
+        mkdir -p coverdir
+        # GOCOVERDIR must be set in the same command that spawns the daemon
+        # so the background process inherits it and writes coverage atomic files
+        # there at shutdown. `caddy start` daemonizes via fork+exec; inheritance
+        # is reliable when the variable is in the command's own environment.
+        GOCOVERDIR="$PWD/coverdir" ./cmd/caddy/caddy start --pidfile=./caddy.pid
+
+        # Poll the admin API for readiness rather than sleeping a fixed time.
+        # Fails the step (set -e) if the API doesn't come up within ~15s.
+        for i in $(seq 1 30); do
+          if curl --silent --fail --max-time 1 http://localhost:2019/config/ >/dev/null; then
+            echo "Caddy admin API ready after ${i} probe(s)"
+            break
+          fi
+          if [ "$i" = "30" ]; then
+            echo "Caddy admin API did not become ready" >&2
+            exit 1
+          fi
+          sleep 0.5
+        done
+
+    - name: Warm local CA
+      run: |
+        # Force certmagic to generate the local CA root + intermediate and
+        # issue a leaf cert for `localhost` before the spec suite runs.
+        # Without this, the first spec that hits HTTPS races against the
+        # async cert issuance and may receive TLS alert 80 (internal_error)
+        # from a TLS app that has no cert to present yet.
+        set -euo pipefail
+        # Note: Caddyfile requires `{` to be followed by a newline, so the
+        # site block cannot be written inline.
+        curl --silent --show-error --fail -X POST http://localhost:2019/load \
+          -H "Content-Type: text/caddyfile" \
+          --data-binary $'{\n\tskip_install_trust\n\thttp_port 9080\n\thttps_port 9443\n\tlocal_certs\n}\nlocalhost {\n\trespond "warmup"\n}\n'
+        # Poll until HTTPS responds successfully, up to ~15s.
+        for i in $(seq 1 30); do
+          if curl --silent --insecure --fail --max-time 1 https://localhost:9443/ >/dev/null; then
+            echo "Local CA warm after ${i} probe(s)"
+            break
+          fi
+          if [ "$i" = "30" ]; then
+            echo "Local CA did not warm up in time" >&2
+            exit 1
+          fi
+          sleep 0.5
+        done
+
+    - name: Run tests with Hurl
+      run: |
+        # Intentionally NOT using `set -e` here so we can capture every spec
+        # file's exit code and continue running the rest of the suite; the
+        # final exit code reflects whether any file failed.
+        mkdir -p hurl-report
+        rc=0
+        # Hurl 7.x accumulates results into a single JUnit file across
+        # invocations: each new run appends to the existing report.
+        # Find produces a deterministic order; the quoted glob prevents
+        # shell expansion from biasing matches if cwd has *.hurl files.
+        #
+        # `--retry 3 --retry-interval 500` is a safety net for the residual
+        # TLS race after each `POST /load`: re-provisioning the TLS app
+        # briefly leaves the cert cache empty, which can produce a one-shot
+        # `tlsv1 alert internal error`. The retry only kicks in on failure,
+        # so passing requests pay no cost.
+        while IFS= read -r -d '' file; do
+          echo "::group::hurl $file"
+          if ! hurl --jobs 1 \
+                    --variables-file caddytest/spec/hurl_vars.properties \
+                    --retry 3 \
+                    --retry-interval 500 \
+                    --test \
+                    --report-junit hurl-report/junit.xml \
+                    --color \
+                    "$file"; then
+            rc=1
+            echo "::error file=$file::spec failed"
+          fi
+          echo "::endgroup::"
+        done < <(find caddytest/spec -name "*.hurl" -print0 | sort -z)
+        exit $rc
+
+    - name: Publish Test Results
+      if: always()
+      uses: EnricoMi/publish-unit-test-result-action@3a74b2957438d0b6e2e61d67b05318aa25c9e6c6 # v2.20.0
+      with:
+        files: |
+          hurl-report/junit.xml
+
+    - name: Generate Coverage Data
+      if: always()
+      run: |
+        set -euo pipefail
+        # `caddy stop` triggers the admin API shutdown path which calls the
+        # standard process exit, giving Go's coverage runtime a chance to
+        # flush atomic files to GOCOVERDIR. We still give it a moment to
+        # finish writing before invoking covdata.
+        ./cmd/caddy/caddy stop || true
+        # Wait for the pid to actually exit so coverage files are fully written.
+        if [ -f ./caddy.pid ]; then
+          pid=$(cat ./caddy.pid)
+          for i in $(seq 1 20); do
+            if ! kill -0 "$pid" 2>/dev/null; then break; fi
+            sleep 0.25
+          done
+          # If still alive, force it down so the step doesn't hang.
+          if kill -0 "$pid" 2>/dev/null; then
+            kill -TERM "$pid" || true
+            sleep 1
+          fi
+        fi
+        mkdir -p hurl-report
+        go tool covdata textfmt -i=coverdir -o hurl-report/caddy_cover_${{ steps.vars.outputs.short_sha }}.txt
+        go tool cover -html hurl-report/caddy_cover_${{ steps.vars.outputs.short_sha }}.txt -o hurl-report/caddy_cover_${{ steps.vars.outputs.short_sha }}.html
+        # Per-package summary to surface coverage trend in the job log.
+        go tool cover -func=hurl-report/caddy_cover_${{ steps.vars.outputs.short_sha }}.txt | tail -n 50
+
+
+    - name: Publish Coverage Profile
+      if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      with:
+        name: caddy-spec-coverage-${{ steps.vars.outputs.short_sha }}
+        path: |
+          hurl-report/caddy_cover_${{ steps.vars.outputs.short_sha }}.txt
+          hurl-report/caddy_cover_${{ steps.vars.outputs.short_sha }}.html
+        retention-days: 30
+        compression-level: 6
+
+  # coverage-report:
+  #   name: "Coverage report"
+  #   # Always runs once the producer jobs finish, even if some failed: each
+  #   # producer publishes its coverage artifact under `if: always()`, so a
+  #   # partial failure still yields a usable profile to summarize.
+  #   if: ${{ always() }}
+  #   runs-on: ubuntu-latest
+  #   needs:
+  #     - test
+  #     - spec-test
+  #     # TODO: once `s390x-test` publishes its own coverage artifact
+  #     # matching `caddy-*-coverage-*`, add it here so this job merges
+  #     # all sources before reporting.
+  #   permissions:
+  #     contents: read
+  #     pull-requests: write
+  #   steps:
+  #     - name: Harden the runner (Audit all outbound calls)
+  #       uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0
+  #       with:
+  #         egress-policy: audit
+
+  #     # `go tool cover -func` needs the source tree to map profile line
+  #     # ranges back to function names, so the repo must be checked out
+  #     # even though this job doesn't run any tests itself.
+  #     - name: Checkout code
+  #       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+  #     - name: Install Go
+  #       uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+  #       with:
+  #         go-version: '~1.25.0'
+  #         check-latest: true
+
+  #     # Pulls every artifact whose name matches the pattern into a flat
+  #     # directory. Today this just grabs spec-test's `caddy-spec-coverage-*`;
+  #     # additional producers will be picked up automatically.
+  #     - name: Download coverage artifacts
+  #       uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+  #       with:
+  #         path: cov-in
+  #         pattern: caddy-*-coverage-*
+  #         merge-multiple: true
+
+  #     - name: Merge coverage profiles
+  #       id: merge
+  #       run: |
+  #         set -euo pipefail
+  #         shopt -s nullglob
+  #         # Producers use different extensions: spec-test publishes
+  #         # `*.txt` (from `go tool covdata textfmt`), the unit `test` job
+  #         # publishes `cover-profile.out` (from `go test -coverprofile`).
+  #         # Both are Go text-format profiles. Exclude `.html` reports.
+  #         profiles=(cov-in/*.txt cov-in/*.out)
+  #         if [[ ${#profiles[@]} -eq 0 ]]; then
+  #           echo "No coverage profiles found; nothing to report."
+  #           exit 0
+  #         fi
+  #         # Concatenate Go text-format profiles: keep the first `mode:`
+  #         # line and append every other line from every profile. Safe
+  #         # because all producers use the same coverage mode.
+  #         head -n 1 "${profiles[0]}" > merged.txt
+  #         for f in "${profiles[@]}"; do
+  #           tail -n +2 "$f" >> merged.txt
+  #         done
+  #         echo "profile=merged.txt" >> "$GITHUB_OUTPUT"
+  #         echo "sources=${#profiles[@]}" >> "$GITHUB_OUTPUT"
+
+  #     - name: Build coverage summary
+  #       if: steps.merge.outputs.profile != ''
+  #       run: |
+  #         set -euo pipefail
+  #         COVER_FILE=merged.txt
+  #         TOTAL=$(go tool cover -func="$COVER_FILE" | awk '/^total:/ {print $NF}')
+
+  #         # Per-package aggregation: average coverage across all functions in a package, lowest first.
+  #         go tool cover -func="$COVER_FILE" \
+  #           | awk -v root='github.com/caddyserver/caddy/v2/' '
+  #               /^total:/ {next}
+  #               {
+  #                 file=$1; sub(/:.*/, "", file); sub(root, "", file)
+  #                 n=split(file, parts, "/")
+  #                 pkg=(n>1) ? substr(file, 1, length(file)-length(parts[n])-1) : "(root)"
+  #                 pct=$NF; sub(/%/, "", pct)
+  #                 sum[pkg]+=pct; cnt[pkg]++
+  #               }
+  #               END { for (p in sum) printf "%s\t%.1f\n", p, sum[p]/cnt[p] }
+  #           ' | sort -t$'\t' -k2,2n > /tmp/pkg-cov.tsv
+
+  #         {
+  #           echo "## Coverage report"
+  #           echo
+  #           echo "**Total coverage:** \`$TOTAL\` &nbsp;·&nbsp; merged from ${{ steps.merge.outputs.sources }} profile(s)"
+  #           echo
+  #           echo "<details><summary>Lowest-covered packages (up to 15)</summary>"
+  #           echo
+  #           echo "| Package | Coverage |"
+  #           echo "|---|---:|"
+  #           head -n 15 /tmp/pkg-cov.tsv \
+  #             | awk -F'\t' '{printf "| `%s` | %.1f%% |\n", $1, $2}'
+  #           echo
+  #           echo "</details>"
+  #           echo
+  #           echo "<details><summary>Lowest-covered functions (up to 30)</summary>"
+  #           echo
+  #           echo '```'
+  #           # `awk` does the "head + cut" atomically so we don't trigger
+  #           # SIGPIPE on `sort` when `head -n 30` closes its input early
+  #           # (which `set -o pipefail` would then surface as an error).
+  #           go tool cover -func="$COVER_FILE" \
+  #             | grep -v '^total:' \
+  #             | awk '{ pct=$NF; sub(/%/,"",pct); if (pct+0 < 100) print pct"\t"$0 }' \
+  #             | sort -n \
+  #             | awk -F'\t' 'NR<=30 { print $2 }'
+  #           echo '```'
+  #           echo
+  #           echo "</details>"
+  #         } > coverage-summary.md
+
+  #         cat coverage-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+  #     - name: Post coverage summary as sticky PR comment
+  #       if: github.event_name == 'pull_request' && hashFiles('coverage-summary.md') != ''
+  #       uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
+  #       with:
+  #         header: coverage-report
+  #         path: coverage-summary.md
 
   s390x-test:
     name: test (s390x on IBM Z)
