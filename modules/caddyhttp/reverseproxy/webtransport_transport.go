@@ -30,10 +30,15 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
-// webtransportProtocol is the :protocol pseudo-header value sent by a
-// client that wants to establish a WebTransport session over an HTTP/3
-// Extended CONNECT.
-const webtransportProtocol = "webtransport"
+// webtransportProtocol values are the :protocol pseudo-header tokens sent
+// by a client that wants to establish a WebTransport session over an HTTP/3
+// Extended CONNECT. draft-15 (webtransport-go v0.11.0+) uses "webtransport-h3";
+// older draft clients use the legacy "webtransport" token, which the
+// webtransport-go server still accepts. Detect both.
+const (
+	webtransportProtocol        = "webtransport"
+	webtransportProtocolDraft15 = "webtransport-h3"
+)
 
 // webtransportWriter is the naked HTTP/3 response-writer shape that
 // webtransport.Server.Upgrade type-asserts on. Caddy's
@@ -49,7 +54,8 @@ type webtransportWriter interface {
 // CONNECT that requests a WebTransport session. Does not check whether
 // WebTransport proxying is configured; callers gate on Handler state.
 func isWebTransportExtendedConnect(r *http.Request) bool {
-	return r.ProtoMajor == 3 && r.Method == http.MethodConnect && r.Proto == webtransportProtocol
+	return r.ProtoMajor == 3 && r.Method == http.MethodConnect &&
+		(r.Proto == webtransportProtocol || r.Proto == webtransportProtocolDraft15)
 }
 
 // webTransportTransport is implemented by reverse-proxy transports that

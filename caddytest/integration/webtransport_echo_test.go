@@ -41,9 +41,14 @@ func init() {
 	caddy.RegisterModule(WebTransportEcho{})
 }
 
-// webtransportEchoProtocol is the :protocol pseudo-header value for an
-// HTTP/3 Extended CONNECT that establishes a WebTransport session.
-const webtransportEchoProtocol = "webtransport"
+// webtransportEchoProtocol values are the :protocol pseudo-header tokens for
+// an HTTP/3 Extended CONNECT that establishes a WebTransport session. draft-15
+// (webtransport-go v0.11.0+) uses "webtransport-h3"; older draft clients use
+// the legacy "webtransport" token.
+const (
+	webtransportEchoProtocol        = "webtransport"
+	webtransportEchoProtocolDraft15 = "webtransport-h3"
+)
 
 // webtransportEchoWriter is the naked HTTP/3 response-writer shape that
 // webtransport.Server.Upgrade type-asserts on.
@@ -137,7 +142,7 @@ func (h *WebTransportEcho) echoStreams(session *webtransport.Session) {
 func isWebTransportEchoUpgrade(r *http.Request) bool {
 	return r.ProtoMajor == 3 &&
 		r.Method == http.MethodConnect &&
-		r.Proto == webtransportEchoProtocol
+		(r.Proto == webtransportEchoProtocol || r.Proto == webtransportEchoProtocolDraft15)
 }
 
 // Interface guards.
@@ -157,6 +162,7 @@ func TestIsWebTransportEchoUpgrade(t *testing.T) {
 		want  bool
 	}{
 		{"h3 connect webtransport", "webtransport", 3, http.MethodConnect, true},
+		{"h3 connect webtransport-h3", "webtransport-h3", 3, http.MethodConnect, true},
 		{"h3 connect websocket", "websocket", 3, http.MethodConnect, false},
 		{"h2 connect webtransport", "webtransport", 2, http.MethodConnect, false},
 		{"h3 GET", "HTTP/3.0", 3, http.MethodGet, false},
