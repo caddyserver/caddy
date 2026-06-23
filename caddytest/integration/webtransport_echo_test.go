@@ -41,10 +41,6 @@ func init() {
 	caddy.RegisterModule(WebTransportEcho{})
 }
 
-// webtransportEchoProtocol is the :protocol pseudo-header value for an
-// HTTP/3 Extended CONNECT that establishes a WebTransport session.
-const webtransportEchoProtocol = "webtransport"
-
 // webtransportEchoWriter is the naked HTTP/3 response-writer shape that
 // webtransport.Server.Upgrade type-asserts on.
 type webtransportEchoWriter interface {
@@ -135,9 +131,8 @@ func (h *WebTransportEcho) echoStreams(session *webtransport.Session) {
 // CONNECT that requests a WebTransport session. The quic-go/http3 server
 // places the :protocol pseudo-header value in r.Proto for CONNECT requests.
 func isWebTransportEchoUpgrade(r *http.Request) bool {
-	return r.ProtoMajor == 3 &&
-		r.Method == http.MethodConnect &&
-		r.Proto == webtransportEchoProtocol
+	return r.ProtoMajor == 3 && r.Method == http.MethodConnect &&
+		(r.Proto == "webtransport" || r.Proto == "webtransport-h3")
 }
 
 // Interface guards.
@@ -157,6 +152,7 @@ func TestIsWebTransportEchoUpgrade(t *testing.T) {
 		want  bool
 	}{
 		{"h3 connect webtransport", "webtransport", 3, http.MethodConnect, true},
+		{"h3 connect webtransport-h3", "webtransport-h3", 3, http.MethodConnect, true},
 		{"h3 connect websocket", "websocket", 3, http.MethodConnect, false},
 		{"h2 connect webtransport", "webtransport", 2, http.MethodConnect, false},
 		{"h3 GET", "HTTP/3.0", 3, http.MethodGet, false},
