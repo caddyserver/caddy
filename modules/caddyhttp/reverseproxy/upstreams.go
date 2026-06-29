@@ -13,7 +13,7 @@ import (
 	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/dynamicupstreams"
+	"github.com/caddyserver/caddy/v2/modules/internal/network"
 )
 
 func init() {
@@ -120,18 +120,18 @@ func (su *SRVUpstreams) Provision(ctx caddy.Context) error {
 
 func (su *SRVUpstreams) ResetCache(r *http.Request) error {
 	if r == nil {
-		dynamicupstreams.ResetAllSRV()
+		network.ResetAllSRV()
 		return nil
 	}
 	_, service, proto, name := su.expandedAddr(r)
-	dynamicupstreams.ResetSRV(service, proto, name)
+	network.ResetSRV(service, proto, name)
 	return nil
 }
 
 func (su SRVUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 	_, service, proto, name := su.expandedAddr(r)
 
-	targets, err := dynamicupstreams.SRV(r.Context(), su.resolver.LookupSRV,
+	targets, err := network.SRV(r.Context(), su.resolver.LookupSRV,
 		service, proto, name,
 		time.Duration(su.Refresh), time.Duration(su.GracePeriod), su.logger)
 	if err != nil {
@@ -291,7 +291,7 @@ func (au AUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 	name := repl.ReplaceAll(au.Name, "")
 	port := repl.ReplaceAll(au.Port, "")
 
-	targets, err := dynamicupstreams.A(r.Context(), au.resolver.LookupIP,
+	targets, err := network.A(r.Context(), au.resolver.LookupIP,
 		ipVersion, name, port, time.Duration(au.Refresh), au.logger)
 	if err != nil {
 		return nil, err
