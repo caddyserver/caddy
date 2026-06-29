@@ -12,15 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package dynamicupstreams provides transport-neutral DNS-based discovery of
-// upstream targets, with result caching. It is shared so that different proxies
-// (e.g. the HTTP reverse_proxy and third-party layer4 proxies) can discover
-// backends from DNS without each copying the resolution and caching logic.
+// Package network provides transport-neutral DNS-based discovery of upstream
+// targets, with result caching. It lives under modules/internal so it can be
+// shared between Caddy's own proxies (currently the HTTP reverse_proxy) without
+// each copying the resolution and caching logic.
 //
 // The package intentionally returns neutral [Target] values rather than any
 // proxy-specific upstream type; each caller builds its own upstream
 // representation from the targets.
-package dynamicupstreams
+package network
 
 import (
 	"context"
