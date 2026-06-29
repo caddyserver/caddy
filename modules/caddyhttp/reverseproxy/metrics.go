@@ -15,11 +15,12 @@ import (
 )
 
 var reverseProxyMetrics = struct {
-	once             sync.Once
-	upstreamsHealthy *prometheus.GaugeVec
-	upstreamRequests *prometheus.CounterVec
-	upstreamDuration *prometheus.HistogramVec
-	logger           *zap.Logger
+	once                     sync.Once
+	upstreamsHealthy         *prometheus.GaugeVec
+	upstreamRequests         *prometheus.CounterVec
+	upstreamDuration         *prometheus.HistogramVec
+	upstreamRequestsInFlight *prometheus.GaugeVec
+	logger                   *zap.Logger
 }{}
 
 func initReverseProxyMetrics(handler *Handler, registry *prometheus.Registry) {
@@ -50,6 +51,13 @@ func initReverseProxyMetrics(handler *Handler, registry *prometheus.Registry) {
 			Help:      "Histogram of request durations to reverse proxy upstreams.",
 			Buckets:   prometheus.DefBuckets,
 		}, upstreamRequestLabels)
+
+		reverseProxyMetrics.upstreamRequestsInFlight = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: ns,
+			Subsystem: sub,
+			Name:      "upstream_requests_in_flight",
+			Help:      "Gauge of requests currently in flight to upstreams.",
+		}, upstreamsLabels)
 	})
 
 	// duplicate registration could happen if multiple sites with reverse proxy are configured; so ignore the error because
@@ -75,6 +83,14 @@ func initReverseProxyMetrics(handler *Handler, registry *prometheus.Registry) {
 		!errors.Is(err, prometheus.AlreadyRegisteredError{
 			ExistingCollector: reverseProxyMetrics.upstreamDuration,
 			NewCollector:      reverseProxyMetrics.upstreamDuration,
+		}) {
+		panic(err)
+	}
+
+	if err := registry.Register(reverseProxyMetrics.upstreamRequestsInFlight); err != nil &&
+		!errors.Is(err, prometheus.AlreadyRegisteredError{
+			ExistingCollector: reverseProxyMetrics.upstreamRequestsInFlight,
+			NewCollector:      reverseProxyMetrics.upstreamRequestsInFlight,
 		}) {
 		panic(err)
 	}

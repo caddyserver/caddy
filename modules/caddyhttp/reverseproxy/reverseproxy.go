@@ -35,6 +35,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/net/http/httpguts"
@@ -998,12 +999,19 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 
 	// Increment the in-flight request count
 	incInFlightRequest(di.Address)
+	requestLabels := prometheus.Labels{"upstream": di.Upstream.Dial}
+	if reverseProxyMetrics.upstreamRequestsInFlight != nil {
+		reverseProxyMetrics.upstreamRequestsInFlight.With(requestLabels).Inc()
+	}
 
 	//nolint:errcheck
 	defer func() {
 		di.Upstream.Host.countRequest(-1)
 		// Decrement the in-flight request count
 		decInFlightRequest(di.Address)
+		if reverseProxyMetrics.upstreamRequestsInFlight != nil {
+			reverseProxyMetrics.upstreamRequestsInFlight.With(requestLabels).Dec()
+		}
 	}()
 
 	// point the request to this upstream
