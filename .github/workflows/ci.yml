@@ -133,8 +133,8 @@ jobs:
       # id: step_test
       # continue-on-error: true
       run: |
-        # (go test -v -coverprofile=cover-profile.out -race ./... 2>&1) > test-results/test-result.out
-        go test -v -coverprofile="cover-profile.out" -short -race ./...
+        # (go test -coverprofile=cover-profile.out -race ./... 2>&1) > test-results/test-result.out
+        go test -coverprofile="cover-profile.out" -short -race ./...
         # echo "status=$?" >> $GITHUB_OUTPUT
 
     # Relevant step if we reinvestigate publishing test/coverage reports
@@ -191,7 +191,7 @@ jobs:
           retries=3
           exit_code=0
           while ((retries > 0)); do
-            CGO_ENABLED=0 go test -p 1 -v ./...
+            CGO_ENABLED=0 go test -p 1 ./...
             exit_code=$?
             if ((exit_code == 0)); then
               break

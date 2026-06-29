@@ -419,14 +419,44 @@ func TestStripHTML(t *testing.T) {
 			expect: `h1`,
 		},
 		{
-			// tags not closed
+			// unclosed tag — trailing text must be stripped, not emitted
 			input:  `<h1`,
-			expect: `<h1`,
+			expect: ``,
 		},
 		{
-			// false start
-			input:  `<h1<b>hi`,
-			expect: `<h1hi`,
+		    // false start — second '<' increments depth, single '>' only closes one level
+		    input:  `<h1<b>hi`,
+		    expect: ``,
+		},
+		{
+			// XSS bypass via double opening bracket
+			input:  `<<>img src=x onerror=alert('XSS')>`,
+			expect: ``,
+		},
+		{
+			// stacked angle brackets (PHP strip_tags parity)
+			input:  `<<<<<>>>>><b>hello</b>`,
+			expect: `hello`,
+		},
+		{
+			// unclosed tag strips trailing text
+			input:  `hello <world`,
+			expect: `hello `,
+		},
+		{
+			// '>' inside double-quoted attribute must not close tag early
+			input:  `<a href="foo>bar">text</a>`,
+			expect: `text`,
+		},
+		{
+			// '>' inside single-quoted attribute must not close tag early
+			input:  `<a href='foo>bar'>text</a>`,
+			expect: `text`,
+		},
+		{
+			// stray '>' with no opening '<' is preserved
+			input:  `stray > bracket`,
+			expect: `stray > bracket`,
 		},
 	} {
 		actual := tplContext.funcStripHTML(test.input)

@@ -101,7 +101,7 @@ type Server struct {
 	KeepAliveCount int `json:"keepalive_count,omitempty"`
 
 	// MaxHeaderBytes is the maximum size to parse from a client's
-	// HTTP request headers.
+	// HTTP request headers. Default: 16 KiB.
 	MaxHeaderBytes int `json:"max_header_bytes,omitempty"`
 
 	// Enable full-duplex communication for HTTP/1 requests.
@@ -123,6 +123,22 @@ type Server struct {
 	//
 	// TODO: This is an EXPERIMENTAL feature. Subject to change or removal.
 	EnableFullDuplex bool `json:"enable_full_duplex,omitempty"`
+
+	// A list of header field names containing underscores that should
+	// be preserved instead of being dropped. By default, Caddy drops
+	// ALL headers with underscores to prevent ambiguity with
+	// CGI/FastCGI backends that map hyphens to underscores
+	// (GHSA-f59h-q822-g45g). When this list is configured, only the
+	// specified headers are kept; their hyphenated variants are
+	// actively dropped to prevent confusion. Entries are
+	// case-insensitive. A trailing "*" acts as a prefix glob
+	// (e.g., "webhook_*" matches any header starting with
+	// "webhook_"). If an allowlisted header arrives with
+	// multiple values (repeated field), all values are dropped
+	// as a safeguard against header injection.
+	//
+	// TODO: This is an EXPERIMENTAL feature. Subject to change or removal.
+	ExpectedUnderscoreHeaders []string `json:"expected_underscore_headers,omitempty"`
 
 	// Routes describes how this server will handle requests.
 	// Routes are executed sequentially. First a route's matchers
@@ -293,11 +309,105 @@ type Server struct {
 
 	shutdownAt atomic.Pointer[time.Time]
 
+	// precomputed underscore header allowlist (built during provisioning)
+	underscoreExactAllow  map[string]struct{}
+	underscoreExactDrop   map[string]struct{}
+	underscorePrefixRules []underscoreRule
+
 	// registered callback functions
 	connStateFuncs   []func(net.Conn, http.ConnState)
 	connContextFuncs []func(ctx context.Context, c net.Conn) context.Context
 	onShutdownFuncs  []func()
 	onStopFuncs      []func(context.Context) error // TODO: Experimental (Nov. 2023)
+}
+
+// underscoreRule pairs a canonical underscore prefix with its hyphenated
+// counterpart. Used for prefix-glob matching in the allowlist.
+type underscoreRule struct {
+	allow string // canonical underscore form, e.g. "Webhook_"
+	drop  string // canonical hyphenated form, e.g. "Webhook-"
+}
+
+// provisionUnderscoreHeaders validates the ExpectedUnderscoreHeaders
+// entries and builds the precomputed maps and prefix rules used by
+// the hot-path filter in serveHTTP.
+func (s *Server) provisionUnderscoreHeaders() error {
+	if len(s.ExpectedUnderscoreHeaders) == 0 {
+		return nil
+	}
+
+	s.underscoreExactAllow = make(map[string]struct{}, len(s.ExpectedUnderscoreHeaders))
+	s.underscoreExactDrop = make(map[string]struct{}, len(s.ExpectedUnderscoreHeaders))
+
+	for _, entry := range s.ExpectedUnderscoreHeaders {
+		// Reject non-ASCII bytes: Go's HTTP parser returns 400 for
+		// non-ASCII header names, so such entries can never match.
+		for i := 0; i < len(entry); i++ {
+			if entry[i] >= 0x80 {
+				return fmt.Errorf("expected_underscore_headers: entry %q contains non-ASCII characters", entry)
+			}
+		}
+
+		isGlob := strings.HasSuffix(entry, "*")
+		name := entry
+		if isGlob {
+			name = strings.TrimSuffix(entry, "*")
+		}
+
+		// Reject entries with '*' not at the trailing position.
+		if strings.ContainsRune(name, '*') {
+			return fmt.Errorf("expected_underscore_headers: entry %q has '*' in an invalid position (only a trailing '*' is allowed)", entry)
+		}
+
+		// The name (without trailing '*') must contain at least one underscore.
+		if !strings.ContainsRune(name, '_') {
+			return fmt.Errorf("expected_underscore_headers: entry %q does not contain an underscore", entry)
+		}
+
+		canonAllow := http.CanonicalHeaderKey(name)
+		canonDrop := http.CanonicalHeaderKey(strings.ReplaceAll(name, "_", "-"))
+
+		if isGlob {
+			s.underscorePrefixRules = append(s.underscorePrefixRules, underscoreRule{
+				allow: canonAllow,
+				drop:  canonDrop,
+			})
+		} else {
+			s.underscoreExactAllow[canonAllow] = struct{}{}
+			s.underscoreExactDrop[canonDrop] = struct{}{}
+		}
+	}
+
+	return nil
+}
+
+// isAllowedUnderscoreHeader reports whether key (a canonical header
+// name containing an underscore) is permitted by the allowlist.
+func (s *Server) isAllowedUnderscoreHeader(key string) bool {
+	if _, ok := s.underscoreExactAllow[key]; ok {
+		return true
+	}
+	for _, rule := range s.underscorePrefixRules {
+		if strings.HasPrefix(key, rule.allow) {
+			return true
+		}
+	}
+	return false
+}
+
+// isHyphenatedVariant reports whether key (a canonical header name
+// without underscores) is the hyphenated variant of an allowlisted
+// underscore header and should therefore be dropped.
+func (s *Server) isHyphenatedVariant(key string) bool {
+	if _, ok := s.underscoreExactDrop[key]; ok {
+		return true
+	}
+	for _, rule := range s.underscorePrefixRules {
+		if strings.HasPrefix(key, rule.drop) {
+			return true
+		}
+	}
+	return false
 }
 
 var defaultProtocols = []string{"h1", "h2", "h3"}
@@ -491,6 +601,48 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) error {
 		return HandlerError{
 			Err:        errors.New("rfc9112 forbids empty Host"),
 			StatusCode: http.StatusBadRequest,
+		}
+	}
+
+	// Drop headers whose names contain `_`: once FastCGI/CGI/FrankenPHP etc. rewrites `-` to
+	// `_`, an underscore alias collides with the legitimate hyphenated header
+	// and can bypass `forward_auth copy_headers` (GHSA-f59h-q822-g45g).
+	//
+	// When an allowlist is configured, only the listed headers are kept and
+	// their hyphenated variants are actively dropped to prevent ambiguity.
+	if len(s.ExpectedUnderscoreHeaders) == 0 {
+		for k := range r.Header {
+			if strings.ContainsRune(k, '_') {
+				delete(r.Header, k)
+
+				if c := s.logger.Check(zapcore.DebugLevel, "dropping header containing underscore"); c != nil {
+					c.Write(zap.String("header", k))
+				}
+			}
+		}
+	} else {
+		for k := range r.Header {
+			if strings.ContainsRune(k, '_') {
+				if !s.isAllowedUnderscoreHeader(k) {
+					delete(r.Header, k)
+
+					if c := s.logger.Check(zapcore.DebugLevel, "dropping header containing underscore"); c != nil {
+						c.Write(zap.String("header", k))
+					}
+				} else if n := len(r.Header[k]); n > 1 {
+					delete(r.Header, k)
+
+					if c := s.logger.Check(zapcore.WarnLevel, "dropping allowlisted underscore header with repeated values (possible spoofing)"); c != nil {
+						c.Write(zap.String("header", k), zap.Int("count", n))
+					}
+				}
+			} else if s.isHyphenatedVariant(k) {
+				delete(r.Header, k)
+
+				if c := s.logger.Check(zapcore.DebugLevel, "dropping hyphenated variant of expected underscore header"); c != nil {
+					c.Write(zap.String("header", k))
+				}
+			}
 		}
 	}
 

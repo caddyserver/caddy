@@ -223,6 +223,15 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 			newPath, injectedQuery = before, after
 			// don't overwrite explicitly-configured query string
 			if query == "" {
+				// the injected query came from the first-pass placeholder
+				// expansion above, which means any '{' or '}' bytes in it
+				// must have come from replacement values (e.g. a request
+				// header), not from operator-written placeholder syntax.
+				// escape them so buildQueryString does not re-expand them,
+				// which would allow attacker input like {env.SECRET} to be
+				// evaluated (see GHSA-j8px-rmrx-76h9).
+				injectedQuery = strings.ReplaceAll(injectedQuery, "{", "%7B")
+				injectedQuery = strings.ReplaceAll(injectedQuery, "}", "%7D")
 				query = injectedQuery
 			}
 		}
@@ -423,7 +432,7 @@ func trimPathPrefix(escapedPath, prefix string) string {
 	}
 
 	// if we iterated through the entire prefix, we found it, so trim it
-	if iPath >= len(prefix) {
+	if iPrefix >= len(prefix) {
 		return escapedPath[iPath:]
 	}
 
@@ -597,13 +606,15 @@ func (q *queryOps) do(r *http.Request, repl *caddy.Replacer) {
 			continue
 		}
 
-		for fieldName, vals := range query {
-			for i := range vals {
-				if replaceParam.re != nil {
-					query[fieldName][i] = replaceParam.re.ReplaceAllString(query[fieldName][i], replace)
-				} else {
-					query[fieldName][i] = strings.ReplaceAll(query[fieldName][i], search, replace)
-				}
+		vals, ok := query[key]
+		if !ok {
+			continue
+		}
+		for i := range vals {
+			if replaceParam.re != nil {
+				query[key][i] = replaceParam.re.ReplaceAllString(query[key][i], replace)
+			} else {
+				query[key][i] = strings.ReplaceAll(query[key][i], search, replace)
 			}
 		}
 	}

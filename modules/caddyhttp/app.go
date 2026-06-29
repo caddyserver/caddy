@@ -46,6 +46,13 @@ func init() {
 // only on the HTTPS port but which do not have any TLS connection policies
 // defined by adding a good, default TLS connection policy.
 //
+// Similar to how other popular web servers work, incoming request header fields
+// with underscores are ignored/dropped implicitly to mitigate security risks.
+// Specific headers to allow can be explicitly configured using
+// `expected_underscore_headers`.
+//
+// ### Placeholders
+//
 // In HTTP routes, additional placeholders are available (replace any `*`):
 //
 // Placeholder | Description
@@ -70,7 +77,8 @@ func init() {
 // `{http.request.orig_uri.query}` | The request's original query string (without `?`)
 // `{http.request.orig_uri.prefixed_query}` | The request's original query string with a `?` prefix, if non-empty
 // `{http.request.port}` | The port part of the request's Host header
-// `{http.request.proto}` | The protocol of the request
+// `{http.request.proto}` | The raw protocol of the request as returned by Go (e.g., HTTP/2.0 or HTTP/3.0)
+// `{http.request.proto_name}` | The spec-defined protocol of the request (e.g., HTTP/2 or HTTP/3)
 // `{http.request.local.host}` | The host (IP) part of the local address the connection arrived on
 // `{http.request.local.port}` | The port part of the local address the connection arrived on
 // `{http.request.local}` | The local address the connection arrived on
@@ -256,6 +264,12 @@ func (app *App) Provision(ctx caddy.Context) error {
 			}
 		}
 
+		// limit max header bytes to a more reasonable default than 1MB from Go std lib
+		// (see https://github.com/php/frankenphp/issues/2459#issuecomment-4655612909)
+		if srv.MaxHeaderBytes <= 0 {
+			srv.MaxHeaderBytes = 16 * 1024
+		}
+
 		// if not explicitly configured by the user, disallow TLS
 		// client auth bypass (domain fronting) which could
 		// otherwise be exploited by sending an unprotected SNI
@@ -284,6 +298,11 @@ func (app *App) Provision(ctx caddy.Context) error {
 		// set the default client IP header to read from
 		if srv.ClientIPHeaders == nil {
 			srv.ClientIPHeaders = []string{"X-Forwarded-For"}
+		}
+
+		// precompute underscore header allowlist rules
+		if err := srv.provisionUnderscoreHeaders(); err != nil {
+			return fmt.Errorf("server %s: %v", srvName, err)
 		}
 
 		// process each listener address

@@ -79,7 +79,7 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			wantResult: true,
 		},
 		{
-			name: "header matches an placeholder replaced during the header matcher (MatchHeader)",
+			name: "header matches a placeholder replaced during the header matcher (MatchHeader)",
 			expression: &MatchExpression{
 				Expr: `header({'Field': '\{http.request.uri.path}'})`,
 			},
@@ -261,6 +261,38 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 				Expr: `path_regexp('bar_at_start', '^/bar')`,
 			},
 			urlTarget:  "https://example.com/foo/bar",
+			wantResult: false,
+		},
+		{
+			name: "url_pattern matches named group (MatchURLPattern)",
+			expression: &MatchExpression{
+				Expr: `url_pattern('/books/:id')`,
+			},
+			urlTarget:  "https://example.com/books/123",
+			wantResult: true,
+		},
+		{
+			name: "url_pattern does not match (MatchURLPattern)",
+			expression: &MatchExpression{
+				Expr: `url_pattern('/books/:id')`,
+			},
+			urlTarget:  "https://example.com/movies/123",
+			wantResult: false,
+		},
+		{
+			name: "url_pattern with base_url matches host (MatchURLPattern)",
+			expression: &MatchExpression{
+				Expr: `url_pattern('/foo', 'https://example.com')`,
+			},
+			urlTarget:  "https://example.com/foo",
+			wantResult: true,
+		},
+		{
+			name: "url_pattern with base_url rejects other host (MatchURLPattern)",
+			expression: &MatchExpression{
+				Expr: `url_pattern('/foo', 'https://example.com')`,
+			},
+			urlTarget:  "https://other.com/foo",
 			wantResult: false,
 		},
 		{

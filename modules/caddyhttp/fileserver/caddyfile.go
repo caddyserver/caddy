@@ -91,10 +91,14 @@ func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			fsrv.FileSystem = d.Val()
 
 		case "hide":
-			fsrv.Hide = d.RemainingArgs()
-			if len(fsrv.Hide) == 0 {
+			hide := d.RemainingArgs()
+			if len(hide) == 0 {
 				return d.ArgErr()
 			}
+			// Append so that repeated "hide" subdirectives accumulate
+			// instead of overwriting, which also lets imported snippets
+			// compose with site-specific hides.
+			fsrv.Hide = append(fsrv.Hide, hide...)
 
 		case "index":
 			fsrv.IndexNames = d.RemainingArgs()

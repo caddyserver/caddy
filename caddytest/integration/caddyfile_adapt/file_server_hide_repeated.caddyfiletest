@@ -1,0 +1,35 @@
+:80
+
+file_server {
+	hide first.txt
+	hide second.txt third.txt
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "file_server",
+									"hide": [
+										"first.txt",
+										"second.txt",
+										"third.txt",
+										"./Caddyfile"
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

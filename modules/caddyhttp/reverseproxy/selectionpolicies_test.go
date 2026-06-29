@@ -131,6 +131,48 @@ func TestWeightedRoundRobinPolicy(t *testing.T) {
 	}
 }
 
+func TestWeightedRoundRobinSelection_Validate(t *testing.T) {
+	tests := []struct {
+		name        string
+		weights     []int
+		wantErr     bool
+	}{
+		{
+			name:        "Valid 0 2 1 case",
+			weights:     []int{0, 2, 1},
+			wantErr:     false,
+		},
+		{
+			name:        "Invalid 0 case (single)",
+			weights:     []int{0},
+			wantErr:     true,
+		},
+		{
+			name:        "Invalid 0 0 case (multiple)",
+			weights:     []int{0, 0},
+			wantErr:     true,
+		},
+		{
+			name:        "Valid weights",
+			weights:     []int{1, 1, 1},
+			wantErr:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &WeightedRoundRobinSelection{
+				Weights:     tt.weights,
+			}
+			_ = s.Provision(caddy.Context{})
+			err := s.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestWeightedRoundRobinPolicyWithZeroWeight(t *testing.T) {
 	pool := testPool()
 	wrrPolicy := WeightedRoundRobinSelection{
@@ -568,7 +610,7 @@ func TestQueryHashPolicy(t *testing.T) {
 	pool[1].setHealthy(false)
 	h = queryPolicy.Select(pool, request, nil)
 	if h != nil {
-		t.Error("Expected query policy policy host to be nil.")
+		t.Error("Expected query policy host to be nil.")
 	}
 
 	request = httptest.NewRequest(http.MethodGet, "/?foo=aa11&foo=bb22", nil)
@@ -630,7 +672,7 @@ func TestURIHashPolicy(t *testing.T) {
 	pool[1].setHealthy(false)
 	h = uriPolicy.Select(pool, request, nil)
 	if h != nil {
-		t.Error("Expected uri policy policy host to be nil.")
+		t.Error("Expected uri policy host to be nil.")
 	}
 }
 

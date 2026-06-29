@@ -105,6 +105,14 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 				return "http", true
 			case "http.request.proto":
 				return req.Proto, true
+			case "http.request.proto_name":
+				if req.ProtoMajor == 2 {
+					return "HTTP/2", true
+				}
+				if req.ProtoMajor == 3 {
+					return "HTTP/3", true
+				}
+				return req.Proto, true
 			case "http.request.host":
 				host, _, err := net.SplitHostPort(req.Host)
 				if err != nil {

@@ -20,12 +20,12 @@
 package encode
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"math"
 	"net/http"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -127,6 +127,14 @@ func (enc *Encode) Provision(ctx caddy.Context) error {
 		}
 	}
 
+	if len(enc.Prefer) == 0 {
+		for _, encName := range []string{"zstd", "br", "gzip"} {
+			if _, ok := enc.writerPools[encName]; ok {
+				enc.Prefer = append(enc.Prefer, encName)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -162,7 +170,7 @@ func (enc *Encode) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 
 			// to comply with RFC 9110 section 8.8.3(.3), we modify the Etag when encoding
 			// by appending a hyphen and the encoder name; the problem is, the client will
-			// send back that Etag in a If-None-Match header, but upstream handlers that set
+			// send back that Etag in an If-None-Match header, but upstream handlers that set
 			// the Etag in the first place don't know that we appended to their Etag! so here
 			// we have to strip our addition so the upstream handlers can still honor client
 			// caches without knowing about our changes...
@@ -243,13 +251,16 @@ type responseWriter struct {
 	statusCode   int
 	wroteHeader  bool
 	isConnect    bool
-	disabled     bool // disable encoding (for error responses)
+	disabled     bool // disable encoding for this response
 }
 
 // WriteHeader stores the status to write when the time comes
 // to actually write the header.
 func (rw *responseWriter) WriteHeader(status int) {
 	rw.statusCode = status
+	if status == http.StatusPartialContent {
+		rw.disabled = true // partial representations must not be dynamically re-encoded
+	}
 
 	// See #5849 and RFC 9110 section 15.4.5 (https://www.rfc-editor.org/rfc/rfc9110.html#section-15.4.5) - 304
 	// Not Modified must have certain headers set as if it was a 200 response, and according to the issue
@@ -369,7 +380,7 @@ const sniffLen = 512
 
 // ReadFrom will try to use sendfile to copy from the reader to the response writer.
 // It's only used if the response writer implements io.ReaderFrom and the data can't be compressed.
-// It's based on stdlin http1.1 response writer implementation.
+// It's based on the standard library HTTP/1.1 response writer implementation.
 // https://github.com/golang/go/blob/f4e3ec3dbe3b8e04a058d266adf8e048bab563f2/src/net/http/server.go#L586
 func (rw *responseWriter) ReadFrom(r io.Reader) (int64, error) {
 	rf, ok := rw.ResponseWriter.(io.ReaderFrom)
@@ -436,8 +447,7 @@ func (rw *responseWriter) Unwrap() http.ResponseWriter {
 
 // init should be called before we write a response, if rw.buf has contents.
 func (rw *responseWriter) init() {
-	// Don't initialize encoder for error responses
-	// This prevents response corruption when handle_errors is used
+	// Don't initialize encoder for responses that must not be encoded.
 	if rw.disabled {
 		return
 	}
@@ -538,11 +548,11 @@ func AcceptedEncodings(r *http.Request, preferredOrder []string) []string {
 	}
 
 	// sort preferences by descending q-factor first, then by preferOrder
-	sort.Slice(prefs, func(i, j int) bool {
-		if math.Abs(prefs[i].q-prefs[j].q) < 0.00001 {
-			return prefs[i].preferOrder > prefs[j].preferOrder
+	slices.SortStableFunc(prefs, func(a, b encodingPreference) int {
+		if math.Abs(a.q-b.q) < 0.00001 {
+			return cmp.Compare(b.preferOrder, a.preferOrder)
 		}
-		return prefs[i].q > prefs[j].q
+		return cmp.Compare(b.q, a.q)
 	})
 
 	prefEncNames := make([]string, len(prefs))

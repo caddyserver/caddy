@@ -1,10 +1,16 @@
 package encode
 
 import (
+	"context"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"sync"
 	"testing"
+
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
 func BenchmarkOpenResponseWriter(b *testing.B) {
@@ -293,5 +299,74 @@ func TestIsEncodeAllowed(t *testing.T) {
 					test.expected)
 			}
 		})
+	}
+}
+
+type mockEncoder struct{}
+
+func (mockEncoder) Write(p []byte) (n int, err error) { return len(p), nil }
+func (mockEncoder) Close() error                      { return nil }
+func (mockEncoder) Reset(w io.Writer)                 {}
+func (mockEncoder) Flush() error                      { return nil }
+
+func TestServeHTTPDefaultEncodingPreference(t *testing.T) {
+	enc := new(Encode)
+	enc.MinLength = 1 // compress everything
+	enc.writerPools = map[string]*sync.Pool{
+		"gzip": {
+			New: func() any { return mockEncoder{} },
+		},
+		"zstd": {
+			New: func() any { return mockEncoder{} },
+		},
+	}
+
+	// Call Provision() with a valid caddy.Context to exercise the real path
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+	if err := enc.Provision(ctx); err != nil {
+		t.Fatalf("Provision failed: %v", err)
+	}
+
+	// Test default preference: zstd preferred over gzip
+	r, err := http.NewRequest("GET", "/", nil)
+	if err != nil {
+		t.Fatalf("error creating request: %v", err)
+	}
+	r.Header.Set("Accept-Encoding", "gzip, deflate, br, zstd")
+
+	w := httptest.NewRecorder()
+	w.Header().Set("Content-Type", "text/plain")
+
+	next := caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+		w.WriteHeader(http.StatusOK)
+		_, err := w.Write([]byte("Hello, world! This is a long enough string to satisfy min length if it wasn't 1."))
+		return err
+	})
+
+	err = enc.ServeHTTP(w, r, next)
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	// ETag suffix or Content-Encoding header should reflect zstd
+	contentEncoding := w.Header().Get("Content-Encoding")
+	if contentEncoding != "zstd" {
+		t.Errorf("Expected Content-Encoding to be 'zstd' by default, got '%s'", contentEncoding)
+	}
+
+	// Test explicit user preference: gzip over zstd
+	enc.Prefer = []string{"gzip", "zstd"}
+
+	w2 := httptest.NewRecorder()
+	w2.Header().Set("Content-Type", "text/plain")
+	err = enc.ServeHTTP(w2, r, next)
+	if err != nil {
+		t.Fatalf("ServeHTTP returned error: %v", err)
+	}
+
+	contentEncoding2 := w2.Header().Get("Content-Encoding")
+	if contentEncoding2 != "gzip" {
+		t.Errorf("Expected Content-Encoding to be 'gzip' when explicitly preferred, got '%s'", contentEncoding2)
 	}
 }

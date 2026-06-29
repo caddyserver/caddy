@@ -461,18 +461,61 @@ func TestPathMatcherWindows(t *testing.T) {
 		return
 	}
 
-	req := &http.Request{URL: &url.URL{Path: "/index.php . . .."}}
 	repl := caddy.NewReplacer()
-	ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
-	req = req.WithContext(ctx)
 
-	match := MatchPath{"*.php"}
-	matched, err := match.MatchWithError(req)
-	if err != nil {
-		t.Errorf("Expected no error, but got: %v", err)
-	}
-	if !matched {
-		t.Errorf("Expected to match; should ignore trailing dots and spaces")
+	for _, tc := range []struct {
+		name          string
+		path          string
+		requestTarget string
+		match         MatchPath
+	}{
+		{
+			name:  "trailing dots and spaces",
+			path:  "/index.php . . ..",
+			match: MatchPath{"*.php"},
+		},
+		{
+			name:          "encoded backslash path separator",
+			requestTarget: `/private%5csecret.txt`,
+			match:         MatchPath{"/private/*"},
+		},
+		{
+			name:          "encoded backslash path separator with escaped wildcard",
+			requestTarget: `/private%5csecret.txt`,
+			match:         MatchPath{"/private/%*"},
+		},
+		{
+			name:          "uppercase encoded backslash path separator with escaped wildcard",
+			requestTarget: `/private%5Csecret.txt`,
+			match:         MatchPath{"/private/%*"},
+		},
+		{
+			name:          "encoded backslash in escaped pattern",
+			requestTarget: `/private%5csecret.txt`,
+			match:         MatchPath{"/private%5c%*"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			u := &url.URL{Path: tc.path}
+			if tc.requestTarget != "" {
+				var err error
+				u, err = url.ParseRequestURI(tc.requestTarget)
+				if err != nil {
+					t.Fatalf("Parsing request target: %v", err)
+				}
+			}
+			req := &http.Request{URL: u}
+			ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+			req = req.WithContext(ctx)
+
+			matched, err := tc.match.MatchWithError(req)
+			if err != nil {
+				t.Errorf("Expected no error, but got: %v", err)
+			}
+			if !matched {
+				t.Errorf("Expected %q to match %v", req.URL.Path, tc.match)
+			}
+		})
 	}
 }
 
@@ -1170,6 +1213,59 @@ func TestNotMatcher(t *testing.T) {
 		}
 		if actual != tc.expect {
 			t.Errorf("Test %d %+v: Expected %t, got %t for: host=%s path=%s'", i, tc.match, tc.expect, actual, tc.host, tc.path)
+			continue
+		}
+	}
+}
+
+func TestMethodMatcher(t *testing.T) {
+	for i, tc := range []struct {
+		scenario string
+		match    MatchMethod
+		input    string
+		expect   bool
+	}{
+		{
+			scenario: "match uppercase GET",
+			match:    MatchMethod{"GET"},
+			input:    http.MethodGet,
+			expect:   true,
+		},
+		{
+			scenario: "match lowercase get after Provision uppercases it",
+			match:    MatchMethod{"get"},
+			input:    http.MethodGet,
+			expect:   true,
+		},
+		{
+			scenario: "match mixed case Post after Provision uppercases it",
+			match:    MatchMethod{"Post"},
+			input:    http.MethodPost,
+			expect:   true,
+		},
+		{
+			scenario: "no match for wrong method",
+			match:    MatchMethod{"GET"},
+			input:    http.MethodPost,
+			expect:   false,
+		},
+		{
+			scenario: "match one of multiple methods",
+			match:    MatchMethod{"get", "post"},
+			input:    http.MethodPost,
+			expect:   true,
+		},
+	} {
+		req := &http.Request{Method: tc.input}
+		if err := tc.match.Provision(caddy.Context{}); err != nil {
+			t.Errorf("Test %d %v: provisioning failed: %v", i, tc.scenario, err)
+		}
+		actual, err := tc.match.MatchWithError(req)
+		if err != nil {
+			t.Errorf("Test %d %v: matching failed: %v", i, tc.scenario, err)
+		}
+		if actual != tc.expect {
+			t.Errorf("Test %d %v: Expected %t, got %t for method=%s", i, tc.scenario, tc.expect, actual, tc.input)
 			continue
 		}
 	}
