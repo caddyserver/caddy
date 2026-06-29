@@ -335,6 +335,7 @@ func escapePathPreservingSlashes(path string) string {
 // duplicate keys rather than replaces.
 func buildQueryString(qs string, repl *caddy.Replacer) string {
 	var sb strings.Builder
+	sb.Grow(len(qs))
 
 	// first component must be key, which is the same
 	// as if we just wrote a value in previous iteration
