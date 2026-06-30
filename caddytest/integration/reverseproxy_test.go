@@ -924,6 +924,9 @@ func TestReverseProxyResponseHandling(t *testing.T) {
 	})
 	ts := httptest.NewUnstartedServer(mux)
 	ts.Start()
+	t.Cleanup(func() {
+		ts.Close()
+	})
 
 	tester := caddytest.NewTester(t)
 	tester.InitServer(fmt.Sprintf(`
