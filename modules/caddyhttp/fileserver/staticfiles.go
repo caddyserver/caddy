@@ -765,12 +765,14 @@ func calculateEtag(d os.FileInfo) string {
 	if !usefulModTime(mtime) {
 		return ""
 	}
-	var sb strings.Builder
-	sb.WriteRune('"')
-	sb.WriteString(strconv.FormatInt(mtime.UnixNano(), 36))
-	sb.WriteString(strconv.FormatInt(d.Size(), 36))
-	sb.WriteRune('"')
-	return sb.String()
+	// A quoted etag of two base-36 int64 values is 30 bytes, thus fitting
+	// comfortably in 32 bytes, on the stack to prevent allocations
+	var buf [32]byte
+	b := append(buf[:0], '"')
+	b = strconv.AppendInt(b, mtime.UnixNano(), 36)
+	b = strconv.AppendInt(b, d.Size(), 36)
+	b = append(b, '"')
+	return string(b)
 }
 
 // Finds the first corresponding etag file for a given file in the file system and return its content
