@@ -433,16 +433,7 @@ func (m MatchPath) MatchWithError(r *http.Request) (bool, error) {
 	// related to differences between operating systems, applications,
 	// etc; if case-sensitive matching is needed, the regex matcher
 	// can be used instead.
-	reqPath := strings.ToLower(r.URL.Path)
-
-	if runtime.GOOS == "windows" { // issue #5613
-		// Windows treats backslashes as path separators and
-		// ignores trailing dots and spaces when accessing files
-		// (sigh), potentially causing a security risk (cry) if
-		// protected files are not matched as intended.
-		reqPath = strings.ReplaceAll(reqPath, `\`, "/")
-		reqPath = strings.TrimRight(reqPath, ". ")
-	}
+	reqPath := normalizeWindowsPath(strings.ToLower(r.URL.Path))
 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
@@ -656,6 +647,28 @@ var windowsEscapedPathSeparatorRepl = strings.NewReplacer(
 	"%5C", "%2f",
 )
 
+// normalizeWindowsPath rewrites a decoded request path the way the Windows
+// filesystem resolves it, so that path matchers (both `path` and `path_regexp`)
+// cannot be bypassed on Windows: backslashes are treated as path separators,
+// and trailing dots and spaces are ignored on EVERY path component (not only at
+// the end of the whole path — e.g. a guard on `/private/` must also cover
+// `/private./secret`). Path navigation segments ("." and "..") are left intact
+// for cleanPath to resolve. It is a no-op on non-Windows systems. See #5613.
+func normalizeWindowsPath(p string) string {
+	if runtime.GOOS != "windows" {
+		return p
+	}
+	p = strings.ReplaceAll(p, `\`, "/")
+	segments := strings.Split(p, "/")
+	for i, s := range segments {
+		if s == "." || s == ".." {
+			continue
+		}
+		segments[i] = strings.TrimRight(s, ". ")
+	}
+	return strings.Join(segments, "/")
+}
+
 // CELLibrary produces options that expose this matcher for use in CEL
 // expression matchers.
 //
@@ -716,8 +729,10 @@ func (m MatchPathRE) MatchWithError(r *http.Request) (bool, error) {
 
 	// Clean the path, merges doubled slashes, etc.
 	// This ensures maliciously crafted requests can't bypass
-	// the path matcher. See #4407
-	cleanedPath := cleanPath(r.URL.Path)
+	// the path matcher. See #4407 (path cleaning) and #5613
+	// (Windows backslash / trailing dot-and-space normalization,
+	// shared with the path matcher).
+	cleanedPath := cleanPath(normalizeWindowsPath(r.URL.Path))
 
 	return m.MatchRegexp.Match(cleanedPath, repl), nil
 }
