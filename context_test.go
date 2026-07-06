@@ -30,7 +30,8 @@ func TestContextWithValuePreservesMetricsRegistry(t *testing.T) {
 		t.Fatal("expected a metrics registry on the base context")
 	}
 
-	derived := ctx.WithValue("key", "value")
+	type testKey struct{}
+	derived := ctx.WithValue(testKey{}, "value")
 	if got := derived.GetMetricsRegistry(); got != reg {
 		t.Fatalf("WithValue must preserve the metrics registry: got %p, want %p", got, reg)
 	}
