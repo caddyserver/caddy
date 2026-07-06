@@ -15,9 +15,26 @@
 package caddy
 
 import (
+	"context"
 	"encoding/json"
 	"io"
+	"testing"
 )
+
+func TestContextWithValuePreservesMetricsRegistry(t *testing.T) {
+	ctx, cancel := NewContext(Context{Context: context.Background()})
+	t.Cleanup(cancel)
+
+	reg := ctx.GetMetricsRegistry()
+	if reg == nil {
+		t.Fatal("expected a metrics registry on the base context")
+	}
+
+	derived := ctx.WithValue("key", "value")
+	if got := derived.GetMetricsRegistry(); got != reg {
+		t.Fatalf("WithValue must preserve the metrics registry: got %p, want %p", got, reg)
+	}
+}
 
 func ExampleContext_LoadModule() {
 	// this whole first part is just setting up for the example;
