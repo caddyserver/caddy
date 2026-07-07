@@ -799,6 +799,15 @@ func (MatchMethod) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
+// Provision uppercases all configured methods to ensure case-insensitive
+// matching against incoming requests, whose methods are always uppercase.
+func (m MatchMethod) Provision(_ caddy.Context) error {
+	for i := range m {
+		m[i] = strings.ToUpper(m[i])
+	}
+	return nil
+}
+
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (m *MatchMethod) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	// iterate to merge multiple matchers into one
@@ -1659,9 +1668,11 @@ var (
 	_ RequestMatcherWithError = (*MatchHost)(nil)
 	_ caddy.Provisioner       = (*MatchHost)(nil)
 	_ RequestMatcherWithError = (*MatchPath)(nil)
+	_ caddy.Provisioner       = (*MatchPath)(nil)
 	_ RequestMatcherWithError = (*MatchPathRE)(nil)
 	_ caddy.Provisioner       = (*MatchPathRE)(nil)
 	_ RequestMatcherWithError = (*MatchMethod)(nil)
+	_ caddy.Provisioner       = (*MatchMethod)(nil)
 	_ RequestMatcherWithError = (*MatchQuery)(nil)
 	_ RequestMatcherWithError = (*MatchHeader)(nil)
 	_ RequestMatcherWithError = (*MatchHeaderRE)(nil)

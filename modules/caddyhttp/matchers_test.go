@@ -1233,6 +1233,59 @@ func TestNotMatcher(t *testing.T) {
 	}
 }
 
+func TestMethodMatcher(t *testing.T) {
+	for i, tc := range []struct {
+		scenario string
+		match    MatchMethod
+		input    string
+		expect   bool
+	}{
+		{
+			scenario: "match uppercase GET",
+			match:    MatchMethod{"GET"},
+			input:    http.MethodGet,
+			expect:   true,
+		},
+		{
+			scenario: "match lowercase get after Provision uppercases it",
+			match:    MatchMethod{"get"},
+			input:    http.MethodGet,
+			expect:   true,
+		},
+		{
+			scenario: "match mixed case Post after Provision uppercases it",
+			match:    MatchMethod{"Post"},
+			input:    http.MethodPost,
+			expect:   true,
+		},
+		{
+			scenario: "no match for wrong method",
+			match:    MatchMethod{"GET"},
+			input:    http.MethodPost,
+			expect:   false,
+		},
+		{
+			scenario: "match one of multiple methods",
+			match:    MatchMethod{"get", "post"},
+			input:    http.MethodPost,
+			expect:   true,
+		},
+	} {
+		req := &http.Request{Method: tc.input}
+		if err := tc.match.Provision(caddy.Context{}); err != nil {
+			t.Errorf("Test %d %v: provisioning failed: %v", i, tc.scenario, err)
+		}
+		actual, err := tc.match.MatchWithError(req)
+		if err != nil {
+			t.Errorf("Test %d %v: matching failed: %v", i, tc.scenario, err)
+		}
+		if actual != tc.expect {
+			t.Errorf("Test %d %v: Expected %t, got %t for method=%s", i, tc.scenario, tc.expect, actual, tc.input)
+			continue
+		}
+	}
+}
+
 func BenchmarkLargeHostMatcher(b *testing.B) {
 	// this benchmark simulates a large host matcher (thousands of entries) where each
 	// value is an exact hostname (not a placeholder or wildcard) - compare the results
