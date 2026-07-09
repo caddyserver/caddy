@@ -410,6 +410,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 // Validate ensures the app's configuration is valid.
 func (app *App) Validate() error {
 	lnAddrs := make(map[string]string)
+	adminPort, checkAdmin := caddy.LocalAdminPort()
 
 	for srvName, srv := range app.Servers {
 		// each server must use distinct listener addresses
@@ -421,11 +422,15 @@ func (app *App) Validate() error {
 			// check that every address in the port range is unique to this server;
 			// we do not use <= here because PortRangeSize() adds 1 to EndPort for us
 			for i := uint(0); i < listenAddr.PortRangeSize(); i++ {
-				addr := caddy.JoinNetworkAddress(listenAddr.Network, listenAddr.Host, strconv.FormatUint(uint64(listenAddr.StartPort+i), 10))
-				if sn, ok := lnAddrs[addr]; ok {
-					return fmt.Errorf("server %s: listener address repeated: %s (already claimed by server '%s')", srvName, addr, sn)
+				port := listenAddr.StartPort + i
+				if checkAdmin && port == adminPort {
+					return fmt.Errorf("server %s: listener %q uses admin API port %d (use another port or 'admin off')", srvName, addr, adminPort)
 				}
-				lnAddrs[addr] = srvName
+				joinedAddr := caddy.JoinNetworkAddress(listenAddr.Network, listenAddr.Host, strconv.FormatUint(uint64(port), 10))
+				if sn, ok := lnAddrs[joinedAddr]; ok {
+					return fmt.Errorf("server %s: listener address repeated: %s (already claimed by server '%s')", srvName, joinedAddr, sn)
+				}
+				lnAddrs[joinedAddr] = srvName
 			}
 		}
 
