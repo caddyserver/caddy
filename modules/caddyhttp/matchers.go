@@ -433,16 +433,7 @@ func (m MatchPath) MatchWithError(r *http.Request) (bool, error) {
 	// related to differences between operating systems, applications,
 	// etc; if case-sensitive matching is needed, the regex matcher
 	// can be used instead.
-	reqPath := strings.ToLower(r.URL.Path)
-
-	if runtime.GOOS == "windows" { // issue #5613
-		// Windows treats backslashes as path separators and
-		// ignores trailing dots and spaces when accessing files
-		// (sigh), potentially causing a security risk (cry) if
-		// protected files are not matched as intended.
-		reqPath = strings.ReplaceAll(reqPath, `\`, "/")
-		reqPath = strings.TrimRight(reqPath, ". ")
-	}
+	reqPath := normalizeWindowsPath(strings.ToLower(r.URL.Path))
 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
@@ -482,6 +473,7 @@ func (m MatchPath) MatchWithError(r *http.Request) (bool, error) {
 			if runtime.GOOS == "windows" {
 				escapedPath = windowsEscapedPathSeparatorRepl.Replace(escapedPath)
 				matchPattern = windowsEscapedPathSeparatorRepl.Replace(matchPattern)
+				escapedPath = normalizeWindowsEscapedPath(escapedPath)
 			}
 			reqPathForPattern := CleanPath(escapedPath, mergeSlashes)
 			if m.matchPatternWithEscapeSequence(reqPathForPattern, matchPattern) {
@@ -670,6 +662,98 @@ var windowsEscapedPathSeparatorRepl = strings.NewReplacer(
 	"%5C", "%2f",
 )
 
+// normalizeWindowsPath rewrites a decoded request path the way the Windows
+// filesystem resolves it, so that path matchers (both `path` and `path_regexp`)
+// cannot be bypassed on Windows: backslashes are treated as path separators,
+// and trailing dots and spaces are ignored on EVERY path component (not only at
+// the end of the whole path — e.g. a guard on `/private/` must also cover
+// `/private./secret`). Path navigation segments ("." and "..") are left intact
+// for cleanPath to resolve. It is a no-op on non-Windows systems. See #5613.
+func normalizeWindowsPath(p string) string {
+	if runtime.GOOS != "windows" {
+		return p
+	}
+	p = strings.ReplaceAll(p, `\`, "/")
+	segments := strings.Split(p, "/")
+	for i, s := range segments {
+		if s == "." || s == ".." {
+			continue
+		}
+		segments[i] = strings.TrimRight(s, ". ")
+	}
+	return strings.Join(segments, "/")
+}
+
+// normalizeWindowsEscapedPath applies the same Windows normalization as
+// normalizeWindowsPath, but in raw/escaped space (used when a matcher pattern
+// contains '%'), where path separators may be percent-encoded ("%2f") and a
+// component's trailing dots and spaces may be literal ("." / " ") or
+// percent-encoded ("%2e" / "%20"). Without this, a '%'-containing matcher such
+// as `/private%2f*` is bypassed on Windows by e.g. GET /private.%5csecret.txt,
+// because only backslash separators — not the per-component trailing dots and
+// spaces — were folded. The caller must have already folded backslash
+// separators to "%2f" via windowsEscapedPathSeparatorRepl. Navigation segments
+// ("." and "..") are left intact for CleanPath to resolve. Only the request
+// path is normalized, not the matcher pattern (mirroring normalizeWindowsPath).
+// It is a no-op on non-Windows systems. See #5613.
+func normalizeWindowsEscapedPath(p string) string {
+	if runtime.GOOS != "windows" {
+		return p
+	}
+	var sb strings.Builder
+	sb.Grow(len(p))
+	// walk the path, splitting on separators that are meaningful on Windows:
+	// the literal '/' and the encoded '%2f'/'%2F' (backslashes were already
+	// folded to "%2f" by the caller). Trim each component, preserving the
+	// separators exactly so escaped-space comparison still lines up.
+	start := 0
+	flush := func(end int) {
+		seg := p[start:end]
+		if seg != "." && seg != ".." {
+			seg = trimWindowsEscapedTrailingDotSpace(seg)
+		}
+		sb.WriteString(seg)
+	}
+	for i := 0; i < len(p); {
+		switch {
+		case p[i] == '/':
+			flush(i)
+			sb.WriteByte('/')
+			i++
+			start = i
+		case p[i] == '%' && i+3 <= len(p) && p[i+1] == '2' && (p[i+2] == 'f' || p[i+2] == 'F'):
+			flush(i)
+			sb.WriteString(p[i : i+3])
+			i += 3
+			start = i
+		default:
+			i++
+		}
+	}
+	flush(len(p))
+	return sb.String()
+}
+
+// trimWindowsEscapedTrailingDotSpace strips trailing dots and spaces — whether
+// literal ("." / " ") or percent-encoded ("%2e"/"%2E" / "%20") — from a single
+// escaped-space path component, matching how Windows ignores them.
+func trimWindowsEscapedTrailingDotSpace(s string) string {
+	for len(s) > 0 {
+		if c := s[len(s)-1]; c == '.' || c == ' ' {
+			s = s[:len(s)-1]
+			continue
+		}
+		if len(s) >= 3 {
+			if tail := s[len(s)-3:]; strings.EqualFold(tail, "%2e") || tail == "%20" {
+				s = s[:len(s)-3]
+				continue
+			}
+		}
+		return s
+	}
+	return s
+}
+
 // CELLibrary produces options that expose this matcher for use in CEL
 // expression matchers.
 //
@@ -730,8 +814,10 @@ func (m MatchPathRE) MatchWithError(r *http.Request) (bool, error) {
 
 	// Clean the path, merges doubled slashes, etc.
 	// This ensures maliciously crafted requests can't bypass
-	// the path matcher. See #4407
-	cleanedPath := cleanPath(r.URL.Path)
+	// the path matcher. See #4407 (path cleaning) and #5613
+	// (Windows backslash / trailing dot-and-space normalization,
+	// shared with the path matcher).
+	cleanedPath := cleanPath(normalizeWindowsPath(r.URL.Path))
 
 	return m.MatchRegexp.Match(cleanedPath, repl), nil
 }
