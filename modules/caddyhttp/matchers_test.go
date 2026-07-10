@@ -504,6 +504,24 @@ func TestPathMatcherWindows(t *testing.T) {
 			path:  "/private /secret.txt",
 			match: MatchPath{"/private/*"},
 		},
+		{
+			// escaped-space matcher (pattern contains '%'): the trailing
+			// dot/space normalization must also apply on the escaped-path
+			// branch, otherwise /private.%5csecret.txt bypasses /private%2f*.
+			name:          "trailing dot before encoded backslash, escaped-space matcher",
+			requestTarget: `/private.%5csecret.txt`,
+			match:         MatchPath{"/private%2f*"},
+		},
+		{
+			name:          "encoded trailing dot before encoded backslash, escaped-space matcher",
+			requestTarget: `/private%2e%5csecret.txt`,
+			match:         MatchPath{"/private%2f*"},
+		},
+		{
+			name:          "encoded trailing space before encoded backslash, escaped-space matcher",
+			requestTarget: `/private%20%5csecret.txt`,
+			match:         MatchPath{"/private%2f*"},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			u := &url.URL{Path: tc.path}
