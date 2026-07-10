@@ -364,12 +364,12 @@ func (admin AdminConfig) allowedOrigins(addr NetworkAddress) []*url.URL {
 	return allowed
 }
 
-// LocalAdminPort returns the port of the local admin API endpoint
+// LocalAdminAddress returns the local admin API listen address
 // and whether it is enabled.
-func LocalAdminPort() (uint, bool) {
+func LocalAdminAddress() (NetworkAddress, bool) {
 	serverMu.Lock()
 	defer serverMu.Unlock()
-	return localAdminPort, localAdminEnabled
+	return localAdminAddr, localAdminEnabled
 }
 
 // replaceLocalAdminServer replaces the running local admin server
@@ -435,7 +435,7 @@ func replaceLocalAdminServer(cfg *Config, ctx Context) error {
 	}
 
 	serverMu.Lock()
-	localAdminPort = addr.StartPort
+	localAdminAddr = addr
 	localAdminEnabled = true
 	localAdminServer = &http.Server{
 		Addr:              addr.String(), // for logging purposes only
@@ -1493,7 +1493,7 @@ var bufPool = sync.Pool{
 // keep a reference to admin endpoint singletons while they're active
 var (
 	serverMu                            sync.Mutex
-	localAdminPort                      uint
+	localAdminAddr                      NetworkAddress
 	localAdminEnabled                   bool
 	localAdminServer, remoteAdminServer *http.Server
 	identityCertCache                   *certmagic.Cache

@@ -710,3 +710,50 @@ func TestSplitUnixSocketPermissionsBits(t *testing.T) {
 		}
 	}
 }
+
+func TestOverlapsWith(t *testing.T) {
+	for i, tc := range []struct {
+		a, b   NetworkAddress
+		expect bool
+	}{
+		{
+			a:      NetworkAddress{Host: "127.0.0.1", StartPort: 2019, EndPort: 2019},
+			b:      NetworkAddress{Host: "127.0.0.1", StartPort: 2019, EndPort: 2019},
+			expect: true,
+		},
+		{
+			a:      NetworkAddress{Host: "127.0.0.1", StartPort: 2019, EndPort: 2019},
+			b:      NetworkAddress{Host: "127.0.0.2", StartPort: 2019, EndPort: 2019},
+			expect: false,
+		},
+		{
+			a:      NetworkAddress{Host: "localhost", StartPort: 2019, EndPort: 2019},
+			b:      NetworkAddress{Host: "127.0.0.1", StartPort: 2019, EndPort: 2019},
+			expect: true,
+		},
+		{
+			a:      NetworkAddress{Host: "", StartPort: 2019, EndPort: 2019},
+			b:      NetworkAddress{Host: "192.168.1.1", StartPort: 2019, EndPort: 2019},
+			expect: true,
+		},
+		{
+			a:      NetworkAddress{Host: "0.0.0.0", StartPort: 2019, EndPort: 2019},
+			b:      NetworkAddress{Host: "::1", StartPort: 2019, EndPort: 2019},
+			expect: false,
+		},
+		{
+			a:      NetworkAddress{Network: "unix", Host: "/run/caddy/admin.sock"},
+			b:      NetworkAddress{Host: "127.0.0.1", StartPort: 2019, EndPort: 2019},
+			expect: false,
+		},
+		{
+			a:      NetworkAddress{Network: "unix", Host: "/run/caddy/admin.sock"},
+			b:      NetworkAddress{Network: "unix", Host: "/run/caddy/admin.sock"},
+			expect: true,
+		},
+	} {
+		if tc.a.OverlapsWith(tc.b) != tc.expect {
+			t.Errorf("Test %d: expected %v for %v vs %v", i, tc.expect, tc.a, tc.b)
+		}
+	}
+}

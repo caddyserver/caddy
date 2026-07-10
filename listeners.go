@@ -15,6 +15,7 @@
 package caddy
 
 import (
+	"cmp"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -253,6 +254,60 @@ func (na NetworkAddress) PortRangeSize() uint {
 		return 0
 	}
 	return (na.EndPort - na.StartPort) + 1
+}
+
+// OverlapsWith reports whether na and other could bind to the same socket and
+// thus conflict. For unix and fd sockets, only the network and host (socket
+// path) are compared. For IP-based networks, it accounts for intersecting port
+// ranges, IP families (e.g. tcp4 and tcp6 never overlap), wildcard interfaces
+// (empty host or 0.0.0.0/::), and the localhost alias.
+func (na NetworkAddress) OverlapsWith(other NetworkAddress) bool {
+	if na.IsUnixNetwork() || na.IsFdNetwork() || other.IsUnixNetwork() || other.IsFdNetwork() {
+		return na.Network == other.Network && na.Host == other.Host
+	}
+
+	// port ranges must intersect
+	if na.EndPort < other.StartPort || other.EndPort < na.StartPort {
+		return false
+	}
+
+	// listeners with distinct IP families (e.g. tcp4 vs tcp6) never overlap.
+	// an empty or "tcp" network is family-agnostic and may overlap either
+	n1, n2 := cmp.Or(na.Network, "tcp"), cmp.Or(other.Network, "tcp")
+	if n1 != n2 && n1 != "tcp" && n2 != "tcp" {
+		return false
+	}
+
+	return na.hostsOverlap(other)
+}
+
+// hostsOverlap reports whether the hosts of na and other could resolve to a
+// common listening interface. Callers must ensure neither is a unix/fd socket.
+func (na NetworkAddress) hostsOverlap(other NetworkAddress) bool {
+	// an empty host means "all interfaces"
+	if na.Host == "" || other.Host == "" || na.Host == other.Host {
+		return true
+	}
+
+	// Use == "localhost" instead of isLoopback() to avoid family-aware comparison.
+	if na.Host == "localhost" {
+		return other.isLoopback()
+	}
+	if other.Host == "localhost" {
+		return na.isLoopback()
+	}
+
+	ip1, err1 := netip.ParseAddr(na.Host)
+	ip2, err2 := netip.ParseAddr(other.Host)
+	if err1 != nil || err2 != nil {
+		return false // unresolved names, assume distinct
+	}
+
+	// a wildcard overlaps any address of the same family
+	if ip1.IsUnspecified() || ip2.IsUnspecified() {
+		return ip1.Is6() == ip2.Is6()
+	}
+	return ip1 == ip2
 }
 
 func (na NetworkAddress) isLoopback() bool {
