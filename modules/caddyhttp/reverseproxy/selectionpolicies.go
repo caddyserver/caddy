@@ -712,7 +712,7 @@ func (s CookieHashSelection) Select(pool UpstreamPool, req *http.Request, w http
 			continue
 		}
 		sha, err := hashCookie(s.Secret, upstream.Dial)
-		if err == nil && sha == cookieValue {
+		if err == nil && hmac.Equal([]byte(sha), []byte(cookieValue)) {
 			return upstream
 		}
 	}
