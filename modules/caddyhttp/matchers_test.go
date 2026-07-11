@@ -509,6 +509,34 @@ func TestPathMatcherWindows(t *testing.T) {
 			requestTarget: `/private%5csecret.txt`,
 			match:         MatchPath{"/private%5c%*"},
 		},
+		{
+			name:  "trailing dot on a middle path component",
+			path:  "/private./secret.txt",
+			match: MatchPath{"/private/*"},
+		},
+		{
+			name:  "trailing space on a middle path component",
+			path:  "/private /secret.txt",
+			match: MatchPath{"/private/*"},
+		},
+		{
+			// escaped-space matcher (pattern contains '%'): the trailing
+			// dot/space normalization must also apply on the escaped-path
+			// branch, otherwise /private.%5csecret.txt bypasses /private%2f*.
+			name:          "trailing dot before encoded backslash, escaped-space matcher",
+			requestTarget: `/private.%5csecret.txt`,
+			match:         MatchPath{"/private%2f*"},
+		},
+		{
+			name:          "encoded trailing dot before encoded backslash, escaped-space matcher",
+			requestTarget: `/private%2e%5csecret.txt`,
+			match:         MatchPath{"/private%2f*"},
+		},
+		{
+			name:          "encoded trailing space before encoded backslash, escaped-space matcher",
+			requestTarget: `/private%20%5csecret.txt`,
+			match:         MatchPath{"/private%2f*"},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			u := &url.URL{Path: tc.path}
@@ -529,6 +557,78 @@ func TestPathMatcherWindows(t *testing.T) {
 			}
 			if !matched {
 				t.Errorf("Expected %q to match %v", req.URL.Path, tc.match)
+			}
+		})
+	}
+}
+
+func TestPathREMatcherWindows(t *testing.T) {
+	// Windows treats backslashes as path separators and ignores trailing
+	// dots and spaces per path component, so the path_regexp matcher must
+	// normalize them the same way the path matcher does (see #5613);
+	// otherwise a guard such as `path_regexp ^/private/` is bypassed by e.g.
+	// GET /private\secret.txt (or %5c) or GET /private./secret.txt.
+	if runtime.GOOS != "windows" {
+		return
+	}
+
+	repl := caddy.NewReplacer()
+
+	for _, tc := range []struct {
+		name          string
+		path          string
+		requestTarget string
+		match         MatchPathRE
+	}{
+		{
+			name:  "literal backslash path separator",
+			path:  `/private\secret.txt`,
+			match: MatchPathRE{MatchRegexp{Pattern: "^/private/"}},
+		},
+		{
+			name:          "encoded backslash path separator",
+			requestTarget: `/private%5csecret.txt`,
+			match:         MatchPathRE{MatchRegexp{Pattern: "^/private/"}},
+		},
+		{
+			name:          "uppercase encoded backslash path separator",
+			requestTarget: `/private%5Csecret.txt`,
+			match:         MatchPathRE{MatchRegexp{Pattern: "^/private/"}},
+		},
+		{
+			name:  "trailing dot on a middle path component",
+			path:  `/private./secret.txt`,
+			match: MatchPathRE{MatchRegexp{Pattern: "^/private/"}},
+		},
+		{
+			name:  "trailing space on a middle path component",
+			path:  `/private /secret.txt`,
+			match: MatchPathRE{MatchRegexp{Pattern: "^/private/"}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := tc.match.Provision(caddy.Context{}); err != nil {
+				t.Fatalf("Provisioning: %v", err)
+			}
+
+			u := &url.URL{Path: tc.path}
+			if tc.requestTarget != "" {
+				var err error
+				u, err = url.ParseRequestURI(tc.requestTarget)
+				if err != nil {
+					t.Fatalf("Parsing request target: %v", err)
+				}
+			}
+			req := &http.Request{URL: u}
+			ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+			req = req.WithContext(ctx)
+
+			matched, err := tc.match.MatchWithError(req)
+			if err != nil {
+				t.Errorf("Expected no error, but got: %v", err)
+			}
+			if !matched {
+				t.Errorf("Expected %q to match %v", req.URL.Path, tc.match.Pattern)
 			}
 		})
 	}
