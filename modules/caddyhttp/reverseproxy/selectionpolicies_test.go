@@ -725,6 +725,33 @@ func TestRandomChoicePolicy(t *testing.T) {
 	}
 }
 
+func TestRandomChoicePolicyLeastLoaded(t *testing.T) {
+	// when the number of available upstreams does not exceed the choose
+	// count, all of them must be candidates, so the least-loaded one
+	// must always be selected; the pool intentionally starts with an
+	// unavailable upstream to verify that reservoir sampling counts
+	// available upstreams rather than pool indices
+	pool := testPool()
+	pool[0].Dial = "localhost:8080"
+	pool[1].Dial = "localhost:8081"
+	pool[2].Dial = "localhost:8082"
+	pool[0].setHealthy(false)
+	pool[1].setHealthy(true)
+	pool[2].setHealthy(true)
+	pool[1].countRequest(30)
+	// pool[2] has no active requests
+
+	request := httptest.NewRequest(http.MethodGet, "/test", nil)
+	randomChoicePolicy := RandomChoiceSelection{Choose: 2}
+
+	for i := 0; i < 100; i++ {
+		h := randomChoicePolicy.Select(pool, request, nil)
+		if h != pool[2] {
+			t.Fatalf("with 2 available upstreams and choose=2, the least-loaded upstream (pool[2]) must always be selected; got %v on iteration %d", h, i)
+		}
+	}
+}
+
 func TestCookieHashPolicy(t *testing.T) {
 	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
 	defer cancel()

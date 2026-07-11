@@ -233,12 +233,23 @@ func (r RandomChoiceSelection) Validate() error {
 // Select returns an available host, if any.
 func (r RandomChoiceSelection) Select(pool UpstreamPool, _ *http.Request, _ http.ResponseWriter) *Upstream {
 	k := min(r.Choose, len(pool))
-	choices := make([]*Upstream, k)
-	for i, upstream := range pool {
+
+	// reservoir sampling (Algorithm R) over the available upstreams:
+	// the first k available upstreams fill the reservoir, then each
+	// subsequent one replaces a random reservoir entry with probability
+	// k/n, so every available upstream is sampled uniformly
+	choices := make([]*Upstream, 0, k)
+	var available int
+	for _, upstream := range pool {
 		if !upstream.Available() {
 			continue
 		}
-		j := weakrand.IntN(i + 1) //nolint:gosec
+		available++
+		if len(choices) < k {
+			choices = append(choices, upstream)
+			continue
+		}
+		j := weakrand.IntN(available) //nolint:gosec
 		if j < k {
 			choices[j] = upstream
 		}
