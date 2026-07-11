@@ -503,7 +503,7 @@ func CELMatcherDecorator(funcName string, fac any) interpreter.InterpretableDeco
 			}
 			return interpreter.NewCall(
 				i.ID(), funcName, funcName+"_opt",
-				[]interpreter.Interpretable{reqAttr},
+				[]interpreter.InterpretableV2{reqAttr},
 				func(args ...ref.Val) ref.Val {
 					// The request value, guaranteed to be of type celHTTPRequest
 					celReq := args[0]
@@ -526,7 +526,7 @@ func CELMatcherDecorator(funcName string, fac any) interpreter.InterpretableDeco
 			}
 			return interpreter.NewCall(
 				i.ID(), funcName, funcName+"_opt",
-				[]interpreter.Interpretable{reqAttr},
+				[]interpreter.InterpretableV2{reqAttr},
 				func(args ...ref.Val) ref.Val {
 					// The request value, guaranteed to be of type celHTTPRequest
 					celReq := args[0]
