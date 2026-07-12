@@ -172,7 +172,7 @@ func TestDispenser_QuotedBracesAreArguments(t *testing.T) {
 	// quoted braces are literal argument text, not structural tokens
 	d := NewTestDispenser(`dir1 "{" "}" foo
 			  dir2 "}" {
-			  	sub1 "{"
+				sub1 "{"
 			  }`)
 
 	d.Next() // dir1
