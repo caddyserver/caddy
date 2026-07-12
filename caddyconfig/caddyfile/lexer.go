@@ -347,6 +347,16 @@ func (t Token) Quoted() bool {
 	return t.wasQuoted > 0
 }
 
+// isOpenCurlyBrace returns true if the token is a structural (unquoted) open curly brace.
+func isOpenCurlyBrace(t Token) bool {
+	return t.Text == "{" && t.wasQuoted == 0
+}
+
+// isCloseCurlyBrace returns true if the token is a structural (unquoted) close curly brace.
+func isCloseCurlyBrace(t Token) bool {
+	return t.Text == "}" && t.wasQuoted == 0
+}
+
 // NumLineBreaks counts how many line breaks are in the token text.
 func (t Token) NumLineBreaks() int {
 	lineBreaks := strings.Count(t.Text, "\n")
