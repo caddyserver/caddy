@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
 // UpstreamPool is a collection of upstreams.
@@ -297,7 +296,7 @@ func (di DialInfo) String() string {
 // GetDialInfo gets the upstream dialing info out of the context,
 // and returns true if there was a valid value; false otherwise.
 func GetDialInfo(ctx context.Context) (DialInfo, bool) {
-	dialInfo, ok := caddyhttp.GetVar(ctx, dialInfoVarKey).(DialInfo)
+	dialInfo, ok := ctx.Value(dialInfoCtxKey).(DialInfo)
 	return dialInfo, ok
 }
 
@@ -329,9 +328,9 @@ type dynamicHostEntry struct {
 	lastSeen time.Time
 }
 
-// dialInfoVarKey is the key used for the variable that holds
+// dialInfoCtxKey is the context key used for the variable that holds
 // the dial info for the upstream connection.
-const dialInfoVarKey = "reverse_proxy.dial_info"
+const dialInfoCtxKey caddy.CtxKey = "reverse_proxy.dial_info"
 
 // proxyProtocolInfoVarKey is the key used for the variable that holds
 // the proxy protocol info for the upstream connection.

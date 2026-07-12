@@ -660,11 +660,6 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 		)
 	}
 
-	// attach to the request information about how to dial the upstream;
-	// this is necessary because the information cannot be sufficiently
-	// or satisfactorily represented in a URL
-	caddyhttp.SetVar(r.Context(), dialInfoVarKey, dialInfo)
-
 	// set placeholders with information about this upstream
 	repl.Set("http.reverse_proxy.upstream.address", dialInfo.String())
 	repl.Set("http.reverse_proxy.upstream.hostport", dialInfo.Address)
@@ -1037,7 +1032,14 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 			return nil
 		},
 	}
-	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
+	// attach to the request information about how to dial the upstream;
+	// this is necessary because the information cannot be sufficiently
+	// or satisfactorily represented in a URL
+	// it's set before request is roundtripped to avoid a race condition when
+	// http.Transport reads a newer value to dial a new connection when that new
+	// value is updated by another reverse proxy handler, typically forward_auth.
+	ctx := context.WithValue(req.Context(), dialInfoCtxKey, di)
+	req = req.WithContext(httptrace.WithClientTrace(ctx, trace))
 
 	// do the round-trip
 	start := time.Now()
