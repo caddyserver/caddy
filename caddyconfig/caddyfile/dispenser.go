@@ -80,8 +80,9 @@ func (d *Dispenser) Prev() bool {
 }
 
 // NextArg loads the next token if it is on the same
-// line and if it is not a block opening (open curly
-// brace). Returns true if an argument token was
+// line and if it is not a block opening (unquoted
+// open curly brace; a quoted brace is a regular
+// argument). Returns true if an argument token was
 // loaded; false otherwise. If false, all tokens on
 // the line have been consumed except for potentially
 // a block opening. It handles imported tokens
@@ -90,7 +91,7 @@ func (d *Dispenser) NextArg() bool {
 	if !d.nextOnSameLine() {
 		return false
 	}
-	if d.Val() == "{" {
+	if isOpenCurlyBrace(d.Token()) {
 		// roll back; a block opening is not an argument
 		d.cursor--
 		return false
@@ -169,9 +170,9 @@ func (d *Dispenser) NextBlock(initialNestingLevel int) bool {
 		if !d.Next() {
 			return false // should be EOF error
 		}
-		if d.Val() == "}" && !d.nextOnSameLine() {
+		if isCloseCurlyBrace(d.Token()) && !d.nextOnSameLine() {
 			d.nesting--
-		} else if d.Val() == "{" && !d.nextOnSameLine() {
+		} else if isOpenCurlyBrace(d.Token()) && !d.nextOnSameLine() {
 			d.nesting++
 		}
 		return d.nesting > initialNestingLevel
@@ -179,12 +180,12 @@ func (d *Dispenser) NextBlock(initialNestingLevel int) bool {
 	if !d.nextOnSameLine() { // block must open on same line
 		return false
 	}
-	if d.Val() != "{" {
+	if !isOpenCurlyBrace(d.Token()) {
 		d.cursor-- // roll back if not opening brace
 		return false
 	}
 	d.Next() // consume open curly brace
-	if d.Val() == "}" {
+	if isCloseCurlyBrace(d.Token()) {
 		return false // open and then closed right away
 	}
 	d.nesting++
@@ -308,9 +309,10 @@ func (d *Dispenser) CountRemainingArgs() int {
 }
 
 // RemainingArgs loads any more arguments (tokens on the same line)
-// into a slice of strings and returns them. Open curly brace tokens
-// also indicate the end of arguments, and the curly brace is not
-// included in the return value nor is it loaded.
+// into a slice of strings and returns them. An unquoted open curly
+// brace also indicates the end of arguments, and it is not included
+// in the return value nor is it loaded; quoted braces are returned
+// as regular arguments.
 func (d *Dispenser) RemainingArgs() []string {
 	var args []string
 	for d.NextArg() {
@@ -321,8 +323,9 @@ func (d *Dispenser) RemainingArgs() []string {
 
 // RemainingArgsRaw loads any more arguments (tokens on the same line,
 // retaining quotes) into a slice of strings and returns them.
-// Open curly brace tokens also indicate the end of arguments,
-// and the curly brace is not included in the return value nor is it loaded.
+// An unquoted open curly brace also indicates the end of arguments,
+// and it is not included in the return value nor is it loaded;
+// quoted braces are returned as regular arguments.
 func (d *Dispenser) RemainingArgsRaw() []string {
 	var args []string
 	for d.NextArg() {
@@ -332,9 +335,10 @@ func (d *Dispenser) RemainingArgsRaw() []string {
 }
 
 // RemainingArgsAsTokens loads any more arguments (tokens on the same line)
-// into a slice of Token-structs and returns them. Open curly brace tokens
-// also indicate the end of arguments, and the curly brace is not included
-// in the return value nor is it loaded.
+// into a slice of Token-structs and returns them. An unquoted open curly
+// brace also indicates the end of arguments, and it is not included in the
+// return value nor is it loaded; quoted braces are returned as regular
+// arguments.
 func (d *Dispenser) RemainingArgsAsTokens() []Token {
 	var args []Token
 	for d.NextArg() {
@@ -406,7 +410,7 @@ func (d *Dispenser) Reset() {
 // a line break or open curly brace was encountered instead of
 // an argument.
 func (d *Dispenser) ArgErr() error {
-	if d.Val() == "{" {
+	if isOpenCurlyBrace(d.Token()) {
 		return d.Err("unexpected token '{', expecting argument")
 	}
 	return d.Errf("wrong argument count or unexpected line ending after '%s'", d.Val())
