@@ -85,6 +85,8 @@ func placeholderShorthands() []string {
 		"{tls_client_subject}", "{http.request.tls.client.subject}",
 		"{tls_client_certificate_pem}", "{http.request.tls.client.certificate_pem}",
 		"{tls_client_certificate_der_base64}", "{http.request.tls.client.certificate_der_base64}",
+		"{tls_client_certificate_rfc9440}", "{http.request.tls.client.certificate_rfc9440}",
+		"{tls_client_certificate_chain_rfc9440}", "{http.request.tls.client.certificate_chain_rfc9440}",
 		"{upstream_hostport}", "{http.reverse_proxy.upstream.hostport}",
 		"{client_ip}", "{http.vars.client_ip}",
 	}
