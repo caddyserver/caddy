@@ -605,6 +605,50 @@ func lexerCompare(t *testing.T, n int, expected, actual []Token) {
 	}
 }
 
+func TestLexComments(t *testing.T) {
+	toks, err := Lex([]byte("foo # hi there\nbar"), "T", LexOptions{Comments: true, Raw: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// foo | # hi there | bar
+	if len(toks) != 3 {
+		t.Fatalf("got %d tokens, want 3: %+v", len(toks), toks)
+	}
+	if !toks[1].IsComment() || toks[1].Text != "# hi there" {
+		t.Errorf("token 1 = %q (comment=%v), want comment %q", toks[1].Text, toks[1].IsComment(), "# hi there")
+	}
+	if toks[2].Text != "bar" {
+		t.Errorf("token 2 = %q, want bar", toks[2].Text)
+	}
+}
+
+func TestLexHashMidTokenIsLiteral(t *testing.T) {
+	toks, err := Lex([]byte("e#f redir /a/#/b"), "T", LexOptions{Comments: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	texts := []string{}
+	for _, tk := range toks {
+		texts = append(texts, tk.Text)
+	}
+	want := []string{"e#f", "redir", "/a/#/b"}
+	if !reflect.DeepEqual(texts, want) {
+		t.Errorf("texts = %v, want %v", texts, want)
+	}
+	for _, tk := range toks {
+		if tk.IsComment() {
+			t.Errorf("unexpected comment token %q", tk.Text)
+		}
+	}
+}
+
+func TestLexCommentsDisabledDiscards(t *testing.T) {
+	toks, _ := Lex([]byte("foo # hi\nbar"), "T", LexOptions{})
+	if len(toks) != 2 {
+		t.Fatalf("got %d tokens, want 2 (comment discarded)", len(toks))
+	}
+}
+
 func TestLexEqualsTokenizeWithZeroOptions(t *testing.T) {
 	in := []byte("site {\n\troot * /srv\n\tfile_server\n}\n")
 	a, err := Tokenize(in, "Caddyfile")
