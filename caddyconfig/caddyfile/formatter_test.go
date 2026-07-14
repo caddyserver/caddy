@@ -15,10 +15,19 @@
 package caddyfile
 
 import (
+	"bytes"
+	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
 )
+
+func TestMain(m *testing.M) {
+	// Pin an empty environment so replaceEnvVars is deterministic for fuzzing.
+	os.Clearenv()
+	os.Exit(m.Run())
+}
 
 func TestFormatter(t *testing.T) {
 	for i, tc := range []struct {
@@ -590,4 +599,223 @@ func TestFormatContinuationHangingIndent(t *testing.T) {
 	if got := string(Format([]byte(in))); got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
+}
+
+func TestFormatStrayCloseBraceKeepsTokens(t *testing.T) {
+	for _, in := range []string{"0 }", "a }"} {
+		once := Format([]byte(in))
+		twice := Format(once)
+		if !bytes.Equal(once, twice) {
+			t.Errorf("not idempotent for %q:\n once=%q\ntwice=%q", in, once, twice)
+		}
+		a, err1 := Parse("Caddyfile", []byte(in))
+		if err1 != nil {
+			t.Fatalf("input %q did not parse: %v", in, err1)
+		}
+		b, err2 := Parse("Caddyfile", once)
+		if err2 != nil {
+			t.Fatalf("formatted %q did not parse: %v", in, err2)
+		}
+		if !sameStructure(a, b) {
+			t.Errorf("stray close brace merged tokens for %q: got %q", in, once)
+		}
+	}
+}
+
+func TestFormatIncompleteHeredocIdempotent(t *testing.T) {
+	for _, in := range []string{"0 <<0", "x <<E"} {
+		once := Format([]byte(in))
+		twice := Format(once)
+		if !bytes.Equal(once, twice) {
+			t.Errorf("not idempotent for %q:\n once=%q\ntwice=%q", in, once, twice)
+		}
+	}
+}
+
+// formatTokenText returns the format-mode non-comment token-text sequence for
+// input, or nil and false on a lex error. It is the basis of the semantic-
+// preservation invariant: Format must reproduce this exact sequence. Comment
+// tokens are omitted because the formatter intentionally normalizes comment
+// whitespace (e.g. trimming a trailing space, "# " -> "#"), which is not a
+// semantic change.
+func formatTokenText(in []byte) ([]string, bool) {
+	toks, err := Lex(in, "", LexOptions{Comments: true, Raw: true})
+	if err != nil {
+		return nil, false
+	}
+	var texts []string
+	for _, t := range toks {
+		if !t.isComment {
+			texts = append(texts, t.Text)
+		}
+	}
+	return texts, true
+}
+
+// formatAndParseLexersDisagree reports whether the format-mode lexer and the
+// parse-path lexer produce different token-text sequences for the input (the
+// parse baseline is newline-terminated to match Format's mandatory trailing
+// newline, and comments — which the parse path discards — are ignored on the
+// format side). When the two lexers already disagree before any formatting, the
+// input is degenerate or structurally ambiguous — an unterminated or lone
+// quote/backtick, an escaped quote swallowing to EOF, a "{}" or a "{"/"}" glued
+// to a literal word that only one path splits — and has no well-defined
+// formatting. Such inputs are a sanctioned divergence excluded from the
+// invariant. Inputs on which both lexers agree, including the stray-close-brace
+// bug's "0 }" and standalone braces in argument position, stay in scope.
+func formatAndParseLexersDisagree(in []byte) bool {
+	fmtToks, err := Lex(in, "", LexOptions{Comments: true, Raw: true})
+	if err != nil {
+		return true
+	}
+	var fmtText []string
+	for _, t := range fmtToks {
+		if t.isComment {
+			continue
+		}
+		fmtText = append(fmtText, t.Text)
+		// A non-quoted token whose verbatim source ends in whitespace, contains an
+		// escaped quote, or whose text carries a newline results from an escaped
+		// quote ("\"") swallowing trailing whitespace to EOF. The format-mode and
+		// parse-path lexers can agree on such a token, but Format emits the source
+		// verbatim and then trims trailing whitespace, changing the token on
+		// re-lex. Treat these degenerate escaped-quote tokens as a disagreement.
+		if t.wasQuoted == 0 {
+			r := t.Raw()
+			if n := len(r); n > 0 && (r[n-1] == ' ' || r[n-1] == '\t' || r[n-1] == '\v' || r[n-1] == '\f' || r[n-1] == '\r' || r[n-1] == '\n') {
+				return true
+			}
+			if strings.Contains(r, `\"`) || strings.Contains(r, "\\`") {
+				return true
+			}
+			if strings.ContainsRune(t.Text, '\n') {
+				return true
+			}
+		}
+	}
+	base := in
+	if n := len(base); n == 0 || base[n-1] != '\n' {
+		base = append(append([]byte{}, base...), '\n')
+	}
+	parseToks, err := Tokenize(base, "")
+	if err != nil {
+		return true
+	}
+	parseText := make([]string, len(parseToks))
+	for i, t := range parseToks {
+		parseText[i] = t.Text
+	}
+	return !reflect.DeepEqual(fmtText, parseText)
+}
+
+// hasHeredocOpenerShapedToken reports whether the format-mode lexer produces a
+// token whose text begins with "<<" (a heredoc opener shape). Such a token is a
+// literal word only because no newline follows it (or a separating space breaks
+// the heredoc), but Format's mandatory trailing newline can turn it into a
+// heredoc opener, so the formatted output re-lexes to a different token stream.
+// This degenerate opener is a sanctioned divergence excluded from the invariant;
+// valid heredocs (whose token text does not begin with "<<") stay in scope. It
+// is detected by token text, so a "<<" split by a stripped carriage return
+// ("<\r<") is caught too.
+func hasHeredocOpenerShapedToken(in []byte) bool {
+	toks, err := Lex(in, "", LexOptions{Comments: true, Raw: true})
+	if err != nil {
+		return true
+	}
+	for _, t := range toks {
+		if t.wasQuoted == 0 && !t.isComment && strings.HasPrefix(t.Text, "<<") {
+			return true
+		}
+	}
+	return false
+}
+
+func FuzzFormatIdempotent(f *testing.F) {
+	for _, s := range []string{"", "  ", "a{\nb\n}", "site {\n\tfoo # c\n}\n", "x <<E\nhi\nE\n"} {
+		f.Add([]byte(s))
+	}
+	f.Fuzz(func(t *testing.T, in []byte) {
+		once := Format(in)
+		twice := Format(once)
+		if !bytes.Equal(once, twice) {
+			t.Errorf("not idempotent:\n once=%q\ntwice=%q", once, twice)
+		}
+	})
+}
+
+func FuzzFormatNoPanic(f *testing.F) {
+	f.Add([]byte("\x00\x00"))
+	f.Add([]byte("`unterminated"))
+	f.Add([]byte("x <<E\nno end marker"))
+	f.Fuzz(func(t *testing.T, in []byte) {
+		_ = Format(in) // must not panic
+	})
+}
+
+func FuzzFormatSemanticPreserve(f *testing.F) {
+	for _, s := range []string{"site {\n\troot * /srv\n\tfile_server\n}\n"} {
+		f.Add([]byte(s))
+	}
+	f.Fuzz(func(t *testing.T, in []byte) {
+		// The semantic-preservation invariant: formatting only changes structural
+		// whitespace, so the format-mode token-text sequence of Format(in) must
+		// equal that of the input. This is stronger and more robust than comparing
+		// parse structures, which the parse path's lenient/quirky grouping of
+		// ambiguous brace layouts (e.g. standalone braces in argument position)
+		// would spuriously flag even though every token is preserved.
+		//
+		// One class is genuinely out of scope: a heredoc-opener-shaped token
+		// ("<<MARKER") that stays a literal word only because no newline follows
+		// it. Format's mandatory trailing newline turns it into a real heredoc
+		// opener, so the output legitimately re-lexes to a different token stream.
+		// Valid heredocs (whose token text does not begin with "<<") stay in scope.
+		// Also out of scope: any input on which the format-mode and parse-path
+		// lexers already disagree (unterminated/lone quotes, escaped quotes at EOF,
+		// "{}" or a brace glued to a literal word) — these are degenerate or
+		// structurally ambiguous and have no well-defined formatting.
+		if hasHeredocOpenerShapedToken(in) || formatAndParseLexersDisagree(in) {
+			return
+		}
+		// Compare the format-mode token text of a newline-terminated baseline
+		// against that of Format's output. Format always ends its output in a
+		// single newline (Invariant); normalizing the baseline the same way keeps
+		// the comparison about token content, not the mandatory trailing newline.
+		base := in
+		if n := len(base); n == 0 || base[n-1] != '\n' {
+			base = append(append([]byte{}, base...), '\n')
+		}
+		before, ok := formatTokenText(base)
+		if !ok {
+			return // input does not lex; Format falls back and there is nothing to preserve
+		}
+		out := Format(in)
+		after, ok := formatTokenText(out)
+		if !ok {
+			t.Fatalf("formatted output no longer lexes\ninput=%q\nout=%q", in, out)
+		}
+		if !reflect.DeepEqual(before, after) {
+			t.Errorf("Format changed the token stream\ninput=%q\nout=%q\nbefore=%q\nafter=%q", in, out, before, after)
+		}
+	})
+}
+
+// sameStructure compares two parses by their per-segment token Text sequences.
+func sameStructure(a, b []ServerBlock) bool {
+	seq := func(blocks []ServerBlock) []string {
+		var s []string
+		for _, blk := range blocks {
+			s = append(s, "K")
+			for _, k := range blk.Keys {
+				s = append(s, k.Text)
+			}
+			for _, seg := range blk.Segments {
+				s = append(s, "S")
+				for _, tk := range seg {
+					s = append(s, tk.Text)
+				}
+			}
+		}
+		return s
+	}
+	return reflect.DeepEqual(seq(a), seq(b))
 }

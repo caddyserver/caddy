@@ -115,7 +115,18 @@ func Lex(input []byte, filename string, opts LexOptions) ([]Token, error) {
 func splitStructuralBraces(in []Token) []Token {
 	out := make([]Token, 0, len(in))
 	for _, tk := range in {
-		if tk.wasQuoted != 0 || tk.isComment || tk.Text == "{" || tk.Text == "}" {
+		if tk.wasQuoted != 0 || tk.isComment {
+			out = append(out, tk)
+			continue
+		}
+		// A standalone structural brace renders as just the brace character; its
+		// placement is governed by the brace rules, so normalize its raw slice to
+		// the brace itself and drop any line-continuation framing it may have
+		// picked up (e.g. a "\"+newline before the brace). This keeps the format
+		// idempotent — the framing would otherwise be re-emitted verbatim.
+		if tk.Text == "{" || tk.Text == "}" {
+			tk.raw = tk.Text
+			tk.continuation = false
 			out = append(out, tk)
 			continue
 		}
@@ -125,6 +136,10 @@ func splitStructuralBraces(in []Token) []Token {
 			closeT := tk
 			closeT.Text, closeT.raw = "}", "}"
 			closeT.precededBySpace = false
+			// The trailing structural "}" is a fresh token whose placement is
+			// governed by the brace rules, not by any line continuation that
+			// preceded the original word.
+			closeT.continuation = false
 			out = append(out, open, closeT)
 			continue
 		}
@@ -134,12 +149,19 @@ func splitStructuralBraces(in []Token) []Token {
 			if prefix != "" && !strings.ContainsAny(prefix, "{}") {
 				lit := tk
 				lit.Text = prefix
-				if lit.raw != "" && strings.HasSuffix(lit.raw, "{") {
-					lit.raw = lit.raw[:len(lit.raw)-1]
+				// Trim the literal's raw slice at its "{" so the peeled brace (and
+				// any whitespace the lexer consumed between them, e.g. a carriage
+				// return in "0{\r") is not left dangling in the literal's raw.
+				if idx := strings.IndexByte(lit.raw, '{'); idx >= 0 {
+					lit.raw = lit.raw[:idx]
 				}
 				brace := tk
 				brace.Text, brace.raw = "{", "{"
 				brace.precededBySpace = false
+				// The peeled structural "{" is a fresh token; its placement is
+				// governed by the brace rules, so it must not inherit the literal
+				// prefix's line-continuation framing.
+				brace.continuation = false
 				out = append(out, lit, brace)
 				continue
 			}
@@ -246,6 +268,13 @@ func (l *lexer) next() (bool, error) {
 				}
 
 				return makeToken(0, false), nil
+			}
+			// An empty-bodied heredoc that hits EOF with no closing marker is
+			// silently dropped on the parse path (existing behavior). In format
+			// mode this loses the token and breaks idempotency, so surface it as
+			// an error there; Format then falls back to preserving the input.
+			if inHeredoc && formatMode {
+				return false, fmt.Errorf("incomplete heredoc <<%s on line #%d, expected ending marker %s", heredocMarker, l.line+l.skippedLines, heredocMarker)
 			}
 			if err == io.EOF {
 				return false, nil
