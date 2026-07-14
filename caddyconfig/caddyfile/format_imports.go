@@ -253,3 +253,50 @@ func isBlockPlaceholder(arg string) bool {
 	}
 	return strings.HasPrefix(arg, "{blocks.") && strings.HasSuffix(arg, "}")
 }
+
+// FormattedFile is a file path paired with its formatted contents.
+type FormattedFile struct {
+	Path    string
+	Content []byte
+}
+
+// FormatImports reads filename, formats it (honoring opts), then discovers all
+// files reachable via its import directives and formats each one independently
+// at nesting-0 baseline (WrapUnbracedSite always forced OFF for imported files,
+// since they are fragments, not standalone Caddyfiles).
+//
+// The root file is always first in the returned slice, followed by discovered
+// files in discovery order. If a discovered file cannot be read it is skipped
+// with a warning log so that one bad import does not abort the whole run.
+func FormatImports(filename string, opts FormatOptions) ([]FormattedFile, error) {
+	rootBytes, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	formattedRoot := FormatWithOptions(rootBytes, opts)
+
+	discovered, err := discoverImportedFiles(filename, rootBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	results := make([]FormattedFile, 0, 1+len(discovered))
+	results = append(results, FormattedFile{Path: filename, Content: formattedRoot})
+
+	for _, path := range discovered {
+		fileBytes, readErr := os.ReadFile(path)
+		if readErr != nil {
+			// Warn and skip rather than failing the entire run; keeps caddy fmt
+			// robust when one imported file is temporarily missing or unreadable.
+			caddy.Log().Warn("Could not read imported file for formatting", zap.String("file", path), zap.Error(readErr))
+			continue
+		}
+		// WrapUnbracedSite is always OFF for imported files: they are fragments,
+		// not standalone Caddyfiles, so wrapping would be incorrect.
+		formatted := FormatWithOptions(fileBytes, FormatOptions{})
+		results = append(results, FormattedFile{Path: path, Content: formatted})
+	}
+
+	return results, nil
+}
