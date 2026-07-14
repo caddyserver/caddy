@@ -312,31 +312,65 @@ func (l *lexer) next() (bool, error) {
 			}
 			// end of the line
 			if ch == '\n' {
-				// newlines can be escaped to chain arguments
-				// onto multiple lines; else, increment the line count
-				if escaped {
-					l.skippedLines++
-					escaped = false
+				// when emitting comment tokens, the newline is handled in the
+				// comment block below (unread + return); don't process it here.
+				if comment && l.opts.Comments {
+					// fall through to the comment block below
 				} else {
-					l.line += 1 + l.skippedLines
-					l.skippedLines = 0
+					// newlines can be escaped to chain arguments
+					// onto multiple lines; else, increment the line count
+					if escaped {
+						l.skippedLines++
+						escaped = false
+					} else {
+						l.line += 1 + l.skippedLines
+						l.skippedLines = 0
+					}
+					// comments (#) are single-line only
+					comment = false
+					// any kind of space means we're at the end of this token
+					if len(val) > 0 {
+						return makeToken(0, true), nil
+					}
+					continue
 				}
-				// comments (#) are single-line only
-				comment = false
+			} else {
+				// non-newline space: end token if we have one (unless in comment mode)
+				if comment && l.opts.Comments {
+					// spaces inside a comment are part of the comment text; fall through
+				} else {
+					if len(val) > 0 {
+						return makeToken(0, true), nil
+					}
+					continue
+				}
 			}
-			// any kind of space means we're at the end of this token
-			if len(val) > 0 {
-				return makeToken(0, true), nil
-			}
-			continue
 		}
 
 		// comments must be at the start of a token,
 		// in other words, preceded by space or newline
 		if ch == '#' && len(val) == 0 {
 			comment = true
+			if l.opts.Comments {
+				// begin a comment token; record its start for raw capture
+				l.tokenStart = l.pos - l.lastSize
+				tokenStartSet = true
+				l.token = Token{Line: l.line, isComment: true}
+			}
 		}
 		if comment {
+			if l.opts.Comments {
+				// a newline ends the comment; don't consume it (leave line accounting
+				// to the normal whitespace path on the next iteration)
+				if ch == '\n' {
+					if err := l.unreadRune(); err != nil {
+						return false, err
+					}
+					l.token.isComment = true
+					return makeToken(0, false), nil
+				}
+				val = append(val, ch)
+			}
 			continue
 		}
 
