@@ -1223,6 +1223,17 @@ func TestNetWriter_WALBufferingDuringOutage(t *testing.T) {
 	// Wait a bit to ensure server is fully stopped
 	time.Sleep(500 * time.Millisecond)
 
+	// The writer cannot detect that the connection is dead until a write
+	// fails: the first write after the peer closes is accepted by the
+	// kernel and only triggers an RST in response. Write a sacrificial
+	// probe entry (which may be lost) and give the flusher time to
+	// attempt it, so the broken connection is discovered before the
+	// messages below are written.
+	if _, err := writer.Write([]byte("outage probe\n")); err != nil {
+		t.Fatalf("Failed to write probe message: %v", err)
+	}
+	time.Sleep(500 * time.Millisecond)
+
 	// Write messages during outage (should be buffered in WAL)
 	outageMessages := []string{
 		"During outage 1\n",
