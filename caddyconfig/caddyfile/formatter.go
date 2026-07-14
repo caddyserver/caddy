@@ -16,361 +16,151 @@ package caddyfile
 
 import (
 	"bytes"
-	"io"
-	"slices"
-	"strings"
-	"unicode"
 )
 
-// Format formats the input Caddyfile to a standard, nice-looking
-// appearance. It works by reading each rune of the input and taking
-// control over all the bracing and whitespace that is written; otherwise,
-// words, comments, placeholders, and escaped characters are all treated
-// literally and written as they appear in the input.
+// Format formats the input Caddyfile to a standard, nice-looking appearance.
+// It tokenizes the input in format mode and renders the token stream, taking
+// control over bracing, indentation, and whitespace; token bodies (words,
+// comments, placeholders, quoted/backtick strings, heredocs, and escaped
+// characters) are emitted verbatim.
 func Format(input []byte) []byte {
-	input = bytes.TrimSpace(input)
+	return FormatWithOptions(input, FormatOptions{})
+}
 
-	out := new(bytes.Buffer)
-	rdr := bytes.NewReader(input)
+// FormatOptions configures optional formatting behavior.
+type FormatOptions struct {
+	// WrapUnbracedSite, when true, wraps a single unbraced site block in braces
+	// (Phase 3). Default false.
+	WrapUnbracedSite bool
+}
 
-	type heredocState int
-
-	const (
-		heredocClosed  heredocState = 0
-		heredocOpening heredocState = 1
-		heredocOpened  heredocState = 2
-	)
-
-	var (
-		last rune // the last character that was written to the result
-
-		space           = true // whether current/previous character was whitespace (beginning of input counts as space)
-		beginningOfLine = true // whether we are at beginning of line
-
-		openBrace        bool // whether current word/token is or started with open curly brace
-		openBraceWritten bool // if openBrace, whether that brace was written or not
-		openBraceSpace   bool // whether there was a non-newline space before open brace
-
-		newLines int // count of newlines consumed
-
-		comment bool   // whether we're in a comment
-		quotes  string // encountered quotes ('', '`', '"', '"`', '`"')
-		escaped bool   // whether current char is escaped
-
-		heredoc              heredocState // whether we're in a heredoc
-		heredocEscaped       bool         // whether heredoc is escaped
-		heredocMarker        []rune
-		heredocClosingMarker []rune
-
-		nesting int // indentation level
-
-		currentToken                  strings.Builder
-		currentLineFirstToken         string
-		previousLineWasTopLevelImport bool
-		openBraceOwnLine              bool
-	)
-
-	finishToken := func() {
-		if currentToken.Len() == 0 {
-			return
-		}
-		if currentLineFirstToken == "" {
-			currentLineFirstToken = currentToken.String()
-		}
-		currentToken.Reset()
+// FormatWithOptions formats the input Caddyfile with the given options.
+func FormatWithOptions(input []byte, opts FormatOptions) []byte {
+	tokens, err := Lex(input, "", LexOptions{Comments: true, Raw: true})
+	if err != nil {
+		// On a lex error, fall back to the trimmed input with a trailing newline;
+		// Format never panics (Invariant 3).
+		trimmed := bytes.TrimSpace(input)
+		return append(trimmed, '\n')
 	}
+	// opts.WrapUnbracedSite is wired in Phase 3 (Task 19); ignored here.
+	_ = opts.WrapUnbracedSite
+	return formatTokens(tokens)
+}
 
-	finishLine := func() {
-		finishToken()
-		if currentLineFirstToken != "" {
-			previousLineWasTopLevelImport = nesting == 0 && currentLineFirstToken == "import"
-		} else if !openBrace || !openBraceOwnLine || openBraceWritten {
-			previousLineWasTopLevelImport = false
-		}
-		currentLineFirstToken = ""
-	}
+// formatTokens renders a format-mode token stream (as produced by
+// Lex(..., LexOptions{Comments: true, Raw: true})) into a normalized
+// Caddyfile. It controls all indentation and structural whitespace; token
+// bodies are emitted verbatim via Token.Raw().
+func formatTokens(tokens []Token) []byte {
+	var out bytes.Buffer
 
-	write := func(ch rune) {
-		out.WriteRune(ch)
-		last = ch
-	}
+	nesting := 0        // current indentation level
+	atLineStart := true // whether the cursor is at the start of a fresh line
+	wrote := false      // whether any non-whitespace has been written yet
+	prevTopClose := false
 
-	indent := func() {
-		for tabs := nesting; tabs > 0; tabs-- {
-			write('\t')
+	writeIndent := func() {
+		for i := 0; i < nesting; i++ {
+			out.WriteByte('\t')
 		}
 	}
 
-	nextLine := func() {
-		write('\n')
-		beginningOfLine = true
+	newline := func() {
+		out.WriteByte('\n')
+		atLineStart = true
 	}
 
-	for {
-		ch, _, err := rdr.ReadRune()
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			panic(err)
-		}
-		// detect whether we have the start of a heredoc
-		if quotes == "" && (heredoc == heredocClosed && !heredocEscaped) &&
-			space && last == '<' && ch == '<' {
-			write(ch)
-			heredoc = heredocOpening
-			space = false
-			continue
-		}
+	for i := range tokens {
+		tk := tokens[i]
+		isOpen := isOpenCurlyBrace(tk)
+		// A structural close brace only closes a block when one is open. When
+		// nesting is zero there is nothing to close (e.g. a "}" glued after a
+		// backtick/quoted argument), so it is treated as an inline literal and
+		// emitted verbatim at its source position.
+		isClose := isCloseCurlyBrace(tk) && nesting > 0
 
-		if heredoc == heredocOpening {
-			if ch == '\n' {
-				if len(heredocMarker) > 0 && heredocMarkerRegexp.MatchString(string(heredocMarker)) {
-					heredoc = heredocOpened
-				} else {
-					heredocMarker = nil
-					heredoc = heredocClosed
-					nextLine()
-					continue
+		// breaks is the number of newlines to emit before this token:
+		//   0 = stay on the current line, 1 = new line, 2 = one blank line.
+		breaks := 0
+		if wrote {
+			prev := tokens[i-1]
+			if isNextOnNewLine(prev, tk) {
+				breaks = 1
+				// A gap of two or more lines yields at most one blank line.
+				if tk.Line-(prev.Line+prev.NumLineBreaks()) >= 2 {
+					breaks = 2
 				}
-				write(ch)
-				continue
-			}
-			if unicode.IsSpace(ch) {
-				// a space means it's just a regular token and not a heredoc
-				heredocMarker = nil
-				heredoc = heredocClosed
-			} else {
-				heredocMarker = append(heredocMarker, ch)
-				write(ch)
-				continue
-			}
-		}
-		// if we're in a heredoc, all characters are read&write as-is
-		if heredoc == heredocOpened {
-			heredocClosingMarker = append(heredocClosingMarker, ch)
-			if len(heredocClosingMarker) > len(heredocMarker)+1 { // We assert that the heredocClosingMarker is followed by a unicode.Space
-				heredocClosingMarker = heredocClosingMarker[1:]
-			}
-			// check if we're done
-			if unicode.IsSpace(ch) && slices.Equal(heredocClosingMarker[:len(heredocClosingMarker)-1], heredocMarker) {
-				heredocMarker = nil
-				heredocClosingMarker = nil
-				heredoc = heredocClosed
-			} else {
-				write(ch)
-				if ch == '\n' {
-					heredocClosingMarker = heredocClosingMarker[:0]
-				}
-				continue
-			}
-		}
-
-		if last == '<' && space {
-			space = false
-		}
-
-		if comment {
-			if ch == '\n' {
-				comment = false
-				space = true
-				nextLine()
-				continue
-			} else {
-				write(ch)
-				continue
-			}
-		}
-
-		if !escaped && ch == '\\' {
-			if space {
-				write(' ')
-				space = false
-			}
-			write(ch)
-			escaped = true
-			continue
-		}
-
-		if escaped {
-			if ch == '<' {
-				heredocEscaped = true
-			}
-			write(ch)
-			escaped = false
-			continue
-		}
-
-		if ch == '`' {
-			switch quotes {
-			case "\"`":
-				quotes = "\""
-			case "`":
-				quotes = ""
-			case "\"":
-				quotes = "\"`"
-			default:
-				quotes = "`"
-			}
-		}
-
-		if quotes == "\"" {
-			if ch == '"' {
-				quotes = ""
-			}
-			write(ch)
-			continue
-		}
-
-		if ch == '"' {
-			switch quotes {
-			case "":
-				if space {
-					quotes = "\""
-				}
-			case "`\"":
-				quotes = "`"
-			case "\"`":
-				quotes = ""
-			}
-		}
-
-		if strings.Contains(quotes, "`") {
-			if ch == '`' && space && !beginningOfLine {
-				write(' ')
-			}
-			write(ch)
-			space = false
-			continue
-		}
-
-		if unicode.IsSpace(ch) {
-			finishToken()
-			space = true
-			heredocEscaped = false
-			if ch == '\n' {
-				finishLine()
-				newLines++
-			}
-			continue
-		}
-		spacePrior := space
-		space = false
-
-		//////////////////////////////////////////////////////////
-		// I find it helpful to think of the formatting loop in two
-		// main sections; by the time we reach this point, we
-		// know we are in a "regular" part of the file: we know
-		// the character is not a space, not in a literal segment
-		// like a comment or quoted, it's not escaped, etc.
-		//////////////////////////////////////////////////////////
-
-		if ch == '#' {
-			comment = true
-		}
-
-		if openBrace && spacePrior && !openBraceWritten {
-			if nesting == 0 && last == '}' {
-				nextLine()
-				nextLine()
-			}
-
-			openBrace = false
-			if openBraceOwnLine && previousLineWasTopLevelImport {
-				if last != '\n' {
-					nextLine()
-				}
-				indent()
-			} else if beginningOfLine {
-				indent()
-			} else if !openBraceSpace || !unicode.IsSpace(last) {
-				write(' ')
-			}
-			write('{')
-			openBraceWritten = true
-			openBraceOwnLine = false
-			nextLine()
-			newLines = 0
-			// prevent infinite nesting from ridiculous inputs (issue #4169)
-			if nesting < 10 {
-				nesting++
 			}
 		}
 
 		switch {
-		case ch == '{':
-			finishToken()
-			openBrace = true
-			openBraceSpace = spacePrior && !beginningOfLine
-			openBraceOwnLine = newLines > 0
-			if openBraceSpace && newLines == 0 {
-				write(' ')
-			}
-			openBraceWritten = false
-			if quotes == "`" {
-				write('{')
-				openBraceWritten = true
-				openBraceOwnLine = false
-				continue
-			}
-			continue
-
-		case ch == '}' && (spacePrior || !openBrace):
-			finishToken()
-			if quotes == "`" {
-				write('}')
-				continue
-			}
-			if last != '\n' {
-				nextLine()
+		case isOpen:
+			// An opening brace attaches to the current line: never break to a
+			// new line before it (it joins the preceding token with a space).
+			breaks = 0
+		case isClose:
+			// A closing brace always goes on its own line, and dedents.
+			if wrote && !atLineStart {
+				breaks = 1
 			}
 			if nesting > 0 {
 				nesting--
 			}
-			indent()
-			write('}')
-			newLines = 0
-			continue
 		}
 
-		if newLines > 2 {
-			newLines = 2
-		}
-		for i := 0; i < newLines; i++ {
-			nextLine()
-		}
-		newLines = 0
-		if beginningOfLine {
-			indent()
-		}
-		if nesting == 0 && last == '}' && beginningOfLine {
-			nextLine()
-			nextLine()
+		// The content following an opening brace always begins on its own
+		// indented line, regardless of how the source was laid out. This
+		// applies to any token, including a nested opening brace.
+		if wrote && isOpenCurlyBrace(tokens[i-1]) && breaks == 0 {
+			breaks = 1
 		}
 
-		if !beginningOfLine && spacePrior {
-			write(' ')
+		// A blank line always follows a top-level closing brace.
+		if prevTopClose && breaks < 2 {
+			breaks = 2
+		}
+		prevTopClose = false
+
+		// Emit the vertical spacing.
+		for breaks > 0 {
+			newline()
+			breaks--
 		}
 
-		if openBrace && !openBraceWritten {
-			write('{')
-			openBraceWritten = true
+		// Emit indentation at the start of a line.
+		if atLineStart {
+			writeIndent()
 		}
 
-		if spacePrior && ch == '<' {
-			space = true
+		// Emit horizontal separation for same-line tokens: exactly one space
+		// separates two tokens that share a line (including an attaching "{").
+		// A structural close brace at nesting zero (an inline literal, see
+		// above) stays glued to its predecessor when the source had no space.
+		if !atLineStart {
+			inlineClose := isCloseCurlyBrace(tk) && !isClose
+			if !(inlineClose && !tk.precededBySpace) {
+				out.WriteByte(' ')
+			}
 		}
 
-		currentToken.WriteRune(ch)
-		write(ch)
+		// Emit the token body verbatim.
+		out.WriteString(tk.Raw())
+		wrote = true
+		atLineStart = false
 
-		beginningOfLine = false
+		// Structural bookkeeping after emitting. Vertical spacing after a
+		// brace is produced by the next token's break calculation, so we don't
+		// emit trailing newlines here.
+		if isOpen {
+			nesting++
+		} else if isClose && nesting == 0 {
+			prevTopClose = true
+		}
 	}
 
-	// the Caddyfile does not need any leading or trailing spaces, but...
-	trimmedResult := bytes.TrimSpace(out.Bytes())
-
-	// ...Caddyfiles should, however, end with a newline because
-	// newlines are significant to the syntax of the file
-	return append(trimmedResult, '\n')
+	// Trim leading/trailing whitespace, then ensure exactly one trailing
+	// newline (newlines are significant to Caddyfile syntax).
+	trimmed := bytes.TrimSpace(out.Bytes())
+	return append(trimmed, '\n')
 }
