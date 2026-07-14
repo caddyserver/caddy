@@ -432,7 +432,7 @@ func trimPathPrefix(escapedPath, prefix string) string {
 	}
 
 	// if we iterated through the entire prefix, we found it, so trim it
-	if iPath >= len(prefix) {
+	if iPrefix >= len(prefix) {
 		return escapedPath[iPath:]
 	}
 
@@ -606,13 +606,15 @@ func (q *queryOps) do(r *http.Request, repl *caddy.Replacer) {
 			continue
 		}
 
-		for fieldName, vals := range query {
-			for i := range vals {
-				if replaceParam.re != nil {
-					query[fieldName][i] = replaceParam.re.ReplaceAllString(query[fieldName][i], replace)
-				} else {
-					query[fieldName][i] = strings.ReplaceAll(query[fieldName][i], search, replace)
-				}
+		vals, ok := query[key]
+		if !ok {
+			continue
+		}
+		for i := range vals {
+			if replaceParam.re != nil {
+				query[key][i] = replaceParam.re.ReplaceAllString(query[key][i], replace)
+			} else {
+				query[key][i] = strings.ReplaceAll(query[key][i], search, replace)
 			}
 		}
 	}

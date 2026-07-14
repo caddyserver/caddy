@@ -218,6 +218,7 @@ jobs:
             - [ ] Security review completed
             - [ ] Documentation updated
             - [ ] Breaking changes documented
+            - [ ] Release notes drafted
             
             ---
             

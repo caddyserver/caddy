@@ -133,7 +133,7 @@ jobs:
       # id: step_test
       # continue-on-error: true
       run: |
-        # (go test -v -coverprofile=cover-profile.out -race ./... 2>&1) > test-results/test-result.out
+        # (go test -coverprofile=cover-profile.out -race ./... 2>&1) > test-results/test-result.out
         go test -coverprofile="cover-profile.out" -short -race ./...
         # echo "status=$?" >> $GITHUB_OUTPUT
 

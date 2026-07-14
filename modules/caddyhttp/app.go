@@ -46,6 +46,13 @@ func init() {
 // only on the HTTPS port but which do not have any TLS connection policies
 // defined by adding a good, default TLS connection policy.
 //
+// Similar to how other popular web servers work, incoming request header fields
+// with underscores are ignored/dropped implicitly to mitigate security risks.
+// Specific headers to allow can be explicitly configured using
+// `expected_underscore_headers`.
+//
+// ### Placeholders
+//
 // In HTTP routes, additional placeholders are available (replace any `*`):
 //
 // Placeholder | Description
@@ -257,6 +264,12 @@ func (app *App) Provision(ctx caddy.Context) error {
 			}
 		}
 
+		// limit max header bytes to a more reasonable default than 1MB from Go std lib
+		// (see https://github.com/php/frankenphp/issues/2459#issuecomment-4655612909)
+		if srv.MaxHeaderBytes <= 0 {
+			srv.MaxHeaderBytes = 16 * 1024
+		}
+
 		// if not explicitly configured by the user, disallow TLS
 		// client auth bypass (domain fronting) which could
 		// otherwise be exploited by sending an unprotected SNI
@@ -285,6 +298,11 @@ func (app *App) Provision(ctx caddy.Context) error {
 		// set the default client IP header to read from
 		if srv.ClientIPHeaders == nil {
 			srv.ClientIPHeaders = []string{"X-Forwarded-For"}
+		}
+
+		// precompute underscore header allowlist rules
+		if err := srv.provisionUnderscoreHeaders(); err != nil {
+			return fmt.Errorf("server %s: %v", srvName, err)
 		}
 
 		// process each listener address

@@ -229,7 +229,7 @@ func (p *parser) addresses() error {
 		}
 
 		// Open brace definitely indicates end of addresses
-		if value == "{" {
+		if isOpenCurlyBrace(token) {
 			if expectingAnother {
 				return p.Errf("Expected another address but had '%s' - check for extra comma", value)
 			}
@@ -243,7 +243,7 @@ func (p *parser) addresses() error {
 		}
 
 		// Users commonly forget to place a space between the address and the '{'
-		if strings.HasSuffix(value, "{") {
+		if strings.HasSuffix(value, "{") && token.wasQuoted == 0 {
 			return p.Errf("Site addresses cannot end with a curly brace: '%s' - put a space between the token and the brace", value)
 		}
 
@@ -320,7 +320,7 @@ func (p *parser) blockContents() error {
 func (p *parser) directives() error {
 	for p.Next() {
 		// end of server block
-		if p.Val() == "}" {
+		if isCloseCurlyBrace(p.Token()) {
 			// p.nesting has already been decremented
 			break
 		}
@@ -384,7 +384,7 @@ func (p *parser) doImport(nesting int) error {
 		for bd.Next() {
 			currentMappingKey := bd.Val()
 
-			if currentMappingKey == "{" {
+			if isOpenCurlyBrace(bd.Token()) {
 				return p.Err("anonymous blocks are not supported")
 			}
 
@@ -518,14 +518,14 @@ func (p *parser) doImport(nesting int) error {
 			}
 		}
 
-		switch token.Text {
-		case "{":
+		switch {
+		case isOpenCurlyBrace(token):
 			nesting++
 			if index == 1 && maybeSnippetId && nesting == 1 {
 				maybeSnippet = true
 				maybeSnippetId = false
 			}
-		case "}":
+		case isCloseCurlyBrace(token):
 			nesting--
 			if nesting == 0 && maybeSnippet {
 				maybeSnippet = false
@@ -641,24 +641,24 @@ func (p *parser) directive() error {
 	segment = append(segment, p.Token())
 
 	for p.Next() {
-		if p.Val() == "{" {
+		if isOpenCurlyBrace(p.Token()) {
 			p.nesting++
-			if !p.isNextOnNewLine() && p.Token().wasQuoted == 0 {
+			if !p.isNextOnNewLine() {
 				return p.Err("Unexpected next token after '{' on same line")
 			}
 			if p.isNewLine() {
 				return p.Err("Unexpected '{' on a new line; did you mean to place the '{' on the previous line?")
 			}
-		} else if p.Val() == "{}" {
-			if p.isNextOnNewLine() && p.Token().wasQuoted == 0 {
+		} else if p.Val() == "{}" && p.Token().wasQuoted == 0 {
+			if p.isNextOnNewLine() {
 				return p.Err("Unexpected '{}' at end of line")
 			}
 		} else if p.isNewLine() && p.nesting == 0 {
 			p.cursor-- // read too far
 			break
-		} else if p.Val() == "}" && p.nesting > 0 {
+		} else if isCloseCurlyBrace(p.Token()) && p.nesting > 0 {
 			p.nesting--
-		} else if p.Val() == "}" && p.nesting == 0 {
+		} else if isCloseCurlyBrace(p.Token()) && p.nesting == 0 {
 			return p.Err("Unexpected '}' because no matching opening brace")
 		} else if p.Val() == "import" && p.isNewLine() {
 			if err := p.doImport(1); err != nil {
@@ -685,7 +685,7 @@ func (p *parser) directive() error {
 // because it returns an error if the token is not
 // an opening curly brace. It does NOT advance the token.
 func (p *parser) openCurlyBrace() error {
-	if p.Val() != "{" {
+	if !isOpenCurlyBrace(p.Token()) {
 		if p.valLooksLikeGlobalOptionsAfterImportedSnippets() {
 			return p.Err("global options block must appear before import directives; move the global options block to the top of the Caddyfile")
 		}
@@ -713,7 +713,7 @@ func (p *parser) valLooksLikeGlobalOptionsAfterImportedSnippets() bool {
 // because it returns an error if the token is not
 // a closing curly brace. It does NOT advance the token.
 func (p *parser) closeCurlyBrace() error {
-	if p.Val() != "}" {
+	if !isCloseCurlyBrace(p.Token()) {
 		return p.SyntaxErr("}")
 	}
 	return nil
@@ -750,7 +750,7 @@ func (p *parser) blockTokens(retainCurlies bool) ([]Token, error) {
 		tokens = append(tokens, p.Token())
 	}
 	for p.Next() {
-		if p.Val() == "}" {
+		if isCloseCurlyBrace(p.Token()) {
 			nesting--
 			if nesting == 0 {
 				if retainCurlies {
@@ -759,7 +759,7 @@ func (p *parser) blockTokens(retainCurlies bool) ([]Token, error) {
 				break
 			}
 		}
-		if p.Val() == "{" {
+		if isOpenCurlyBrace(p.Token()) {
 			nesting++
 		}
 		tokens = append(tokens, p.tokens[p.cursor])
