@@ -34,6 +34,13 @@ type (
 		token        Token
 		line         int
 		skippedLines int
+
+		// format-mode configuration and state (Tasks 4-6)
+		opts       LexOptions
+		src        []byte // original input, for raw slicing
+		pos        int    // bytes consumed from src
+		lastSize   int    // byte size of the most recently read rune
+		tokenStart int    // byte offset in src where the current token began
 	}
 
 	// Token represents a single parsable unit.
@@ -54,13 +61,31 @@ type (
 	}
 )
 
-// Tokenize takes bytes as input and lexes it into
-// a list of tokens that can be parsed as a Caddyfile.
-// Also takes a filename to fill the token's File as
-// the source of the tokens, which is important to
-// determine relative paths for `import` directives.
+// LexOptions configures optional, non-default lexer behavior used for
+// formatting. The zero value reproduces Tokenize exactly.
+type LexOptions struct {
+	// Comments, when true, emits comment tokens (spanning '#' to end of line)
+	// instead of discarding comments.
+	Comments bool
+	// Raw, when true, records each token's verbatim source bytes in Token.raw.
+	Raw bool
+}
+
+// Tokenize takes bytes as input and lexes it into a list of tokens that can be
+// parsed as a Caddyfile. filename fills each token's File field.
 func Tokenize(input []byte, filename string) ([]Token, error) {
-	l := lexer{}
+	return Lex(input, filename, LexOptions{})
+}
+
+// Lex tokenizes input like Tokenize, but with the given options. With the zero
+// LexOptions it is identical to Tokenize. Format-mode options (Comments, Raw)
+// populate additional Token state used by the formatter and are not needed for
+// parsing.
+func Lex(input []byte, filename string, opts LexOptions) ([]Token, error) {
+	l := lexer{opts: opts}
+	if opts.Raw {
+		l.src = input
+	}
 	if err := l.load(bytes.NewReader(input)); err != nil {
 		return nil, err
 	}
