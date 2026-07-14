@@ -693,6 +693,16 @@ func cmdFmt(fl Flags) (int, error) {
 	} else if configFile == "" {
 		configFile = configFlag
 	}
+
+	useImports := fl.Bool("imports")
+
+	// --imports cannot be used with stdin: there is no source directory to
+	// resolve import paths against.
+	if useImports && configFile == "-" {
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("cannot use --imports when reading from stdin (no source directory to resolve imports against)")
+	}
+
 	// as a special case, read from stdin if the file name is "-"
 	if configFile == "-" {
 		input, err := io.ReadAll(os.Stdin)
@@ -701,6 +711,50 @@ func cmdFmt(fl Flags) (int, error) {
 				fmt.Errorf("reading stdin: %v", err)
 		}
 		fmt.Print(string(caddyfile.Format(input)))
+		return caddy.ExitCodeSuccess, nil
+	}
+
+	// --imports: format the root file and all files it references via import
+	// directives, then write or print each one.
+	if useImports {
+		results, err := caddyfile.FormatImports(configFile, caddyfile.FormatOptions{})
+		if err != nil {
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("formatting imports: %v", err)
+		}
+
+		if fl.Bool("overwrite") {
+			for _, f := range results {
+				if err := os.WriteFile(f.Path, f.Content, 0o600); err != nil { //nolint:gosec
+					return caddy.ExitCodeFailedStartup, fmt.Errorf("overwriting formatted file %s: %v", f.Path, err)
+				}
+			}
+			return caddy.ExitCodeSuccess, nil
+		}
+
+		for _, f := range results {
+			fmt.Printf("# %s\n", f.Path)
+			if fl.Bool("diff") {
+				original, readErr := os.ReadFile(f.Path)
+				if readErr != nil {
+					return caddy.ExitCodeFailedStartup, fmt.Errorf("reading file for diff %s: %v", f.Path, readErr)
+				}
+				diff := difflib.Diff(
+					strings.Split(string(original), "\n"),
+					strings.Split(string(f.Content), "\n"))
+				for _, d := range diff {
+					switch d.Delta {
+					case difflib.Common:
+						fmt.Printf("  %s\n", d.Payload)
+					case difflib.LeftOnly:
+						fmt.Printf("- %s\n", d.Payload)
+					case difflib.RightOnly:
+						fmt.Printf("+ %s\n", d.Payload)
+					}
+				}
+			} else {
+				fmt.Print(string(f.Content))
+			}
+		}
 		return caddy.ExitCodeSuccess, nil
 	}
 
