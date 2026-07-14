@@ -104,6 +104,37 @@ func Lex(input []byte, filename string, opts LexOptions) ([]Token, error) {
 	return tokens, nil
 }
 
+// readRune reads the next rune and advances the byte position tracker.
+func (l *lexer) readRune() (rune, error) {
+	ch, size, err := l.reader.ReadRune()
+	if err == nil {
+		l.lastSize = size
+		l.pos += size
+	}
+	return ch, err
+}
+
+// unreadRune pushes back the last rune read by readRune, keeping pos in sync.
+func (l *lexer) unreadRune() error {
+	if err := l.reader.UnreadRune(); err != nil {
+		return err
+	}
+	l.pos -= l.lastSize
+	l.lastSize = 0
+	return nil
+}
+
+// rawSlice returns the verbatim source of the current token. trimLast
+// excludes the most recently read rune (used when a delimiter terminated
+// the token and should not be part of its raw span).
+func (l *lexer) rawSlice(trimLast bool) string {
+	end := l.pos
+	if trimLast {
+		end -= l.lastSize
+	}
+	return string(l.src[l.tokenStart:end])
+}
+
 // load prepares the lexer to scan an input for tokens.
 // It discards any leading byte order mark.
 func (l *lexer) load(input io.Reader) error {
@@ -111,12 +142,12 @@ func (l *lexer) load(input io.Reader) error {
 	l.line = 1
 
 	// discard byte order mark, if present
-	firstCh, _, err := l.reader.ReadRune()
+	firstCh, err := l.readRune()
 	if err != nil {
 		return err
 	}
 	if firstCh != 0xFEFF {
-		err := l.reader.UnreadRune()
+		err := l.unreadRune()
 		if err != nil {
 			return err
 		}
@@ -139,11 +170,16 @@ func (l *lexer) next() (bool, error) {
 	var val []rune
 	var comment, quoted, btQuoted, inHeredoc, heredocEscaped, escaped bool
 	var heredocMarker string
+	var tokenStartSet bool // whether l.tokenStart has been set for the current token
 
-	makeToken := func(quoted rune) bool {
+	makeToken := func(quoted rune, trimLast bool) bool {
 		l.token.Text = string(val)
 		l.token.wasQuoted = quoted
 		l.token.heredocMarker = heredocMarker
+		if l.opts.Raw {
+			l.token.raw = l.rawSlice(trimLast)
+		}
+		tokenStartSet = false
 		return true
 	}
 
@@ -152,14 +188,14 @@ func (l *lexer) next() (bool, error) {
 		// read some characters, make a token. If we
 		// reached EOF, then no more tokens to read.
 		// If no EOF, then we had a problem.
-		ch, _, err := l.reader.ReadRune()
+		ch, err := l.readRune()
 		if err != nil {
 			if len(val) > 0 {
 				if inHeredoc {
 					return false, fmt.Errorf("incomplete heredoc <<%s on line #%d, expected ending marker %s", heredocMarker, l.line+l.skippedLines, heredocMarker)
 				}
 
-				return makeToken(0), nil
+				return makeToken(0, false), nil
 			}
 			if err == io.EOF {
 				return false, nil
@@ -172,7 +208,7 @@ func (l *lexer) next() (bool, error) {
 			len(val) > 1 && string(val[:2]) == "<<" {
 			// a space means it's just a regular token and not a heredoc
 			if ch == ' ' {
-				return makeToken(0), nil
+				return makeToken(0, true), nil
 			}
 
 			// skip CR, we only care about LF
@@ -227,7 +263,7 @@ func (l *lexer) next() (bool, error) {
 				// set the line counter, and make the token
 				l.line += l.skippedLines
 				l.skippedLines = 0
-				return makeToken('<'), nil
+				return makeToken('<', false), nil
 			}
 
 			// stay in the heredoc until we find the ending marker
@@ -237,6 +273,11 @@ func (l *lexer) next() (bool, error) {
 		// track whether we found an escape '\' for the next
 		// iteration to be contextually aware
 		if !escaped && !btQuoted && ch == '\\' {
+			// a leading backslash starts a new token (e.g. \<<marker)
+			if l.opts.Raw && len(val) == 0 && !tokenStartSet {
+				l.tokenStart = l.pos - l.lastSize
+				tokenStartSet = true
+			}
 			escaped = true
 			continue
 		}
@@ -251,7 +292,7 @@ func (l *lexer) next() (bool, error) {
 				escaped = false
 			} else {
 				if (quoted && ch == '"') || (btQuoted && ch == '`') {
-					return makeToken(ch), nil
+					return makeToken(ch, false), nil
 				}
 			}
 			// allow quoted text to wrap continue on multiple lines
@@ -285,7 +326,7 @@ func (l *lexer) next() (bool, error) {
 			}
 			// any kind of space means we're at the end of this token
 			if len(val) > 0 {
-				return makeToken(0), nil
+				return makeToken(0, true), nil
 			}
 			continue
 		}
@@ -302,10 +343,18 @@ func (l *lexer) next() (bool, error) {
 		if len(val) == 0 {
 			l.token = Token{Line: l.line}
 			if ch == '"' {
+				if l.opts.Raw && !tokenStartSet {
+					l.tokenStart = l.pos - l.lastSize
+					tokenStartSet = true
+				}
 				quoted = true
 				continue
 			}
 			if ch == '`' {
+				if l.opts.Raw && !tokenStartSet {
+					l.tokenStart = l.pos - l.lastSize
+					tokenStartSet = true
+				}
 				btQuoted = true
 				continue
 			}
@@ -319,6 +368,13 @@ func (l *lexer) next() (bool, error) {
 				val = append(val, '\\')
 			}
 			escaped = false
+		}
+
+		// first character of a new unquoted token (tokenStart may already be
+		// set by a leading backslash; only set it if not yet recorded)
+		if l.opts.Raw && len(val) == 0 && !tokenStartSet {
+			l.tokenStart = l.pos - l.lastSize
+			tokenStartSet = true
 		}
 
 		val = append(val, ch)
