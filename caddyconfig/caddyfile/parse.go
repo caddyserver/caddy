@@ -117,6 +117,11 @@ type parser struct {
 	definedSnippets map[string][]Token
 	nesting         int
 	importGraph     importGraph
+	// importObserver, when set, runs after an imported file is opened and read but
+	// before its tokens are inserted. Returning true skips token insertion. This
+	// internal hook lets FormatImports observe the parser's actual import execution
+	// and suppress repeated physical files without duplicating parser semantics.
+	importObserver func(string, os.FileInfo, []byte) (bool, error)
 }
 
 func (p *parser) parseAll() ([]ServerBlock, error) {
@@ -561,15 +566,29 @@ func (p *parser) doSingleImport(importFile string) ([]Token, error) {
 	}
 	defer file.Close()
 
-	if info, err := file.Stat(); err != nil {
+	info, err := file.Stat()
+	if err != nil {
 		return nil, p.Errf("Could not import %s: %v", importFile, err)
-	} else if info.IsDir() {
+	}
+	if info.IsDir() {
 		return nil, p.Errf("Could not import %s: is a directory", importFile)
 	}
 
 	input, err := io.ReadAll(file)
 	if err != nil {
 		return nil, p.Errf("Could not read imported file %s: %v", importFile, err)
+	}
+	// Notify only after a successful read so observers receive bytes and metadata
+	// from the same open descriptor. A skipped import is treated as already
+	// processed and contributes no tokens at this occurrence.
+	if p.importObserver != nil {
+		skip, err := p.importObserver(importFile, info, input)
+		if err != nil {
+			return nil, p.Errf("Could not import %s: %v", importFile, err)
+		}
+		if skip {
+			return nil, nil
+		}
 	}
 
 	// only warning in case of empty files

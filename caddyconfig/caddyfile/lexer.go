@@ -101,74 +101,7 @@ func Lex(input []byte, filename string, opts LexOptions) ([]Token, error) {
 		l.token.File = filename
 		tokens = append(tokens, l.token)
 	}
-	if opts.Comments || opts.Raw {
-		tokens = splitStructuralBraces(tokens)
-	}
 	return tokens, nil
-}
-
-// splitStructuralBraces rewrites a format-mode token stream so that structural
-// braces are their own tokens. It splits a "{}" token into "{" and "}", and
-// peels a single trailing "{" off a literal token whose prefix contains no
-// other braces (e.g. example.com{ -> example.com, {). Quoted, backtick,
-// heredoc, and comment tokens are never split.
-func splitStructuralBraces(in []Token) []Token {
-	out := make([]Token, 0, len(in))
-	for _, tk := range in {
-		if tk.wasQuoted != 0 || tk.isComment {
-			out = append(out, tk)
-			continue
-		}
-		// A standalone structural brace renders as just the brace character; its
-		// placement is governed by the brace rules, so normalize its raw slice to
-		// the brace itself and drop any line-continuation framing it may have
-		// picked up (e.g. a "\"+newline before the brace). This keeps the format
-		// idempotent — the framing would otherwise be re-emitted verbatim.
-		if tk.Text == "{" || tk.Text == "}" {
-			tk.raw = tk.Text
-			tk.continuation = false
-			out = append(out, tk)
-			continue
-		}
-		if tk.Text == "{}" {
-			open := tk
-			open.Text, open.raw = "{", "{"
-			closeT := tk
-			closeT.Text, closeT.raw = "}", "}"
-			closeT.precededBySpace = false
-			// The trailing structural "}" is a fresh token whose placement is
-			// governed by the brace rules, not by any line continuation that
-			// preceded the original word.
-			closeT.continuation = false
-			out = append(out, open, closeT)
-			continue
-		}
-		// peel a single trailing "{" if the prefix is non-empty and brace-free
-		if strings.HasSuffix(tk.Text, "{") {
-			prefix := tk.Text[:len(tk.Text)-1]
-			if prefix != "" && !strings.ContainsAny(prefix, "{}") {
-				lit := tk
-				lit.Text = prefix
-				// Trim the literal's raw slice at its "{" so the peeled brace (and
-				// any whitespace the lexer consumed between them, e.g. a carriage
-				// return in "0{\r") is not left dangling in the literal's raw.
-				if idx := strings.IndexByte(lit.raw, '{'); idx >= 0 {
-					lit.raw = lit.raw[:idx]
-				}
-				brace := tk
-				brace.Text, brace.raw = "{", "{"
-				brace.precededBySpace = false
-				// The peeled structural "{" is a fresh token; its placement is
-				// governed by the brace rules, so it must not inherit the literal
-				// prefix's line-continuation framing.
-				brace.continuation = false
-				out = append(out, lit, brace)
-				continue
-			}
-		}
-		out = append(out, tk)
-	}
-	return out
 }
 
 // readRune reads the next rune and advances the byte position tracker.
@@ -527,10 +460,13 @@ func (l *lexer) finalizeHeredoc(val []rune, marker string) ([]rune, error) {
 	paddingToStrip := stringVal[lastNewline+1 : len(stringVal)-len(marker)]
 
 	// iterate over each line and strip the whitespace from the front
-	var out string
+	var out strings.Builder
+	if lastNewline > 0 {
+		out.Grow(lastNewline)
+	}
 	for lineNum, lineText := range lines[:len(lines)-1] {
 		if lineText == "" || lineText == "\r" {
-			out += "\n"
+			out.WriteByte('\n')
 			continue
 		}
 
@@ -545,16 +481,22 @@ func (l *lexer) finalizeHeredoc(val []rune, marker string) ([]rune, error) {
 
 		// strip, then append the line, with the newline, to the output.
 		// also removes all "\r" because Windows.
-		out += strings.ReplaceAll(lineText[len(paddingToStrip):]+"\n", "\r", "")
+		for _, ch := range lineText[len(paddingToStrip):] {
+			if ch != '\r' {
+				out.WriteRune(ch)
+			}
+		}
+		out.WriteByte('\n')
 	}
 
 	// Remove the trailing newline from the loop
-	if len(out) > 0 && out[len(out)-1] == '\n' {
-		out = out[:len(out)-1]
+	result := out.String()
+	if len(result) > 0 && result[len(result)-1] == '\n' {
+		result = result[:len(result)-1]
 	}
 
 	// return the final value
-	return []rune(out), nil
+	return []rune(result), nil
 }
 
 // Quoted returns true if the token was enclosed in quotes

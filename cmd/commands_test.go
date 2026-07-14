@@ -1,6 +1,8 @@
 package caddycmd
 
 import (
+	"bytes"
+	"io"
 	"maps"
 	"os"
 	"path/filepath"
@@ -12,6 +14,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
 // newFmtFlags builds a Flags value wired up the same way the fmt cobra command does.
@@ -43,6 +46,31 @@ func writeTestFile(t *testing.T, path, content string) {
 	}
 }
 
+func captureStdout(t *testing.T, fn func() (int, error)) (string, int, error) {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldStdout := os.Stdout
+	os.Stdout = w
+	t.Cleanup(func() { os.Stdout = oldStdout })
+
+	code, callErr := fn()
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = oldStdout
+	output, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return string(output), code, callErr
+}
+
 // TestCmdFmtImportsStdinRejected verifies that --imports with stdin is rejected.
 func TestCmdFmtImportsStdinRejected(t *testing.T) {
 	fl := newFmtFlags("-", false, false, true)
@@ -71,8 +99,19 @@ func TestCmdFmtImportsOverwrite(t *testing.T) {
 	importedPath := filepath.Join(sitesDir, "a.caddy")
 
 	// Root imports the sites file; both are deliberately messy.
-	writeTestFile(t, rootPath, "import sites/a.caddy\n")
-	writeTestFile(t, importedPath, "localhost{\nrespond   200\n}\n")
+	writeTestFile(t, rootPath, "import    sites/a.caddy\n")
+	writeTestFile(t, importedPath, "localhost {\nrespond   200\n}\n")
+	if err := os.Chmod(rootPath, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	rootInfoBefore, err := os.Stat(rootPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	importedInfoBefore, err := os.Stat(importedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	fl := newFmtFlags(rootPath, true, false, true)
 	code, err := cmdFmt(fl)
@@ -83,7 +122,24 @@ func TestCmdFmtImportsOverwrite(t *testing.T) {
 		t.Errorf("expected ExitCodeSuccess, got %d", code)
 	}
 
-	// The imported file should now be properly formatted.
+	gotRoot, err := os.ReadFile(rootPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "import sites/a.caddy\n"; string(gotRoot) != want {
+		t.Errorf("root file content = %q, want %q", string(gotRoot), want)
+	}
+	gotRootInfo, err := os.Stat(rootPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotRootInfo.Mode().Perm() != rootInfoBefore.Mode().Perm() {
+		t.Errorf("root file permissions = %o, want %o", gotRootInfo.Mode().Perm(), rootInfoBefore.Mode().Perm())
+	}
+	if os.SameFile(rootInfoBefore, gotRootInfo) {
+		t.Error("root file was rewritten in place instead of atomically replaced")
+	}
+
 	got, err := os.ReadFile(importedPath)
 	if err != nil {
 		t.Fatal(err)
@@ -91,6 +147,89 @@ func TestCmdFmtImportsOverwrite(t *testing.T) {
 	want := "localhost {\n\trespond 200\n}\n"
 	if string(got) != want {
 		t.Errorf("imported file content = %q, want %q", string(got), want)
+	}
+	gotImportedInfo, err := os.Stat(importedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if os.SameFile(importedInfoBefore, gotImportedInfo) {
+		t.Error("imported file was rewritten in place instead of atomically replaced")
+	}
+}
+
+func TestCmdFmtImportsPreviewReportsFormattingDifference(t *testing.T) {
+	for _, diff := range []bool{false, true} {
+		t.Run(map[bool]string{false: "preview", true: "diff"}[diff], func(t *testing.T) {
+			dir := t.TempDir()
+			rootPath := filepath.Join(dir, "Caddyfile")
+			importedPath := filepath.Join(dir, "imported.caddy")
+			writeTestFile(t, rootPath, "import imported.caddy\n")
+			writeTestFile(t, importedPath, "localhost {\nrespond  200\n}\n")
+
+			output, code, err := captureStdout(t, func() (int, error) {
+				return cmdFmt(newFmtFlags(rootPath, false, diff, true))
+			})
+			if err == nil || !strings.Contains(err.Error(), "input is not formatted") {
+				t.Fatalf("expected formatting error, got %v", err)
+			}
+			if code != caddy.ExitCodeFailedStartup {
+				t.Errorf("expected ExitCodeFailedStartup, got %d", code)
+			}
+			if !strings.Contains(output, "# "+importedPath) {
+				t.Errorf("output missing imported file header; got:\n%s", output)
+			}
+			if diff && !strings.Contains(output, "+ \trespond 200") {
+				t.Errorf("output missing formatted diff; got:\n%s", output)
+			}
+			if !diff && !strings.Contains(output, "localhost {\n\trespond 200\n}") {
+				t.Errorf("output missing formatted preview; got:\n%s", output)
+			}
+		})
+	}
+}
+
+func TestOverwriteFormattedFilesRejectsSymlink(t *testing.T) {
+	dir := t.TempDir()
+	targetPath := filepath.Join(dir, "target")
+	linkPath := filepath.Join(dir, "link")
+	writeTestFile(t, targetPath, "original")
+	if err := os.Symlink(targetPath, linkPath); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	err := overwriteFormattedFiles([]caddyfile.FormattedFile{{Path: linkPath, Content: []byte("changed")}})
+	if err == nil || !strings.Contains(err.Error(), "refusing to overwrite") {
+		t.Fatalf("expected symlink rejection, got %v", err)
+	}
+	got, err := os.ReadFile(targetPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, []byte("original")) {
+		t.Errorf("symlink target changed to %q", got)
+	}
+}
+
+func TestOverwriteFormattedFilesReportsPartialUpdate(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "Caddyfile")
+	writeTestFile(t, path, "localhost {\nrespond  200\n}\n")
+	formatted := []byte("localhost {\n\trespond 200\n}\n")
+
+	err := overwriteFormattedFiles([]caddyfile.FormattedFile{
+		{Path: path, Content: formatted},
+		{Path: path, Content: formatted},
+	})
+	if err == nil || !strings.Contains(err.Error(), "after replacing 1 of 2 files") ||
+		!strings.Contains(err.Error(), "may be partially updated") {
+		t.Fatalf("expected partial-update error, got %v", err)
+	}
+	got, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if !bytes.Equal(got, formatted) {
+		t.Errorf("first replacement content = %q, want %q", got, formatted)
 	}
 }
 
@@ -109,23 +248,8 @@ func TestCmdFmtImportsPrintsHeaders(t *testing.T) {
 	writeTestFile(t, rootPath, "import sites/b.caddy\n")
 	writeTestFile(t, importedPath, "localhost {\n\trespond 200\n}\n")
 
-	// Capture stdout by redirecting os.Stdout.
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	oldStdout := os.Stdout
-	os.Stdout = w
-
 	fl := newFmtFlags(rootPath, false, false, true)
-	code, fmtErr := cmdFmt(fl)
-
-	w.Close()
-	os.Stdout = oldStdout
-
-	buf := make([]byte, 4096)
-	n, _ := r.Read(buf)
-	output := string(buf[:n])
+	output, code, fmtErr := captureStdout(t, func() (int, error) { return cmdFmt(fl) })
 
 	if fmtErr != nil {
 		t.Fatalf("cmdFmt returned error: %v", fmtErr)
