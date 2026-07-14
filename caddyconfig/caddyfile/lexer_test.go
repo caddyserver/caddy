@@ -672,9 +672,9 @@ func TestLexSeparatorKind(t *testing.T) {
 	}
 }
 
-func lexTexts(t *testing.T, in string) []string {
+func lexTexts(t *testing.T, in string, opts LexOptions) []string {
 	t.Helper()
-	toks, err := Lex([]byte(in), "T", LexOptions{Raw: true, Comments: true})
+	toks, err := Lex([]byte(in), "T", opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -685,23 +685,25 @@ func lexTexts(t *testing.T, in string) []string {
 	return out
 }
 
-func TestLexBraceSplitting(t *testing.T) {
+func TestLexOptionsPreserveTokenBoundaries(t *testing.T) {
 	cases := []struct {
 		in   string
 		want []string
 	}{
-		{"example.com{", []string{"example.com", "{"}},
+		{"example.com{", []string{"example.com{"}},
 		{"{$A}{", []string{"{$A}{"}},       // placeholder tail: not split
 		{"foo{bar}", []string{"foo{bar}"}}, // placeholder: not split
-		{"route {}", []string{"route", "{", "}"}},
+		{"route {}", []string{"route", "{}"}},
 		{"route { }", []string{"route", "{", "}"}},
-		{"a { b {} }", []string{"a", "{", "b", "{", "}", "}"}},
+		{"a { b {} }", []string{"a", "{", "b", "{}", "}"}},
 		{"site {\n\troot\n}", []string{"site", "{", "root", "}"}},
 	}
 	for _, c := range cases {
-		got := lexTexts(t, c.in)
-		if !reflect.DeepEqual(got, c.want) {
-			t.Errorf("%q: got %v, want %v", c.in, got, c.want)
+		for _, opts := range []LexOptions{{Raw: true}, {Comments: true}, {Raw: true, Comments: true}} {
+			got := lexTexts(t, c.in, opts)
+			if !reflect.DeepEqual(got, c.want) {
+				t.Errorf("%q with %+v: got %v, want %v", c.in, opts, got, c.want)
+			}
 		}
 	}
 }

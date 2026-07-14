@@ -19,6 +19,8 @@ import (
 	"strings"
 )
 
+const maxIndent = 10
+
 // Format formats the input Caddyfile to a standard, nice-looking appearance.
 // It tokenizes the input in format mode and renders the token stream, taking
 // control over bracing, indentation, and whitespace; token bodies (words,
@@ -37,7 +39,7 @@ type FormatOptions struct {
 
 // FormatWithOptions formats the input Caddyfile with the given options.
 func FormatWithOptions(input []byte, opts FormatOptions) []byte {
-	tokens, err := Lex(input, "", LexOptions{Comments: true, Raw: true})
+	tokens, err := lexFormat(input)
 	if err != nil {
 		// On a lex error, fall back to the trimmed input with a trailing newline;
 		// Format never panics (Invariant 3).
@@ -58,6 +60,8 @@ func FormatWithOptions(input []byte, opts FormatOptions) []byte {
 		trimmed := bytes.TrimSpace(input)
 		return append(trimmed, '\n')
 	}
+	parseTokens, parseErr := Tokenize(input, "")
+	wrapped := false
 	if opts.WrapUnbracedSite {
 		// Decide whether to wrap on the NORMALIZED token stream, not the raw one.
 		// isSingleUnbracedSite uses source-line gaps (a blank-line gap => ambiguous
@@ -69,9 +73,17 @@ func FormatWithOptions(input []byte, opts FormatOptions) []byte {
 		// braced, so isSingleUnbracedSite is false on any re-run and there is no
 		// double-wrap.
 		normalized := formatTokens(tokens)
-		normToks, nerr := Lex(normalized, "", LexOptions{Comments: true, Raw: true})
+		normToks, nerr := lexFormat(normalized)
 		if nerr == nil && isSingleUnbracedSite(normToks) {
-			tokens = wrapUnbracedSite(normToks)
+			// Prefer the original token positions when they are already
+			// unambiguous. Normalization may insert top-level block spacing that
+			// would become an unwanted interior blank line after wrapping.
+			if isSingleUnbracedSite(tokens) {
+				tokens = wrapUnbracedSite(tokens)
+			} else {
+				tokens = wrapUnbracedSite(normToks)
+			}
+			wrapped = true
 		}
 	}
 	out := formatTokens(tokens)
@@ -85,13 +97,32 @@ func FormatWithOptions(input []byte, opts FormatOptions) []byte {
 	// the trimmed input verbatim. Well-formed input is a fixed point on the first
 	// pass, so this only affects degenerate input. A lex error on the output is
 	// likewise treated as a divergence.
-	reToks, rerr := Lex(out, "", LexOptions{Comments: true, Raw: true})
-	if rerr != nil || !sameTokenTexts(tokens, reToks) ||
+	reToks, rerr := lexFormat(out)
+	outParseTokens, outParseErr := Tokenize(out, "")
+	parseChanged := !wrapped && parseErr == nil && (outParseErr != nil || !sameTokenTexts(parseTokens, outParseTokens))
+	if rerr != nil || parseChanged || !sameTokenTexts(tokens, reToks) ||
 		!bytes.Equal(out, formatTokens(reToks)) {
 		trimmed := bytes.TrimSpace(input)
 		return append(trimmed, '\n')
 	}
 	return out
+}
+
+// lexFormat captures comments and raw source while only normalizing braces the
+// parser already recognized as standalone structural tokens. Public Lex options
+// intentionally do not change ordinary token boundaries.
+func lexFormat(input []byte) ([]Token, error) {
+	tokens, err := Lex(input, "", LexOptions{Comments: true, Raw: true})
+	if err != nil {
+		return nil, err
+	}
+	for i := range tokens {
+		if isOpenCurlyBrace(tokens[i]) || isCloseCurlyBrace(tokens[i]) {
+			tokens[i].raw = tokens[i].Text
+			tokens[i].continuation = false
+		}
+	}
+	return tokens, nil
 }
 
 // isSingleUnbracedSite reports whether the format-mode token stream is exactly
@@ -115,8 +146,7 @@ func FormatWithOptions(input []byte, opts FormatOptions) []byte {
 //   - no structural "{" appears on the address line (which would make it an
 //     already-braced site block, or, with no address before it, a
 //     global-options block), and
-//   - there is exactly one top-level block: once nesting returns to zero after
-//     the site's directives, no further top-level address group begins.
+//   - top-level directive groups are not separated by an ambiguous blank line.
 //
 // Interior directive braces (nesting >= 1, e.g. "reverse_proxy {"..."}") are
 // allowed and ignored. Comments are ignored for the boundary decision.
@@ -158,6 +188,9 @@ func isSingleUnbracedSite(tokens []Token) bool {
 	if firstAddrIdx < 0 {
 		return false
 	}
+	if tokens[firstAddrIdx].Text == "import" {
+		return false
+	}
 
 	// Snippet "(...)" or named route "&(...)" first address: not a site.
 	if firstText := tokens[firstAddrIdx].Text; strings.HasPrefix(firstText, "&(") || strings.HasPrefix(firstText, "(") {
@@ -165,17 +198,11 @@ func isSingleUnbracedSite(tokens []Token) bool {
 	}
 
 	// Walk the remaining tokens (the block body) tracking structural nesting.
-	// Two shapes disqualify a single unbraced site:
-	//   - Returning to top level (nesting 0) via a closing brace and then
-	//     starting another top-level token group — a second site/block. This
-	//     only happens when the first "block" was itself braced, which the
-	//     address-line scan above already rejects; guarded here for safety.
-	//   - A blank line (a gap of >= 2 source lines) between two top-level token
-	//     groups: without wrapping braces this is the ambiguous multi-site shape
-	//     (e.g. "a.com"⏎"respond 200"⏎⏎"b.com"⏎"respond 404"), which must not be
-	//     treated as a single site.
+	// A blank line (a gap of >= 2 source lines) between two top-level token
+	// groups is the ambiguous multi-site shape and disqualifies wrapping. The
+	// renderer itself inserts such a gap after an interior directive block, so a
+	// gap immediately following its closing brace is allowed.
 	nesting := 0
-	returnedToTop := false
 	prevIdx := -1
 	for j := addrLineEndIdx + 1; j < len(tokens); j++ {
 		tk := tokens[j]
@@ -186,7 +213,7 @@ func isSingleUnbracedSite(tokens []Token) bool {
 			// Blank line at top level between directive groups: ambiguous
 			// multi-site. A gap of two or more lines is a blank line.
 			prev := tokens[prevIdx]
-			if tk.Line-(prev.Line+fmtNumLineBreaks(prev)) >= 2 {
+			if !isCloseCurlyBrace(prev) && tk.Line-(prev.Line+fmtNumLineBreaks(prev)) >= 2 {
 				return false
 			}
 		}
@@ -195,13 +222,6 @@ func isSingleUnbracedSite(tokens []Token) bool {
 			nesting++
 		case isCloseCurlyBrace(tk) && nesting > 0:
 			nesting--
-			if nesting == 0 {
-				returnedToTop = true
-			}
-		case nesting == 0 && returnedToTop:
-			// A non-brace token at top level after a block already closed back
-			// to top level is a second top-level group: multi-site.
-			return false
 		}
 		prevIdx = j
 	}
@@ -280,11 +300,11 @@ func trailingNewlineChangesTokens(input []byte) bool {
 	if n := len(input); n > 0 && input[n-1] == '\n' {
 		return false
 	}
-	a, erra := Lex(input, "", LexOptions{Comments: true, Raw: true})
+	a, erra := lexFormat(input)
 	withNL := make([]byte, len(input)+1)
 	copy(withNL, input)
 	withNL[len(input)] = '\n'
-	b, errb := Lex(withNL, "", LexOptions{Comments: true, Raw: true})
+	b, errb := lexFormat(withNL)
 	if erra != nil || errb != nil {
 		return erra != errb
 	}
@@ -354,14 +374,6 @@ func hasUnformattableToken(tokens []Token) bool {
 			return true
 		}
 		raw := tk.Raw()
-		// A quote or backtick embedded in a literal (non-Quoted) token: the token
-		// only stayed unquoted because the delimiter was escaped or never closed,
-		// so its text and the formatter's spacing around it are sensitive to the
-		// mandatory trailing newline and cannot be rendered idempotently. (Quotes
-		// inside a properly Quoted token have wasQuoted != 0 and are unaffected.)
-		if tk.wasQuoted == 0 && strings.ContainsAny(raw, "\"`") {
-			return true
-		}
 		// Dangling (unpaired) trailing backslash.
 		if tk.wasQuoted == 0 && endsInDanglingBackslash(raw) {
 			return true
@@ -478,7 +490,7 @@ func formatTokens(tokens []Token) []byte {
 	prevTopClose := false
 
 	writeIndent := func() {
-		for range nesting {
+		for range min(nesting, maxIndent) {
 			out.WriteByte('\t')
 		}
 	}
@@ -565,13 +577,11 @@ func formatTokens(tokens []Token) []byte {
 			// that immediately follows a top-level "import" line, with no
 			// intervening blank line, opens an unrelated global-options block
 			// and must stay on its own line rather than folding onto the import.
-			// If a blank line intervenes, it folds as usual and the blank is
-			// dropped.
 			standaloneBrace := wrote && fmtNextOnNewLine(tokens[i-1], tk)
 			if prevWasComment {
 				breaks = 1
-			} else if lineStartsWithImport && nesting == 0 && standaloneBrace && breaks < 2 {
-				breaks = 1
+			} else if lineStartsWithImport && nesting == 0 && standaloneBrace {
+				breaks = max(breaks, 1)
 			} else {
 				breaks = 0
 			}
@@ -646,7 +656,7 @@ func formatTokens(tokens []Token) []byte {
 		body := tk.Raw()
 		if tk.continuation && !atLineStart {
 			out.WriteString(" \\\n")
-			for range nesting + 1 {
+			for range min(nesting+1, maxIndent) {
 				out.WriteByte('\t')
 			}
 			body = strings.TrimLeft(strings.TrimPrefix(body, "\\"), " \t\r\n")

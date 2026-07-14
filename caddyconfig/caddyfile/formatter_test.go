@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"os"
 	"reflect"
-	"strconv"
 	"strings"
 	"testing"
 )
@@ -137,12 +136,11 @@ m {
 
 c{ d
 }`,
-			expect: `a {
-	b
+			expect: `a{
+b
 }
 
-c {
-	d
+c{ d
 }`,
 		},
 		{
@@ -311,8 +309,7 @@ bar "{\"key\":34}"`,
 			// sanctioned divergence: invalid glued braces left literal (design decision)
 			description: "placeholders and malformed braces",
 			input:       `foo{bar} foo{ bar}baz`,
-			expect: `foo{bar} foo {
-	bar}baz`,
+			expect:      `foo{bar} foo{ bar}baz`,
 		},
 		{
 			description: "hash within string is not a comment",
@@ -521,27 +518,103 @@ func TestFormatImportStandaloneBrace(t *testing.T) {
 	if got := string(Format([]byte(in1))); got != in1 {
 		t.Errorf("standalone brace after import not preserved:\n got %q\nwant %q", got, in1)
 	}
-	// with an intervening blank line: brace glues up and the blank line is removed
+	// An intervening blank line must not turn the global options block into an
+	// import block mapping.
 	in2 := "import a.caddy\n\n{\n\torder x first\n}\n"
-	want2 := "import a.caddy {\n\torder x first\n}\n"
+	want2 := in2
 	if got := string(Format([]byte(in2))); got != want2 {
 		t.Errorf("blank-line case:\n got %q\nwant %q", got, want2)
 	}
 }
 
-func TestFormatDeepNestingNoCap(t *testing.T) {
-	// 12 levels deep; every level indents (no 10-level clamp)
+func TestFormatDeepNestingCapsIndent(t *testing.T) {
+	// Brace matching remains unbounded, but rendered indentation is capped to
+	// keep linear-size malicious input from producing quadratic output.
 	var b strings.Builder
-	for i := range 12 {
-		b.WriteString(strings.Repeat("\t", i) + "l" + strconv.Itoa(i) + " {\n")
+	const depth = 1000
+	for range depth {
+		b.WriteString("l {\n")
 	}
-	b.WriteString(strings.Repeat("\t", 12) + "x\n")
-	for i := 11; i >= 0; i-- {
-		b.WriteString(strings.Repeat("\t", i) + "}\n")
+	b.WriteString("x\n")
+	for range depth {
+		b.WriteString("}\n")
 	}
 	out := string(Format([]byte(b.String())))
-	if !strings.Contains(out, "\n"+strings.Repeat("\t", 12)+"x\n") {
-		t.Errorf("expected 12-tab indent for deepest token, got:\n%s", out)
+	if !strings.Contains(out, "\n"+strings.Repeat("\t", maxIndent)+"x\n") {
+		t.Errorf("expected %d-tab indent for deepest token", maxIndent)
+	}
+	if len(out) > b.Len()+(2*depth+1)*maxIndent {
+		t.Fatalf("formatted output grew unexpectedly: input=%d output=%d", b.Len(), len(out))
+	}
+}
+
+func TestFormatPreservesLiteralBraceArguments(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want string
+	}{
+		{"localhost\nrespond   foo{\n", "localhost\nrespond foo{\n"},
+		{"localhost\nrespond   {}   200\n", "localhost\nrespond {} 200\n"},
+	} {
+		before, err := Tokenize([]byte(tc.in), "")
+		if err != nil {
+			t.Fatalf("input %q: %v", tc.in, err)
+		}
+		out := Format([]byte(tc.in))
+		if string(out) != tc.want {
+			t.Errorf("Format(%q) = %q, want %q", tc.in, out, tc.want)
+		}
+		after, err := Tokenize(out, "")
+		if err != nil {
+			t.Fatalf("formatted input %q no longer parses: %v\nout=%q", tc.in, err, out)
+		}
+		if !sameTokenTexts(before, after) {
+			t.Errorf("formatting changed parser tokens for %q:\nbefore=%v\nafter=%v\nout=%q", tc.in, before, after, out)
+		}
+	}
+}
+
+func TestFormatEscapedDelimitersDoesNotDisableFormatting(t *testing.T) {
+	in := "localhost   {\nrespond foo\\\"bar\nrespond foo\\`bar\n}\n"
+	want := "localhost {\n\trespond foo\\\"bar\n\trespond foo\\`bar\n}\n"
+	if got := string(Format([]byte(in))); got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestFinalizeHeredocLargeBody(t *testing.T) {
+	line := strings.Repeat("x", 1024)
+	var val strings.Builder
+	for range 1024 {
+		val.WriteByte('\t')
+		val.WriteString(line)
+		val.WriteByte('\n')
+	}
+	val.WriteString("\tEND")
+
+	got, err := new(lexer).finalizeHeredoc([]rune(val.String()), "END")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantLen := 1024*(len(line)+1) - 1
+	if len(string(got)) != wantLen {
+		t.Fatalf("large heredoc length = %d, want %d", len(string(got)), wantLen)
+	}
+}
+
+func TestWrapUnbracedSiteRejectsLeadingImport(t *testing.T) {
+	in := "import common.caddy\nlocalhost\nrespond 200\n"
+	want := string(Format([]byte(in)))
+	if got := string(FormatWithOptions([]byte(in), FormatOptions{WrapUnbracedSite: true})); got != want {
+		t.Errorf("leading import was wrapped:\n got %q\nwant %q", got, want)
+	}
+}
+
+func TestWrapUnbracedSiteAfterNestedDirective(t *testing.T) {
+	in := "localhost\nroute {\nrespond ok\n}\nfile_server\n"
+	want := "localhost {\n\troute {\n\t\trespond ok\n\t}\n\tfile_server\n}\n"
+	if got := string(FormatWithOptions([]byte(in), FormatOptions{WrapUnbracedSite: true})); got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 }
 
@@ -553,9 +626,9 @@ func TestFormatAngleNotQuirked(t *testing.T) {
 
 func TestFormatEmptyBlocksExpand(t *testing.T) {
 	cases := []struct{ in, want string }{
-		{"route {}", "route {\n}\n"},
+		{"route {}", "route {}\n"},
 		{"route { }", "route {\n}\n"},
-		{"a { b {} }", "a {\n\tb {\n\t}\n}\n"},
+		{"a { b {} }", "a {\n\tb {}\n}\n"},
 	}
 	for _, c := range cases {
 		if got := string(Format([]byte(c.in))); got != c.want {
