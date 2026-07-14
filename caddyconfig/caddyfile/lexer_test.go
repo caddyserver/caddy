@@ -15,6 +15,7 @@
 package caddyfile
 
 import (
+	"reflect"
 	"testing"
 )
 
@@ -557,5 +558,20 @@ func lexerCompare(t *testing.T, n int, expected, actual []Token) {
 				n, i, expected[i].Text, actual[i].Text)
 			break
 		}
+	}
+}
+
+func TestLexEqualsTokenizeWithZeroOptions(t *testing.T) {
+	in := []byte("site {\n\troot * /srv\n\tfile_server\n}\n")
+	a, err := Tokenize(in, "Caddyfile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := Lex(in, "Caddyfile", LexOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(a, b) {
+		t.Errorf("Lex(zero opts) != Tokenize\n a=%+v\n b=%+v", a, b)
 	}
 }
