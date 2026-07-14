@@ -216,13 +216,11 @@ d {
 	# g
 }
 
-h {
-	# i
+h { # i
 }`,
 		},
 		{
 			description: "quotes and escaping",
-			skip:        "task 9: comment placement (I1) keeps a glued trailing comment attached to its token",
 			input: `"a \"b\" "#c
 	d
 
@@ -326,7 +324,6 @@ baz`,
 		},
 		{
 			description: "brace does not fold into comment above",
-			skip:        "task 9: comment placement (I1) keeps a following { off the comment line",
 			input: `# comment
 {
 	foo
@@ -524,5 +521,34 @@ import ./conf.d/matcher_not_my_subnet.caddy
 			t.Errorf("\n[TEST %d: %s]\n====== EXPECTED ======\n%s\n====== ACTUAL ======\n%s^^^^^^^^^^^^^^^^^^^^^",
 				i, tc.description, string(tc.expect), string(actual))
 		}
+	}
+}
+
+func TestFormatCommentsOnBraceLines(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"site {\n\tfoo\n} # after close\n", "site {\n\tfoo\n} # after close\n"},
+		{"site { # note\n\tfoo\n}\n", "site { # note\n\tfoo\n}\n"},
+		{"site # note\n{\n\tfoo\n}\n", "site { # note\n\tfoo\n}\n"},
+	}
+	for _, c := range cases {
+		if got := string(Format([]byte(c.in))); got != c.want {
+			t.Errorf("in %q:\n got %q\nwant %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestFormatBlankLineCapAfterComment(t *testing.T) {
+	got := string(Format([]byte("foo # inline\n\n\nbar\n")))
+	want := "foo # inline\n\nbar\n"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestFormatContinuationHangingIndent(t *testing.T) {
+	in := "route {\n\treverse_proxy \\\n\ta \\\n\tb\n}\n"
+	want := "route {\n\treverse_proxy \\\n\t\ta \\\n\t\tb\n}\n"
+	if got := string(Format([]byte(in))); got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 }
