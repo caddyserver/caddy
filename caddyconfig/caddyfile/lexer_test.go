@@ -521,6 +521,26 @@ EOF`),
 	}
 }
 
+func TestTokenFormatModeAccessors(t *testing.T) {
+	tok := Token{Text: "hello", raw: `"hello"`, isComment: false}
+	if tok.Raw() != `"hello"` {
+		t.Errorf("Raw() = %q, want %q", tok.Raw(), `"hello"`)
+	}
+	// falls back to Text when raw not captured
+	if (Token{Text: "hi"}).Raw() != "hi" {
+		t.Errorf("Raw() fallback = %q, want %q", (Token{Text: "hi"}).Raw(), "hi")
+	}
+	c := Token{Text: "# note", raw: "# note", isComment: true}
+	if !c.IsComment() {
+		t.Error("IsComment() = false, want true")
+	}
+	// Clone copies the new fields
+	clone := c.Clone()
+	if clone.raw != c.raw || clone.isComment != c.isComment {
+		t.Errorf("Clone did not copy format-mode fields: %+v", clone)
+	}
+}
+
 func lexerCompare(t *testing.T, n int, expected, actual []Token) {
 	if len(expected) != len(actual) {
 		t.Fatalf("Test case %d: expected %d token(s) but got %d", n, len(expected), len(actual))
