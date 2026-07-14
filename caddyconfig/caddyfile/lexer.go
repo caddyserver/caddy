@@ -172,6 +172,11 @@ func (l *lexer) next() (bool, error) {
 	var heredocMarker string
 	var tokenStartSet bool // whether l.tokenStart has been set for the current token
 
+	// format-mode separator tracking: record how this token was separated from
+	// the previous one. Only maintained when opts.Comments || opts.Raw.
+	formatMode := l.opts.Comments || l.opts.Raw
+	var sawSpace, sawContinuation bool
+
 	makeToken := func(quoted rune, trimLast bool) bool {
 		l.token.Text = string(val)
 		l.token.wasQuoted = quoted
@@ -322,6 +327,9 @@ func (l *lexer) next() (bool, error) {
 					if escaped {
 						l.skippedLines++
 						escaped = false
+						if formatMode {
+							sawContinuation = true
+						}
 					} else {
 						l.line += 1 + l.skippedLines
 						l.skippedLines = 0
@@ -342,6 +350,9 @@ func (l *lexer) next() (bool, error) {
 					if len(val) > 0 {
 						return makeToken(0, true), nil
 					}
+					if formatMode {
+						sawSpace = true
+					}
 					continue
 				}
 			}
@@ -356,6 +367,11 @@ func (l *lexer) next() (bool, error) {
 				l.tokenStart = l.pos - l.lastSize
 				tokenStartSet = true
 				l.token = Token{Line: l.line, isComment: true}
+				if formatMode {
+					l.token.precededBySpace = sawSpace
+					l.token.continuation = sawContinuation
+					sawSpace, sawContinuation = false, false
+				}
 			}
 		}
 		if comment {
@@ -376,6 +392,11 @@ func (l *lexer) next() (bool, error) {
 
 		if len(val) == 0 {
 			l.token = Token{Line: l.line}
+			if formatMode {
+				l.token.precededBySpace = sawSpace
+				l.token.continuation = sawContinuation
+				sawSpace, sawContinuation = false, false
+			}
 			if ch == '"' {
 				if l.opts.Raw && !tokenStartSet {
 					l.tokenStart = l.pos - l.lastSize

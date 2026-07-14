@@ -649,6 +649,29 @@ func TestLexCommentsDisabledDiscards(t *testing.T) {
 	}
 }
 
+func TestLexSeparatorKind(t *testing.T) {
+	// glued comment after a closing quote: "x"#c -> [ "x", "#c" ] glued
+	toks, _ := Lex([]byte(`"x"#c`), "T", LexOptions{Comments: true, Raw: true})
+	if len(toks) != 2 || !toks[1].IsComment() {
+		t.Fatalf("got %+v, want string + comment", toks)
+	}
+	if toks[1].precededBySpace {
+		t.Error(`"x"#c: comment should be glued (precededBySpace=false)`)
+	}
+
+	toks2, _ := Lex([]byte(`"x" #c`), "T", LexOptions{Comments: true, Raw: true})
+	if !toks2[1].precededBySpace {
+		t.Error(`"x" #c: comment should be space-separated (precededBySpace=true)`)
+	}
+
+	// line continuation: `foo bar \<nl>baz` -> baz has continuation=true
+	toks3, _ := Lex([]byte("foo bar \\\nbaz"), "T", LexOptions{Raw: true})
+	last := toks3[len(toks3)-1]
+	if last.Text != "baz" || !last.continuation {
+		t.Errorf("continuation token = %q continuation=%v, want baz/true", last.Text, last.continuation)
+	}
+}
+
 func TestLexEqualsTokenizeWithZeroOptions(t *testing.T) {
 	in := []byte("site {\n\troot * /srv\n\tfile_server\n}\n")
 	a, err := Tokenize(in, "Caddyfile")
