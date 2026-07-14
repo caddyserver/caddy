@@ -14,7 +14,37 @@
 
 package caddyfile
 
-import "testing"
+import (
+	"bytes"
+	"testing"
+)
+
+func TestFormatWithWrapUnbracedSite(t *testing.T) {
+	// eligible: wrapped
+	in := "localhost\nroot * /srv\nfile_server\n"
+	want := "localhost {\n\troot * /srv\n\tfile_server\n}\n"
+	if got := string(FormatWithOptions([]byte(in), FormatOptions{WrapUnbracedSite: true})); got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	// ineligible: unchanged from default formatting (no-op wrap)
+	snip := "(s) {\n\trespond 200\n}\n"
+	if got := string(FormatWithOptions([]byte(snip), FormatOptions{WrapUnbracedSite: true})); got != string(Format([]byte(snip))) {
+		t.Errorf("snippet should be a no-op for WrapUnbracedSite; got %q", got)
+	}
+	// default (option off) never wraps
+	if got := string(Format([]byte(in))); got != "localhost\nroot * /srv\nfile_server\n" {
+		t.Errorf("default Format must not wrap; got %q", got)
+	}
+}
+
+func TestWrapUnbracedSiteIdempotentAndSemantic(t *testing.T) {
+	in := "localhost\nrespond 200\n"
+	once := FormatWithOptions([]byte(in), FormatOptions{WrapUnbracedSite: true})
+	twice := FormatWithOptions(once, FormatOptions{WrapUnbracedSite: true})
+	if !bytes.Equal(once, twice) {
+		t.Errorf("not idempotent:\n once=%q\ntwice=%q", once, twice)
+	}
+}
 
 func TestIsSingleUnbracedSite(t *testing.T) {
 	yes := []string{

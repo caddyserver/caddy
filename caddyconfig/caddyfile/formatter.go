@@ -58,8 +58,9 @@ func FormatWithOptions(input []byte, opts FormatOptions) []byte {
 		trimmed := bytes.TrimSpace(input)
 		return append(trimmed, '\n')
 	}
-	// opts.WrapUnbracedSite is wired in Phase 3 (Task 19); ignored here.
-	_ = opts.WrapUnbracedSite
+	if opts.WrapUnbracedSite {
+		tokens = wrapUnbracedSite(tokens)
+	}
 	out := formatTokens(tokens)
 
 	// Backstop: formatting must be idempotent and must not change the token
@@ -193,6 +194,67 @@ func isSingleUnbracedSite(tokens []Token) bool {
 	}
 
 	return true
+}
+
+// wrapUnbracedSite transforms a single unbraced site block into a braced one by
+// inserting a synthetic structural "{" after the address list and appending a
+// synthetic structural "}" at the end; the renderer (formatTokens) then indents
+// the body and emits the braces. If the token stream is not a single unbraced
+// site (per isSingleUnbracedSite), the tokens are returned unchanged.
+//
+// The synthetic braces are structural (Text/Raw "{"/"}", wasQuoted 0). The
+// opening brace's Line is the last address token's Line so it folds onto the
+// address line; the closing brace's Line follows the last body token so it lands
+// on its own line. Because the wrapped output is a genuinely braced site,
+// isSingleUnbracedSite returns false for it, so re-formatting is a fixed point
+// and does not re-wrap (idempotency), and the FormatWithOptions backstop — which
+// requires the output to re-lex to the same tokens and re-render identically —
+// does not fire.
+func wrapUnbracedSite(tokens []Token) []Token {
+	if !isSingleUnbracedSite(tokens) {
+		return tokens
+	}
+
+	// Recompute the address-list boundary the same way isSingleUnbracedSite does:
+	// the leading run of non-comment tokens up to the first newline, extended
+	// across newlines while the previous address token ends in a trailing comma.
+	addrLineEndIdx := -1
+	firstAddrIdx := -1
+	expectAnother := false
+	for i := 0; i < len(tokens); i++ {
+		tk := tokens[i]
+		if tk.isComment {
+			continue
+		}
+		if firstAddrIdx >= 0 && !expectAnother && fmtNextOnNewLine(tokens[i-1], tk) {
+			break
+		}
+		if firstAddrIdx < 0 {
+			firstAddrIdx = i
+		}
+		addrLineEndIdx = i
+		expectAnother = strings.HasSuffix(tk.Text, ",")
+	}
+
+	openBrace := Token{
+		File: tokens[addrLineEndIdx].File,
+		Line: tokens[addrLineEndIdx].Line,
+		Text: "{",
+		raw:  "{",
+	}
+	closeBrace := Token{
+		File: tokens[len(tokens)-1].File,
+		Line: tokens[len(tokens)-1].Line + fmtNumLineBreaks(tokens[len(tokens)-1]) + 1,
+		Text: "}",
+		raw:  "}",
+	}
+
+	wrapped := make([]Token, 0, len(tokens)+2)
+	wrapped = append(wrapped, tokens[:addrLineEndIdx+1]...)
+	wrapped = append(wrapped, openBrace)
+	wrapped = append(wrapped, tokens[addrLineEndIdx+1:]...)
+	wrapped = append(wrapped, closeBrace)
+	return wrapped
 }
 
 // trailingNewlineChangesTokens reports whether appending a newline to input
