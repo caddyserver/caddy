@@ -85,6 +85,13 @@ func formatTokens(tokens []Token) []byte {
 	// emitted early (before a trailing comment) as part of the address/comment/
 	// brace fold; when the loop reaches that index it is skipped.
 	foldedOpenAt := -1
+	// lineStartsWithImport tracks whether the first token of the current
+	// nesting-zero source line is "import". A standalone "{" that opens a
+	// global-options block immediately after such a line must stay on its own
+	// line instead of folding onto the import line (the "import" directive and a
+	// global-options "{" are unrelated statements). See the import exception in
+	// the isOpen case below.
+	lineStartsWithImport := false
 
 	for i := range tokens {
 		if i == foldedOpenAt {
@@ -92,6 +99,20 @@ func formatTokens(tokens []Token) []byte {
 			continue
 		}
 		tk := tokens[i]
+		// Track whether the first token of the current nesting-zero source line
+		// is "import". A token starts a new source line when it is the very
+		// first token or is on a later line than its predecessor. This is
+		// computed against the pre-token nesting so that a top-level "import"
+		// line is recognized before any brace on a following line dedents.
+		// Braces are not directives, so a line beginning with "{" or "}" leaves
+		// the tracker untouched: the isOpen import exception below needs to see
+		// the state established by the preceding import line.
+		if !isCloseCurlyBrace(tk) && !isOpenCurlyBrace(tk) {
+			startsNewLine := !wrote || isNextOnNewLine(tokens[i-1], tk)
+			if startsNewLine {
+				lineStartsWithImport = nesting == 0 && !tk.isComment && tk.Text == "import"
+			}
+		}
 		isOpen := isOpenCurlyBrace(tk)
 		// A structural close brace only closes a block when one is open. When
 		// nesting is zero there is nothing to close (e.g. a "}" glued after a
@@ -122,9 +143,18 @@ func formatTokens(tokens []Token) []byte {
 		case isOpen:
 			// An opening brace attaches to the current line: never break to a
 			// new line before it (it joins the preceding token with a space).
-			// EXCEPTION: a standalone comment line must keep the following "{"
+			// EXCEPTION 1: a standalone comment line must keep the following "{"
 			// on its own line, otherwise the "#" would comment the brace out.
+			// EXCEPTION 2: a standalone "{" (one that begins a new source line)
+			// that immediately follows a top-level "import" line, with no
+			// intervening blank line, opens an unrelated global-options block
+			// and must stay on its own line rather than folding onto the import.
+			// If a blank line intervenes, it folds as usual and the blank is
+			// dropped.
+			standaloneBrace := wrote && isNextOnNewLine(tokens[i-1], tk)
 			if prevWasComment {
+				breaks = 1
+			} else if lineStartsWithImport && nesting == 0 && standaloneBrace && breaks < 2 {
 				breaks = 1
 			} else {
 				breaks = 0
