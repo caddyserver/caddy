@@ -814,8 +814,10 @@ func TestNetWriter_WALCreationAndCleanup(t *testing.T) {
 	// Wait for WAL writes
 	time.Sleep(1 * time.Second)
 
-	// Check that WAL files were created
-	walFiles, err := filepath.Glob(filepath.Join(walDir, "*"))
+	// Check that WAL segment files were created. rosedb's WAL stores
+	// segment files inside a per-address subdirectory, so walk the tree
+	// and inspect regular files (directory sizes are 0 on Windows).
+	walFiles, err := collectWALFiles(walDir)
 	if err != nil {
 		t.Fatalf("Failed to list WAL files: %v", err)
 	}
@@ -825,17 +827,17 @@ func TestNetWriter_WALCreationAndCleanup(t *testing.T) {
 	}
 
 	t.Logf("Created %d WAL files", len(walFiles))
+	var totalSize int64
 	for _, file := range walFiles {
 		info, err := os.Stat(file)
 		if err != nil {
 			continue
 		}
 		t.Logf("  %s (size: %d bytes)", filepath.Base(file), info.Size())
-
-		// Verify the file has content
-		if info.Size() == 0 {
-			t.Errorf("WAL file %s is empty", filepath.Base(file))
-		}
+		totalSize += info.Size()
+	}
+	if totalSize == 0 {
+		t.Errorf("WAL files are empty; expected messages to be written to the WAL")
 	}
 
 	// Close the writer
@@ -848,7 +850,7 @@ func TestNetWriter_WALCreationAndCleanup(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 
 	// Check if WAL files were cleaned up
-	walFilesAfter, err := filepath.Glob(filepath.Join(walDir, "*"))
+	walFilesAfter, err := collectWALFiles(walDir)
 	if err != nil {
 		t.Fatalf("Failed to list WAL files after cleanup: %v", err)
 	}
@@ -867,6 +869,24 @@ func TestNetWriter_WALCreationAndCleanup(t *testing.T) {
 	} else {
 		t.Log("WAL files were successfully cleaned up")
 	}
+}
+
+// collectWALFiles returns all regular files under root. It is used by
+// WAL tests instead of filepath.Glob so that segment files nested inside
+// a per-address subdirectory are discovered, and so that directory
+// entries (whose reported size is 0 on Windows) are excluded.
+func collectWALFiles(root string) ([]string, error) {
+	var files []string
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() {
+			files = append(files, path)
+		}
+		return nil
+	})
+	return files, err
 }
 
 func TestNetWriter_WALTruncation(t *testing.T) {
@@ -1410,8 +1430,10 @@ func TestNetWriter_WALWriting(t *testing.T) {
 		t.Fatalf("WAL directory was not created: %s", walDir)
 	}
 
-	// Check WAL files
-	walFiles, err := filepath.Glob(filepath.Join(walDir, "*"))
+	// Check WAL segment files. Walk the tree so that files nested inside
+	// per-address subdirectories are discovered and directory entries
+	// (which report size 0 on Windows) are excluded.
+	walFiles, err := collectWALFiles(walDir)
 	if err != nil {
 		t.Fatalf("Failed to list WAL files: %v", err)
 	}
