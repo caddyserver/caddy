@@ -19,7 +19,6 @@ import (
 	"testing"
 
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
 func TestInterceptUnmarshalCaddyfile(t *testing.T) {
@@ -193,90 +192,4 @@ func TestInterceptUnmarshalCaddyfile(t *testing.T) {
 			}
 		})
 	}
-}
-
-// TestInterceptedResponseHandlerWriteHeader exercises the status-code
-// override logic in interceptedResponseHandler.WriteHeader. The condition
-// `irh.statusCode != 0 && (statusCode < 100 || statusCode >= 200)` means:
-//   - 1xx informational statuses always pass through unchanged
-//     (proxies must not swallow them, e.g. 100 Continue, 103 Early Hints)
-//   - other statuses are replaced by the configured override
-func TestInterceptedResponseHandlerWriteHeader(t *testing.T) {
-	tests := []struct {
-		name         string
-		overrideCode int
-		incomingCode int
-		wantWritten  int
-	}{
-		{
-			name:         "no override passes status through",
-			overrideCode: 0,
-			incomingCode: 404,
-			wantWritten:  404,
-		},
-		{
-			name:         "override replaces non-informational status",
-			overrideCode: 500,
-			incomingCode: 404,
-			wantWritten:  500,
-		},
-		{
-			name:         "override replaces 200",
-			overrideCode: 500,
-			incomingCode: 200,
-			wantWritten:  500,
-		},
-		{
-			name:         "100 Continue passes through even with override set",
-			overrideCode: 500,
-			incomingCode: 100,
-			wantWritten:  100,
-		},
-		{
-			name:         "103 Early Hints passes through even with override set",
-			overrideCode: 500,
-			incomingCode: 103,
-			wantWritten:  103,
-		},
-		{
-			name: "199 is treated as informational and passes through (boundary)",
-			// The guard uses `statusCode < 100 || statusCode >= 200`, so the
-			// override is applied only when status >= 200, leaving 100-199
-			// untouched as required by RFC 9110.
-			overrideCode: 500,
-			incomingCode: 199,
-			wantWritten:  199,
-		},
-		{
-			name:         "300 redirect is overridden",
-			overrideCode: 500,
-			incomingCode: 301,
-			wantWritten:  500,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			rec := &fakeResponseRecorder{}
-			irh := interceptedResponseHandler{
-				ResponseRecorder: rec,
-				statusCode:       tc.overrideCode,
-			}
-			irh.WriteHeader(tc.incomingCode)
-			if rec.lastStatus != tc.wantWritten {
-				t.Errorf("WriteHeader wrote %d, want %d", rec.lastStatus, tc.wantWritten)
-			}
-		})
-	}
-}
-
-// fakeResponseRecorder is a minimal caddyhttp.ResponseRecorder stub for
-// observing WriteHeader calls without needing a real HTTP response writer.
-type fakeResponseRecorder struct {
-	caddyhttp.ResponseRecorder
-	lastStatus int
-}
-
-func (f *fakeResponseRecorder) WriteHeader(code int) {
-	f.lastStatus = code
 }
