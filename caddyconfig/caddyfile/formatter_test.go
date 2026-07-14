@@ -532,7 +532,7 @@ func TestFormatImportStandaloneBrace(t *testing.T) {
 func TestFormatDeepNestingNoCap(t *testing.T) {
 	// 12 levels deep; every level indents (no 10-level clamp)
 	var b strings.Builder
-	for i := 0; i < 12; i++ {
+	for i := range 12 {
 		b.WriteString(strings.Repeat("\t", i) + "l" + strconv.Itoa(i) + " {\n")
 	}
 	b.WriteString(strings.Repeat("\t", 12) + "x\n")
