@@ -45,6 +45,12 @@ type (
 		wasQuoted     rune // enclosing quote character, if any
 		heredocMarker string
 		snippetName   string
+
+		// format mode only (populated by Lex with LexOptions; zero on the parse path)
+		raw             string // verbatim source bytes of the token
+		isComment       bool   // this token is a # comment spanning to end-of-line
+		precededBySpace bool   // whitespace separated this token from the previous one on the same line
+		continuation    bool   // this token followed a '\'+newline line continuation
 	}
 )
 
@@ -347,6 +353,23 @@ func (t Token) Quoted() bool {
 	return t.wasQuoted > 0
 }
 
+// Raw returns the verbatim source text of the token as it appeared in the
+// input, including quotes, backticks, escapes, and heredoc framing. It is only
+// populated when the token was produced by Lex in format mode; otherwise it
+// falls back to the processed Text.
+func (t Token) Raw() string {
+	if t.raw != "" {
+		return t.raw
+	}
+	return t.Text
+}
+
+// IsComment returns true if the token is a comment. Comment tokens are only
+// produced by Lex in format mode.
+func (t Token) IsComment() bool {
+	return t.isComment
+}
+
 // isOpenCurlyBrace returns true if the token is a structural (unquoted) open curly brace.
 func isOpenCurlyBrace(t Token) bool {
 	return t.Text == "{" && t.wasQuoted == 0
@@ -372,13 +395,17 @@ func (t Token) NumLineBreaks() int {
 // Clone returns a deep copy of the token.
 func (t Token) Clone() Token {
 	return Token{
-		File:          t.File,
-		imports:       append([]string{}, t.imports...),
-		Line:          t.Line,
-		Text:          t.Text,
-		wasQuoted:     t.wasQuoted,
-		heredocMarker: t.heredocMarker,
-		snippetName:   t.snippetName,
+		File:            t.File,
+		imports:         append([]string{}, t.imports...),
+		Line:            t.Line,
+		Text:            t.Text,
+		wasQuoted:       t.wasQuoted,
+		heredocMarker:   t.heredocMarker,
+		snippetName:     t.snippetName,
+		raw:             t.raw,
+		isComment:       t.isComment,
+		precededBySpace: t.precededBySpace,
+		continuation:    t.continuation,
 	}
 }
 
