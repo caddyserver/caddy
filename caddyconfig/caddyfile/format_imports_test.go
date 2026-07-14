@@ -1,0 +1,61 @@
+// Copyright 2015 Matthew Holt and The Caddy Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package caddyfile
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDiscoverImportedFiles(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, "Caddyfile")
+	writeFile(t, root, "import sites/*.caddy\nimport mysnip\n")
+	os.MkdirAll(filepath.Join(dir, "sites"), 0o755)
+	writeFile(t, filepath.Join(dir, "sites", "a.caddy"), "(mysnip) {\n\trespond 200\n}\nlocalhost {\n\timport mysnip\n}\n")
+	rootInput, _ := os.ReadFile(root)
+	files, err := discoverImportedFiles(root, rootInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// sites/a.caddy is discovered; "mysnip" is a snippet (defined in a.caddy), not a file
+	want := []string{filepath.Join(dir, "sites", "a.caddy")}
+	abs := func(p string) string { a, _ := filepath.Abs(p); return a }
+	if len(files) != 1 || abs(files[0]) != abs(want[0]) {
+		t.Errorf("got %v, want %v", files, want)
+	}
+}
+
+func TestDiscoverIgnoresNonDirectiveImport(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, "Caddyfile")
+	writeFile(t, root, "localhost {\n\tbasic_auth / import password\n}\n")
+	rootInput, _ := os.ReadFile(root)
+	files, err := discoverImportedFiles(root, rootInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 0 {
+		t.Errorf("got %v, want none ('import' here is an argument)", files)
+	}
+}
