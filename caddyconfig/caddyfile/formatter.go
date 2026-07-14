@@ -76,6 +76,11 @@ func formatTokens(tokens []Token) []byte {
 	// comment. A structural "{" must never fold onto a line whose last token is
 	// a comment, since "#" runs to end of line and would comment the brace out.
 	prevWasComment := false
+	// prevWasClose tracks whether the last non-whitespace token emitted was a
+	// structural "}". A token that shared the source line with that "}" (other
+	// than another "}" or a trailing comment) must break to its own indented
+	// line rather than folding after the brace (I4).
+	prevWasClose := false
 	// foldedOpenAt, when >= 0, is the index of a structural "{" that was already
 	// emitted early (before a trailing comment) as part of the address/comment/
 	// brace fold; when the loop reaches that index it is skipped.
@@ -135,6 +140,13 @@ func formatTokens(tokens []Token) []byte {
 		case trailingComment:
 			// A trailing comment stays on the current line.
 			breaks = 0
+		}
+
+		// A token that shared the source line with a preceding structural "}"
+		// (other than another "}" or a trailing comment) breaks to its own
+		// indented line instead of folding after the brace (I4).
+		if prevWasClose && breaks == 0 && !isClose && !trailingComment {
+			breaks = 1
 		}
 
 		// The content following an opening brace always begins on its own
@@ -205,6 +217,7 @@ func formatTokens(tokens []Token) []byte {
 		wrote = true
 		atLineStart = false
 		prevWasComment = tk.isComment
+		prevWasClose = isClose
 
 		// Structural bookkeeping after emitting. Vertical spacing after a
 		// brace is produced by the next token's break calculation, so we don't
