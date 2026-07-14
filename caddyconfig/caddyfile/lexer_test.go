@@ -542,6 +542,50 @@ func TestTokenFormatModeAccessors(t *testing.T) {
 	}
 }
 
+func TestLexRawCapture(t *testing.T) {
+	cases := []struct {
+		in      string
+		text    string // processed Text of the single token
+		wantRaw string // verbatim source of that token
+	}{
+		{`hello`, `hello`, `hello`},
+		{`"a \"b\" "`, `a "b" `, `"a \"b\" "`},
+		{"`raw \"x\"`", `raw "x"`, "`raw \"x\"`"},
+		{`\<<NOTHEREDOC`, `<<NOTHEREDOC`, `\<<NOTHEREDOC`},
+	}
+	for _, c := range cases {
+		toks, err := Lex([]byte(c.in), "T", LexOptions{Raw: true})
+		if err != nil {
+			t.Fatalf("%q: %v", c.in, err)
+		}
+		if len(toks) != 1 {
+			t.Fatalf("%q: got %d tokens, want 1", c.in, len(toks))
+		}
+		if toks[0].Text != c.text {
+			t.Errorf("%q: Text = %q, want %q", c.in, toks[0].Text, c.text)
+		}
+		if toks[0].Raw() != c.wantRaw {
+			t.Errorf("%q: Raw() = %q, want %q", c.in, toks[0].Raw(), c.wantRaw)
+		}
+	}
+}
+
+func TestLexRawCaptureHeredoc(t *testing.T) {
+	in := "x <<END\n\thello\n\tEND"
+	toks, err := Lex([]byte(in), "T", LexOptions{Raw: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// token 0 is "x"; token 1 is the heredoc
+	if len(toks) != 2 {
+		t.Fatalf("got %d tokens, want 2", len(toks))
+	}
+	// heredoc Text is the de-indented body; Raw is the full framing verbatim.
+	if toks[1].Raw() != "<<END\n\thello\n\tEND" {
+		t.Errorf("heredoc Raw() = %q, want %q", toks[1].Raw(), "<<END\n\thello\n\tEND")
+	}
+}
+
 func lexerCompare(t *testing.T, n int, expected, actual []Token) {
 	if len(expected) != len(actual) {
 		t.Fatalf("Test case %d: expected %d token(s) but got %d", n, len(expected), len(actual))
