@@ -117,6 +117,7 @@ type parser struct {
 	definedSnippets map[string][]Token
 	nesting         int
 	importGraph     importGraph
+	importObserver  func(string, os.FileInfo, []byte) (bool, error)
 }
 
 func (p *parser) parseAll() ([]ServerBlock, error) {
@@ -561,15 +562,26 @@ func (p *parser) doSingleImport(importFile string) ([]Token, error) {
 	}
 	defer file.Close()
 
-	if info, err := file.Stat(); err != nil {
+	info, err := file.Stat()
+	if err != nil {
 		return nil, p.Errf("Could not import %s: %v", importFile, err)
-	} else if info.IsDir() {
+	}
+	if info.IsDir() {
 		return nil, p.Errf("Could not import %s: is a directory", importFile)
 	}
 
 	input, err := io.ReadAll(file)
 	if err != nil {
 		return nil, p.Errf("Could not read imported file %s: %v", importFile, err)
+	}
+	if p.importObserver != nil {
+		skip, err := p.importObserver(importFile, info, input)
+		if err != nil {
+			return nil, p.Errf("Could not import %s: %v", importFile, err)
+		}
+		if skip {
+			return nil, nil
+		}
 	}
 
 	// only warning in case of empty files
