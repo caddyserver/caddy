@@ -80,6 +80,121 @@ func FormatWithOptions(input []byte, opts FormatOptions) []byte {
 	return out
 }
 
+// isSingleUnbracedSite reports whether the format-mode token stream is exactly
+// one top-level server block written WITHOUT wrapping braces — i.e. a single
+// site whose address line is followed directly by directives, with no outer
+// "{"..."}" around them. This is the shape the (default-off, Phase 3)
+// braced-wrap feature may wrap in braces, so detection must be conservative:
+// anything ambiguous, already-braced, or multi-site returns false.
+//
+// The analysis is purely structural (no filesystem, no import expansion, no env
+// substitution). It mirrors the parser's address-boundary logic
+// (parser.addresses, isSnippet, isNamedRoute in parse.go): the ADDRESS LIST is
+// the run of leading non-comment tokens up to the first newline, honoring
+// trailing-comma continuation across lines (a token ending in "," means another
+// address follows, possibly on the next line).
+//
+// It returns true iff:
+//   - the address list is non-empty, and
+//   - the first address token is not a snippet "(...)" or named route "&(...)",
+//     and
+//   - no structural "{" appears on the address line (which would make it an
+//     already-braced site block, or, with no address before it, a
+//     global-options block), and
+//   - there is exactly one top-level block: once nesting returns to zero after
+//     the site's directives, no further top-level address group begins.
+//
+// Interior directive braces (nesting >= 1, e.g. "reverse_proxy {"..."}") are
+// allowed and ignored. Comments are ignored for the boundary decision.
+func isSingleUnbracedSite(tokens []Token) bool {
+	// Collect the leading address list: non-comment tokens up to the first
+	// newline, extending across newlines while the previous address token ends
+	// in a trailing comma (comma-continuation).
+	var (
+		firstAddrIdx   = -1 // index of the first address token
+		addrLineEndIdx = -1 // index of the last address token
+		expectAnother  bool // previous address token ended in ","
+	)
+	for i := 0; i < len(tokens); i++ {
+		tk := tokens[i]
+		if tk.isComment {
+			continue
+		}
+		// A structural "{" on the address line ends the address list AND means
+		// the block is braced (a real site block) or, with no address seen yet,
+		// a global-options block. Either way, not a single unbraced site.
+		if isOpenCurlyBrace(tk) {
+			return false
+		}
+		// If this token begins a new line and we're not waiting for another
+		// comma-continued address, the address list ended on the previous token.
+		if firstAddrIdx >= 0 && !expectAnother && fmtNextOnNewLine(tokens[i-1], tk) {
+			break
+		}
+
+		// This token is part of the address list.
+		if firstAddrIdx < 0 {
+			firstAddrIdx = i
+		}
+		addrLineEndIdx = i
+		expectAnother = strings.HasSuffix(tk.Text, ",")
+	}
+
+	// Zero address tokens: not a site.
+	if firstAddrIdx < 0 {
+		return false
+	}
+
+	// Snippet "(...)" or named route "&(...)" first address: not a site.
+	if firstText := tokens[firstAddrIdx].Text; strings.HasPrefix(firstText, "&(") || strings.HasPrefix(firstText, "(") {
+		return false
+	}
+
+	// Walk the remaining tokens (the block body) tracking structural nesting.
+	// Two shapes disqualify a single unbraced site:
+	//   - Returning to top level (nesting 0) via a closing brace and then
+	//     starting another top-level token group — a second site/block. This
+	//     only happens when the first "block" was itself braced, which the
+	//     address-line scan above already rejects; guarded here for safety.
+	//   - A blank line (a gap of >= 2 source lines) between two top-level token
+	//     groups: without wrapping braces this is the ambiguous multi-site shape
+	//     (e.g. "a.com"⏎"respond 200"⏎⏎"b.com"⏎"respond 404"), which must not be
+	//     treated as a single site.
+	nesting := 0
+	returnedToTop := false
+	prevIdx := -1
+	for j := addrLineEndIdx + 1; j < len(tokens); j++ {
+		tk := tokens[j]
+		if tk.isComment {
+			continue
+		}
+		if nesting == 0 && prevIdx >= 0 {
+			// Blank line at top level between directive groups: ambiguous
+			// multi-site. A gap of two or more lines is a blank line.
+			prev := tokens[prevIdx]
+			if tk.Line-(prev.Line+fmtNumLineBreaks(prev)) >= 2 {
+				return false
+			}
+		}
+		switch {
+		case isOpenCurlyBrace(tk):
+			nesting++
+		case isCloseCurlyBrace(tk) && nesting > 0:
+			nesting--
+			if nesting == 0 {
+				returnedToTop = true
+			}
+		case nesting == 0 && returnedToTop:
+			// A non-brace token at top level after a block already closed back
+			// to top level is a second top-level group: multi-site.
+			return false
+		}
+		prevIdx = j
+	}
+
+	return true
+}
+
 // trailingNewlineChangesTokens reports whether appending a newline to input
 // changes its format-mode token-text sequence. This is true for inputs whose
 // final token would swallow Format's mandatory trailing newline — an
