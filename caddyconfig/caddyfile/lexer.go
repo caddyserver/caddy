@@ -101,7 +101,52 @@ func Lex(input []byte, filename string, opts LexOptions) ([]Token, error) {
 		l.token.File = filename
 		tokens = append(tokens, l.token)
 	}
+	if opts.Comments || opts.Raw {
+		tokens = splitStructuralBraces(tokens)
+	}
 	return tokens, nil
+}
+
+// splitStructuralBraces rewrites a format-mode token stream so that structural
+// braces are their own tokens. It splits a "{}" token into "{" and "}", and
+// peels a single trailing "{" off a literal token whose prefix contains no
+// other braces (e.g. example.com{ -> example.com, {). Quoted, backtick,
+// heredoc, and comment tokens are never split.
+func splitStructuralBraces(in []Token) []Token {
+	out := make([]Token, 0, len(in))
+	for _, tk := range in {
+		if tk.wasQuoted != 0 || tk.isComment || tk.Text == "{" || tk.Text == "}" {
+			out = append(out, tk)
+			continue
+		}
+		if tk.Text == "{}" {
+			open := tk
+			open.Text, open.raw = "{", "{"
+			closeT := tk
+			closeT.Text, closeT.raw = "}", "}"
+			closeT.precededBySpace = false
+			out = append(out, open, closeT)
+			continue
+		}
+		// peel a single trailing "{" if the prefix is non-empty and brace-free
+		if strings.HasSuffix(tk.Text, "{") {
+			prefix := tk.Text[:len(tk.Text)-1]
+			if prefix != "" && !strings.ContainsAny(prefix, "{}") {
+				lit := tk
+				lit.Text = prefix
+				if lit.raw != "" && strings.HasSuffix(lit.raw, "{") {
+					lit.raw = lit.raw[:len(lit.raw)-1]
+				}
+				brace := tk
+				brace.Text, brace.raw = "{", "{"
+				brace.precededBySpace = false
+				out = append(out, lit, brace)
+				continue
+			}
+		}
+		out = append(out, tk)
+	}
+	return out
 }
 
 // readRune reads the next rune and advances the byte position tracker.
