@@ -17,6 +17,7 @@ package caddyfile
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -43,6 +44,36 @@ func TestDiscoverImportedFiles(t *testing.T) {
 	abs := func(p string) string { a, _ := filepath.Abs(p); return a }
 	if len(files) != 1 || abs(files[0]) != abs(want[0]) {
 		t.Errorf("got %v, want %v", files, want)
+	}
+}
+
+func TestFormatImports(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, "Caddyfile")
+	writeFile(t, root, "import sites/a.caddy\n")
+	os.MkdirAll(filepath.Join(dir, "sites"), 0o755)
+	// deliberately messy imported file to prove it gets formatted at baseline 0
+	writeFile(t, filepath.Join(dir, "sites", "a.caddy"), "localhost{\nrespond   200\n}\n")
+	results, err := FormatImports(root, FormatOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("got %d results, want 2", len(results))
+	}
+	// results[0] is the root; results[1] is the imported file, formatted
+	var imported *FormattedFile
+	for i := range results {
+		if strings.HasSuffix(results[i].Path, "a.caddy") {
+			imported = &results[i]
+		}
+	}
+	if imported == nil {
+		t.Fatal("imported file not in results")
+	}
+	want := "localhost {\n\trespond 200\n}\n"
+	if string(imported.Content) != want {
+		t.Errorf("imported formatted = %q, want %q", imported.Content, want)
 	}
 }
 
