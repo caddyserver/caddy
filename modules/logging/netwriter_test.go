@@ -19,7 +19,7 @@ import (
 // mockServer represents a simple TCP server for testing
 type mockServer struct {
 	listener    net.Listener
-	listenerMu  sync.RWMutex // Add this line
+	listenerMu  sync.RWMutex
 	addr        string
 	messages    []string
 	messagesMu  sync.RWMutex
@@ -544,6 +544,17 @@ func TestNetWriter_NetworkFailureRecovery(t *testing.T) {
 	// Stop the server to simulate network failure
 	server.stop()
 
+	// The writer cannot detect that the connection is dead until a write
+	// fails: the first write after the peer closes is accepted by the
+	// kernel and only triggers an RST in response. Write a sacrificial
+	// probe entry (which may be lost) and give the flusher time to
+	// attempt it, so the broken connection is discovered before the
+	// messages below are written.
+	if _, err := writer.Write([]byte("connection probe\n")); err != nil {
+		t.Fatalf("Failed to write probe message: %v", err)
+	}
+	time.Sleep(500 * time.Millisecond)
+
 	// Write messages during failure (should go to WAL)
 	failureMessages := []string{
 		"During failure 1\n",
@@ -827,14 +838,13 @@ func TestNetWriter_WALCreationAndCleanup(t *testing.T) {
 		}
 	}
 
-	// Close the writer - this should trigger cleanup
+	// Close the writer
 	err = writer.Close()
 	if err != nil {
 		t.Fatalf("Failed to close writer: %v", err)
 	}
 
-	// The Close() method calls w.Delete(), so WAL files should be cleaned up
-	// Wait a moment for cleanup to complete
+	// Wait a moment for any cleanup to complete
 	time.Sleep(500 * time.Millisecond)
 
 	// Check if WAL files were cleaned up
@@ -845,7 +855,7 @@ func TestNetWriter_WALCreationAndCleanup(t *testing.T) {
 
 	t.Logf("WAL files after cleanup: %d", len(walFilesAfter))
 
-	// The w.Delete() call should have removed the WAL files
+	// delivered entries may remain in the WAL until it is truncated
 	if len(walFilesAfter) > 0 {
 		t.Log("Some WAL files still exist after cleanup:")
 		for _, file := range walFilesAfter {
@@ -857,6 +867,86 @@ func TestNetWriter_WALCreationAndCleanup(t *testing.T) {
 	} else {
 		t.Log("WAL files were successfully cleaned up")
 	}
+}
+
+func TestNetWriter_WALTruncation(t *testing.T) {
+	// Create a temporary directory for this test
+	tempDir := t.TempDir()
+	originalAppDataDir := os.Getenv("XDG_DATA_HOME")
+	os.Setenv("XDG_DATA_HOME", tempDir)
+	defer os.Setenv("XDG_DATA_HOME", originalAppDataDir)
+
+	// Start mock server
+	server := newMockServer(t)
+	defer server.close()
+
+	// Create and provision NetWriter
+	nw := &NetWriter{
+		Address:     server.addr,
+		DialTimeout: caddy.Duration(5 * time.Second),
+		SoftStart:   true,
+	}
+
+	ctx := caddy.Context{
+		Context: context.Background(),
+	}
+
+	if err := nw.Provision(ctx); err != nil {
+		t.Fatalf("Failed to provision NetWriter: %v", err)
+	}
+
+	writer, err := nw.OpenWriter()
+	if err != nil {
+		t.Fatalf("Failed to open writer: %v", err)
+	}
+	defer writer.Close()
+
+	// Write enough data to cross the truncation threshold
+	payload := strings.Repeat("x", 1024)
+	numMessages := walTruncateThreshold/len(payload) + 100
+	for i := 0; i < numMessages; i++ {
+		msg := fmt.Sprintf("%d %s\n", i, payload)
+		if _, err := writer.Write([]byte(msg)); err != nil {
+			t.Fatalf("Failed to write message %d: %v", i, err)
+		}
+	}
+
+	// Wait until all messages have been delivered
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(server.getMessages()) >= numMessages {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	received := server.getMessages()
+	if len(received) != numMessages {
+		t.Fatalf("Expected %d messages, got %d", numMessages, len(received))
+	}
+
+	// Allow the truncation to run after the final delivery
+	time.Sleep(1 * time.Second)
+
+	// After full delivery, the WAL should have been truncated so that
+	// delivered entries no longer occupy disk space
+	walFiles, err := filepath.Glob(filepath.Join(nw.walDir, "*.SEG"))
+	if err != nil {
+		t.Fatalf("Failed to list WAL segment files: %v", err)
+	}
+
+	var totalSize int64
+	for _, file := range walFiles {
+		if info, err := os.Stat(file); err == nil {
+			totalSize += info.Size()
+		}
+	}
+
+	if totalSize >= int64(walTruncateThreshold) {
+		t.Errorf("WAL was not truncated after full delivery; %d bytes remain on disk", totalSize)
+	}
+
+	t.Logf("WAL size after truncation: %d bytes across %d segment files", totalSize, len(walFiles))
 }
 
 func TestNetWriter_UnmarshalCaddyfile(t *testing.T) {
@@ -897,12 +987,14 @@ func TestNetWriter_UnmarshalCaddyfile(t *testing.T) {
 			name: "full configuration",
 			input: `net localhost:9999 {
 				dial_timeout 15s
+				reconnect_interval 5s
 				soft_start
 			}`,
 			expected: NetWriter{
-				Address:     "localhost:9999",
-				DialTimeout: caddy.Duration(15 * time.Second),
-				SoftStart:   true,
+				Address:           "localhost:9999",
+				DialTimeout:       caddy.Duration(15 * time.Second),
+				ReconnectInterval: caddy.Duration(5 * time.Second),
+				SoftStart:         true,
 			},
 		},
 		{
@@ -918,7 +1010,7 @@ func TestNetWriter_UnmarshalCaddyfile(t *testing.T) {
 	}
 
 	for i := range tests {
-		tt := tests[i] //nolint:copylocks
+		tt := &tests[i]
 		t.Run(tt.name, func(t *testing.T) {
 			d := caddyfile.NewTestDispenser(tt.input)
 			nw := &NetWriter{}
@@ -942,6 +1034,10 @@ func TestNetWriter_UnmarshalCaddyfile(t *testing.T) {
 
 			if nw.DialTimeout != tt.expected.DialTimeout {
 				t.Errorf("DialTimeout: expected %v, got %v", tt.expected.DialTimeout, nw.DialTimeout)
+			}
+
+			if nw.ReconnectInterval != tt.expected.ReconnectInterval {
+				t.Errorf("ReconnectInterval: expected %v, got %v", tt.expected.ReconnectInterval, nw.ReconnectInterval)
 			}
 
 			if nw.SoftStart != tt.expected.SoftStart {
@@ -1406,7 +1502,7 @@ func TestNetWriter_ConnectionRetry(t *testing.T) {
 	}
 
 	// Wait longer for potential reconnection and message delivery
-	// Note: The original implementation has a 10-second cooldown for reconnection attempts
+	// Note: the default reconnect interval is 10 seconds
 	time.Sleep(15 * time.Second)
 
 	receivedMessages := server.getMessages()
@@ -1417,7 +1513,7 @@ func TestNetWriter_ConnectionRetry(t *testing.T) {
 
 	// The original implementation might not handle reconnection perfectly
 	if len(receivedMessages) == 0 {
-		t.Log("No messages received - the readWal reconnection logic may have issues")
+		t.Log("No messages received after reconnection")
 		t.Log("This test verifies that WAL writing works during outages")
 	} else {
 		t.Logf("Successfully received %d messages after reconnection", len(receivedMessages))

@@ -15,10 +15,12 @@
 package logging
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"os"
@@ -37,10 +39,22 @@ func init() {
 	caddy.RegisterModule(&NetWriter{})
 }
 
-// NetWriter implements a log writer that outputs to a network socket. If
-// the socket goes down, it will dump logs to stderr while it attempts to
-// reconnect. Logs are written to a WAL first and then asynchronously
-// flushed to the network to avoid blocking HTTP request handling.
+const (
+	// walSegmentSize is the maximum size of a WAL segment file.
+	walSegmentSize = 64 * 1024 * 1024
+
+	// walTruncateThreshold is the number of delivered payload bytes
+	// after which the WAL is truncated (once the backlog is fully
+	// delivered) to reclaim disk space and keep flush scans cheap.
+	walTruncateThreshold = 4 * 1024 * 1024
+)
+
+// NetWriter implements a log writer that outputs to a network socket.
+// Log entries are first appended to a write-ahead log (WAL) on disk and
+// then delivered to the socket by a background goroutine, so logging
+// never blocks on a slow or unavailable destination. If the socket goes
+// down, entries accumulate in the WAL and are delivered once the
+// connection is re-established, including across process restarts.
 type NetWriter struct {
 	// The address of the network socket to which to connect.
 	Address string `json:"address,omitempty"`
@@ -48,27 +62,37 @@ type NetWriter struct {
 	// The timeout to wait while connecting to the socket.
 	DialTimeout caddy.Duration `json:"dial_timeout,omitempty"`
 
-	// If enabled, allow connections errors when first opening the
-	// writer. The error and subsequent log entries will be reported
-	// to stderr instead until a connection can be re-established.
+	// If enabled, a failure to connect to the socket when first
+	// opening the writer is not fatal; log entries are buffered
+	// in the WAL until a connection can be established.
 	SoftStart bool `json:"soft_start,omitempty"`
 
 	// How often to attempt reconnection when the network connection fails.
 	ReconnectInterval caddy.Duration `json:"reconnect_interval,omitempty"`
 
-	// Buffer size for the WAL flush channel.
-	BufferSize int `json:"buffer_size,omitempty"`
+	logger         *slog.Logger
+	addr           caddy.NetworkAddress
+	wal            *wal.WAL
+	walDir         string
+	flushCtx       context.Context
+	flushCtxCancel context.CancelFunc
+	flushWg        sync.WaitGroup
 
-	logger              *slog.Logger
-	addr                caddy.NetworkAddress
-	wal                 *wal.WAL
-	walDir              string
-	flushCtx            context.Context
-	flushCtxCancel      context.CancelFunc
-	flushWg             sync.WaitGroup
-	lastProcessedOffset int64
-	mu                  sync.RWMutex
-	walMu               sync.Mutex // synchronizes WAL read/write operations
+	// walMu synchronizes WAL open/read/write/truncate operations
+	walMu sync.Mutex
+
+	// mu protects the fields below; when held together with walMu,
+	// it is always acquired after walMu
+	mu sync.RWMutex
+	// position of the last WAL entry delivered to the destination,
+	// or nil if nothing has been delivered from the current WAL
+	lastProcessed *wal.ChunkPosition
+	// whether the WAL may contain undelivered entries
+	pending bool
+
+	// number of payload bytes delivered since the WAL was last
+	// truncated; only accessed by the background flusher goroutine
+	deliveredSinceTruncate int64
 }
 
 // CaddyModule returns the Caddy module information.
@@ -109,10 +133,6 @@ func (nw *NetWriter) Provision(ctx caddy.Context) error {
 		nw.ReconnectInterval = caddy.Duration(10 * time.Second)
 	}
 
-	if nw.BufferSize <= 0 {
-		nw.BufferSize = 1000
-	}
-
 	return nil
 }
 
@@ -127,27 +147,22 @@ func (nw *NetWriter) WriterKey() string {
 
 // OpenWriter opens a new network connection and sets up the WAL.
 func (nw *NetWriter) OpenWriter() (io.WriteCloser, error) {
-	// Set up WAL directory
+	// set up WAL directory
 	baseDir := caddy.AppDataDir()
 	nw.walDir = filepath.Join(baseDir, "wal", "netwriter", strings.ReplaceAll(nw.addr.String(), ":", "-"))
 	if err := os.MkdirAll(nw.walDir, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create WAL directory: %v", err)
 	}
 
-	// Open WAL
-	opts := wal.DefaultOptions
-	opts.DirPath = nw.walDir
-	opts.SegmentSize = 64 * 1024 * 1024 // 64MB segments
-	w, err := wal.Open(opts)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open WAL: %v", err)
+	if err := nw.openWAL(); err != nil {
+		return nil, err
 	}
-	nw.wal = w
 
-	// Load last processed offset from metadata file if it exists
-	nw.loadLastProcessedOffset()
+	// resume where a previous run left off, if applicable
+	nw.loadLastProcessed()
+	nw.pending = !nw.wal.IsEmpty()
 
-	// If SoftStart is disabled, test the connection immediately
+	// if SoftStart is disabled, test the connection immediately
 	if !nw.SoftStart {
 		testConn, err := net.DialTimeout(nw.addr.Network, nw.addr.JoinHostPort(0), time.Duration(nw.DialTimeout))
 		if err != nil {
@@ -156,56 +171,89 @@ func (nw *NetWriter) OpenWriter() (io.WriteCloser, error) {
 		testConn.Close()
 	}
 
-	// Create the writer wrapper
+	// create the writer wrapper
 	writer := &netWriterConn{
 		nw: nw,
 	}
 
-	// Start the background flusher
-	nw.flushCtx, nw.flushCtxCancel = context.WithCancel(context.Background())
+	// start the background flusher; the cancel function is called by Close
+	nw.flushCtx, nw.flushCtxCancel = context.WithCancel(context.Background()) //nolint:gosec
 	nw.flushWg.Add(1)
 	go nw.backgroundFlusher()
 
 	return writer, nil
 }
 
-// loadLastProcessedOffset loads the last processed offset from a metadata file
-func (nw *NetWriter) loadLastProcessedOffset() {
-	metaFile := filepath.Join(nw.walDir, "last_processed")
-	data, err := os.ReadFile(metaFile)
+// openWAL opens the write-ahead log in nw.walDir.
+func (nw *NetWriter) openWAL() error {
+	opts := wal.DefaultOptions
+	opts.DirPath = nw.walDir
+	opts.SegmentSize = walSegmentSize
+	w, err := wal.Open(opts)
 	if err != nil {
-		// Use -1 to indicate "no entries processed yet"
-		nw.lastProcessedOffset = -1
-		nw.logger.Debug("no last processed offset file found, starting from beginning", "file", metaFile, "error", err)
-		return
+		return fmt.Errorf("failed to open WAL: %v", err)
 	}
-
-	var offset int64
-	if _, err := fmt.Sscanf(string(data), "%d", &offset); err != nil {
-		// Use -1 to indicate "no entries processed yet"
-		nw.lastProcessedOffset = -1
-		return
-	}
-
-	nw.lastProcessedOffset = offset
-	nw.logger.Debug("loaded last processed offset", "offset", offset)
+	nw.wal = w
+	return nil
 }
 
-// saveLastProcessedOffset saves the last processed offset to a metadata file
-func (nw *NetWriter) saveLastProcessedOffset(cp *wal.ChunkPosition) {
-	// Create a unique offset by combining segment, block, and chunk offset
-	offset := (int64(cp.SegmentId) << 32) | (int64(cp.BlockNumber) << 16) | (cp.ChunkOffset)
+// walMetaFile returns the path of the file that records the position
+// of the last delivered WAL entry.
+func (nw *NetWriter) walMetaFile() string {
+	return filepath.Join(nw.walDir, "last_processed")
+}
 
-	nw.mu.Lock()
-	nw.lastProcessedOffset = offset
-	nw.mu.Unlock()
+// comparePositions orders two WAL chunk positions; it returns a negative
+// number if a comes before b, 0 if they are equal, and a positive number
+// otherwise.
+func comparePositions(a, b *wal.ChunkPosition) int {
+	if c := cmp.Compare(a.SegmentId, b.SegmentId); c != 0 {
+		return c
+	}
+	if c := cmp.Compare(a.BlockNumber, b.BlockNumber); c != 0 {
+		return c
+	}
+	return cmp.Compare(a.ChunkOffset, b.ChunkOffset)
+}
 
-	metaFile := filepath.Join(nw.walDir, "last_processed")
-	data := fmt.Sprintf("%d", offset)
-	if err := os.WriteFile(metaFile, []byte(data), 0o600); err != nil {
-		nw.logger.Error("failed to save last processed offset", "error", err)
-	} else {
-		nw.logger.Debug("saved last processed offset", "offset", offset)
+// loadLastProcessed restores the position of the last delivered entry
+// from the metadata file, if present.
+func (nw *NetWriter) loadLastProcessed() {
+	data, err := os.ReadFile(nw.walMetaFile())
+	if err != nil {
+		nw.lastProcessed = nil
+		return
+	}
+	var segmentID, blockNumber uint32
+	var chunkOffset int64
+	if _, err := fmt.Sscanf(string(data), "%d %d %d", &segmentID, &blockNumber, &chunkOffset); err != nil {
+		nw.lastProcessed = nil
+		return
+	}
+	nw.lastProcessed = &wal.ChunkPosition{
+		SegmentId:   segmentID,
+		BlockNumber: blockNumber,
+		ChunkOffset: chunkOffset,
+	}
+	nw.logger.Debug("loaded last processed WAL position",
+		"segment", nw.lastProcessed.SegmentId,
+		"block", nw.lastProcessed.BlockNumber,
+		"offset", nw.lastProcessed.ChunkOffset)
+}
+
+// persistLastProcessed writes the position of the last delivered entry
+// to the metadata file so that delivery can resume where it left off
+// after a restart.
+func (nw *NetWriter) persistLastProcessed() {
+	nw.mu.RLock()
+	lp := nw.lastProcessed
+	nw.mu.RUnlock()
+	if lp == nil {
+		return
+	}
+	data := fmt.Sprintf("%d %d %d", lp.SegmentId, lp.BlockNumber, lp.ChunkOffset)
+	if err := os.WriteFile(nw.walMetaFile(), []byte(data), 0o600); err != nil {
+		nw.logger.Error("failed to save WAL position", "error", err)
 	}
 }
 
@@ -217,7 +265,7 @@ func (nw *NetWriter) backgroundFlusher() {
 	var conn net.Conn
 	var connMu sync.RWMutex
 
-	// Function to establish connection
+	// establish a connection
 	dial := func() error {
 		newConn, err := net.DialTimeout(nw.addr.Network, nw.addr.JoinHostPort(0), time.Duration(nw.DialTimeout))
 		if err != nil {
@@ -235,7 +283,13 @@ func (nw *NetWriter) backgroundFlusher() {
 		return nil
 	}
 
-	// Function to write data to connection
+	hasConn := func() bool {
+		connMu.RLock()
+		defer connMu.RUnlock()
+		return conn != nil
+	}
+
+	// write data to the connection
 	writeToConn := func(data []byte) error {
 		connMu.RLock()
 		currentConn := conn
@@ -247,7 +301,7 @@ func (nw *NetWriter) backgroundFlusher() {
 
 		_, err := currentConn.Write(data)
 		if err != nil {
-			// Connection failed, clear it so reconnection logic kicks in
+			// connection failed, clear it so reconnection logic kicks in
 			connMu.Lock()
 			if conn == currentConn {
 				conn.Close()
@@ -258,19 +312,15 @@ func (nw *NetWriter) backgroundFlusher() {
 		return err
 	}
 
-	// Try initial connection
+	// try initial connection
 	if err := dial(); err != nil {
-		if !nw.SoftStart {
-			nw.logger.Error("failed to connect to log destination", "error", err)
-		} else {
-			nw.logger.Warn("failed to connect to log destination, will retry", "error", err)
-		}
+		nw.logger.Warn("failed to connect to log destination, will retry", "error", err)
 	}
 
-	// Process any existing entries in the WAL immediately
+	// deliver any backlog left over from a previous run
 	nw.processWALEntries(writeToConn)
 
-	ticker := time.NewTicker(100 * time.Millisecond) // Check for new entries every 100ms
+	ticker := time.NewTicker(100 * time.Millisecond) // check for new entries every 100ms
 	defer ticker.Stop()
 
 	reconnectTicker := time.NewTicker(time.Duration(nw.ReconnectInterval))
@@ -279,8 +329,23 @@ func (nw *NetWriter) backgroundFlusher() {
 	for {
 		select {
 		case <-nw.flushCtx.Done():
-			// Flush remaining entries before shutting down
-			nw.flushRemainingWALEntries(writeToConn)
+			// best-effort final flush; anything undelivered stays in
+			// the WAL and will be delivered after the next start
+			if !hasConn() {
+				if err := dial(); err != nil {
+					nw.logger.Warn("cannot connect for final flush", "error", err)
+				}
+			}
+			if hasConn() {
+				nw.processWALEntries(writeToConn)
+			}
+
+			nw.mu.RLock()
+			pending := nw.pending
+			nw.mu.RUnlock()
+			if pending {
+				nw.logger.Warn("undelivered log entries remain in the WAL and will be delivered after the next start", "wal_dir", nw.walDir)
+			}
 
 			connMu.Lock()
 			if conn != nil {
@@ -290,159 +355,136 @@ func (nw *NetWriter) backgroundFlusher() {
 			return
 
 		case <-ticker.C:
-			// Process available WAL entries
-			nw.processWALEntries(writeToConn)
+			// deliver new WAL entries, but only if there may be any
+			// and the destination is reachable; otherwise entries
+			// keep accumulating in the WAL until reconnection
+			if !hasConn() {
+				continue
+			}
+			nw.mu.RLock()
+			pending := nw.pending
+			nw.mu.RUnlock()
+			if pending {
+				nw.processWALEntries(writeToConn)
+			}
 
 		case <-reconnectTicker.C:
-			// Try to reconnect if we don't have a connection
-			connMu.RLock()
-			hasConn := conn != nil
-			connMu.RUnlock()
-
-			nw.logger.Debug("reconnect ticker fired", "hasConn", hasConn)
-			if !hasConn {
-				if err := dial(); err != nil {
-					nw.logger.Debug("reconnection attempt failed", "error", err)
-				} else {
-					// Successfully reconnected, process any buffered WAL entries
-					nw.logger.Info("reconnected, processing buffered WAL entries")
-					nw.processWALEntries(writeToConn)
-				}
+			// try to reconnect if we don't have a connection
+			if hasConn() {
+				continue
 			}
+			if err := dial(); err != nil {
+				nw.logger.Debug("reconnection attempt failed", "error", err)
+				continue
+			}
+			// successfully reconnected, deliver any buffered WAL entries
+			nw.processWALEntries(writeToConn)
 		}
 	}
 }
 
-// processWALEntries processes all available entries in the WAL using a fresh reader
+// processWALEntries delivers all undelivered WAL entries to the network
+// connection. If a write fails, delivery stops and the remaining backlog
+// is kept in the WAL to be retried once the connection is restored.
 func (nw *NetWriter) processWALEntries(writeToConn func([]byte) error) {
-	// Synchronize WAL access to prevent race conditions with writers
+	// optimistically mark the backlog as flushed; this is set again if
+	// delivery fails partway or if an entry is written concurrently
+	nw.mu.Lock()
+	nw.pending = false
+	lastProcessed := nw.lastProcessed
+	nw.mu.Unlock()
+
 	nw.walMu.Lock()
-	// Create a fresh reader to see all current entries
 	reader := nw.wal.NewReader()
 	nw.walMu.Unlock()
 
-	processed := 0
-	skipped := 0
-	nw.logger.Debug("processing available WAL entries")
+	delivered := 0
+	caughtUp := true
 	for {
 		nw.walMu.Lock()
 		data, cp, err := reader.Next()
 		nw.walMu.Unlock()
 
 		if err == io.EOF {
-			if processed > 0 {
-				nw.logger.Debug("processed WAL entries", "processed", processed, "skipped", skipped)
-			}
 			break
 		}
 		if err != nil {
-			if err == wal.ErrClosed {
-				nw.logger.Debug("WAL closed during processing")
-				return
-			}
 			nw.logger.Error("error reading from WAL", "error", err)
+			caughtUp = false
 			break
 		}
 
-		// Check if we've already processed this entry
-		nw.mu.RLock()
-		lastProcessedOffset := nw.lastProcessedOffset
-		nw.mu.RUnlock()
-
-		// Create current entry offset for comparison
-		currentOffset := (int64(cp.SegmentId) << 32) | (int64(cp.BlockNumber) << 16) | (cp.ChunkOffset)
-		nw.logger.Debug("found WAL entry", "segmentId", cp.SegmentId, "blockNumber", cp.BlockNumber, "chunkOffset", cp.ChunkOffset, "currentOffset", currentOffset, "lastProcessedOffset", lastProcessedOffset, "size", len(data))
-
-		if currentOffset <= lastProcessedOffset {
-			// Already processed, skip
-			nw.logger.Debug("skipping already processed entry", "currentOffset", currentOffset, "lastProcessedOffset", lastProcessedOffset)
-			skipped++
+		// skip entries that were already delivered
+		if lastProcessed != nil && comparePositions(cp, lastProcessed) <= 0 {
 			continue
 		}
 
-		if err := nw.processWALEntry(data, cp, writeToConn); err != nil {
-			nw.logger.Error("error processing WAL entry", "error", err)
-			// Don't break here - we want to continue processing other entries
-		} else {
-			processed++
+		if err := writeToConn(data); err != nil {
+			// connection is down; keep the backlog in the WAL and let
+			// the reconnect logic trigger another delivery attempt
+			caughtUp = false
+			break
 		}
+
+		nw.mu.Lock()
+		nw.lastProcessed = cp
+		nw.mu.Unlock()
+		lastProcessed = cp
+		delivered++
+		nw.deliveredSinceTruncate += int64(len(data))
+	}
+
+	if !caughtUp {
+		nw.mu.Lock()
+		nw.pending = true
+		nw.mu.Unlock()
+	}
+	if delivered > 0 {
+		nw.persistLastProcessed()
+		nw.logger.Debug("delivered WAL entries", "count", delivered)
+	}
+	if caughtUp {
+		nw.maybeTruncateWAL()
 	}
 }
 
-// processWALEntry processes a single WAL entry
-func (nw *NetWriter) processWALEntry(data []byte, cp *wal.ChunkPosition, writeToConn func([]byte) error) error {
-	if err := writeToConn(data); err != nil {
-		// Connection failed, dump to stderr as fallback
-		os.Stderr.Write(data)
-		return err
+// maybeTruncateWAL discards delivered WAL entries by deleting and
+// re-opening the WAL once enough data has been delivered, reclaiming
+// disk space; without this, the WAL would grow without bound. It must
+// only be called by the background flusher, and only when the backlog
+// has been fully delivered.
+func (nw *NetWriter) maybeTruncateWAL() {
+	if nw.deliveredSinceTruncate < walTruncateThreshold {
+		return
 	}
 
-	// Mark this entry as processed
-	nw.saveLastProcessedOffset(cp)
-	nw.logger.Debug("processed WAL entry", "segmentId", cp.SegmentId, "blockNumber", cp.BlockNumber, "chunkOffset", cp.ChunkOffset, "data", string(data))
-	return nil
-}
-
-// flushRemainingWALEntries flushes all remaining entries during shutdown
-func (nw *NetWriter) flushRemainingWALEntries(writeToConn func([]byte) error) {
-	nw.logger.Info("flushing remaining WAL entries during shutdown")
-
-	// Synchronize WAL access to prevent race conditions with writers
 	nw.walMu.Lock()
-	// Create a fresh reader for shutdown processing
-	reader := nw.wal.NewReader()
-	nw.walMu.Unlock()
+	defer nw.walMu.Unlock()
+	nw.mu.Lock()
+	defer nw.mu.Unlock()
 
-	count := 0
-	for {
-		nw.walMu.Lock()
-		data, cp, err := reader.Next()
-		nw.walMu.Unlock()
-
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			nw.logger.Error("error reading from WAL during shutdown flush", "error", err)
-			break
-		}
-
-		// Check if we've already processed this entry
-		nw.mu.RLock()
-		lastProcessedOffset := nw.lastProcessedOffset
-		nw.mu.RUnlock()
-
-		// Create current entry offset for comparison
-		currentOffset := (int64(cp.SegmentId) << 32) | (int64(cp.BlockNumber) << 16) | (cp.ChunkOffset)
-
-		if currentOffset <= lastProcessedOffset {
-			// Already processed, skip
-			continue
-		}
-
-		// During shutdown, we try harder to deliver logs
-		maxRetries := 3
-		for i := 0; i < maxRetries; i++ {
-			if err := writeToConn(data); err != nil {
-				if i == maxRetries-1 {
-					// Final attempt failed, dump to stderr
-					os.Stderr.Write(data)
-					nw.logger.Error("failed to send log entry during shutdown, dumped to stderr", "error", err)
-				} else {
-					time.Sleep(time.Second)
-				}
-			} else {
-				nw.saveLastProcessedOffset(cp)
-				nw.logger.Debug("flushed WAL entry during shutdown", "segmentId", cp.SegmentId, "blockNumber", cp.BlockNumber, "chunkOffset", cp.ChunkOffset)
-				break
-			}
-		}
-		count++
+	// an entry may have been written after the backlog was drained;
+	// truncating now would discard it, so wait for the next chance
+	if nw.pending {
+		return
 	}
 
-	if count > 0 {
-		nw.logger.Info("flushed WAL entries during shutdown", "count", count)
+	if err := nw.wal.Delete(); err != nil {
+		nw.logger.Error("failed to truncate WAL", "error", err)
+		return
 	}
+	if err := nw.openWAL(); err != nil {
+		nw.logger.Error("failed to re-open WAL after truncation", "error", err)
+		return
+	}
+
+	// positions restart in the new WAL, so the old ones no longer apply
+	nw.lastProcessed = nil
+	nw.deliveredSinceTruncate = 0
+	if err := os.Remove(nw.walMetaFile()); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		nw.logger.Error("failed to remove WAL position file", "error", err)
+	}
+	nw.logger.Debug("truncated WAL")
 }
 
 // netWriterConn implements io.WriteCloser and writes to the WAL
@@ -450,32 +492,28 @@ type netWriterConn struct {
 	nw *NetWriter
 }
 
-// Write writes data to the WAL (non-blocking)
+// Write appends the entry to the WAL; the background flusher delivers
+// it to the network destination asynchronously.
 func (w *netWriterConn) Write(p []byte) (n int, err error) {
-	if w.nw.wal == nil {
-		w.nw.logger.Error("WAL not initialized")
+	nw := w.nw
+
+	nw.walMu.Lock()
+	defer nw.walMu.Unlock()
+
+	if nw.wal == nil {
 		return 0, errors.New("WAL not initialized")
 	}
-
-	w.nw.logger.Debug("writing to WAL", "size", len(p))
-
-	// Synchronize WAL access to prevent race conditions
-	w.nw.walMu.Lock()
-	defer w.nw.walMu.Unlock()
-
-	// Write to WAL - this should be fast and non-blocking
-	_, err = w.nw.wal.Write(p)
-	if err != nil {
-		w.nw.logger.Error("failed to write to WAL", "error", err)
+	if _, err = nw.wal.Write(p); err != nil {
+		// the entry cannot be persisted, so dump it to stderr
+		// rather than losing it silently
+		os.Stderr.Write(p)
 		return 0, fmt.Errorf("failed to write to WAL: %v", err)
 	}
 
-	// Sync WAL to ensure data is available for reading
-	if err = w.nw.wal.Sync(); err != nil {
-		w.nw.logger.Error("failed to sync WAL", "error", err)
-	}
+	nw.mu.Lock()
+	nw.pending = true
+	nw.mu.Unlock()
 
-	w.nw.logger.Debug("wrote data to WAL", "size", len(p))
 	return len(p), nil
 }
 
@@ -485,33 +523,30 @@ func (w *netWriterConn) Close() error {
 		w.nw.flushCtxCancel()
 	}
 
-	// Wait for background flusher to complete
+	// wait for the background flusher to finish its final flush
 	w.nw.flushWg.Wait()
 
 	var errs []error
 
-	// Sync and close WAL with synchronization
+	w.nw.walMu.Lock()
 	if w.nw.wal != nil {
-		w.nw.walMu.Lock()
 		if err := w.nw.wal.Sync(); err != nil {
 			errs = append(errs, fmt.Errorf("WAL sync error: %v", err))
 		}
 		if err := w.nw.wal.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("WAL close error: %v", err))
 		}
-		w.nw.walMu.Unlock()
 	}
+	w.nw.walMu.Unlock()
 
-	if len(errs) > 0 {
-		return errors.Join(errs...)
-	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
 //	net <address> {
 //	    dial_timeout <duration>
+//	    reconnect_interval <duration>
 //	    soft_start
 //	}
 func (nw *NetWriter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
@@ -537,6 +572,19 @@ func (nw *NetWriter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.ArgErr()
 			}
 			nw.DialTimeout = caddy.Duration(timeout)
+
+		case "reconnect_interval":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			interval, err := caddy.ParseDuration(d.Val())
+			if err != nil {
+				return d.Errf("invalid duration: %s", d.Val())
+			}
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+			nw.ReconnectInterval = caddy.Duration(interval)
 
 		case "soft_start":
 			if d.NextArg() {
