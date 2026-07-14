@@ -15,6 +15,7 @@
 package caddyfile
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -24,11 +25,6 @@ func TestFormatter(t *testing.T) {
 		description string
 		input       string
 		expect      string
-		// skip, when non-empty, temporarily skips a case whose expected output
-		// depends on a formatter feature that lands in a later refactor task
-		// (Task 8 implements only the core token-based layout). The string
-		// names the task that will re-enable the case.
-		skip string
 	}{
 		{
 			description: "very simple",
@@ -268,17 +264,15 @@ j {
 `,
 		},
 		{
+			// sanctioned divergence: invalid glued braces left literal (design decision)
 			description: "bad nesting (too many close)",
-			skip:        "task 11: dropped nesting cap and glued-brace splitting for }}}",
 			input: `a
 {
 	{
 }}}`,
 			expect: `a {
 	{
-	}
-}
-}
+		}}}
 `,
 		},
 		{
@@ -483,7 +477,6 @@ Hope this helps.` + "`" + `
 		},
 		{
 			description: "imports before global options block keep standalone brace",
-			skip:        "task 11: import standalone-brace exception keeps { off the import line",
 			input: `import ./conf.d/matcher_my_subnet.caddy
 import ./conf.d/matcher_not_my_subnet.caddy
 {
@@ -498,11 +491,6 @@ import ./conf.d/matcher_not_my_subnet.caddy
 }`,
 		},
 	} {
-		if tc.skip != "" {
-			t.Logf("[TEST %d: %s] SKIPPED (%s)", i, tc.description, tc.skip)
-			continue
-		}
-
 		// the formatter should output a trailing newline,
 		// even if the tests aren't written to expect that
 		if !strings.HasSuffix(tc.expect, "\n") {
@@ -515,6 +503,42 @@ import ./conf.d/matcher_not_my_subnet.caddy
 			t.Errorf("\n[TEST %d: %s]\n====== EXPECTED ======\n%s\n====== ACTUAL ======\n%s^^^^^^^^^^^^^^^^^^^^^",
 				i, tc.description, string(tc.expect), string(actual))
 		}
+	}
+}
+
+func TestFormatImportStandaloneBrace(t *testing.T) {
+	// immediately after a top-level import line: keep the brace standalone
+	in1 := "import a.caddy\nimport b.caddy\n{\n\torder x first\n}\n"
+	if got := string(Format([]byte(in1))); got != in1 {
+		t.Errorf("standalone brace after import not preserved:\n got %q\nwant %q", got, in1)
+	}
+	// with an intervening blank line: brace glues up and the blank line is removed
+	in2 := "import a.caddy\n\n{\n\torder x first\n}\n"
+	want2 := "import a.caddy {\n\torder x first\n}\n"
+	if got := string(Format([]byte(in2))); got != want2 {
+		t.Errorf("blank-line case:\n got %q\nwant %q", got, want2)
+	}
+}
+
+func TestFormatDeepNestingNoCap(t *testing.T) {
+	// 12 levels deep; every level indents (no 10-level clamp)
+	var b strings.Builder
+	for i := 0; i < 12; i++ {
+		b.WriteString(strings.Repeat("\t", i) + "l" + strconv.Itoa(i) + " {\n")
+	}
+	b.WriteString(strings.Repeat("\t", 12) + "x\n")
+	for i := 11; i >= 0; i-- {
+		b.WriteString(strings.Repeat("\t", i) + "}\n")
+	}
+	out := string(Format([]byte(b.String())))
+	if !strings.Contains(out, "\n"+strings.Repeat("\t", 12)+"x\n") {
+		t.Errorf("expected 12-tab indent for deepest token, got:\n%s", out)
+	}
+}
+
+func TestFormatAngleNotQuirked(t *testing.T) {
+	if got := string(Format([]byte("foo < bar"))); got != "foo < bar\n" {
+		t.Errorf("got %q, want %q", got, "foo < bar\n")
 	}
 }
 
