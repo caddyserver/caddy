@@ -672,6 +672,40 @@ func TestLexSeparatorKind(t *testing.T) {
 	}
 }
 
+func lexTexts(t *testing.T, in string) []string {
+	t.Helper()
+	toks, err := Lex([]byte(in), "T", LexOptions{Raw: true, Comments: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := []string{}
+	for _, tk := range toks {
+		out = append(out, tk.Text)
+	}
+	return out
+}
+
+func TestLexBraceSplitting(t *testing.T) {
+	cases := []struct {
+		in   string
+		want []string
+	}{
+		{"example.com{", []string{"example.com", "{"}},
+		{"{$A}{", []string{"{$A}{"}},       // placeholder tail: not split
+		{"foo{bar}", []string{"foo{bar}"}}, // placeholder: not split
+		{"route {}", []string{"route", "{", "}"}},
+		{"route { }", []string{"route", "{", "}"}},
+		{"a { b {} }", []string{"a", "{", "b", "{", "}", "}"}},
+		{"site {\n\troot\n}", []string{"site", "{", "root", "}"}},
+	}
+	for _, c := range cases {
+		got := lexTexts(t, c.in)
+		if !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%q: got %v, want %v", c.in, got, c.want)
+		}
+	}
+}
+
 func TestLexEqualsTokenizeWithZeroOptions(t *testing.T) {
 	in := []byte("site {\n\troot * /srv\n\tfile_server\n}\n")
 	a, err := Tokenize(in, "Caddyfile")
