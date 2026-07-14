@@ -46,6 +46,49 @@ func TestWrapUnbracedSiteIdempotentAndSemantic(t *testing.T) {
 	}
 }
 
+func TestWrapUnbracedSiteIdempotentReproducer(t *testing.T) {
+	// A valid Caddyfile (Parse accepts it) that used to be non-idempotent under
+	// WrapUnbracedSite: it reads as "not a single site" on the raw stream (a
+	// blank-line gap), but after formatTokens removes the blank line and folds a
+	// dangling brace, a second pass saw a single unbraced site and wrapped it.
+	// Deciding on the normalized stream makes the wrap decision stable.
+	in := []byte(") 0((.b ))\na\t\tab(\n}\n\n { }")
+	if _, err := Parse("", in); err != nil {
+		t.Fatalf("reproducer must be a valid Caddyfile, got parse error: %v", err)
+	}
+	once := FormatWithOptions(in, FormatOptions{WrapUnbracedSite: true})
+	twice := FormatWithOptions(once, FormatOptions{WrapUnbracedSite: true})
+	if !bytes.Equal(once, twice) {
+		t.Errorf("not idempotent:\n once=%q\ntwice=%q", once, twice)
+	}
+}
+
+func FuzzWrapUnbracedSiteIdempotent(f *testing.F) {
+	seeds := []string{
+		"localhost\nrespond 200\n",
+		"localhost\nroot * /srv\nfile_server\n",
+		"example.com\nreverse_proxy {\n\tto a:80\n}\n",
+		"a.com\nrespond 200\n\nb.com\nrespond 404\n",
+		"(snip) {\n\trespond 200\n}\n",
+		") 0((.b ))\na\t\tab(\n}\n\n { }",
+		"localhost {\n\trespond 200\n}\n",
+	}
+	for _, s := range seeds {
+		f.Add([]byte(s))
+	}
+	f.Fuzz(func(t *testing.T, in []byte) {
+		// Valid-only, like FuzzFormatIdempotent: skip inputs Parse rejects.
+		if _, err := Parse("", in); err != nil {
+			t.Skip()
+		}
+		once := FormatWithOptions(in, FormatOptions{WrapUnbracedSite: true})
+		twice := FormatWithOptions(once, FormatOptions{WrapUnbracedSite: true})
+		if !bytes.Equal(once, twice) {
+			t.Errorf("WrapUnbracedSite not idempotent for %q:\n once=%q\ntwice=%q", in, once, twice)
+		}
+	})
+}
+
 func TestIsSingleUnbracedSite(t *testing.T) {
 	yes := []string{
 		"localhost\nrespond 200\n",

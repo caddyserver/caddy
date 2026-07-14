@@ -59,7 +59,20 @@ func FormatWithOptions(input []byte, opts FormatOptions) []byte {
 		return append(trimmed, '\n')
 	}
 	if opts.WrapUnbracedSite {
-		tokens = wrapUnbracedSite(tokens)
+		// Decide whether to wrap on the NORMALIZED token stream, not the raw one.
+		// isSingleUnbracedSite uses source-line gaps (a blank-line gap => ambiguous
+		// multi-site => don't wrap), but formatTokens removes blank lines and folds
+		// dangling braces, so a shape that reads as "not a single site" on the raw
+		// stream can read as a single unbraced site on a second pass over the
+		// already-formatted output. Deciding on the normalized stream makes the
+		// decision stable across passes (idempotent). Once wrapped, the output is
+		// braced, so isSingleUnbracedSite is false on any re-run and there is no
+		// double-wrap.
+		normalized := formatTokens(tokens)
+		normToks, nerr := Lex(normalized, "", LexOptions{Comments: true, Raw: true})
+		if nerr == nil && isSingleUnbracedSite(normToks) {
+			tokens = wrapUnbracedSite(normToks)
+		}
 	}
 	out := formatTokens(tokens)
 
