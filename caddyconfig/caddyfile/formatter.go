@@ -16,6 +16,7 @@ package caddyfile
 
 import (
 	"bytes"
+	"strings"
 )
 
 // Format formats the input Caddyfile to a standard, nice-looking appearance.
@@ -71,7 +72,20 @@ func formatTokens(tokens []Token) []byte {
 		atLineStart = true
 	}
 
+	// prevWasComment tracks whether the last non-whitespace token emitted was a
+	// comment. A structural "{" must never fold onto a line whose last token is
+	// a comment, since "#" runs to end of line and would comment the brace out.
+	prevWasComment := false
+	// foldedOpenAt, when >= 0, is the index of a structural "{" that was already
+	// emitted early (before a trailing comment) as part of the address/comment/
+	// brace fold; when the loop reaches that index it is skipped.
+	foldedOpenAt := -1
+
 	for i := range tokens {
+		if i == foldedOpenAt {
+			// This "{" was already emitted ahead of a trailing comment.
+			continue
+		}
 		tk := tokens[i]
 		isOpen := isOpenCurlyBrace(tk)
 		// A structural close brace only closes a block when one is open. When
@@ -79,6 +93,11 @@ func formatTokens(tokens []Token) []byte {
 		// backtick/quoted argument), so it is treated as an inline literal and
 		// emitted verbatim at its source position.
 		isClose := isCloseCurlyBrace(tk) && nesting > 0
+
+		// A trailing comment shares its source line with the previous token
+		// (e.g. after "}", after "{", or after a directive) and renders inline
+		// on that line; a standalone comment sits alone on its own line.
+		trailingComment := tk.isComment && wrote && !isNextOnNewLine(tokens[i-1], tk)
 
 		// breaks is the number of newlines to emit before this token:
 		//   0 = stay on the current line, 1 = new line, 2 = one blank line.
@@ -98,7 +117,13 @@ func formatTokens(tokens []Token) []byte {
 		case isOpen:
 			// An opening brace attaches to the current line: never break to a
 			// new line before it (it joins the preceding token with a space).
-			breaks = 0
+			// EXCEPTION: a standalone comment line must keep the following "{"
+			// on its own line, otherwise the "#" would comment the brace out.
+			if prevWasComment {
+				breaks = 1
+			} else {
+				breaks = 0
+			}
 		case isClose:
 			// A closing brace always goes on its own line, and dedents.
 			if wrote && !atLineStart {
@@ -107,20 +132,36 @@ func formatTokens(tokens []Token) []byte {
 			if nesting > 0 {
 				nesting--
 			}
+		case trailingComment:
+			// A trailing comment stays on the current line.
+			breaks = 0
 		}
 
 		// The content following an opening brace always begins on its own
 		// indented line, regardless of how the source was laid out. This
-		// applies to any token, including a nested opening brace.
-		if wrote && isOpenCurlyBrace(tokens[i-1]) && breaks == 0 {
+		// applies to any token, including a nested opening brace. A trailing
+		// comment after "{" is the exception: it stays inline on the "{" line.
+		if wrote && isOpenCurlyBrace(tokens[i-1]) && breaks == 0 && !trailingComment {
 			breaks = 1
 		}
 
-		// A blank line always follows a top-level closing brace.
-		if prevTopClose && breaks < 2 {
+		// A blank line always follows a top-level closing brace, unless this
+		// token is a comment trailing that brace on the same source line.
+		if prevTopClose && breaks < 2 && !trailingComment {
 			breaks = 2
 		}
 		prevTopClose = false
+
+		// Address/comment/brace fold: when this is a trailing comment whose very
+		// next token is a structural "{" that opens this line's block, emit the
+		// "{" on the head line before the comment, so "addr # c"⏎"{" renders as
+		// "addr { # c". This must happen before any newline is emitted.
+		if trailingComment && i+1 < len(tokens) && isOpenCurlyBrace(tokens[i+1]) && breaks == 0 && !atLineStart {
+			out.WriteByte(' ')
+			out.WriteString(tokens[i+1].Raw())
+			nesting++
+			foldedOpenAt = i + 1
+		}
 
 		// Emit the vertical spacing.
 		for breaks > 0 {
@@ -133,21 +174,37 @@ func formatTokens(tokens []Token) []byte {
 			writeIndent()
 		}
 
-		// Emit horizontal separation for same-line tokens: exactly one space
-		// separates two tokens that share a line (including an attaching "{").
-		// A structural close brace at nesting zero (an inline literal, see
-		// above) stays glued to its predecessor when the source had no space.
-		if !atLineStart {
+		// A line continuation renders as "\", a newline, then a hanging indent
+		// of nesting+1 tabs before the token (instead of a single space). The
+		// token's Raw() carries the source continuation framing ("\"+newline+
+		// indentation) as a prefix, so it is stripped and re-emitted normalized.
+		body := tk.Raw()
+		if tk.continuation && !atLineStart {
+			out.WriteString(" \\\n")
+			for j := 0; j < nesting+1; j++ {
+				out.WriteByte('\t')
+			}
+			body = strings.TrimLeft(strings.TrimPrefix(body, "\\"), " \t\r\n")
+			atLineStart = false
+		} else if !atLineStart {
+			// Emit horizontal separation for same-line tokens: exactly one space
+			// separates two tokens that share a line (including an attaching "{").
+			// A structural close brace at nesting zero (an inline literal) stays
+			// glued to its predecessor when the source had no space. A comment
+			// glues to a preceding quoted/backtick/heredoc token only when no
+			// space separated them ("x"#c); otherwise it takes a leading space.
 			inlineClose := isCloseCurlyBrace(tk) && !isClose
-			if !(inlineClose && !tk.precededBySpace) {
+			gluedComment := tk.isComment && tokens[i-1].Quoted() && !tk.precededBySpace
+			if !(inlineClose && !tk.precededBySpace) && !gluedComment {
 				out.WriteByte(' ')
 			}
 		}
 
 		// Emit the token body verbatim.
-		out.WriteString(tk.Raw())
+		out.WriteString(body)
 		wrote = true
 		atLineStart = false
+		prevWasComment = tk.isComment
 
 		// Structural bookkeeping after emitting. Vertical spacing after a
 		// brace is produced by the next token's break calculation, so we don't
