@@ -129,7 +129,7 @@ func isSingleUnbracedSite(tokens []Token) bool {
 		addrLineEndIdx = -1 // index of the last address token
 		expectAnother  bool // previous address token ended in ","
 	)
-	for i := 0; i < len(tokens); i++ {
+	for i := range len(tokens) {
 		tk := tokens[i]
 		if tk.isComment {
 			continue
@@ -234,7 +234,7 @@ func wrapUnbracedSite(tokens []Token) []Token {
 	addrLineEndIdx := -1
 	firstAddrIdx := -1
 	expectAnother := false
-	for i := 0; i < len(tokens); i++ {
+	for i := range len(tokens) {
 		tk := tokens[i]
 		if tk.isComment {
 			continue
@@ -665,7 +665,7 @@ func formatTokens(tokens []Token) []byte {
 			// preserved so two distinct tokens (e.g. "0" then "}") do not merge.
 			inlineClose := isCloseCurlyBrace(tk) && !isClose && tokens[i-1].Quoted()
 			gluedComment := tk.isComment && tokens[i-1].Quoted() && !tk.precededBySpace
-			if !(inlineClose && !tk.precededBySpace) && !gluedComment {
+			if (!inlineClose || tk.precededBySpace) && !gluedComment {
 				out.WriteByte(' ')
 			}
 		}
