@@ -386,7 +386,7 @@ func hasUnformattableToken(tokens []Token) bool {
 
 // anyNonCommentBefore reports whether any token before index i is not a comment.
 func anyNonCommentBefore(tokens []Token, i int) bool {
-	for j := 0; j < i; j++ {
+	for j := range i {
 		if !tokens[j].isComment {
 			return true
 		}
@@ -478,7 +478,7 @@ func formatTokens(tokens []Token) []byte {
 	prevTopClose := false
 
 	writeIndent := func() {
-		for i := 0; i < nesting; i++ {
+		for range nesting {
 			out.WriteByte('\t')
 		}
 	}
@@ -646,7 +646,7 @@ func formatTokens(tokens []Token) []byte {
 		body := tk.Raw()
 		if tk.continuation && !atLineStart {
 			out.WriteString(" \\\n")
-			for j := 0; j < nesting+1; j++ {
+			for range nesting + 1 {
 				out.WriteByte('\t')
 			}
 			body = strings.TrimLeft(strings.TrimPrefix(body, "\\"), " \t\r\n")
