@@ -219,7 +219,7 @@ func discoverImportedFiles(rootFile string, rootInput []byte) (files []string, e
 // is only recognized when it is the first token of its line. A snippet
 // definition is a first-of-line `(name)` token followed by an open brace.
 func scanTokens(tokens []Token) (snippets []string, imports []string) {
-	for i := 0; i < len(tokens); i++ {
+	for i := range len(tokens) {
 		tok := tokens[i]
 		firstOfLine := i == 0 || isNextOnNewLine(tokens[i-1], tok)
 		if !firstOfLine {
