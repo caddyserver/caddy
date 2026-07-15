@@ -46,6 +46,15 @@ func writeTestFile(t *testing.T, path, content string) {
 	}
 }
 
+func canonicalTestPath(t *testing.T, path string) string {
+	t.Helper()
+	path, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
 func captureStdout(t *testing.T, fn func() (int, error)) (string, int, error) {
 	t.Helper()
 	r, w, err := os.Pipe()
@@ -112,6 +121,11 @@ func TestCmdFmtImportsOverwrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Windows loads FileInfo IDs lazily when SameFile is first called. Prime
+	// them before replacement so these values continue to identify the old files.
+	if !os.SameFile(rootInfoBefore, rootInfoBefore) || !os.SameFile(importedInfoBefore, importedInfoBefore) {
+		t.Fatal("could not snapshot file identity")
+	}
 
 	fl := newFmtFlags(rootPath, true, false, true)
 	code, err := cmdFmt(fl)
@@ -175,7 +189,7 @@ func TestCmdFmtImportsPreviewReportsFormattingDifference(t *testing.T) {
 			if code != caddy.ExitCodeFailedStartup {
 				t.Errorf("expected ExitCodeFailedStartup, got %d", code)
 			}
-			if !strings.Contains(output, "# "+importedPath) {
+			if !strings.Contains(output, "# "+canonicalTestPath(t, importedPath)) {
 				t.Errorf("output missing imported file header; got:\n%s", output)
 			}
 			if diff && !strings.Contains(output, "+ \trespond 200") {
@@ -257,10 +271,10 @@ func TestCmdFmtImportsPrintsHeaders(t *testing.T) {
 	if code != caddy.ExitCodeSuccess {
 		t.Errorf("expected ExitCodeSuccess, got %d", code)
 	}
-	if !strings.Contains(output, "# "+rootPath) {
+	if !strings.Contains(output, "# "+canonicalTestPath(t, rootPath)) {
 		t.Errorf("output missing root header; got:\n%s", output)
 	}
-	if !strings.Contains(output, "# "+importedPath) {
+	if !strings.Contains(output, "# "+canonicalTestPath(t, importedPath)) {
 		t.Errorf("output missing imported file header; got:\n%s", output)
 	}
 }
