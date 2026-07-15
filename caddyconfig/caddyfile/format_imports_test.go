@@ -61,9 +61,12 @@ func TestDiscoverImportedFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	// sites/a.caddy is discovered; "mysnip" is a snippet (defined in a.caddy), not a file
-	want := []string{filepath.Join(dir, "sites", "a.caddy")}
-	abs := func(p string) string { a, _ := filepath.Abs(p); return a }
-	if len(files) != 1 || abs(files[0]) != abs(want[0]) {
+	wantPath, err := canonicalPath(filepath.Join(dir, "sites", "a.caddy"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{wantPath}
+	if len(files) != 1 || files[0] != want[0] {
 		t.Errorf("got %v, want %v", files, want)
 	}
 }
