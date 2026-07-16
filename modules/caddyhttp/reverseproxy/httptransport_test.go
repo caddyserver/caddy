@@ -260,7 +260,7 @@ func TestHTTPTransport_DialContext_DialInfoOverride(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dialCtx := context.WithValue(context.Background(), caddyhttp.VarsCtxKey, make(map[string]any))
-			caddyhttp.SetVar(dialCtx, dialInfoVarKey, DialInfo{
+			dialCtx = context.WithValue(dialCtx, dialInfoCtxKey, DialInfo{
 				Network: "tcp4",
 				Address: tt.dialInfo,
 			})
