@@ -757,6 +757,21 @@ func TestOverlapsWith(t *testing.T) {
 			expect: false,
 		},
 		{
+			a:      NetworkAddress{Host: "0.0.0.0", StartPort: 2019, EndPort: 2019},
+			b:      NetworkAddress{Host: "::", StartPort: 2019, EndPort: 2019},
+			expect: true, // tcp/[::] may be dual-stack
+		},
+		{
+			a:      NetworkAddress{Network: "tcp6", Host: "::", StartPort: 2019, EndPort: 2019},
+			b:      NetworkAddress{Host: "0.0.0.0", StartPort: 2019, EndPort: 2019},
+			expect: false, // tcp6/[::] is IPv6-only
+		},
+		{
+			a:      NetworkAddress{Host: "::", StartPort: 2019, EndPort: 2019},
+			b:      NetworkAddress{Host: "192.168.1.1", StartPort: 2019, EndPort: 2019},
+			expect: true, // dual-stack [::] covers IPv4
+		},
+		{
 			a:      NetworkAddress{Network: "tcp", Host: "127.0.0.1", StartPort: 2019, EndPort: 2019},
 			b:      NetworkAddress{Network: "udp", Host: "127.0.0.1", StartPort: 2019, EndPort: 2019},
 			expect: false,

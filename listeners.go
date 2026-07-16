@@ -327,7 +327,13 @@ func (na NetworkAddress) hostsOverlap(other NetworkAddress) bool {
 
 	// a wildcard overlaps any address of the same family
 	if ip1.IsUnspecified() || ip2.IsUnspecified() {
-		return ip1.Is6() == ip2.Is6()
+		if ip1.Is6() == ip2.Is6() {
+			return true
+		}
+		_, f1 := networkParts(na.Network)
+		_, f2 := networkParts(other.Network)
+		return (ip1.IsUnspecified() && ip1.Is6() && f1 == 0) ||
+			(ip2.IsUnspecified() && ip2.Is6() && f2 == 0)
 	}
 	return ip1 == ip2
 }
