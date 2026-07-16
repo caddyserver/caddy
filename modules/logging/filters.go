@@ -24,6 +24,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"go.uber.org/zap/zapcore"
 
@@ -39,6 +40,7 @@ func init() {
 	caddy.RegisterModule(IPMaskFilter{})
 	caddy.RegisterModule(QueryFilter{})
 	caddy.RegisterModule(CookieFilter{})
+	caddy.RegisterModule(SetCookieFilter{})
 	caddy.RegisterModule(RegexpFilter{})
 	caddy.RegisterModule(RenameFilter{})
 	caddy.RegisterModule(MultiRegexpFilter{})
@@ -564,6 +566,177 @@ OUTER:
 	return in
 }
 
+// SetCookieFilter is a Caddy log field filter that filters
+// Set-Cookie header values.
+//
+// This filter updates logged Set-Cookie header values to remove,
+// replace or hash cookies containing sensitive data while preserving
+// the original attribute suffix verbatim.
+//
+// It is typically used with access log fields such as
+// "resp_headers>Set-Cookie".
+//
+// If several actions are configured for the same cookie name, only the first
+// will be applied.
+type SetCookieFilter struct {
+	// A list of actions to apply to the Set-Cookie values.
+	Actions []cookieFilterAction `json:"actions"`
+}
+
+// Validate checks that action types are correct.
+func (f *SetCookieFilter) Validate() error {
+	for _, a := range f.Actions {
+		if err := a.Type.IsValid(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// CaddyModule returns the Caddy module information.
+func (SetCookieFilter) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "caddy.logging.encoders.filter.set_cookie",
+		New: func() caddy.Module { return new(SetCookieFilter) },
+	}
+}
+
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+func (m *SetCookieFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	d.Next() // consume filter name
+	for d.NextBlock(0) {
+		cfa := cookieFilterAction{}
+		switch d.Val() {
+		case "replace":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+
+			cfa.Type = replaceAction
+			cfa.Name = d.Val()
+
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			cfa.Value = d.Val()
+
+		case "hash":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+
+			cfa.Type = hashAction
+			cfa.Name = d.Val()
+
+		case "delete":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+
+			cfa.Type = deleteAction
+			cfa.Name = d.Val()
+
+		default:
+			return d.Errf("unrecognized subdirective %s", d.Val())
+		}
+
+		m.Actions = append(m.Actions, cfa)
+	}
+	return nil
+}
+
+// Filter filters the input field.
+func (m SetCookieFilter) Filter(in zapcore.Field) zapcore.Field {
+	setCookies, ok := in.Interface.(internal.LoggableStringArray)
+	if !ok {
+		return in
+	}
+
+	transformed := make(internal.LoggableStringArray, 0, len(setCookies))
+	for _, line := range setCookies {
+		filtered, keep := m.filterLine(line)
+		if keep {
+			transformed = append(transformed, filtered)
+		}
+	}
+
+	in.Interface = transformed
+
+	return in
+}
+
+func (m SetCookieFilter) filterLine(line string) (string, bool) {
+	cookie, err := http.ParseSetCookie(line)
+	if err != nil {
+		return line, true
+	}
+
+	for _, a := range m.Actions {
+		if cookie.Name != a.Name {
+			continue
+		}
+
+		switch a.Type {
+		case replaceAction:
+			return replaceSetCookieValue(line, cookie, a.Value), true
+
+		case hashAction:
+			// A Set-Cookie-based deletion may still have an empty value
+			// (for example with Max-Age=0). As with the existing hash filter,
+			// hashing an empty value yields the SHA-256 prefix "e3b0c442".
+			return replaceSetCookieValue(line, cookie, hash(cookie.Value)), true
+
+		case deleteAction:
+			return "", false
+		}
+	}
+
+	return line, true
+}
+
+// replaceSetCookieValue keeps the original Set-Cookie suffix verbatim and only
+// swaps out the leading cookie value after ParseSetCookie has identified it.
+func replaceSetCookieValue(line string, cookie *http.Cookie, newValue string) string {
+	// Only operate on the first Set-Cookie segment: "name=value".
+	headEnd := strings.IndexByte(line, ';')
+	if headEnd == -1 {
+		headEnd = len(line)
+	}
+
+	head := line[:headEnd]
+	eq := strings.IndexByte(head, '=')
+	if eq == -1 {
+		return line
+	}
+
+	name := strings.TrimSpace(head[:eq])
+	if name != cookie.Name {
+		return line
+	}
+
+	// Preserve the original spacing around the value so the logged header stays
+	// as close as possible to the original input.
+	rawValue := head[eq+1:]
+	trimmedValue := strings.TrimSpace(rawValue)
+	leadingWhitespaceLen := len(rawValue) - len(strings.TrimLeftFunc(rawValue, unicode.IsSpace))
+	trailingWhitespaceLen := len(rawValue) - len(strings.TrimRightFunc(rawValue, unicode.IsSpace))
+
+	replacement := newValue
+	// If the original cookie value was quoted, keep the replacement quoted too.
+	if cookie.Quoted && len(trimmedValue) >= 2 && trimmedValue[0] == '"' && trimmedValue[len(trimmedValue)-1] == '"' {
+		replacement = `"` + newValue + `"`
+	}
+
+	// Rebuild only the first "name=value" pair and keep the attribute suffix
+	// byte-for-byte unchanged.
+	return line[:eq+1] +
+		rawValue[:leadingWhitespaceLen] +
+		replacement +
+		rawValue[len(rawValue)-trailingWhitespaceLen:] +
+		line[headEnd:]
+}
+
 // RegexpFilter is a Caddy log field filter that
 // replaces the field matching the provided regexp
 // with the indicated string. If the field is an
@@ -879,6 +1052,7 @@ var (
 	_ LogFieldFilter = (*IPMaskFilter)(nil)
 	_ LogFieldFilter = (*QueryFilter)(nil)
 	_ LogFieldFilter = (*CookieFilter)(nil)
+	_ LogFieldFilter = (*SetCookieFilter)(nil)
 	_ LogFieldFilter = (*RegexpFilter)(nil)
 	_ LogFieldFilter = (*RenameFilter)(nil)
 	_ LogFieldFilter = (*MultiRegexpFilter)(nil)
@@ -889,6 +1063,7 @@ var (
 	_ caddyfile.Unmarshaler = (*IPMaskFilter)(nil)
 	_ caddyfile.Unmarshaler = (*QueryFilter)(nil)
 	_ caddyfile.Unmarshaler = (*CookieFilter)(nil)
+	_ caddyfile.Unmarshaler = (*SetCookieFilter)(nil)
 	_ caddyfile.Unmarshaler = (*RegexpFilter)(nil)
 	_ caddyfile.Unmarshaler = (*RenameFilter)(nil)
 	_ caddyfile.Unmarshaler = (*MultiRegexpFilter)(nil)
@@ -898,5 +1073,6 @@ var (
 	_ caddy.Provisioner = (*MultiRegexpFilter)(nil)
 
 	_ caddy.Validator = (*QueryFilter)(nil)
+	_ caddy.Validator = (*SetCookieFilter)(nil)
 	_ caddy.Validator = (*MultiRegexpFilter)(nil)
 )
