@@ -421,7 +421,7 @@ func (m QueryFilter) processQueryString(s string) string {
 
 		case hashAction:
 			for i := range q[a.Parameter] {
-				q[a.Parameter][i] = hash(a.Value)
+				q[a.Parameter][i] = hash(q[a.Parameter][i])
 			}
 
 		case deleteAction:
