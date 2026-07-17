@@ -57,6 +57,61 @@ var testCfg = []byte(`{
 		}
 		`)
 
+func TestContextLocalAdminAddress(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		ctx         Context
+		wantAddress string
+		wantEnabled bool
+	}{
+		{
+			name: "provision-only context does not validate admin address",
+			ctx:  Context{cfg: &Config{}},
+		},
+		{
+			name:        "validation context uses default admin address",
+			ctx:         Context{cfg: &Config{}, validateAdmin: true},
+			wantAddress: DefaultAdminListen,
+			wantEnabled: true,
+		},
+		{
+			name: "disabled admin is not validated",
+			ctx: Context{
+				cfg:           &Config{Admin: &AdminConfig{Disabled: true}},
+				validateAdmin: true,
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			addr, enabled, err := tc.ctx.LocalAdminAddress()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if enabled != tc.wantEnabled {
+				t.Fatalf("enabled: got %t, want %t", enabled, tc.wantEnabled)
+			}
+			if enabled && addr.String() != tc.wantAddress {
+				t.Fatalf("address: got %q, want %q", addr, tc.wantAddress)
+			}
+		})
+	}
+}
+
+func TestDerivedContextPreservesAdminValidation(t *testing.T) {
+	ctx := Context{Context: context.Background(), cfg: &Config{}, validateAdmin: true}
+
+	child, cancel := NewContext(ctx)
+	cancel()
+	if _, enabled, err := child.LocalAdminAddress(); err != nil || !enabled {
+		t.Fatalf("NewContext did not preserve admin validation: enabled=%t, err=%v", enabled, err)
+	}
+
+	withValue := ctx.WithValue("test-key", "test-value")
+	if _, enabled, err := withValue.LocalAdminAddress(); err != nil || !enabled {
+		t.Fatalf("WithValue did not preserve admin validation: enabled=%t, err=%v", enabled, err)
+	}
+}
+
 type testAdminPublicKey string
 
 func (k testAdminPublicKey) Equal(x crypto.PublicKey) bool {

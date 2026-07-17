@@ -717,78 +717,48 @@ func TestOverlapsWith(t *testing.T) {
 		expect bool
 	}{
 		{
-			a:      NetworkAddress{Host: "127.0.0.1", StartPort: 2019, EndPort: 2019},
-			b:      NetworkAddress{Host: "127.0.0.1", StartPort: 2019, EndPort: 2019},
+			a:      NetworkAddress{Network: "tcp", Host: "localhost", StartPort: 2019, EndPort: 2019},
+			b:      NetworkAddress{Network: "tcp", Host: "localhost", StartPort: 2019, EndPort: 2019},
 			expect: true,
 		},
 		{
-			a:      NetworkAddress{Host: "127.0.0.1", StartPort: 2019, EndPort: 2019},
-			b:      NetworkAddress{Host: "127.0.0.2", StartPort: 2019, EndPort: 2019},
+			a:      NetworkAddress{Network: "tcp", Host: "localhost", StartPort: 2019, EndPort: 2020},
+			b:      NetworkAddress{Network: "tcp", Host: "localhost", StartPort: 2020, EndPort: 2021},
+			expect: true,
+		},
+		{
+			a:      NetworkAddress{Network: "tcp", Host: "localhost", StartPort: 2019, EndPort: 2019},
+			b:      NetworkAddress{Network: "tcp", Host: "localhost", StartPort: 2020, EndPort: 2020},
 			expect: false,
 		},
 		{
-			a:      NetworkAddress{Host: "localhost", StartPort: 2019, EndPort: 2019},
-			b:      NetworkAddress{Host: "127.0.0.1", StartPort: 2019, EndPort: 2019},
+			a:      NetworkAddress{Network: "tcp", Host: "127.0.0.1"},
+			b:      NetworkAddress{Network: "tcp", Host: "127.0.0.1"},
 			expect: true,
 		},
 		{
-			a:      NetworkAddress{Host: "localhost", StartPort: 2019, EndPort: 2019},
-			b:      NetworkAddress{Host: "127.0.0.2", StartPort: 2019, EndPort: 2019},
+			a:      NetworkAddress{Network: "tcp", Host: "localhost", StartPort: 2019, EndPort: 2019},
+			b:      NetworkAddress{Network: "tcp", Host: "", StartPort: 2019, EndPort: 2019},
 			expect: false,
 		},
 		{
-			a:      NetworkAddress{Host: "localhost", StartPort: 2019, EndPort: 2019},
-			b:      NetworkAddress{Host: "0.0.0.0", StartPort: 2019, EndPort: 2019},
-			expect: true,
-		},
-		{
-			a:      NetworkAddress{Host: "localhost", StartPort: 2019, EndPort: 2019},
-			b:      NetworkAddress{Host: "::1", StartPort: 2019, EndPort: 2019},
-			expect: true,
-		},
-		{
-			a:      NetworkAddress{Host: "", StartPort: 2019, EndPort: 2019},
-			b:      NetworkAddress{Host: "192.168.1.1", StartPort: 2019, EndPort: 2019},
-			expect: true,
-		},
-		{
-			a:      NetworkAddress{Host: "0.0.0.0", StartPort: 2019, EndPort: 2019},
-			b:      NetworkAddress{Host: "::1", StartPort: 2019, EndPort: 2019},
+			a:      NetworkAddress{Network: "tcp", Host: "localhost", StartPort: 2019, EndPort: 2019},
+			b:      NetworkAddress{Network: "tcp", Host: "::1", StartPort: 2019, EndPort: 2019},
 			expect: false,
 		},
 		{
-			a:      NetworkAddress{Host: "0.0.0.0", StartPort: 2019, EndPort: 2019},
-			b:      NetworkAddress{Host: "::", StartPort: 2019, EndPort: 2019},
-			expect: true, // tcp/[::] may be dual-stack
-		},
-		{
-			a:      NetworkAddress{Network: "tcp6", Host: "::", StartPort: 2019, EndPort: 2019},
-			b:      NetworkAddress{Host: "0.0.0.0", StartPort: 2019, EndPort: 2019},
-			expect: false, // tcp6/[::] is IPv6-only
-		},
-		{
-			a:      NetworkAddress{Host: "::", StartPort: 2019, EndPort: 2019},
-			b:      NetworkAddress{Host: "192.168.1.1", StartPort: 2019, EndPort: 2019},
-			expect: true, // dual-stack [::] covers IPv4
-		},
-		{
-			a:      NetworkAddress{Network: "tcp", Host: "127.0.0.1", StartPort: 2019, EndPort: 2019},
-			b:      NetworkAddress{Network: "udp", Host: "127.0.0.1", StartPort: 2019, EndPort: 2019},
+			a:      NetworkAddress{Network: "plugin", Host: "same", StartPort: 2019, EndPort: 2019},
+			b:      NetworkAddress{Network: "plugin6", Host: "same", StartPort: 2019, EndPort: 2019},
 			expect: false,
 		},
 		{
-			a:      NetworkAddress{Network: "udp4", Host: "127.0.0.1", StartPort: 2019, EndPort: 2019},
-			b:      NetworkAddress{Network: "udp6", Host: "::1", StartPort: 2019, EndPort: 2019},
+			a:      NetworkAddress{Network: "tcp4", Host: "::1", StartPort: 2019, EndPort: 2019},
+			b:      NetworkAddress{Network: "tcp", Host: "::1", StartPort: 2019, EndPort: 2019},
 			expect: false,
 		},
 		{
-			a:      NetworkAddress{Network: "udp", Host: "127.0.0.1", StartPort: 2019, EndPort: 2019},
-			b:      NetworkAddress{Network: "udp4", Host: "127.0.0.1", StartPort: 2019, EndPort: 2019},
-			expect: true,
-		},
-		{
-			a:      NetworkAddress{Network: "tcp4", Host: "127.0.0.1", StartPort: 2019, EndPort: 2019},
-			b:      NetworkAddress{Network: "tcp6", Host: "::1", StartPort: 2019, EndPort: 2019},
+			a:      NetworkAddress{Network: "tcp6", Host: "127.0.0.1", StartPort: 2019, EndPort: 2019},
+			b:      NetworkAddress{Network: "tcp", Host: "127.0.0.1", StartPort: 2019, EndPort: 2019},
 			expect: false,
 		},
 		{
@@ -804,6 +774,16 @@ func TestOverlapsWith(t *testing.T) {
 		{
 			a:      NetworkAddress{Network: "unix", Host: "/run/caddy/admin.sock|0222"},
 			b:      NetworkAddress{Network: "unix", Host: "/run/caddy/admin.sock|0777"},
+			expect: true,
+		},
+		{
+			a:      NetworkAddress{Network: "unix", Host: "/run/caddy/admin.sock"},
+			b:      NetworkAddress{Network: "unixpacket", Host: "/run/caddy/admin.sock"},
+			expect: true,
+		},
+		{
+			a:      NetworkAddress{Network: "fd", Host: "3"},
+			b:      NetworkAddress{Network: "fdgram", Host: "3"},
 			expect: true,
 		},
 	} {

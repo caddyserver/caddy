@@ -165,6 +165,9 @@ type App struct {
 	logger *zap.Logger
 	tlsApp *caddytls.TLS
 
+	adminAddr  caddy.NetworkAddress
+	checkAdmin bool
+
 	// stopped indicates whether the app has stopped
 	// It can only happen if it has started successfully in the first place.
 	// Otherwise, Cleanup will call Stop to clean up resources.
@@ -187,6 +190,11 @@ func (app *App) Provision(ctx caddy.Context) error {
 	// store some references
 	app.logger = ctx.Logger()
 	app.ctx = ctx
+	var err error
+	app.adminAddr, app.checkAdmin, err = ctx.LocalAdminAddress()
+	if err != nil {
+		return fmt.Errorf("parsing local admin address: %v", err)
+	}
 
 	// provision TLS and events apps
 	tlsAppIface, err := ctx.App("tls")
@@ -410,7 +418,6 @@ func (app *App) Provision(ctx caddy.Context) error {
 // Validate ensures the app's configuration is valid.
 func (app *App) Validate() error {
 	lnAddrs := make(map[string]string)
-	adminAddr, checkAdmin := caddy.LocalAdminAddress()
 
 	for srvName, srv := range app.Servers {
 		// each server must use distinct listener addresses
@@ -419,8 +426,8 @@ func (app *App) Validate() error {
 			if err != nil {
 				return fmt.Errorf("invalid listener address '%s': %v", addr, err)
 			}
-			if checkAdmin && listenAddr.OverlapsWith(adminAddr) {
-				return fmt.Errorf("server %s: listener %q overlaps with admin API address %s (use another address or 'admin off')", srvName, addr, adminAddr)
+			if app.checkAdmin && listenAddr.OverlapsWith(app.adminAddr) {
+				return fmt.Errorf("server %s: listener %q overlaps with admin API address %s (use another address or 'admin off')", srvName, addr, app.adminAddr)
 			}
 			// check that every address in the port range is unique to this server;
 			// we do not use <= here because PortRangeSize() adds 1 to EndPort for us

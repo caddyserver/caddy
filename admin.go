@@ -364,12 +364,21 @@ func (admin AdminConfig) allowedOrigins(addr NetworkAddress) []*url.URL {
 	return allowed
 }
 
-// LocalAdminAddress returns the local admin API listen address
+// LocalAdminAddress returns the configured local admin API listen address
 // and whether it is enabled.
-func LocalAdminAddress() (NetworkAddress, bool) {
-	serverMu.Lock()
-	defer serverMu.Unlock()
-	return localAdminAddr, localAdminEnabled
+func (ctx Context) LocalAdminAddress() (NetworkAddress, bool, error) {
+	if !ctx.validateAdmin {
+		return NetworkAddress{}, false, nil
+	}
+	if ctx.cfg != nil && ctx.cfg.Admin != nil && ctx.cfg.Admin.Disabled {
+		return NetworkAddress{}, false, nil
+	}
+	listen := DefaultAdminListen
+	if ctx.cfg != nil && ctx.cfg.Admin != nil {
+		listen = ctx.cfg.Admin.Listen
+	}
+	addr, err := parseAdminListenAddr(listen, DefaultAdminListen)
+	return addr, true, err
 }
 
 // replaceLocalAdminServer replaces the running local admin server
@@ -411,9 +420,6 @@ func replaceLocalAdminServer(cfg *Config, ctx Context) error {
 
 	// if new admin endpoint is to be disabled, we're done
 	if cfg.Admin.Disabled {
-		serverMu.Lock()
-		localAdminEnabled = false
-		serverMu.Unlock()
 		Log().Named("admin").Warn("admin endpoint disabled")
 		return nil
 	}
@@ -435,8 +441,6 @@ func replaceLocalAdminServer(cfg *Config, ctx Context) error {
 	}
 
 	serverMu.Lock()
-	localAdminAddr = addr
-	localAdminEnabled = true
 	localAdminServer = &http.Server{
 		Addr:              addr.String(), // for logging purposes only
 		Handler:           handler,
@@ -1493,8 +1497,6 @@ var bufPool = sync.Pool{
 // keep a reference to admin endpoint singletons while they're active
 var (
 	serverMu                            sync.Mutex
-	localAdminAddr                      NetworkAddress
-	localAdminEnabled                   bool
 	localAdminServer, remoteAdminServer *http.Server
 	identityCertCache                   *certmagic.Cache
 )

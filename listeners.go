@@ -15,7 +15,6 @@
 package caddy
 
 import (
-	"cmp"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -256,26 +255,21 @@ func (na NetworkAddress) PortRangeSize() uint {
 	return (na.EndPort - na.StartPort) + 1
 }
 
-// Reports whether na and other could bind to the same socket and thus conflict.
-// For unix and fd sockets, only the network and host (socket path) are compared.
-// For IP-based networks, it accounts for intersecting port ranges, transport
-// IP families, wildcard interfaces, and the localhost alias.
+// OverlapsWith reports whether na and other use the same Caddy listener.
+// It compares configured listener identity rather than resolving hostnames or
+// predicting platform-specific IP wildcard behaviour. Unix socket types share
+// the same path namespace, so equal normalized paths overlap across types.
 func (na NetworkAddress) OverlapsWith(other NetworkAddress) bool {
-	if na.IsUnixNetwork() || na.IsFdNetwork() || other.IsUnixNetwork() || other.IsFdNetwork() {
-		return na.Network == other.Network && na.bindPath() == other.bindPath()
+	if na.IsUnixNetwork() || other.IsUnixNetwork() {
+		return na.IsUnixNetwork() && other.IsUnixNetwork() && na.bindPath() == other.bindPath()
 	}
-
-	// port ranges must intersect
-	if na.EndPort < other.StartPort || other.EndPort < na.StartPort {
-		return false
+	if na.IsFdNetwork() || other.IsFdNetwork() {
+		return na.IsFdNetwork() && other.IsFdNetwork() && na.Host == other.Host
 	}
-
-	// transport and IP family must be compatible
-	if !networksOverlap(na.Network, other.Network) {
-		return false
-	}
-
-	return na.hostsOverlap(other)
+	return na.Network == other.Network &&
+		na.Host == other.Host &&
+		na.StartPort <= other.EndPort &&
+		other.StartPort <= na.EndPort
 }
 
 func (na NetworkAddress) bindPath() string {
@@ -287,65 +281,6 @@ func (na NetworkAddress) bindPath() string {
 		return na.Host
 	}
 	return path
-}
-
-// Reports whether two network names could bind the same socket.
-func networksOverlap(n1, n2 string) bool {
-	t1, f1 := networkParts(n1)
-	t2, f2 := networkParts(n2)
-	return t1 == t2 && (f1 == 0 || f2 == 0 || f1 == f2)
-}
-
-func networkParts(network string) (transport string, family int) {
-	network = cmp.Or(network, "tcp") // default to tcp
-	if base, ok := strings.CutSuffix(network, "4"); ok && base != "" {
-		return base, 4
-	}
-	if base, ok := strings.CutSuffix(network, "6"); ok && base != "" {
-		return base, 6
-	}
-	return network, 0
-}
-
-// hostsOverlap reports whether the hosts of na and other could resolve to a
-// common listening interface. Callers must ensure neither is a unix/fd socket.
-func (na NetworkAddress) hostsOverlap(other NetworkAddress) bool {
-	// an empty host means "all interfaces"
-	if na.Host == "" || other.Host == "" || na.Host == other.Host {
-		return true
-	}
-
-	if na.Host == "localhost" || other.Host == "localhost" {
-		return bindsLikeLocalhost(na.Host) && bindsLikeLocalhost(other.Host)
-	}
-
-	ip1, err1 := netip.ParseAddr(na.Host)
-	ip2, err2 := netip.ParseAddr(other.Host)
-	if err1 != nil || err2 != nil {
-		return false // unresolved names, assume distinct
-	}
-
-	// a wildcard overlaps any address of the same family
-	if ip1.IsUnspecified() || ip2.IsUnspecified() {
-		if ip1.Is6() == ip2.Is6() {
-			return true
-		}
-		_, f1 := networkParts(na.Network)
-		_, f2 := networkParts(other.Network)
-		return (ip1.IsUnspecified() && ip1.Is6() && f1 == 0) ||
-			(ip2.IsUnspecified() && ip2.Is6() && f2 == 0)
-	}
-	return ip1 == ip2
-}
-
-// Reports whether host could bind the same socket as localhost
-func bindsLikeLocalhost(host string) bool {
-	switch host {
-	case "", "localhost":
-		return true
-	}
-	ip, err := netip.ParseAddr(host)
-	return err == nil && (ip.IsUnspecified() || ip == netip.MustParseAddr("127.0.0.1") || ip == netip.MustParseAddr("::1"))
 }
 
 func (na NetworkAddress) isLoopback() bool {

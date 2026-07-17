@@ -417,7 +417,7 @@ func unsyncedDecodeAndRun(cfgJSON []byte, allowPersist bool) error {
 // will want to use Run instead, which also
 // updates the config's raw state.
 func run(newCfg *Config, start bool) (Context, error) {
-	ctx, err := provisionContext(newCfg, start)
+	ctx, err := provisionContext(newCfg, true)
 	if err != nil {
 		globalMetrics.configSuccess.Set(0)
 		return ctx, err
@@ -441,28 +441,35 @@ func run(newCfg *Config, start bool) (Context, error) {
 	}()
 
 	// Start
-	err = func() error {
-		started := make([]string, 0, len(ctx.cfg.apps))
-		for name, a := range ctx.cfg.apps {
-			err := a.Start()
-			if err != nil {
-				// an app failed to start, so we need to stop
-				// all other apps that were already started
-				for _, otherAppName := range started {
-					err2 := ctx.cfg.apps[otherAppName].Stop()
-					if err2 != nil {
-						err = fmt.Errorf("%v; additionally, aborting app %s: %v",
-							err, otherAppName, err2)
-					}
+	started := make([]string, 0, len(ctx.cfg.apps))
+	for name, a := range ctx.cfg.apps {
+		err = a.Start()
+		if err != nil {
+			// an app failed to start, so we need to stop
+			// all other apps that were already started
+			for _, otherAppName := range started {
+				err2 := ctx.cfg.apps[otherAppName].Stop()
+				if err2 != nil {
+					err = fmt.Errorf("%v; additionally, aborting app %s: %v",
+						err, otherAppName, err2)
 				}
-				return fmt.Errorf("%s app module: start: %v", name, err)
 			}
-			started = append(started, name)
+			return ctx, fmt.Errorf("%s app module: start: %v", name, err)
 		}
-		return nil
-	}()
+		started = append(started, name)
+	}
+
+	// replace the local admin endpoint only after every app has started;
+	// otherwise a rejected config could replace the admin endpoint while the
+	// previous app config remains active
+	err = replaceLocalAdminServer(newCfg, ctx)
 	if err != nil {
-		return ctx, err
+		for _, appName := range started {
+			if stopErr := ctx.cfg.apps[appName].Stop(); stopErr != nil {
+				err = fmt.Errorf("%v; additionally, aborting app %s: %v", err, appName, stopErr)
+			}
+		}
+		return ctx, fmt.Errorf("starting caddy administration endpoint: %v", err)
 	}
 	globalMetrics.configSuccess.Set(1)
 	globalMetrics.configSuccessTime.SetToCurrentTime()
@@ -479,9 +486,9 @@ func run(newCfg *Config, start bool) (Context, error) {
 // provisionContext creates a new context from the given configuration and provisions
 // storage and apps.
 // If `newCfg` is nil a new empty configuration will be created.
-// If `replaceAdminServer` is true any currently active admin server will be replaced
-// with a new admin server based on the provided configuration.
-func provisionContext(newCfg *Config, replaceAdminServer bool) (Context, error) {
+// If `validateAdmin` is true apps may validate their listeners against the
+// configured admin listener.
+func provisionContext(newCfg *Config, validateAdmin bool) (Context, error) {
 	// because we will need to roll back any state
 	// modifications if this function errors, we
 	// keep a single error value and scope all
@@ -501,7 +508,11 @@ func provisionContext(newCfg *Config, replaceAdminServer bool) (Context, error) 
 	// cleanup occurs when we return if there
 	// was an error; if no error, it will get
 	// cleaned up on next config cycle
-	ctx, cancelCause := NewContextWithCause(Context{Context: context.Background(), cfg: newCfg})
+	ctx, cancelCause := NewContextWithCause(Context{
+		Context:       context.Background(),
+		cfg:           newCfg,
+		validateAdmin: validateAdmin,
+	})
 	defer func() {
 		if err != nil {
 			globalMetrics.configSuccess.Set(0)
@@ -561,14 +572,6 @@ func provisionContext(newCfg *Config, replaceAdminServer bool) (Context, error) 
 		return ctx, err
 	}
 
-	// start the admin endpoint (and stop any prior one)
-	if replaceAdminServer {
-		err = replaceLocalAdminServer(newCfg, ctx)
-		if err != nil {
-			return ctx, fmt.Errorf("starting caddy administration endpoint: %v", err)
-		}
-	}
-
 	// Load and Provision each app and their submodules
 	err = func() error {
 		for appName := range newCfg.AppsRaw {
@@ -578,6 +581,10 @@ func provisionContext(newCfg *Config, replaceAdminServer bool) (Context, error) 
 		}
 		return nil
 	}()
+	if err != nil {
+		return ctx, err
+	}
+
 	return ctx, err
 }
 
