@@ -462,7 +462,7 @@ func run(newCfg *Config, start bool) (Context, error) {
 	// replace the local admin endpoint only after every app has started;
 	// otherwise a rejected config could replace the admin endpoint while the
 	// previous app config remains active
-	err = replaceLocalAdminServer(newCfg, ctx)
+	err = replaceLocalAdminServer(ctx.cfg, ctx)
 	if err != nil {
 		for _, appName := range started {
 			if stopErr := ctx.cfg.apps[appName].Stop(); stopErr != nil {
