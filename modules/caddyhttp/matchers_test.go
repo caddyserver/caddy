@@ -1400,7 +1400,7 @@ func BenchmarkLargeHostMatcher(b *testing.B) {
 	req = req.WithContext(ctx)
 
 	matcher := make(MatchHost, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		matcher[i] = fmt.Sprintf("%d.example.com", i)
 	}
 	err := matcher.Provision(caddy.Context{})

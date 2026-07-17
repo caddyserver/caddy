@@ -289,7 +289,7 @@ func testTLSProxyProtocolMatrix(t *testing.T, ppVersion string, transportVersion
 
 	proxyURL := fmt.Sprintf("http://127.0.0.1:%d/", listenPort)
 
-	for i := 0; i < numRequests; i++ {
+	for i := range numRequests {
 		resp, err := tester.Client.Get(proxyURL)
 		if err != nil {
 			t.Fatalf("request %d/%d: GET %s: %v", i+1, numRequests, proxyURL, err)
@@ -499,7 +499,7 @@ func testProxyProtocolMatrix(t *testing.T, ppVersion string, transportVersions [
 
 	proxyURL := fmt.Sprintf("http://127.0.0.1:%d/", listenPort)
 
-	for i := 0; i < numRequests; i++ {
+	for i := range numRequests {
 		resp, err := tester.Client.Get(proxyURL)
 		if err != nil {
 			t.Fatalf("request %d/%d: GET %s: %v", i+1, numRequests, proxyURL, err)

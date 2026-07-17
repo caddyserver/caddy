@@ -36,13 +36,11 @@ func TestClientDisconnectRecordsStatus(t *testing.T) {
 	rec := caddyhttp.NewResponseRecorder(httptest.NewRecorder(), nil, nil)
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		_ = h.ServeHTTP(rec, req, caddyhttp.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
 			return nil
 		}))
-	}()
+	})
 
 	<-gotRequest
 	cancel()

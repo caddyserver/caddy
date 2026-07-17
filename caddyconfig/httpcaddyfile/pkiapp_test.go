@@ -47,7 +47,7 @@ func TestParsePKIApp_maintenanceIntervalAndRenewalWindowRatio(t *testing.T) {
 					MaintenanceInterval int64   `json:"maintenance_interval,omitempty"`
 					RenewalWindowRatio  float64 `json:"renewal_window_ratio,omitempty"`
 				} `json:"certificate_authorities,omitempty"`
-			} `json:"pki,omitempty"`
+			} `json:"pki"`
 		} `json:"apps"`
 	}
 	if err := json.Unmarshal(out, &cfg); err != nil {

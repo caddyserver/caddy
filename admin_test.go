@@ -163,7 +163,7 @@ func TestUnsyncedConfigAccess(t *testing.T) {
 func TestLoadConcurrent(t *testing.T) {
 	var wg sync.WaitGroup
 
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		wg.Go(func() {
 			_ = Load(testCfg, true)
 		})

@@ -610,7 +610,7 @@ func BenchmarkSingleRouteMetrics(b *testing.B) {
 	var next Handler = HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	})
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		capturedNext := next
 		next = HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 			return capturedNext.ServeHTTP(w, r)

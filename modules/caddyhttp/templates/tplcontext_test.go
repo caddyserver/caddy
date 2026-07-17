@@ -356,14 +356,14 @@ func TestCookieMultipleCookies(t *testing.T) {
 
 	cookieNameBase, cookieValueBase := "cookieName", "cookieValue"
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		tplContext.Req.AddCookie(&http.Cookie{
 			Name:  fmt.Sprintf("%s%d", cookieNameBase, i),
 			Value: fmt.Sprintf("%s%d", cookieValueBase, i),
 		})
 	}
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		expectedCookieVal := fmt.Sprintf("%s%d", cookieValueBase, i)
 		actualCookieVal := tplContext.Cookie(fmt.Sprintf("%s%d", cookieNameBase, i))
 		if actualCookieVal != expectedCookieVal {
@@ -424,9 +424,9 @@ func TestStripHTML(t *testing.T) {
 			expect: ``,
 		},
 		{
-		    // false start — second '<' increments depth, single '>' only closes one level
-		    input:  `<h1<b>hi`,
-		    expect: ``,
+			// false start — second '<' increments depth, single '>' only closes one level
+			input:  `<h1<b>hi`,
+			expect: ``,
 		},
 		{
 			// XSS bypass via double opening bracket

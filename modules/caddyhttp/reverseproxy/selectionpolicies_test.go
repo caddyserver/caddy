@@ -133,36 +133,36 @@ func TestWeightedRoundRobinPolicy(t *testing.T) {
 
 func TestWeightedRoundRobinSelection_Validate(t *testing.T) {
 	tests := []struct {
-		name        string
-		weights     []int
-		wantErr     bool
+		name    string
+		weights []int
+		wantErr bool
 	}{
 		{
-			name:        "Valid 0 2 1 case",
-			weights:     []int{0, 2, 1},
-			wantErr:     false,
+			name:    "Valid 0 2 1 case",
+			weights: []int{0, 2, 1},
+			wantErr: false,
 		},
 		{
-			name:        "Invalid 0 case (single)",
-			weights:     []int{0},
-			wantErr:     true,
+			name:    "Invalid 0 case (single)",
+			weights: []int{0},
+			wantErr: true,
 		},
 		{
-			name:        "Invalid 0 0 case (multiple)",
-			weights:     []int{0, 0},
-			wantErr:     true,
+			name:    "Invalid 0 0 case (multiple)",
+			weights: []int{0, 0},
+			wantErr: true,
 		},
 		{
-			name:        "Valid weights",
-			weights:     []int{1, 1, 1},
-			wantErr:     false,
+			name:    "Valid weights",
+			weights: []int{1, 1, 1},
+			wantErr: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &WeightedRoundRobinSelection{
-				Weights:     tt.weights,
+				Weights: tt.weights,
 			}
 			_ = s.Provision(caddy.Context{})
 			err := s.Validate()
@@ -744,7 +744,7 @@ func TestRandomChoicePolicyLeastLoaded(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/test", nil)
 	randomChoicePolicy := RandomChoiceSelection{Choose: 2}
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		h := randomChoicePolicy.Select(pool, request, nil)
 		if h != pool[2] {
 			t.Fatalf("with 2 available upstreams and choose=2, the least-loaded upstream (pool[2]) must always be selected; got %v on iteration %d", h, i)

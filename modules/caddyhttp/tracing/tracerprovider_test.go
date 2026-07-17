@@ -64,7 +64,7 @@ func Test_tracersProvider_buildOptsOnlyOnCreate(t *testing.T) {
 	// First call creates the provider and must build options.
 	_, _ = tp.getTracerProvider(build)
 	// Subsequent calls reuse the existing provider and must NOT build options again.
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		_, _ = tp.getTracerProvider(build)
 	}
 

@@ -338,7 +338,7 @@ func TestMultiRegexpFilterSecurityLimits(t *testing.T) {
 	f := MultiRegexpFilter{}
 
 	// Test maximum operations limit
-	for i := 0; i < 51; i++ {
+	for i := range 51 {
 		err := f.AddOperation(fmt.Sprintf("pattern%d", i), "replacement")
 		if i < 50 {
 			if err != nil {

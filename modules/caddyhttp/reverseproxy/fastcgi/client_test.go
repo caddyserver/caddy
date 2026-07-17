@@ -244,15 +244,15 @@ func DisabledTest(t *testing.T) {
 	sendFcgi(0, fcgiParams, []byte("c4ca4238a0b923820dcc509a6f75849b=1&7b8b965ad4bca0e41ab51de7b31363a1=n"), nil, nil)
 
 	log.Println("test:", "post data (more than 60KB)")
-	data := ""
-	for i := 0x00; i < 0xff; i++ {
+	var data strings.Builder
+	for i := range 0xff {
 		v0 := strings.Repeat(fmt.Sprint(i), 256)
 		h := md5.New()
 		_, _ = io.WriteString(h, v0)
 		k0 := fmt.Sprintf("%x", h.Sum(nil))
-		data += k0 + "=" + url.QueryEscape(v0) + "&"
+		data.WriteString(k0 + "=" + url.QueryEscape(v0) + "&")
 	}
-	sendFcgi(0, fcgiParams, []byte(data), nil, nil)
+	sendFcgi(0, fcgiParams, []byte(data.String()), nil, nil)
 
 	log.Println("test:", "post form (use url.Values)")
 	p0 := make(map[string]string, 1)
@@ -262,7 +262,7 @@ func DisabledTest(t *testing.T) {
 
 	log.Println("test:", "post forms (256 keys, more than 1MB)")
 	p1 := make(map[string]string, 1)
-	for i := 0x00; i < 0xff; i++ {
+	for i := range 0xff {
 		v0 := strings.Repeat(fmt.Sprint(i), 4096)
 		h := md5.New()
 		_, _ = io.WriteString(h, v0)

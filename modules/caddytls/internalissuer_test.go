@@ -154,7 +154,7 @@ func TestInternalIssuer_Issue(t *testing.T) {
 		logger := zap.NewNop()
 
 		ca := &caddypki.CA{
-			StorageRaw: []byte(fmt.Sprintf(`{"module": "file_system", "root": %q}`, storageDir)),
+			StorageRaw: fmt.Appendf(nil, `{"module": "file_system", "root": %q}`, storageDir),
 		}
 		if err := ca.Provision(caddyCtx, "local-test-generated", logger); err != nil {
 			t.Fatalf("Failed provisioning CA: %v", err)
@@ -193,7 +193,7 @@ func TestInternalIssuer_Issue(t *testing.T) {
 				Certificate: intermediateCertFile,
 				PrivateKey:  intermediateKeyFile,
 			},
-			StorageRaw: []byte(fmt.Sprintf(`{"module": "file_system", "root": %q}`, storageDir)),
+			StorageRaw: fmt.Appendf(nil, `{"module": "file_system", "root": %q}`, storageDir),
 		}
 
 		if err := ca.Provision(caddyCtx, "local-test-single-intermediate", logger); err != nil {
@@ -233,7 +233,7 @@ func TestInternalIssuer_Issue(t *testing.T) {
 				Certificate: intermediateChainFile,
 				PrivateKey:  intermediateChainKeyFile,
 			},
-			StorageRaw: []byte(fmt.Sprintf(`{"module": "file_system", "root": %q}`, storageDir)),
+			StorageRaw: fmt.Appendf(nil, `{"module": "file_system", "root": %q}`, storageDir),
 		}
 
 		if err := ca.Provision(caddyCtx, "local-test", zap.NewNop()); err != nil {
