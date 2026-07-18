@@ -1,6 +1,9 @@
 package fastcgi
 
 import (
+	"context"
+	"net"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -8,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
 func TestProvisionSplitPath(t *testing.T) {
@@ -355,3 +359,27 @@ func TestSplitPosSecurityRegressionUnicodeBypass(t *testing.T) {
 		assert.Equalf(t, -1, tr.splitPos(p), "payload %q must not be detected as .php", p)
 	}
 }
+
+func TestBuildEnvServerAddr(t *testing.T) {
+	tr := Transport{
+		Root: "/var/www",
+	}
+	err := tr.Provision(caddy.Context{})
+	require.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodGet, "http://localhost/index.php", nil)
+	require.NoError(t, err)
+
+	req = req.WithContext(context.WithValue(req.Context(), caddyhttp.OriginalRequestCtxKey, *req))
+	repl := caddy.NewReplacer()
+	req = req.WithContext(context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl))
+
+	localAddr := &net.TCPAddr{IP: net.ParseIP("10.0.0.12"), Port: 80}
+	req = req.WithContext(context.WithValue(req.Context(), http.LocalAddrContextKey, localAddr))
+
+	env, err := tr.buildEnv(req)
+	require.NoError(t, err)
+
+	assert.Equal(t, "10.0.0.12", env["SERVER_ADDR"])
+}
+
