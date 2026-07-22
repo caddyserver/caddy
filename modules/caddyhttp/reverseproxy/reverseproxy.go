@@ -1297,6 +1297,10 @@ func (h *Handler) finalizeResponse(
 		if c := logger.Check(zapcore.WarnLevel, "aborting with incomplete response"); c != nil {
 			c.Write(zap.Error(err))
 		}
+		// flush the buffer to ensure the client sees the partial response
+		// see: https://github.com/caddyserver/caddy/issues/7845
+		//nolint:bodyclose
+		http.NewResponseController(rw).Flush()
 		// no extra logging from stdlib
 		panic(http.ErrAbortHandler)
 	}
