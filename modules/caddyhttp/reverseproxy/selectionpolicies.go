@@ -149,7 +149,7 @@ func (r *WeightedRoundRobinSelection) Select(pool UpstreamPool, _ *http.Request,
 		return pool[0]
 	}
 	var index, totalWeight int
-	var weights []int
+	weights := make([]int, 0, len(r.Weights))
 
 	for _, w := range r.Weights {
 		if w > 0 {
