@@ -48,6 +48,7 @@ type Context struct {
 
 	moduleInstances map[string][]Module
 	cfg             *Config
+	validateAdmin   bool
 	ancestry        []Module
 	cleanupFuncs    []func()                // invoked at every config unload
 	exitFuncs       []func(context.Context) // invoked at config unload ONLY IF the process is exiting (EXPERIMENTAL)
@@ -70,7 +71,12 @@ func NewContext(ctx Context) (Context, context.CancelFunc) {
 // NewContextWithCause is like NewContext but returns a context.CancelCauseFunc.
 // EXPERIMENTAL: This API is subject to change.
 func NewContextWithCause(ctx Context) (Context, context.CancelCauseFunc) {
-	newCtx := Context{moduleInstances: make(map[string][]Module), cfg: ctx.cfg, metricsRegistry: prometheus.NewPedanticRegistry()}
+	newCtx := Context{
+		moduleInstances: make(map[string][]Module),
+		cfg:             ctx.cfg,
+		validateAdmin:   ctx.validateAdmin,
+		metricsRegistry: prometheus.NewPedanticRegistry(),
+	}
 	c, cancel := context.WithCancelCause(ctx.Context)
 	wrappedCancel := func(cause error) {
 		cancel(cause)
@@ -673,6 +679,7 @@ func (ctx *Context) WithValue(key, value any) Context {
 		Context:         context.WithValue(ctx.Context, key, value),
 		moduleInstances: ctx.moduleInstances,
 		cfg:             ctx.cfg,
+		validateAdmin:   ctx.validateAdmin,
 		ancestry:        ctx.ancestry,
 		cleanupFuncs:    ctx.cleanupFuncs,
 		exitFuncs:       ctx.exitFuncs,
