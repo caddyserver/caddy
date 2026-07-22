@@ -1110,6 +1110,13 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 		res.Body, _ = h.bufferedBody(res.Body, h.ResponseBuffers)
 	}
 
+	var bodyReleased bool
+	defer func() {
+		if !bodyReleased && res != nil && res.Body != nil {
+			res.Body.Close()
+		}
+	}()
+
 	// set response placeholders so they can be used in retry match
 	// expressions and handle_response routes; clear stale header
 	// placeholders from a previous attempt first so they don't
@@ -1141,6 +1148,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 			}
 			if match {
 				res.Body.Close()
+				bodyReleased = true
 				return retryableResponseError{
 					error:      fmt.Errorf("upstream response matched retry_match (status %d)", res.StatusCode),
 					statusCode: res.StatusCode,
@@ -1198,6 +1206,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 		if !hrc.isFinalized {
 			res.Body.Close()
 		}
+		bodyReleased = true
 
 		// wrap any route error in roundtripSucceededError so caller knows that
 		// the roundtrip was successful and to not retry
@@ -1211,6 +1220,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	}
 
 	// copy the response body and headers back to the upstream client
+	bodyReleased = true
 	return h.finalizeResponse(rw, req, res, repl, start, logger)
 }
 
