@@ -521,6 +521,29 @@ func getReqTLSReplacement(req *http.Request, key string) (any, bool) {
 			return pem.EncodeToMemory(&block), true
 		case "client.certificate_der_base64":
 			return base64.StdEncoding.EncodeToString(cert.Raw), true
+		// RFC 9440 colon-wrapped variants of the leaf and chain placeholders,
+		// for direct use in Client-Cert and Client-Cert-Chain headers.
+		// Each cert's DER is base64-encoded and wrapped as :b64: per RFC 8941
+		// byte sequence syntax. Chain entries are joined with ", ".
+		// Both return empty string when no client cert is presented, so guard
+		// header emission with a matcher on mTLS connections (Caddy does not
+		// auto-omit headers with empty values).
+		case "client.certificate_rfc9440":
+			if len(cert.Raw) == 0 {
+				return "", true
+			}
+			return ":" + base64.StdEncoding.EncodeToString(cert.Raw) + ":", true
+		case "client.certificate_chain_rfc9440":
+			if req.TLS == nil || len(req.TLS.PeerCertificates) <= 1 {
+				return "", true
+			}
+			intermediates := req.TLS.PeerCertificates[1:]
+			parts := make([]string, 0, len(intermediates))
+			for _, ic := range intermediates {
+				parts = append(parts, ":"+base64.StdEncoding.EncodeToString(ic.Raw)+":")
+			}
+			return strings.Join(parts, ", "), true
+
 		default:
 			return nil, false
 		}

@@ -16,13 +16,20 @@ package caddyhttp
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
 )
@@ -293,6 +300,138 @@ func TestHTTPProtoNameNormalization(t *testing.T) {
 		gotName, okName := repl.GetString("http.request.proto_name")
 		if !okName || gotName != tc.expectName {
 			t.Errorf("proto=%s: expected http.request.proto_name to be %q, got %q (ok=%t)", tc.proto, tc.expectName, gotName, okName)
+		}
+	}
+}
+
+func generateTestCert(t *testing.T, seed int64) *x509.Certificate {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate ECDSA key: %v", err)
+	}
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(seed),
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("failed to create certificate: %v", err)
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatalf("failed to parse certificate: %v", err)
+	}
+	return cert
+}
+
+func TestCertificateRFC9440Placeholders(t *testing.T) {
+	leaf := generateTestCert(t, 1)
+	inter1 := generateTestCert(t, 2)
+	inter2 := generateTestCert(t, 3)
+
+	wrapCert := func(c *x509.Certificate) string {
+		return ":" + base64.StdEncoding.EncodeToString(c.Raw) + ":"
+	}
+
+	for i, tc := range []struct {
+		name          string
+		tlsState      *tls.ConnectionState
+		expectChain   string
+		expectLeaf    string
+		expectLeafRFC string
+	}{
+		{
+			name:          "no TLS at all",
+			tlsState:      nil,
+			expectChain:   "",
+			expectLeaf:    "",
+			expectLeafRFC: "",
+		},
+		{
+			name: "TLS but no client cert",
+			tlsState: &tls.ConnectionState{
+				HandshakeComplete: true,
+				PeerCertificates:  []*x509.Certificate{},
+			},
+			expectChain:   "",
+			expectLeaf:    "",
+			expectLeafRFC: "",
+		},
+		{
+			name: "leaf only, no intermediates",
+			tlsState: &tls.ConnectionState{
+				HandshakeComplete: true,
+				PeerCertificates:  []*x509.Certificate{leaf},
+			},
+			expectChain:   "",
+			expectLeaf:    base64.StdEncoding.EncodeToString(leaf.Raw),
+			expectLeafRFC: wrapCert(leaf),
+		},
+		{
+			name: "one intermediate",
+			tlsState: &tls.ConnectionState{
+				HandshakeComplete: true,
+				PeerCertificates:  []*x509.Certificate{leaf, inter1},
+			},
+			expectChain:   wrapCert(inter1),
+			expectLeaf:    base64.StdEncoding.EncodeToString(leaf.Raw),
+			expectLeafRFC: wrapCert(leaf),
+		},
+		{
+			name: "two intermediates with comma-space join",
+			tlsState: &tls.ConnectionState{
+				HandshakeComplete: true,
+				PeerCertificates:  []*x509.Certificate{leaf, inter1, inter2},
+			},
+			expectChain:   wrapCert(inter1) + ", " + wrapCert(inter2),
+			expectLeaf:    base64.StdEncoding.EncodeToString(leaf.Raw),
+			expectLeafRFC: wrapCert(leaf),
+		},
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.TLS = tc.tlsState
+		repl := caddy.NewReplacer()
+		addHTTPVarsToReplacer(repl, req, nil)
+		gotChain, _ := repl.GetString("http.request.tls.client.certificate_chain_rfc9440")
+		if gotChain != tc.expectChain {
+			t.Errorf("Test %d (%s): chain: expected %q, got %q", i, tc.name, tc.expectChain, gotChain)
+		}
+		gotLeaf, _ := repl.GetString("http.request.tls.client.certificate_der_base64")
+		if gotLeaf != tc.expectLeaf {
+			t.Errorf("Test %d (%s): leaf: expected %q, got %q", i, tc.name, tc.expectLeaf, gotLeaf)
+		}
+		gotLeafRFC, _ := repl.GetString("http.request.tls.client.certificate_rfc9440")
+		if gotLeafRFC != tc.expectLeafRFC {
+			t.Errorf("Test %d (%s): leaf rfc9440: expected %q, got %q", i, tc.name, tc.expectLeafRFC, gotLeafRFC)
+		}
+		if gotLeafRFC != "" && (gotLeafRFC != strings.TrimSpace(gotLeafRFC)) {
+			t.Errorf("Test %d (%s): leaf rfc9440 has unexpected whitespace: %q", i, tc.name, gotLeafRFC)
+		}
+		if gotChain != "" && gotLeaf != "" {
+			if strings.Contains(gotChain, base64.StdEncoding.EncodeToString(leaf.Raw)) {
+				t.Errorf("Test %d (%s): chain should NOT contain the leaf cert", i, tc.name)
+			}
+		}
+		if gotChain != "" {
+			entries := strings.Split(gotChain, ", ")
+			for j, entry := range entries {
+				if !strings.HasPrefix(entry, ":") || !strings.HasSuffix(entry, ":") {
+					t.Errorf("Test %d (%s): chain entry %d not colon-wrapped: %q", i, tc.name, j, entry)
+					continue
+				}
+				b64 := entry[1 : len(entry)-1]
+				_, err := base64.StdEncoding.DecodeString(b64)
+				if err != nil {
+					t.Errorf("Test %d (%s): chain entry %d is not valid padded base64: %v", i, tc.name, j, err)
+				}
+			}
+		}
+		if tc.tlsState != nil && len(tc.tlsState.PeerCertificates) > 2 {
+			if strings.HasPrefix(gotChain, ", ") || strings.HasSuffix(gotChain, ", ") {
+				t.Errorf("Test %d (%s): chain has leading/trailing separator: %q", i, tc.name, gotChain)
+			}
 		}
 	}
 }
