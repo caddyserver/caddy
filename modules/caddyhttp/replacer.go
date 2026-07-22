@@ -26,6 +26,7 @@ import (
 	"encoding/asn1"
 	"encoding/base64"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -226,31 +227,21 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 				if req.Body == nil {
 					return "", true
 				}
-				// normally net/http will close the body for us, but since we
-				// are replacing it with a fake one, we have to ensure we close
-				// the real body ourselves when we're done
-				defer req.Body.Close()
-				// read the request body into a buffer (can't pool because we
-				// don't know its lifetime and would have to make a copy anyway)
-				buf := new(bytes.Buffer)
-				_, _ = io.Copy(buf, req.Body) // can't handle error, so just ignore it
-				req.Body = io.NopCloser(buf)  // replace real body with buffered data
-				return buf.String(), true
+				body, err := readRequestBodyForPlaceholder(req)
+				if err != nil {
+					return err, true
+				}
+				return string(body), true
 
 			case "http.request.body_base64":
 				if req.Body == nil {
 					return "", true
 				}
-				// normally net/http will close the body for us, but since we
-				// are replacing it with a fake one, we have to ensure we close
-				// the real body ourselves when we're done
-				defer req.Body.Close()
-				// read the request body into a buffer (can't pool because we
-				// don't know its lifetime and would have to make a copy anyway)
-				buf := new(bytes.Buffer)
-				_, _ = io.Copy(buf, req.Body) // can't handle error, so just ignore it
-				req.Body = io.NopCloser(buf)  // replace real body with buffered data
-				return base64.StdEncoding.EncodeToString(buf.Bytes()), true
+				body, err := readRequestBodyForPlaceholder(req)
+				if err != nil {
+					return err, true
+				}
+				return base64.StdEncoding.EncodeToString(body), true
 
 			// original request, before any internal changes
 			case "http.request.orig_method":
@@ -409,6 +400,28 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 	}
 
 	repl.Map(httpVars)
+}
+
+func readRequestBodyForPlaceholder(req *http.Request) ([]byte, error) {
+	// normally net/http will close the body for us, but since we
+	// are replacing it with a fake one, we have to ensure we close
+	// the real body ourselves when we're done
+	defer req.Body.Close()
+
+	// read the request body into a buffer (can't pool because we
+	// don't know its lifetime and would have to make a copy anyway)
+	buf := new(bytes.Buffer)
+	_, err := io.Copy(buf, req.Body)
+	if err != nil {
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) {
+			err = Error(http.StatusRequestEntityTooLarge, err)
+		}
+		return nil, err
+	}
+
+	req.Body = io.NopCloser(bytes.NewReader(buf.Bytes()))
+	return buf.Bytes(), nil
 }
 
 func getReqTLSReplacement(req *http.Request, key string) (any, bool) {
