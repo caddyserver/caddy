@@ -278,7 +278,7 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 		mergeSlashes := !strings.Contains(suffix, "//")
 		changePath(r, func(escapedPath string) string {
 			escapedPath = caddyhttp.CleanPath(escapedPath, mergeSlashes)
-			return reverse(trimPathPrefix(reverse(escapedPath), reverse(suffix)))
+			return trimPathSuffix(escapedPath, suffix)
 		})
 	}
 
@@ -440,12 +440,58 @@ func trimPathPrefix(escapedPath, prefix string) string {
 	return escapedPath
 }
 
-func reverse(s string) string {
-	r := []rune(s)
-	for i, j := 0, len(r)-1; i < len(r)/2; i, j = i+1, j-1 {
-		r[i], r[j] = r[j], r[i]
+// trimPathSuffix is the suffix counterpart of trimPathPrefix: it trims suffix
+// from the end of escapedPath using the same escape-aware, case-insensitive
+// comparison semantics. Both strings are iterated in lock-step from their ends,
+// and if escapedPath has a '%' encoding at a particular position where the
+// suffix pattern uses the decoded character, escapedPath's escape is decoded so
+// the comparison happens in normalized/unescaped space. Conversely, if the
+// suffix pattern itself uses an escape (`%xx`), escapedPath must literally use
+// the same escape at that position (the escapes are then compared byte-for-byte).
+//
+// A naive reverse-then-trimPathPrefix approach cannot be used here: reversing
+// the strings moves the '%' to the end of each escape sequence, which defeats
+// trimPathPrefix's escape detection (it expects '%' to precede the two hex
+// digits) and makes escaped path bytes compare unequal to their decoded form.
+func trimPathSuffix(escapedPath, suffix string) string {
+	iPath, iSuffix := len(escapedPath), len(suffix)
+	for iPath > 0 && iSuffix > 0 {
+		suffixCh := suffix[iSuffix-1]
+		ch := string(escapedPath[iPath-1])
+		step := 1
+
+		// if escapedPath uses a percent-encoding that ends at this position but
+		// the suffix pattern does not encode this position, decode escapedPath's
+		// escape so the comparison happens in normalized/unescaped space
+		pathHasEscape := iPath >= 3 && escapedPath[iPath-3] == '%'
+		suffixHasEscape := iSuffix >= 3 && suffix[iSuffix-3] == '%'
+		if pathHasEscape && !suffixHasEscape {
+			decoded, err := url.PathUnescape(escapedPath[iPath-3 : iPath])
+			if err != nil {
+				// should be impossible unless EscapedPath() is returning invalid values!
+				return escapedPath
+			}
+			ch = decoded
+			step = 3
+		}
+
+		// suffix comparisons are case-insensitive for consistency with
+		// trimPathPrefix, which is case-insensitive for good reasons
+		if !strings.EqualFold(ch, string(suffixCh)) {
+			return escapedPath
+		}
+
+		iPath -= step
+		iSuffix--
 	}
-	return string(r)
+
+	// if we iterated through the entire suffix, we found it, so trim it
+	if iSuffix <= 0 {
+		return escapedPath[:iPath]
+	}
+
+	// otherwise we did not find the suffix
+	return escapedPath
 }
 
 // substrReplacer describes either a simple and fast substring replacement.

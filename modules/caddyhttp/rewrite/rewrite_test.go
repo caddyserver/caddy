@@ -335,6 +335,27 @@ func TestRewrite(t *testing.T) {
 			input:  newRequest(t, "GET", "/foo/suffix/bar"),
 			expect: newRequest(t, "GET", "/foo/suffix/bar"),
 		},
+		{
+			// a decoded suffix pattern must match a percent-encoded path in
+			// normalized space, mirroring StripPathPrefix (see the "/a/b/c"
+			// vs "/a%2Fb/c/d" case above)
+			rule:   Rewrite{StripPathSuffix: "/b/c"},
+			input:  newRequest(t, "GET", "/a/b%2Fc"),
+			expect: newRequest(t, "GET", "/a"),
+		},
+		{
+			// decoded suffix char matches its percent-encoded form in the path
+			rule:   Rewrite{StripPathSuffix: "bc"},
+			input:  newRequest(t, "GET", "/a%62c"), // %62 == 'b'
+			expect: newRequest(t, "GET", "/a"),
+		},
+		{
+			// an escaped suffix pattern requires the path to use the same
+			// escape at that position, so a decoded path must NOT be stripped
+			rule:   Rewrite{StripPathSuffix: "%2fsuffix"},
+			input:  newRequest(t, "GET", "/foo/bar/suffix"),
+			expect: newRequest(t, "GET", "/foo/bar/suffix"),
+		},
 
 		{
 			rule:   Rewrite{URISubstring: []substrReplacer{{Find: "findme", Replace: "replaced"}}},
