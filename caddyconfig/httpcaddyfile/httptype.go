@@ -16,6 +16,7 @@ package httpcaddyfile
 
 import (
 	"cmp"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -967,6 +968,8 @@ func (st *ServerType) serversFromPairings(
 			return nil, err
 		}
 
+		srv.TLSConnPolicies = addExactHostTLSConnPolicies(srv.TLSConnPolicies, p.serverBlocks, httpPort, warnings)
+
 		// a catch-all TLS conn policy is necessary to ensure TLS can
 		// be offered to all hostnames of the server; even though only
 		// one policy is needed to enable TLS for the server, that
@@ -1061,6 +1064,84 @@ func detectConflictingSchemes(srv *caddyhttp.Server, serverBlocks []serverBlock,
 	}
 
 	return nil
+}
+
+func addExactHostTLSConnPolicies(cps caddytls.ConnectionPolicies, serverBlocks []serverBlock, httpPort string, warnings *[]caddyconfig.Warning) caddytls.ConnectionPolicies {
+	exactHosts := make(map[string]struct{})
+	for _, sblock := range serverBlocks {
+		for _, addr := range sblock.parsedKeys {
+			if addr.Host == "" || strings.Contains(addr.Host, "*") {
+				continue
+			}
+			if addr.Scheme == "http" || addr.Port == httpPort {
+				continue
+			}
+			exactHosts[addr.Host] = struct{}{}
+		}
+	}
+
+	if len(exactHosts) == 0 {
+		return cps
+	}
+
+	for _, cp := range cps {
+		for _, name := range sniConnPolicyMatcherNames(cp) {
+			if !strings.Contains(name, "*") {
+				delete(exactHosts, name)
+			}
+		}
+	}
+
+	sortedExactHosts := make([]string, 0, len(exactHosts))
+	for host := range exactHosts {
+		sortedExactHosts = append(sortedExactHosts, host)
+	}
+	slices.Sort(sortedExactHosts)
+
+	for _, host := range sortedExactHosts {
+		insertAt := -1
+		for i, cp := range cps {
+			if cp.ClientAuthentication == nil {
+				continue
+			}
+			for _, name := range sniConnPolicyMatcherNames(cp) {
+				if strings.Contains(name, "*") && (caddytls.MatchServerName{name}).Match(&tls.ClientHelloInfo{ServerName: host}) {
+					insertAt = i
+					break
+				}
+			}
+			if insertAt >= 0 {
+				break
+			}
+		}
+		if insertAt < 0 {
+			continue
+		}
+
+		exactHostCP := &caddytls.ConnectionPolicy{
+			MatchersRaw: caddy.ModuleMap{
+				"sni": caddyconfig.JSON([]string{host}, warnings),
+			},
+		}
+		cps = append(cps[:insertAt], append(caddytls.ConnectionPolicies{exactHostCP}, cps[insertAt:]...)...)
+	}
+
+	return cps
+}
+
+func sniConnPolicyMatcherNames(cp *caddytls.ConnectionPolicy) caddytls.MatchServerName {
+	if cp == nil || len(cp.MatchersRaw) != 1 {
+		return nil
+	}
+	sniMatcherJSON, ok := cp.MatchersRaw["sni"]
+	if !ok {
+		return nil
+	}
+	var sniMatcher caddytls.MatchServerName
+	if err := json.Unmarshal(sniMatcherJSON, &sniMatcher); err != nil {
+		return nil
+	}
+	return sniMatcher
 }
 
 // consolidateConnPolicies sorts any catch-all policy to the end, removes empty TLS connection
