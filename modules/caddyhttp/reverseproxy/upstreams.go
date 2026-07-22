@@ -7,14 +7,13 @@ import (
 	weakrand "math/rand/v2"
 	"net"
 	"net/http"
-	"strconv"
-	"sync"
 	"time"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/internal/network"
 )
 
 func init() {
@@ -120,101 +119,42 @@ func (su *SRVUpstreams) Provision(ctx caddy.Context) error {
 }
 
 func (su *SRVUpstreams) ResetCache(r *http.Request) error {
-	srvsMu.Lock()
 	if r == nil {
-		srvs = make(map[string]srvLookup)
-	} else {
-		suAddr, _, _, _ := su.expandedAddr(r)
-		delete(srvs, suAddr)
+		network.ResetAllSRV()
+		return nil
 	}
-	srvsMu.Unlock()
+	_, service, proto, name := su.expandedAddr(r)
+	network.ResetSRV(service, proto, name)
 	return nil
 }
 
 func (su SRVUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
-	suAddr, service, proto, name := su.expandedAddr(r)
+	_, service, proto, name := su.expandedAddr(r)
 
-	// first, use a cheap read-lock to return a cached result quickly
-	srvsMu.RLock()
-	cached := srvs[suAddr]
-	srvsMu.RUnlock()
-	if cached.isFresh() {
-		return allNew(cached.upstreams), nil
-	}
-
-	// otherwise, obtain a write-lock to update the cached value
-	srvsMu.Lock()
-	defer srvsMu.Unlock()
-
-	// check to see if it's still stale, since we're now in a different
-	// lock from when we first checked freshness; another goroutine might
-	// have refreshed it in the meantime before we re-obtained our lock
-	cached = srvs[suAddr]
-	if cached.isFresh() {
-		return allNew(cached.upstreams), nil
-	}
-
-	if c := su.logger.Check(zapcore.DebugLevel, "refreshing SRV upstreams"); c != nil {
-		c.Write(
-			zap.String("service", service),
-			zap.String("proto", proto),
-			zap.String("name", name),
-		)
-	}
-
-	_, records, err := su.resolver.LookupSRV(r.Context(), service, proto, name)
+	targets, err := network.SRV(r.Context(), su.resolver.LookupSRV,
+		service, proto, name,
+		time.Duration(su.Refresh), time.Duration(su.GracePeriod), su.logger)
 	if err != nil {
-		// From LookupSRV docs: "If the response contains invalid names, those records are filtered
-		// out and an error will be returned alongside the remaining results, if any." Thus, we
-		// only return an error if no records were also returned.
-		if len(records) == 0 {
-			if su.GracePeriod > 0 {
-				if c := su.logger.Check(zapcore.ErrorLevel, "SRV lookup failed; using previously cached"); c != nil {
-					c.Write(zap.Error(err))
-				}
-				cached.freshness = time.Now().Add(time.Duration(su.GracePeriod) - time.Duration(su.Refresh))
-				srvs[suAddr] = cached
-				return allNew(cached.upstreams), nil
-			}
-			return nil, err
-		}
-		if c := su.logger.Check(zapcore.WarnLevel, "SRV records filtered"); c != nil {
-			c.Write(zap.Error(err))
-		}
+		return nil, err
 	}
 
-	upstreams := make([]Upstream, len(records))
-	for i, rec := range records {
+	upstreams := make([]*Upstream, len(targets))
+	for i, t := range targets {
 		if c := su.logger.Check(zapcore.DebugLevel, "discovered SRV record"); c != nil {
 			c.Write(
-				zap.String("target", rec.Target),
-				zap.Uint16("port", rec.Port),
-				zap.Uint16("priority", rec.Priority),
-				zap.Uint16("weight", rec.Weight),
+				zap.String("target", t.Host),
+				zap.String("port", t.Port),
+				zap.Uint16("priority", t.Priority),
+				zap.Uint16("weight", t.Weight),
 			)
 		}
-		addr := net.JoinHostPort(rec.Target, strconv.Itoa(int(rec.Port)))
+		addr := net.JoinHostPort(t.Host, t.Port)
 		if su.DialNetwork != "" {
 			addr = su.DialNetwork + "/" + addr
 		}
-		upstreams[i] = Upstream{Dial: addr}
+		upstreams[i] = &Upstream{Dial: addr}
 	}
-
-	// before adding a new one to the cache (as opposed to replacing stale one), make room if cache is full
-	if cached.freshness.IsZero() && len(srvs) >= 100 {
-		for randomKey := range srvs {
-			delete(srvs, randomKey)
-			break
-		}
-	}
-
-	srvs[suAddr] = srvLookup{
-		srvUpstreams: su,
-		freshness:    time.Now(),
-		upstreams:    upstreams,
-	}
-
-	return allNew(upstreams), nil
+	return upstreams, nil
 }
 
 func (su SRVUpstreams) String() string {
@@ -245,16 +185,6 @@ func (su SRVUpstreams) expandedAddr(r *http.Request) (addr, service, proto, name
 // the form "_service._proto.name".
 func (SRVUpstreams) formattedAddr(service, proto, name string) string {
 	return fmt.Sprintf("_%s._%s.%s", service, proto, name)
-}
-
-type srvLookup struct {
-	srvUpstreams SRVUpstreams
-	freshness    time.Time
-	upstreams    []Upstream
-}
-
-func (sl srvLookup) isFresh() bool {
-	return time.Since(sl.freshness) < time.Duration(sl.srvUpstreams.Refresh)
 }
 
 type IPVersions struct {
@@ -357,92 +287,27 @@ func (au *AUpstreams) Provision(ctx caddy.Context) error {
 func (au AUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
-	// Map ipVersion early, so we can use it as part of the cache-key.
-	// This should be fairly inexpensive and comes and the upside of
-	// allowing the same dynamic upstream (name + port combination)
-	// to be used multiple times with different ip versions.
-	//
-	// It also forced a cache-miss if a previously cached dynamic
-	// upstream changes its ip version, e.g. after a config reload,
-	// while keeping the cache-invalidation as simple as it currently is.
 	ipVersion := resolveIpVersion(au.Versions)
-
-	auStr := repl.ReplaceAll(au.String()+ipVersion, "")
-
-	// first, use a cheap read-lock to return a cached result quickly
-	aAaaaMu.RLock()
-	cached := aAaaa[auStr]
-	aAaaaMu.RUnlock()
-	if cached.isFresh() {
-		return allNew(cached.upstreams), nil
-	}
-
-	// otherwise, obtain a write-lock to update the cached value
-	aAaaaMu.Lock()
-	defer aAaaaMu.Unlock()
-
-	// check to see if it's still stale, since we're now in a different
-	// lock from when we first checked freshness; another goroutine might
-	// have refreshed it in the meantime before we re-obtained our lock
-	cached = aAaaa[auStr]
-	if cached.isFresh() {
-		return allNew(cached.upstreams), nil
-	}
-
 	name := repl.ReplaceAll(au.Name, "")
 	port := repl.ReplaceAll(au.Port, "")
 
-	if c := au.logger.Check(zapcore.DebugLevel, "refreshing A upstreams"); c != nil {
-		c.Write(
-			zap.String("version", ipVersion),
-			zap.String("name", name),
-			zap.String("port", port),
-		)
-	}
-
-	ips, err := au.resolver.LookupIP(r.Context(), ipVersion, name)
+	targets, err := network.A(r.Context(), au.resolver.LookupIP,
+		ipVersion, name, port, time.Duration(au.Refresh), au.logger)
 	if err != nil {
 		return nil, err
 	}
 
-	upstreams := make([]Upstream, len(ips))
-	for i, ip := range ips {
+	upstreams := make([]*Upstream, len(targets))
+	for i, t := range targets {
 		if c := au.logger.Check(zapcore.DebugLevel, "discovered A record"); c != nil {
-			c.Write(zap.String("ip", ip.String()))
+			c.Write(zap.String("ip", t.Host))
 		}
-		upstreams[i] = Upstream{
-			Dial: net.JoinHostPort(ip.String(), port),
-		}
+		upstreams[i] = &Upstream{Dial: net.JoinHostPort(t.Host, t.Port)}
 	}
-
-	// before adding a new one to the cache (as opposed to replacing stale one), make room if cache is full
-	if cached.freshness.IsZero() && len(aAaaa) >= 100 {
-		for randomKey := range aAaaa {
-			delete(aAaaa, randomKey)
-			break
-		}
-	}
-
-	aAaaa[auStr] = aLookup{
-		aUpstreams: au,
-		freshness:  time.Now(),
-		upstreams:  upstreams,
-	}
-
-	return allNew(upstreams), nil
+	return upstreams, nil
 }
 
 func (au AUpstreams) String() string { return net.JoinHostPort(au.Name, au.Port) }
-
-type aLookup struct {
-	aUpstreams AUpstreams
-	freshness  time.Time
-	upstreams  []Upstream
-}
-
-func (al aLookup) isFresh() bool {
-	return time.Since(al.freshness) < time.Duration(al.aUpstreams.Refresh)
-}
 
 // MultiUpstreams is a single dynamic upstream source that
 // aggregates the results of multiple dynamic upstream sources.
@@ -547,22 +412,6 @@ func (u *UpstreamResolver) ParseAddresses() error {
 	}
 	return nil
 }
-
-func allNew(upstreams []Upstream) []*Upstream {
-	results := make([]*Upstream, len(upstreams))
-	for i := range upstreams {
-		results[i] = &Upstream{Dial: upstreams[i].Dial}
-	}
-	return results
-}
-
-var (
-	srvs   = make(map[string]srvLookup)
-	srvsMu sync.RWMutex
-
-	aAaaa   = make(map[string]aLookup)
-	aAaaaMu sync.RWMutex
-)
 
 // Interface guards
 var (
