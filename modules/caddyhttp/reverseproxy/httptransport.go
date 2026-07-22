@@ -300,6 +300,7 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 		if h.ProxyProtocol != "" {
 			proxyProtocolInfo, ok := caddyhttp.GetVar(ctx, proxyProtocolInfoVarKey).(ProxyProtocolInfo)
 			if !ok {
+				_ = conn.Close()
 				return nil, fmt.Errorf("failed to get proxy protocol info from context")
 			}
 			var proxyv byte
@@ -309,6 +310,7 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 			case "v2":
 				proxyv = 2
 			default:
+				_ = conn.Close()
 				return nil, fmt.Errorf("unexpected proxy protocol version")
 			}
 
@@ -326,6 +328,7 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 					IP: net.IPv6zero,
 				}
 			default:
+				_ = conn.Close()
 				return nil, fmt.Errorf("unexpected remote addr type in proxy protocol info")
 			}
 			sourceAddr := &net.TCPAddr{
@@ -345,6 +348,7 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 
 			_, err = header.WriteTo(conn)
 			if err != nil {
+				_ = conn.Close()
 				// identify this error as one that occurred during
 				// dialing, which can be important when trying to
 				// decide whether to retry a request
