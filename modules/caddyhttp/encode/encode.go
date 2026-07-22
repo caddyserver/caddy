@@ -504,16 +504,17 @@ func AcceptedEncodings(r *http.Request, preferredOrder []string) []string {
 		return []string{}
 	}
 
-	prefs := []encodingPreference{}
+	prefs := make([]encodingPreference, 0, strings.Count(acceptEncHeader, ",")+1)
 
 	for accepted := range strings.SplitSeq(acceptEncHeader, ",") {
-		parts := strings.Split(accepted, ";")
-		encName := strings.ToLower(strings.TrimSpace(parts[0]))
+		encName, params, found := strings.Cut(accepted, ";")
+		encName = strings.ToLower(strings.TrimSpace(encName))
 
 		// determine q-factor
 		qFactor := 1.0
-		if len(parts) > 1 {
-			qFactorStr := strings.ToLower(strings.TrimSpace(parts[1]))
+		if found {
+			qFactorStr, _, _ := strings.Cut(params, ";")
+			qFactorStr = strings.ToLower(strings.TrimSpace(qFactorStr))
 			if strings.HasPrefix(qFactorStr, "q=") {
 				if qFactorFloat, err := strconv.ParseFloat(qFactorStr[2:], 32); err == nil {
 					if qFactorFloat >= 0 && qFactorFloat <= 1 {
