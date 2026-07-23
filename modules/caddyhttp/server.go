@@ -1052,6 +1052,7 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 		TLSConfig:          tlsCfg,
 		PacketConnWrappers: s.packetConnWrappers,
 		Allow0RTT:          s.Allow0RTT,
+		EnableWebTransport: s.EnableWebTransport,
 	})
 	if err != nil {
 		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
