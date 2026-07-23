@@ -44,6 +44,128 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, 
 		Path:         urlPath,
 		CanGoUp:      canGoUp,
 		lastModified: parentModTime,
+		// preallocate, since we know the upper bound on the number of
+		// items; avoids repeated slice growth/copy for large directories
+		Items: make([]fileInfo, 0, len(entries)),
+	}
+
+	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			break
+		}
+
+		name := entry.Name()
+
+		if fileHidden(name, filesToHide) {
+			continue
+		}
+
+		info, err := entry.Info()
+		if err != nil {
+			if c := fsrv.logger.Check(zapcore.ErrorLevel, "could not get info about directory entry"); c != nil {
+				c.Write(zap.String("name", entry.Name()), zap.String("root", root))
+			}
+			continue
+		}
+
+		// keep track of the most recently modified item in the listing
+		modTime := info.ModTime()
+		if tplCtx.lastModified.IsZero() || modTime.After(tplCtx.lastModified) {
+			tplCtx.lastModified = modTime
+		}
+
+		fileIsSymlink := isSymlink(info)
+		size := info.Size()
+
+		// for a symlink, a single stat of its target tells us both whether
+		// the target is a directory and what its size is, instead of the
+		// two separate stats of the same path that the old implementation
+		// made (one via isSymlinkTargetDir, one to get the size below)
+		var targetInfo fs.FileInfo
+		var targetPath string
+		if fileIsSymlink {
+			targetPath = caddyhttp.SanitizedPathJoin(root, path.Join(urlPath, info.Name()))
+			// An error most likely means the symlink target doesn't exist,
+			// which isn't entirely unusual and shouldn't fail the listing.
+			// In this case, targetInfo stays nil and we fall back to
+			// treating it as a non-directory, using the symlink's own size.
+			targetInfo, _ = fs.Stat(fileSystem, targetPath)
+		}
+
+		isDir := entry.IsDir() || (targetInfo != nil && targetInfo.IsDir())
+
+		// add the slash after the escape of path to avoid escaping the slash as well
+		if isDir {
+			name += "/"
+			tplCtx.NumDirs++
+		} else {
+			tplCtx.NumFiles++
+		}
+
+		if !isDir {
+			// increase the total by the symlink's size, not the target's size,
+			// by incrementing before we follow the symlink
+			tplCtx.TotalFileSize += size
+		}
+
+		symlinkPath := ""
+		if fileIsSymlink {
+			if targetInfo != nil {
+				size = targetInfo.Size()
+			}
+
+			if fsrv.Browse.RevealSymlinks {
+				symLinkTarget, err := os.Readlink(targetPath)
+				if err == nil {
+					symlinkPath = symLinkTarget
+				}
+			}
+		}
+
+		if !isDir {
+			// increase the total including the symlink target's size
+			tplCtx.TotalFileSizeFollowingSymlinks += size
+		}
+
+		u := url.URL{Path: "./" + name} // prepend with "./" to fix paths with ':' in the name
+
+		tplCtx.Items = append(tplCtx.Items, fileInfo{
+			IsDir:       isDir,
+			IsSymlink:   fileIsSymlink,
+			Name:        name,
+			Size:        size,
+			URL:         u.String(),
+			ModTime:     modTime.UTC(),
+			Mode:        info.Mode(),
+			Tpl:         tplCtx, // a reference up to the template context is useful
+			SymlinkPath: symlinkPath,
+		})
+	}
+
+	// this time is used for the Last-Modified header and comparing If-Modified-Since from client
+	// both are expected to be in UTC, so we convert to UTC here
+	// see: https://github.com/caddyserver/caddy/issues/6828
+	tplCtx.lastModified = tplCtx.lastModified.UTC()
+	return tplCtx
+}
+
+// directoryListingOld is the previous implementation of directoryListing, kept
+// temporarily so its performance can be compared against directoryListing via
+// benchmarks (see browsetplcontext_bench_test.go). It is unused in production
+// code and should be deleted, along with its benchmark and parity test, once
+// the new implementation has been merged and validated.
+//
+//nolint:unused // only called from tests/benchmarks, kept temporarily for comparison
+func (fsrv *FileServer) directoryListingOld(ctx context.Context, fileSystem fs.FS, parentModTime time.Time, entries []fs.DirEntry, canGoUp bool, root, urlPath string, repl *caddy.Replacer) *browseTemplateContext {
+	filesToHide := fsrv.transformHidePaths(repl)
+
+	name, _ := url.PathUnescape(urlPath)
+
+	tplCtx := &browseTemplateContext{
+		Name:         path.Base(name),
+		Path:         urlPath,
+		CanGoUp:      canGoUp,
+		lastModified: parentModTime,
 	}
 
 	for _, entry := range entries {
@@ -220,6 +342,13 @@ func (l *browseTemplateContext) applySortAndLimit(sortParam, orderParam, limitPa
 	l.Sort = sortParam
 	l.Order = orderParam
 
+	// precompute each item's lowercase name once, up front (O(n)), instead
+	// of letting byName/byNameDirFirst/bySize recompute it on every one of
+	// the O(n log n) comparisons sort.Sort makes
+	for i := range l.Items {
+		l.Items[i].nameLower = strings.ToLower(l.Items[i].Name)
+	}
+
 	if l.Order == "desc" {
 		switch l.Sort {
 		case sortByName:
@@ -239,6 +368,59 @@ func (l *browseTemplateContext) applySortAndLimit(sortParam, orderParam, limitPa
 			sort.Sort(byNameDirFirst(*l))
 		case sortBySize:
 			sort.Sort(bySize(*l))
+		case sortByTime:
+			sort.Sort(byTime(*l))
+		}
+	}
+
+	if offsetParam != "" {
+		offset, _ := strconv.Atoi(offsetParam)
+		if offset > 0 && offset <= len(l.Items) {
+			l.Items = l.Items[offset:]
+			l.Offset = offset
+		}
+	}
+
+	if limitParam != "" {
+		limit, _ := strconv.Atoi(limitParam)
+
+		if limit > 0 && limit <= len(l.Items) {
+			l.Items = l.Items[:limit]
+			l.Limit = limit
+		}
+	}
+}
+
+// applySortAndLimitOld is the previous implementation of applySortAndLimit, kept
+// temporarily so its performance can be compared against applySortAndLimit via
+// benchmarks (see browsetplcontext_bench_test.go). It is unused in production
+// code and should be deleted, along with its benchmark and the old comparator
+// types below, once the new implementation has been merged and validated.
+//
+//nolint:unused // only called from tests/benchmarks, kept temporarily for comparison
+func (l *browseTemplateContext) applySortAndLimitOld(sortParam, orderParam, limitParam string, offsetParam string) {
+	l.Sort = sortParam
+	l.Order = orderParam
+
+	if l.Order == "desc" {
+		switch l.Sort {
+		case sortByName:
+			sort.Sort(sort.Reverse(byNameOld(*l)))
+		case sortByNameDirFirst:
+			sort.Sort(sort.Reverse(byNameDirFirstOld(*l)))
+		case sortBySize:
+			sort.Sort(sort.Reverse(bySizeOld(*l)))
+		case sortByTime:
+			sort.Sort(sort.Reverse(byTime(*l)))
+		}
+	} else {
+		switch l.Sort {
+		case sortByName:
+			sort.Sort(byNameOld(*l))
+		case sortByNameDirFirst:
+			sort.Sort(byNameDirFirstOld(*l))
+		case sortBySize:
+			sort.Sort(bySizeOld(*l))
 		case sortByTime:
 			sort.Sort(byTime(*l))
 		}
@@ -282,6 +464,11 @@ type fileInfo struct {
 
 	// a pointer to the template context is useful inside nested templates
 	Tpl *browseTemplateContext `json:"-"`
+
+	// cached lowercase Name, precomputed once by applySortAndLimit so that
+	// byName/byNameDirFirst/bySize don't each recompute it on every one of
+	// the O(n log n) comparisons sort.Sort makes; not serialized.
+	nameLower string
 }
 
 // HasExt returns true if the filename has any of the given suffixes, case-insensitive.
@@ -328,7 +515,7 @@ func (l byName) Len() int      { return len(l.Items) }
 func (l byName) Swap(i, j int) { l.Items[i], l.Items[j] = l.Items[j], l.Items[i] }
 
 func (l byName) Less(i, j int) bool {
-	return strings.ToLower(l.Items[i].Name) < strings.ToLower(l.Items[j].Name)
+	return l.Items[i].nameLower < l.Items[j].nameLower
 }
 
 func (l byNameDirFirst) Len() int      { return len(l.Items) }
@@ -337,7 +524,7 @@ func (l byNameDirFirst) Swap(i, j int) { l.Items[i], l.Items[j] = l.Items[j], l.
 func (l byNameDirFirst) Less(i, j int) bool {
 	// sort by name if both are dir or file
 	if l.Items[i].IsDir == l.Items[j].IsDir {
-		return strings.ToLower(l.Items[i].Name) < strings.ToLower(l.Items[j].Name)
+		return l.Items[i].nameLower < l.Items[j].nameLower
 	}
 	// sort dir ahead of file
 	return l.Items[i].IsDir
@@ -361,7 +548,7 @@ func (l bySize) Less(i, j int) bool {
 		jSize = directoryOffset
 	}
 	if l.Items[i].IsDir && l.Items[j].IsDir {
-		return strings.ToLower(l.Items[i].Name) < strings.ToLower(l.Items[j].Name)
+		return l.Items[i].nameLower < l.Items[j].nameLower
 	}
 
 	return iSize < jSize
@@ -370,6 +557,76 @@ func (l bySize) Less(i, j int) bool {
 func (l byTime) Len() int           { return len(l.Items) }
 func (l byTime) Swap(i, j int)      { l.Items[i], l.Items[j] = l.Items[j], l.Items[i] }
 func (l byTime) Less(i, j int) bool { return l.Items[i].ModTime.Before(l.Items[j].ModTime) }
+
+// byNameOld, byNameDirFirstOld, and bySizeOld are the previous
+// implementations of byName, byNameDirFirst, and bySize, kept temporarily so
+// their performance can be compared via benchmarks (see
+// browsetplcontext_bench_test.go). They are unused in production code and
+// should be deleted, along with their benchmark, once the new
+// implementations have been merged and validated. byTime is unchanged, so
+// there is no byTimeOld.
+//
+//nolint:unused // only used from tests/benchmarks, kept temporarily for comparison
+type (
+	byNameOld         browseTemplateContext
+	byNameDirFirstOld browseTemplateContext
+	bySizeOld         browseTemplateContext
+)
+
+//nolint:unused // only called from tests/benchmarks, kept temporarily for comparison
+func (l byNameOld) Len() int { return len(l.Items) }
+
+//nolint:unused // only called from tests/benchmarks, kept temporarily for comparison
+func (l byNameOld) Swap(i, j int) { l.Items[i], l.Items[j] = l.Items[j], l.Items[i] }
+
+//nolint:unused // only called from tests/benchmarks, kept temporarily for comparison
+func (l byNameOld) Less(i, j int) bool {
+	return strings.ToLower(l.Items[i].Name) < strings.ToLower(l.Items[j].Name)
+}
+
+//nolint:unused // only called from tests/benchmarks, kept temporarily for comparison
+func (l byNameDirFirstOld) Len() int { return len(l.Items) }
+
+//nolint:unused // only called from tests/benchmarks, kept temporarily for comparison
+func (l byNameDirFirstOld) Swap(i, j int) { l.Items[i], l.Items[j] = l.Items[j], l.Items[i] }
+
+//nolint:unused // only called from tests/benchmarks, kept temporarily for comparison
+func (l byNameDirFirstOld) Less(i, j int) bool {
+	// sort by name if both are dir or file
+	if l.Items[i].IsDir == l.Items[j].IsDir {
+		return strings.ToLower(l.Items[i].Name) < strings.ToLower(l.Items[j].Name)
+	}
+	// sort dir ahead of file
+	return l.Items[i].IsDir
+}
+
+//nolint:unused // only called from tests/benchmarks, kept temporarily for comparison
+func (l bySizeOld) Len() int { return len(l.Items) }
+
+//nolint:unused // only called from tests/benchmarks, kept temporarily for comparison
+func (l bySizeOld) Swap(i, j int) { l.Items[i], l.Items[j] = l.Items[j], l.Items[i] }
+
+//nolint:unused // only called from tests/benchmarks, kept temporarily for comparison
+func (l bySizeOld) Less(i, j int) bool {
+	const directoryOffset = -1 << 31 // = -math.MinInt32
+
+	iSize, jSize := l.Items[i].Size, l.Items[j].Size
+
+	// directory sizes depend on the file system; to
+	// provide a consistent experience, put them up front
+	// and sort them by name
+	if l.Items[i].IsDir {
+		iSize = directoryOffset
+	}
+	if l.Items[j].IsDir {
+		jSize = directoryOffset
+	}
+	if l.Items[i].IsDir && l.Items[j].IsDir {
+		return strings.ToLower(l.Items[i].Name) < strings.ToLower(l.Items[j].Name)
+	}
+
+	return iSize < jSize
+}
 
 const (
 	sortByName         = "name"
