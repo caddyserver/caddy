@@ -610,6 +610,13 @@ type sharedQuicListener struct {
 	supportsWebTransport bool // set by the first creator; subsequent pool reuses keep this value
 }
 
+// SupportsWebTransport reports whether the shared QUIC listener was created
+// with WebTransport capabilities (DATAGRAM support and stream-reset partial
+// delivery). The value is fixed by the first creator of a pooled listener.
+func (sql *sharedQuicListener) SupportsWebTransport() bool {
+	return sql.supportsWebTransport
+}
+
 // Destruct closes the underlying QUIC listener and its associated net.PacketConn.
 func (sql *sharedQuicListener) Destruct() error {
 	// close EarlyListener first to stop any operations being done to the net.PacketConn
