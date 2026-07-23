@@ -335,6 +335,8 @@ func (fsrv *FileServer) makeBrowseTemplate(tplCtx *templateContext) (*template.T
 
 // isSymlinkTargetDir returns true if f's symbolic link target
 // is a directory.
+//
+//nolint:unused // only called from directoryListingOld, kept temporarily for benchmark comparison; see browsetplcontext_bench_test.go
 func (fsrv *FileServer) isSymlinkTargetDir(fileSystem fs.FS, f fs.FileInfo, root, urlPath string) bool {
 	if !isSymlink(f) {
 		return false
