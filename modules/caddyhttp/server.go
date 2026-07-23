@@ -35,6 +35,7 @@ import (
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 	h3qlog "github.com/quic-go/quic-go/http3/qlog"
+	"github.com/quic-go/webtransport-go"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
@@ -123,6 +124,27 @@ type Server struct {
 	//
 	// TODO: This is an EXPERIMENTAL feature. Subject to change or removal.
 	EnableFullDuplex bool `json:"enable_full_duplex,omitempty"`
+
+	// EnableWebTransport enables WebTransport (draft-ietf-webtrans-http3)
+	// on this server's HTTP/3 listener. When true, the HTTP/3 server
+	// advertises WebTransport in SETTINGS, enables HTTP/3 DATAGRAMs and
+	// QUIC stream-reset partial delivery, and dispatches each QUIC
+	// connection through webtransport.Server.ServeQUICConn so that
+	// handlers can upgrade Extended CONNECT requests with
+	// `:protocol=webtransport`. When false, the HTTP/3 path is
+	// bit-for-bit identical to the pre-WebTransport behavior: clients
+	// that don't speak WebTransport see nothing new.
+	//
+	// This is a server-level opt-in that matches how other
+	// protocol-level features are enabled (see `protocols`,
+	// `allow_0rtt`, `enable_full_duplex`). Handlers that want to proxy
+	// or terminate WebTransport sessions auto-detect the request shape
+	// once this is on — no per-handler configuration is needed.
+	//
+	// Requires HTTP/3.
+	//
+	// TODO: This is an EXPERIMENTAL feature. Subject to change or removal.
+	EnableWebTransport bool `json:"enable_webtransport,omitempty"`
 
 	// A list of header field names containing underscores that should
 	// be preserved instead of being dropped. By default, Caddy drops
@@ -303,6 +325,7 @@ type Server struct {
 
 	server    *http.Server
 	h3server  *http3.Server
+	wtServer  *webtransport.Server
 	addresses []caddy.NetworkAddress
 
 	trustedProxies IPRangeSource
@@ -813,31 +836,103 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
 	}
 	addr.Network = h3net
-	h3ln, err := addr.ListenQUIC(s.ctx, 0, net.ListenConfig{}, tlsCfg, s.packetConnWrappers, s.Allow0RTT)
+	h3ln, err := addr.ListenQUIC(s.ctx, 0, net.ListenConfig{}, tlsCfg, s.packetConnWrappers, s.Allow0RTT, s.EnableWebTransport)
 	if err != nil {
 		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
 	}
 
 	// create HTTP/3 server if not done already
 	if s.h3server == nil {
-		s.h3server = &http3.Server{
-			Handler:        s,
-			TLSConfig:      tlsCfg,
-			MaxHeaderBytes: s.MaxHeaderBytes,
-			QUICConfig: &quic.Config{
-				Versions: []quic.Version{quic.Version1, quic.Version2},
-				Tracer:   h3qlog.DefaultConnectionTracer,
-			},
-			IdleTimeout: time.Duration(s.IdleTimeout),
+		s.h3server = s.buildHTTP3Server(tlsCfg)
+		if s.EnableWebTransport {
+			s.wtServer = s.buildWebTransportServer()
 		}
 	}
 
 	s.quicListeners = append(s.quicListeners, h3ln)
 
-	//nolint:errcheck
-	go s.h3server.ServeListener(h3ln)
+	go s.serveH3AcceptLoop(h3ln)
 
 	return nil
+}
+
+// serveH3AcceptLoop accepts incoming QUIC connections from the HTTP/3
+// listener. When EnableWebTransport is false, the listener is handed
+// directly to http3.Server — the code path is identical to pre-WebTransport
+// Caddy. When true, each connection is dispatched through
+// webtransport.Server.ServeQUICConn, which demultiplexes WebTransport
+// streams from normal HTTP/3 streams (forwarding the latter to the
+// http3.Server request path at the cost of one varint peek per stream).
+//
+// If EnableWebTransport is true but the underlying QUIC listener was created
+// without DATAGRAM support (e.g. a pooled listener reused after a reload that
+// turns on enable_webtransport), fall back to plain HTTP/3 with a warning so
+// that H3 is not silently broken by webtransport.Server.ServeQUICConn rejecting
+// every connection.
+func (s *Server) serveH3AcceptLoop(h3ln http3.QUICListener) {
+	if !s.EnableWebTransport {
+		_ = s.h3server.ServeListener(h3ln)
+		return
+	}
+	if wtLn, ok := h3ln.(interface{ SupportsWebTransport() bool }); ok && !wtLn.SupportsWebTransport() {
+		if c := s.logger.Check(zapcore.WarnLevel, "WebTransport unavailable: QUIC listener was created without DATAGRAM support; restart Caddy to apply enable_webtransport"); c != nil {
+			c.Write(zap.Stringer("address", h3ln.Addr()))
+		}
+		_ = s.h3server.ServeListener(h3ln)
+		return
+	}
+	for {
+		conn, err := h3ln.Accept(s.ctx)
+		if err != nil {
+			return
+		}
+		go func() {
+			err := s.wtServer.ServeQUICConn(conn)
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
+				if c := s.logger.Check(zapcore.ErrorLevel, "serving WebTransport QUIC connection"); c != nil {
+					c.Write(zap.Error(err))
+				}
+			}
+		}()
+	}
+}
+
+// buildHTTP3Server constructs the http3.Server used by this server for
+// HTTP/3. When EnableWebTransport is true, the server is additionally
+// configured for WebTransport: WT enablement is advertised in SETTINGS,
+// DATAGRAMs are enabled, QUIC stream-reset partial delivery is enabled,
+// and a ConnContext hook stashes the *quic.Conn in each request's context
+// so handlers can call webtransport.Server.Upgrade. When false, none of
+// those modifications are applied and the returned server is
+// bit-for-bit identical to the pre-WebTransport implementation.
+func (s *Server) buildHTTP3Server(tlsCfg *tls.Config) *http3.Server {
+	qc := &quic.Config{
+		Versions: []quic.Version{quic.Version1, quic.Version2},
+		Tracer:   h3qlog.DefaultConnectionTracer,
+	}
+	if s.EnableWebTransport {
+		qc.EnableStreamResetPartialDelivery = true
+	}
+	h3 := &http3.Server{
+		Handler:        s,
+		TLSConfig:      tlsCfg,
+		MaxHeaderBytes: s.MaxHeaderBytes,
+		QUICConfig:     qc,
+		IdleTimeout:    time.Duration(s.IdleTimeout),
+	}
+	if s.EnableWebTransport {
+		webtransport.ConfigureHTTP3Server(h3)
+	}
+	return h3
+}
+
+// buildWebTransportServer constructs the webtransport.Server that wraps
+// the http3.Server. It owns the per-connection session state needed by
+// webtransport.Server.Upgrade and demultiplexes WebTransport streams
+// from normal HTTP/3 streams on each accepted QUIC connection.
+// Only constructed when EnableWebTransport is true.
+func (s *Server) buildWebTransportServer() *webtransport.Server {
+	return &webtransport.Server{H3: s.h3server}
 }
 
 // configureServer applies/binds the registered callback functions to the server.
@@ -1115,6 +1210,23 @@ func (s *Server) Listeners() []net.Listener { return s.listeners }
 
 // Name returns the server's name.
 func (s *Server) Name() string { return s.name }
+
+// WebTransportServer returns the server's underlying WebTransport
+// serving state as an opaque value. Modules that import
+// github.com/quic-go/webtransport-go may type-assert it to
+// *webtransport.Server. Returns nil if WebTransport is not enabled
+// on this server (EnableWebTransport=false or HTTP/3 is not in use).
+//
+// This is exposed as any so caddyhttp's public API does not leak the
+// upstream webtransport-go type to packages that don't use it.
+//
+// EXPERIMENTAL: Subject to change or removal.
+func (s *Server) WebTransportServer() any {
+	if s.wtServer == nil {
+		return nil
+	}
+	return s.wtServer
+}
 
 // PrepareRequest fills the request r for use in a Caddy HTTP handler chain. w and s can
 // be nil, but the handlers will lose response placeholders and access to the server.
