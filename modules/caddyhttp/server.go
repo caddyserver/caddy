@@ -874,7 +874,12 @@ func (s *Server) serveH3AcceptLoop(h3ln http3.QUICListener) {
 			return
 		}
 		go func() {
-			_ = s.wtServer.ServeQUICConn(conn)
+			err := s.wtServer.ServeQUICConn(conn)
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
+				if c := s.logger.Check(zapcore.ErrorLevel, "serving WebTransport QUIC connection"); c != nil {
+					c.Write(zap.Error(err))
+				}
+			}
 		}()
 	}
 }
