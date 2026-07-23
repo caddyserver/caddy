@@ -863,8 +863,21 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 // webtransport.Server.ServeQUICConn, which demultiplexes WebTransport
 // streams from normal HTTP/3 streams (forwarding the latter to the
 // http3.Server request path at the cost of one varint peek per stream).
+//
+// If EnableWebTransport is true but the underlying QUIC listener was created
+// without DATAGRAM support (e.g. a pooled listener reused after a reload that
+// turns on enable_webtransport), fall back to plain HTTP/3 with a warning so
+// that H3 is not silently broken by webtransport.Server.ServeQUICConn rejecting
+// every connection.
 func (s *Server) serveH3AcceptLoop(h3ln http3.QUICListener) {
 	if !s.EnableWebTransport {
+		_ = s.h3server.ServeListener(h3ln)
+		return
+	}
+	if wtLn, ok := h3ln.(interface{ SupportsWebTransport() bool }); ok && !wtLn.SupportsWebTransport() {
+		if c := s.logger.Check(zapcore.WarnLevel, "WebTransport unavailable: QUIC listener was created without DATAGRAM support; restart Caddy to apply enable_webtransport"); c != nil {
+			c.Write(zap.Stringer("address", h3ln.Addr()))
+		}
 		_ = s.h3server.ServeListener(h3ln)
 		return
 	}

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -14,10 +15,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/http3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 type writeFunc func(p []byte) (int, error)
@@ -1069,4 +1073,43 @@ func TestServer_BuildWebTransportServerWrapsHTTP3Server(t *testing.T) {
 func TestServer_WebTransportServerNilUntilH3(t *testing.T) {
 	s := &Server{}
 	assert.Nil(t, s.WebTransportServer(), "expected nil before HTTP/3 setup")
+}
+
+// stubQUICListenerWithoutWT implements http3.QUICListener and reports that
+// WebTransport is not supported. Accept returns immediately with an error so
+// that h3server.ServeListener exits promptly when the fallback path is taken.
+type stubQUICListenerWithoutWT struct{}
+
+func (stubQUICListenerWithoutWT) Accept(context.Context) (*quic.Conn, error) {
+	return nil, errors.New("stub: no connections")
+}
+
+func (stubQUICListenerWithoutWT) Addr() net.Addr {
+	return &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 9443}
+}
+
+func (stubQUICListenerWithoutWT) Close() error { return nil }
+
+func (stubQUICListenerWithoutWT) SupportsWebTransport() bool { return false }
+
+// TestServeH3AcceptLoopFallsBackWhenListenerLacksWebTransport verifies that
+// when EnableWebTransport is true but the QUIC listener was created without
+// DATAGRAM support, serveH3AcceptLoop falls back to plain HTTP/3 with a
+// warning instead of calling webtransport.Server.ServeQUICConn. wtServer is
+// intentionally nil so the WebTransport branch cannot be silently taken; the
+// logged warning proves the fallback path was used.
+func TestServeH3AcceptLoopFallsBackWhenListenerLacksWebTransport(t *testing.T) {
+	core, logs := observer.New(zapcore.WarnLevel)
+	s := &Server{
+		EnableWebTransport: true,
+		logger:             zap.New(core),
+		h3server:           &http3.Server{},
+		// wtServer left nil: WebTransport path would nil-panic
+	}
+	// Must not panic: fallback uses h3server.ServeListener, not wtServer.
+	s.serveH3AcceptLoop(stubQUICListenerWithoutWT{})
+
+	if logs.FilterMessageSnippet("WebTransport unavailable").Len() != 1 {
+		t.Errorf("expected fallback warning to be logged, got logs: %v", logs.All())
+	}
 }
