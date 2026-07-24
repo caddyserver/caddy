@@ -15,6 +15,7 @@
 package caddyauth
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 
@@ -88,8 +89,18 @@ func (a Authentication) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	var hasCandidate bool
 	var authed bool
 	var err error
+	var winner *bufferedResponseWriter
+	var failed []*bufferedResponseWriter
 	for provName, prov := range a.Providers {
-		user, authed, err = prov.Authenticate(w, r)
+		// Give each provider its own buffered response writer so that a
+		// provider which writes to the response (e.g. a failing provider
+		// that sends a 401 challenge or a login redirect) cannot clobber
+		// the response of another provider or of the successful handler
+		// chain. The winning provider's headers are applied; failed
+		// providers' responses are discarded unless every provider fails.
+		// See https://github.com/caddyserver/caddy/issues/5190.
+		bw := &bufferedResponseWriter{header: make(http.Header)}
+		user, authed, err = prov.Authenticate(bw, r)
 		if err != nil {
 			if c := a.logger.Check(zapcore.ErrorLevel, "auth provider returned error"); c != nil {
 				c.Write(zap.String("provider", provName), zap.Error(err))
@@ -100,8 +111,10 @@ func (a Authentication) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			continue
 		}
 		if authed {
+			winner = bw
 			break
 		}
+		failed = append(failed, bw)
 		if userHasInfo(user) {
 			candidate = user
 			hasCandidate = true
@@ -111,7 +124,36 @@ func (a Authentication) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		if hasCandidate {
 			setAuthUserPlaceholders(repl, "http.auth.candidate", candidate)
 		}
+		// No provider authenticated the request. Apply the challenge headers
+		// (e.g. WWW-Authenticate, or a Location) of one provider that tried,
+		// so a meaningful challenge still reaches the client without other
+		// providers clobbering it; a redirecting provider takes precedence.
+		// A provider that produced a full redirect response is sent as-is;
+		// otherwise we fall through to the auth error so handle_errors runs
+		// and the client still receives a 401 — a challenge that set only
+		// headers (like basic auth) must NOT downgrade the status to 200.
+		if replay := pickReplay(failed); replay != nil {
+			for field, vals := range replay.header {
+				w.Header()[field] = vals
+			}
+			if replay.statusCode >= 300 && replay.statusCode < 400 {
+				w.WriteHeader(replay.statusCode)
+				_, _ = w.Write(replay.buf.Bytes())
+				return nil
+			}
+		}
 		return caddyhttp.Error(http.StatusUnauthorized, fmt.Errorf("not authenticated"))
+	}
+
+	// The successful provider may have set headers that must reach the
+	// client (e.g. a Set-Cookie establishing a new session), so copy its
+	// headers onto the real writer. Its status and body are NOT replayed:
+	// the request is authenticated and continues down the handler chain,
+	// which produces the actual response.
+	if winner != nil {
+		for field, vals := range winner.header {
+			w.Header()[field] = vals
+		}
 	}
 
 	setAuthUserPlaceholders(repl, "http.auth.user", user)
@@ -119,8 +161,48 @@ func (a Authentication) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	return next.ServeHTTP(w, r)
 }
 
+// pickReplay chooses which failed provider's buffered response to send when
+// no provider authenticated: a redirect (3xx) wins, otherwise the first
+// provider that wrote anything (status, body, or headers).
+func pickReplay(failed []*bufferedResponseWriter) *bufferedResponseWriter {
+	var replay *bufferedResponseWriter
+	for _, bw := range failed {
+		if bw.statusCode >= 300 && bw.statusCode < 400 {
+			return bw
+		}
+		if replay == nil && (bw.statusCode != 0 || bw.buf.Len() > 0 || len(bw.header) > 0) {
+			replay = bw
+		}
+	}
+	return replay
+}
+
 func userHasInfo(user User) bool {
 	return user.ID != "" || len(user.Metadata) > 0
+}
+
+// bufferedResponseWriter captures a single provider's response — headers,
+// status, and body — so it can be discarded or replayed once the outcome of
+// the whole provider set is known. Providers that need to stream (Flush) or
+// hijack the connection during authentication are not supported while
+// buffered; authentication providers are not expected to do so.
+type bufferedResponseWriter struct {
+	header     http.Header
+	statusCode int
+	buf        bytes.Buffer
+}
+
+func (bw *bufferedResponseWriter) Header() http.Header { return bw.header }
+
+func (bw *bufferedResponseWriter) WriteHeader(statusCode int) {
+	if bw.statusCode == 0 {
+		bw.statusCode = statusCode
+	}
+}
+
+func (bw *bufferedResponseWriter) Write(data []byte) (int, error) {
+	bw.WriteHeader(http.StatusOK)
+	return bw.buf.Write(data)
 }
 
 func setAuthUserPlaceholders(repl *caddy.Replacer, namespace string, user User) {
