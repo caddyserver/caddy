@@ -42,6 +42,7 @@ type MatchRemoteIP struct {
 	// length and indexes for matching later
 	cidrs  []*netip.Prefix
 	zones  []string
+	trie   *IPTrie
 	logger *zap.Logger
 }
 
@@ -55,6 +56,7 @@ type MatchClientIP struct {
 	// length and indexes for matching later
 	cidrs  []*netip.Prefix
 	zones  []string
+	trie   *IPTrie
 	logger *zap.Logger
 }
 
@@ -138,6 +140,9 @@ func (m *MatchRemoteIP) Provision(ctx caddy.Context) error {
 	}
 	m.cidrs = cidrs
 	m.zones = zones
+	if len(cidrs) >= 8 {
+		m.trie = NewIPTrie(cidrs, zones)
+	}
 
 	return nil
 }
@@ -170,7 +175,12 @@ func (m MatchRemoteIP) MatchWithError(r *http.Request) (bool, error) {
 
 		return false, nil
 	}
-	matches, zoneFilter := matchIPByCidrZones(clientIP, zoneID, m.cidrs, m.zones)
+	var matches, zoneFilter bool
+	if m.trie != nil {
+		matches, zoneFilter = m.trie.Contains(clientIP, zoneID)
+	} else {
+		matches, zoneFilter = matchIPByCidrZones(clientIP, zoneID, m.cidrs, m.zones)
+	}
 	if !matches && !zoneFilter {
 		if c := m.logger.Check(zapcore.DebugLevel, "zone ID from remote IP did not match"); c != nil {
 			c.Write(zap.String("zone", zoneID))
@@ -246,6 +256,9 @@ func (m *MatchClientIP) Provision(ctx caddy.Context) error {
 	}
 	m.cidrs = cidrs
 	m.zones = zones
+	if len(cidrs) >= 8 {
+		m.trie = NewIPTrie(cidrs, zones)
+	}
 	return nil
 }
 
@@ -274,7 +287,12 @@ func (m MatchClientIP) MatchWithError(r *http.Request) (bool, error) {
 		m.logger.Error("getting client IP", zap.Error(err))
 		return false, nil
 	}
-	matches, zoneFilter := matchIPByCidrZones(clientIP, zoneID, m.cidrs, m.zones)
+	var matches, zoneFilter bool
+	if m.trie != nil {
+		matches, zoneFilter = m.trie.Contains(clientIP, zoneID)
+	} else {
+		matches, zoneFilter = matchIPByCidrZones(clientIP, zoneID, m.cidrs, m.zones)
+	}
 	if !matches && !zoneFilter {
 		m.logger.Debug("zone ID from client IP did not match", zap.String("zone", zoneID))
 	}
