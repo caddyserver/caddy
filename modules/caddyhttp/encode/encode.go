@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"mime"
 	"net/http"
 	"slices"
 	"strconv"
@@ -282,6 +283,17 @@ func (rw *responseWriter) WriteHeader(status int) {
 	// see: https://caddy.community/t/disappear-103-early-hints-response-with-encode-enable-caddy-v2-7-6/23081/5
 	if 100 <= status && status <= 199 {
 		rw.ResponseWriter.WriteHeader(status)
+	}
+
+	// write header immediately for server-sent events responses, since the
+	// body may not be written for a while and the client needs the headers
+	// to establish the event stream; see #6293
+	if !rw.wroteHeader && !(100 <= status && status <= 199) {
+		if ct, _, err := mime.ParseMediaType(rw.Header().Get("Content-Type")); err == nil && ct == "text/event-stream" {
+			rw.init()
+			rw.ResponseWriter.WriteHeader(status)
+			rw.wroteHeader = true
+		}
 	}
 }
 
