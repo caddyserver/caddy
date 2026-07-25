@@ -480,8 +480,9 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 		earlyLn, err := tr.ListenEarly(
 			http3.ConfigureTLSConfig(quicTlsConfig),
 			&quic.Config{
-				Allow0RTT: allow0rtt,
-				Tracer:    h3qlog.DefaultConnectionTracer,
+				InitialPacketSize: 1200,
+				Allow0RTT:         allow0rtt,
+				Tracer:            h3qlog.DefaultConnectionTracer,
 			},
 		)
 		if err != nil {
