@@ -50,10 +50,10 @@ func makeBenchDir(tb testing.TB, dir string, n int) {
 
 	target := filepath.Join(dir, "file-0.txt")
 	if err := os.Symlink(target, filepath.Join(dir, "symlink-to-file")); err != nil {
-		tb.Fatal(err)
+		tb.Skipf("symlink not supported on this platform: %v", err)
 	}
 	if err := os.Symlink(subdir, filepath.Join(dir, "symlink-to-dir")); err != nil {
-		tb.Fatal(err)
+		tb.Skipf("symlink not supported on this platform: %v", err)
 	}
 }
 

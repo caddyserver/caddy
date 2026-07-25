@@ -132,13 +132,13 @@ func TestDirectoryListingParity(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(filepath.Join(dir, "a.txt"), filepath.Join(dir, "symlink-to-file")); err != nil {
-		t.Fatal(err)
+		t.Skipf("symlink not supported on this platform: %v", err)
 	}
 	if err := os.Symlink(subdir, filepath.Join(dir, "symlink-to-dir")); err != nil {
-		t.Fatal(err)
+		t.Skipf("symlink not supported on this platform: %v", err)
 	}
 	if err := os.Symlink(filepath.Join(dir, "does-not-exist"), filepath.Join(dir, "symlink-broken")); err != nil {
-		t.Fatal(err)
+		t.Skipf("symlink not supported on this platform: %v", err)
 	}
 
 	fileSystem := os.DirFS(dir)
