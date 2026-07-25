@@ -534,7 +534,7 @@ func (l bySize) Len() int      { return len(l.Items) }
 func (l bySize) Swap(i, j int) { l.Items[i], l.Items[j] = l.Items[j], l.Items[i] }
 
 func (l bySize) Less(i, j int) bool {
-	const directoryOffset = -1 << 31 // = -math.MinInt32
+	const directoryOffset = -1 << 31 // = -2147483648 (min int32)
 
 	iSize, jSize := l.Items[i].Size, l.Items[j].Size
 
@@ -608,7 +608,7 @@ func (l bySizeOld) Swap(i, j int) { l.Items[i], l.Items[j] = l.Items[j], l.Items
 
 //nolint:unused // only called from tests/benchmarks, kept temporarily for comparison
 func (l bySizeOld) Less(i, j int) bool {
-	const directoryOffset = -1 << 31 // = -math.MinInt32
+	const directoryOffset = -1 << 31 // = -2147483648 (min int32)
 
 	iSize, jSize := l.Items[i].Size, l.Items[j].Size
 
