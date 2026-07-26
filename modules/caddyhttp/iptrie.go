@@ -58,10 +58,26 @@ func NewIPTrie(cidrs []*netip.Prefix, zones []string) *IPTrie {
 	return t
 }
 
+// normalizePrefix converts an IPv4-mapped IPv6 prefix with prefix length >= 96
+// into a standard IPv4 prefix (e.g. ::ffff:192.0.2.0/120 -> 192.0.2.0/24).
+// For pure IPv4 or pure IPv6 prefixes, it unmaps the address representation.
+func normalizePrefix(prefix netip.Prefix) (netip.Addr, int) {
+	addr := prefix.Addr()
+	bits := prefix.Bits()
+
+	if addr.Is4In6() {
+		if bits >= 96 {
+			return addr.Unmap(), bits - 96
+		}
+		return addr, bits
+	}
+
+	return addr.Unmap(), bits
+}
+
 // Insert adds a prefix and associated zone string into the trie.
 func (t *IPTrie) Insert(prefix netip.Prefix, zone string) {
-	addr := prefix.Addr().Unmap()
-	bits := prefix.Bits()
+	addr, bits := normalizePrefix(prefix)
 
 	var root *iptrieNode
 	var bytes []byte
@@ -79,6 +95,9 @@ func (t *IPTrie) Insert(prefix netip.Prefix, zone string) {
 	}
 
 	if bits < 0 {
+		bits = len(bytes) * 8
+	}
+	if bits > len(bytes)*8 {
 		bits = len(bytes) * 8
 	}
 

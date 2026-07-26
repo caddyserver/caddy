@@ -356,9 +356,13 @@ func parseIPZoneFromString(address string) (netip.Addr, string, error) {
 }
 
 func matchIPByCidrZones(clientIP netip.Addr, zoneID string, cidrs []*netip.Prefix, zones []string) (bool, bool) {
+	unmappedClientIP := clientIP.Unmap()
 	zoneFilter := true
 	for i, ipRange := range cidrs {
-		if ipRange.Contains(clientIP) {
+		if ipRange == nil {
+			continue
+		}
+		if prefixContainsAddr(*ipRange, clientIP, unmappedClientIP) {
 			// Check if there are zone filters assigned and if they match.
 			if zones[i] == "" || zoneID == zones[i] {
 				return true, false
@@ -367,6 +371,19 @@ func matchIPByCidrZones(clientIP netip.Addr, zoneID string, cidrs []*netip.Prefi
 		}
 	}
 	return false, zoneFilter
+}
+
+func prefixContainsAddr(prefix netip.Prefix, clientIP netip.Addr, unmappedClientIP netip.Addr) bool {
+	if prefix.Contains(clientIP) || prefix.Contains(unmappedClientIP) {
+		return true
+	}
+	if prefix.Addr().Is4In6() && prefix.Bits() >= 96 {
+		unmappedPrefix := netip.PrefixFrom(prefix.Addr().Unmap(), prefix.Bits()-96)
+		if unmappedPrefix.Contains(unmappedClientIP) {
+			return true
+		}
+	}
+	return false
 }
 
 // Interface guards

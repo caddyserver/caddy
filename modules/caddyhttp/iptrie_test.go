@@ -105,6 +105,30 @@ func TestIPTrie(t *testing.T) {
 			wantMatch:    true, // 10.0.0.0/8 has no zone requirement, so it matches
 			wantZonePass: true,
 		},
+		{
+			name:         "IPv4-mapped IPv6 prefix with IPv4 query",
+			cidrs:        []string{"::ffff:192.0.2.0/120"},
+			zones:        []string{""},
+			queryIP:      "192.0.2.1",
+			wantMatch:    true,
+			wantZonePass: true,
+		},
+		{
+			name:         "IPv4-mapped IPv6 prefix with IPv4-mapped IPv6 query",
+			cidrs:        []string{"::ffff:192.0.2.0/120"},
+			zones:        []string{""},
+			queryIP:      "::ffff:192.0.2.1",
+			wantMatch:    true,
+			wantZonePass: true,
+		},
+		{
+			name:         "IPv4-mapped IPv6 prefix out of range no match",
+			cidrs:        []string{"::ffff:192.0.2.0/120"},
+			zones:        []string{""},
+			queryIP:      "192.0.3.1",
+			wantMatch:    false,
+			wantZonePass: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -125,6 +149,13 @@ func TestIPTrie(t *testing.T) {
 			}
 			if gotZonePass != tt.wantZonePass {
 				t.Errorf("IPTrie.Contains() zonePass = %v, want %v", gotZonePass, tt.wantZonePass)
+			}
+
+			// Parity check against linear matcher (matchIPByCidrZones)
+			linearMatch, linearZonePass := matchIPByCidrZones(addr, tt.queryZone, prefixes, tt.zones)
+			if gotMatch != linearMatch || gotZonePass != linearZonePass {
+				t.Errorf("Parity mismatch with linear matcher: Trie(%v, %v) vs Linear(%v, %v)",
+					gotMatch, gotZonePass, linearMatch, linearZonePass)
 			}
 		})
 	}
