@@ -16,7 +16,6 @@ package fileserver
 
 import (
 	"context"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -25,6 +24,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/internal/filesystems"
 )
 
 func TestBreadcrumbs(t *testing.T) {
@@ -141,8 +141,8 @@ func TestDirectoryListingParity(t *testing.T) {
 		t.Skipf("symlink not supported on this platform: %v", err)
 	}
 
-	fileSystem := os.DirFS(dir)
-	entries, err := fileSystem.(fs.ReadDirFS).ReadDir(".")
+	fileSystem := filesystems.OsFS{}
+	entries, err := fileSystem.ReadDir(dir)
 	if err != nil {
 		t.Fatal(err)
 	}

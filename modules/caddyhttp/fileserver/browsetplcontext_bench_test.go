@@ -28,6 +28,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/internal/filesystems"
 )
 
 // makeBenchDir populates dir with n regular files and a handful of
@@ -71,8 +72,8 @@ func makeBenchDir(tb testing.TB, dir string, n int) {
 func readBenchDirEntries(tb testing.TB, dir string) (fs.FS, []fs.DirEntry) {
 	tb.Helper()
 
-	fileSystem := os.DirFS(dir)
-	f, err := fileSystem.Open(".")
+	fileSystem := filesystems.OsFS{}
+	f, err := fileSystem.Open(dir)
 	if err != nil {
 		tb.Fatal(err)
 	}
