@@ -18,7 +18,7 @@ import (
 	"net/netip"
 )
 
-// iptrieNode represents a node in the bitwise Radix Trie.
+// iptrieNode represents a node in the bitwise binary prefix trie.
 type iptrieNode struct {
 	children [2]*iptrieNode
 	// isEnd is true if a CIDR prefix ends at this node depth.
@@ -28,17 +28,16 @@ type iptrieNode struct {
 	zones []string
 }
 
-// IPTrie is a bitwise Radix Trie (PATRICIA trie) for fast O(W) IP and CIDR prefix lookups.
-// It provides sub-50ns lookup speed regardless of the number of registered CIDRs.
-type IPTrie struct {
+// ipTrie is an internal bitwise binary prefix trie for fast O(W) IP and CIDR prefix lookups.
+type ipTrie struct {
 	v4Root *iptrieNode
 	v6Root *iptrieNode
 	count  int
 }
 
-// NewIPTrie constructs a new IPTrie from a list of netip.Prefix and corresponding zone strings.
-func NewIPTrie(cidrs []*netip.Prefix, zones []string) *IPTrie {
-	t := &IPTrie{
+// newIPTrie constructs a new ipTrie from a list of netip.Prefix and corresponding zone strings.
+func newIPTrie(cidrs []*netip.Prefix, zones []string) *ipTrie {
+	t := &ipTrie{
 		v4Root: &iptrieNode{},
 		v6Root: &iptrieNode{},
 		count:  len(cidrs),
@@ -52,32 +51,16 @@ func NewIPTrie(cidrs []*netip.Prefix, zones []string) *IPTrie {
 		if i < len(zones) {
 			zone = zones[i]
 		}
-		t.Insert(*prefix, zone)
+		t.insert(*prefix, zone)
 	}
 
 	return t
 }
 
-// normalizePrefix converts an IPv4-mapped IPv6 prefix with prefix length >= 96
-// into a standard IPv4 prefix (e.g. ::ffff:192.0.2.0/120 -> 192.0.2.0/24).
-// For pure IPv4 or pure IPv6 prefixes, it unmaps the address representation.
-func normalizePrefix(prefix netip.Prefix) (netip.Addr, int) {
+// insert adds a prefix and associated zone string into the trie.
+func (t *ipTrie) insert(prefix netip.Prefix, zone string) {
 	addr := prefix.Addr()
 	bits := prefix.Bits()
-
-	if addr.Is4In6() {
-		if bits >= 96 {
-			return addr.Unmap(), bits - 96
-		}
-		return addr, bits
-	}
-
-	return addr.Unmap(), bits
-}
-
-// Insert adds a prefix and associated zone string into the trie.
-func (t *IPTrie) Insert(prefix netip.Prefix, zone string) {
-	addr, bits := normalizePrefix(prefix)
 
 	var root *iptrieNode
 	var bytes []byte
@@ -123,26 +106,21 @@ func (t *IPTrie) Insert(prefix netip.Prefix, zone string) {
 	curr.zones = append(curr.zones, zone)
 }
 
-// Contains tests whether clientIP matches any CIDR prefix stored in the trie.
-// It returns (matches, zoneFilterPassed):
-// - matches = true if clientIP is in a matching prefix and zone matches.
-// - zoneFilterPassed = true if either no CIDR matched, or a CIDR matched with a valid zone.
-//   zoneFilterPassed = false if a CIDR matched but the zone ID failed to match.
-func (t *IPTrie) Contains(clientIP netip.Addr, zoneID string) (bool, bool) {
-	addr := clientIP.Unmap()
-
+// contains tests whether clientIP matches any CIDR prefix stored in the trie.
+// It returns (matches, zoneFilterPassed) matching the exact return tuple contract of matchIPByCidrZones.
+func (t *ipTrie) contains(clientIP netip.Addr, zoneID string) (bool, bool) {
 	var curr *iptrieNode
 	var bytes []byte
 	var maxBits int
 
-	if addr.Is4() {
+	if clientIP.Is4() {
 		curr = t.v4Root
-		b4 := addr.As4()
+		b4 := clientIP.As4()
 		bytes = b4[:]
 		maxBits = 32
-	} else if addr.Is6() {
+	} else if clientIP.Is6() {
 		curr = t.v6Root
-		b16 := addr.As16()
+		b16 := clientIP.As16()
 		bytes = b16[:]
 		maxBits = 128
 	} else {
@@ -155,7 +133,7 @@ func (t *IPTrie) Contains(clientIP netip.Addr, zoneID string) (bool, bool) {
 	if curr.isEnd {
 		m, zm := checkZoneMatch(curr.zones, zoneID)
 		if m {
-			return true, true
+			return true, false
 		}
 		if zm {
 			foundZoneMismatch = true
@@ -175,7 +153,7 @@ func (t *IPTrie) Contains(clientIP netip.Addr, zoneID string) (bool, bool) {
 		if curr.isEnd {
 			m, zm := checkZoneMatch(curr.zones, zoneID)
 			if m {
-				return true, true
+				return true, false
 			}
 			if zm {
 				foundZoneMismatch = true

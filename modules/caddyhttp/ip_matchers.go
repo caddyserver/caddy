@@ -42,7 +42,7 @@ type MatchRemoteIP struct {
 	// length and indexes for matching later
 	cidrs  []*netip.Prefix
 	zones  []string
-	trie   *IPTrie
+	trie   *ipTrie
 	logger *zap.Logger
 }
 
@@ -56,7 +56,7 @@ type MatchClientIP struct {
 	// length and indexes for matching later
 	cidrs  []*netip.Prefix
 	zones  []string
-	trie   *IPTrie
+	trie   *ipTrie
 	logger *zap.Logger
 }
 
@@ -140,8 +140,9 @@ func (m *MatchRemoteIP) Provision(ctx caddy.Context) error {
 	}
 	m.cidrs = cidrs
 	m.zones = zones
+	m.trie = nil
 	if len(cidrs) >= 8 {
-		m.trie = NewIPTrie(cidrs, zones)
+		m.trie = newIPTrie(cidrs, zones)
 	}
 
 	return nil
@@ -177,7 +178,7 @@ func (m MatchRemoteIP) MatchWithError(r *http.Request) (bool, error) {
 	}
 	var matches, zoneFilter bool
 	if m.trie != nil {
-		matches, zoneFilter = m.trie.Contains(clientIP, zoneID)
+		matches, zoneFilter = m.trie.contains(clientIP, zoneID)
 	} else {
 		matches, zoneFilter = matchIPByCidrZones(clientIP, zoneID, m.cidrs, m.zones)
 	}
@@ -256,8 +257,9 @@ func (m *MatchClientIP) Provision(ctx caddy.Context) error {
 	}
 	m.cidrs = cidrs
 	m.zones = zones
+	m.trie = nil
 	if len(cidrs) >= 8 {
-		m.trie = NewIPTrie(cidrs, zones)
+		m.trie = newIPTrie(cidrs, zones)
 	}
 	return nil
 }
@@ -289,7 +291,7 @@ func (m MatchClientIP) MatchWithError(r *http.Request) (bool, error) {
 	}
 	var matches, zoneFilter bool
 	if m.trie != nil {
-		matches, zoneFilter = m.trie.Contains(clientIP, zoneID)
+		matches, zoneFilter = m.trie.contains(clientIP, zoneID)
 	} else {
 		matches, zoneFilter = matchIPByCidrZones(clientIP, zoneID, m.cidrs, m.zones)
 	}
@@ -356,13 +358,9 @@ func parseIPZoneFromString(address string) (netip.Addr, string, error) {
 }
 
 func matchIPByCidrZones(clientIP netip.Addr, zoneID string, cidrs []*netip.Prefix, zones []string) (bool, bool) {
-	unmappedClientIP := clientIP.Unmap()
 	zoneFilter := true
 	for i, ipRange := range cidrs {
-		if ipRange == nil {
-			continue
-		}
-		if prefixContainsAddr(*ipRange, clientIP, unmappedClientIP) {
+		if ipRange.Contains(clientIP) {
 			// Check if there are zone filters assigned and if they match.
 			if zones[i] == "" || zoneID == zones[i] {
 				return true, false
@@ -371,19 +369,6 @@ func matchIPByCidrZones(clientIP netip.Addr, zoneID string, cidrs []*netip.Prefi
 		}
 	}
 	return false, zoneFilter
-}
-
-func prefixContainsAddr(prefix netip.Prefix, clientIP netip.Addr, unmappedClientIP netip.Addr) bool {
-	if prefix.Contains(clientIP) || prefix.Contains(unmappedClientIP) {
-		return true
-	}
-	if prefix.Addr().Is4In6() && prefix.Bits() >= 96 {
-		unmappedPrefix := netip.PrefixFrom(prefix.Addr().Unmap(), prefix.Bits()-96)
-		if unmappedPrefix.Contains(unmappedClientIP) {
-			return true
-		}
-	}
-	return false
 }
 
 // Interface guards
