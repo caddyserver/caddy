@@ -342,11 +342,12 @@ func (l *browseTemplateContext) applySortAndLimit(sortParam, orderParam, limitPa
 	l.Sort = sortParam
 	l.Order = orderParam
 
-	// precompute each item's lowercase name once, up front (O(n)), instead
-	// of letting byName/byNameDirFirst/bySize recompute it on every one of
-	// the O(n log n) comparisons sort.Sort makes
-	for i := range l.Items {
-		l.Items[i].nameLower = strings.ToLower(l.Items[i].Name)
+	// Only compute lowercase names when the selected sort comparator needs it;
+ 	// avoid O(n) work when sorting by time or when no sorting is requested.
+ 	if l.Sort == sortByName || l.Sort == sortByNameDirFirst || l.Sort == sortBySize {
+ 		for i := range l.Items {
+ 			l.Items[i].nameLower = strings.ToLower(l.Items[i].Name)
+ 		}
 	}
 
 	if l.Order == "desc" {
