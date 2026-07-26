@@ -98,8 +98,29 @@ func init() {
 // `{http.request.tls.client.public_key_sha256}` | The SHA256 checksum of the client's public key.
 // `{http.request.tls.client.certificate_pem}` | The PEM-encoded value of the certificate.
 // `{http.request.tls.client.certificate_der_base64}` | The base64-encoded value of the certificate.
-// `{http.request.tls.client.certificate_rfc9440}` | The leaf certificate colon-wrapped per RFC 9440 for Client-Cert header; guard with a matcher on mTLS.
-// `{http.request.tls.client.certificate_chain_rfc9440}` | The intermediate chain (excluding leaf) colon-wrapped per RFC 9440 for Client-Cert-Chain header; guard with a matcher on mTLS.
+// `{http.request.tls.client.certificate_rfc9440}` | The verified leaf certificate colon-wrapped per RFC 9440 for Client-Cert header; derived from VerifiedChains (empty when mTLS verification did not succeed).
+// `{http.request.tls.client.certificate_chain_rfc9440}` | The verified intermediate chain (excluding leaf) colon-wrapped per RFC 9440 for Client-Cert-Chain header; derived from VerifiedChains (empty when mTLS verification did not succeed).
+//
+// RFC 9440 safe forwarding of Client-Cert / Client-Cert-Chain headers
+// requires mTLS and careful ordering. The following Caddyfile pattern
+// strips any inbound (potentially spoofed) headers unconditionally,
+// then conditionally sets them only when the mTLS placeholder is
+// non-empty (i.e. when VerifiedChains produced a verified leaf):
+//
+//	example.com {
+//	    header -Client-Cert
+//	    header -Client-Cert-Chain
+//	    @has_mtls expression `{http.request.tls.client.certificate_rfc9440} != ""`
+//	    header @has_mtls Client-Cert {http.request.tls.client.certificate_rfc9440}
+//	    header @has_mtls Client-Cert-Chain {http.request.tls.client.certificate_chain_rfc9440}
+//	}
+//
+// The delete and the conditional set MUST remain separate header
+// directives. Combining Delete and Set into a single HeaderOps block
+// causes Set to execute before Delete due to HeaderOps.ApplyTo ordering,
+// which silently discards the verified certificate value even when a
+// verified chain exists. This is a hard invariant — do not collapse
+// these into one directive.
 // `{http.request.tls.client.issuer}` | The issuer DN of the client certificate
 // `{http.request.tls.client.serial}` | The serial number of the client certificate
 // `{http.request.tls.client.subject}` | The subject DN of the client certificate

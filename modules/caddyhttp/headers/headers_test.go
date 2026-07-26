@@ -376,3 +376,150 @@ func TestPlaceholderInSearchRegexp(t *testing.T) {
 		t.Errorf("Expected header value %q, got %q", expected, result)
 	}
 }
+
+func TestRFC9440HeaderSafety(t *testing.T) {
+	makeRepl := func(leafVal, chainVal string) *caddy.Replacer {
+		repl := caddy.NewReplacer()
+		repl.Set("http.request.tls.client.certificate_rfc9440", leafVal)
+		repl.Set("http.request.tls.client.certificate_chain_rfc9440", chainVal)
+		return repl
+	}
+
+	const (
+		spoofed   = "spoofed-by-client"
+		leafValue = ":AABBCC:"
+		chainVal  = ":DDEEFF:"
+	)
+
+	t.Run("Set overwrites spoofed inbound header", func(t *testing.T) {
+		hdr := http.Header{"Client-Cert": []string{spoofed}}
+		repl := makeRepl(leafValue, "")
+		ops := &HeaderOps{
+			Set: http.Header{
+				"Client-Cert": []string{"{http.request.tls.client.certificate_rfc9440}"},
+			},
+		}
+		ops.ApplyTo(hdr, repl)
+		got := hdr.Get("Client-Cert")
+		if got != leafValue {
+			t.Errorf("expected %q, got %q", leafValue, got)
+		}
+		vals := hdr["Client-Cert"]
+		if len(vals) != 1 {
+			t.Errorf("expected exactly 1 Client-Cert value (no duplication), got %d: %v", len(vals), vals)
+		}
+	})
+
+	t.Run("Delete then Set strips spoofed header completely", func(t *testing.T) {
+		hdr := http.Header{
+			"Client-Cert":       []string{spoofed},
+			"Client-Cert-Chain": []string{spoofed},
+		}
+		repl := makeRepl(leafValue, chainVal)
+
+		deleteOps := &HeaderOps{Delete: []string{"Client-Cert", "Client-Cert-Chain"}}
+		deleteOps.ApplyTo(hdr, repl)
+
+		setOps := &HeaderOps{
+			Set: http.Header{
+				"Client-Cert":       []string{"{http.request.tls.client.certificate_rfc9440}"},
+				"Client-Cert-Chain": []string{"{http.request.tls.client.certificate_chain_rfc9440}"},
+			},
+		}
+		setOps.ApplyTo(hdr, repl)
+
+		if got := hdr.Get("Client-Cert"); got != leafValue {
+			t.Errorf("Client-Cert: expected %q, got %q", leafValue, got)
+		}
+		if got := hdr.Get("Client-Cert-Chain"); got != chainVal {
+			t.Errorf("Client-Cert-Chain: expected %q, got %q", chainVal, got)
+		}
+	})
+
+	t.Run("naive Set with empty placeholder emits empty header (unsafe baseline)", func(t *testing.T) {
+		hdr := http.Header{}
+		repl := makeRepl("", "")
+		ops := &HeaderOps{
+			Set: http.Header{
+				"Client-Cert": []string{"{http.request.tls.client.certificate_rfc9440}"},
+			},
+		}
+		ops.ApplyTo(hdr, repl)
+		_, present := hdr["Client-Cert"]
+		if !present {
+			t.Errorf("expected Client-Cert to be present (even empty) with naive Set; it was absent")
+		}
+		if got := hdr.Get("Client-Cert"); got != "" {
+			t.Errorf("expected empty string, got %q", got)
+		}
+	})
+
+	t.Run("Delete without Set on non-mTLS request: header is absent", func(t *testing.T) {
+		hdr := http.Header{"Client-Cert": []string{spoofed}}
+		leafVal := ""
+		repl := makeRepl(leafVal, "")
+
+		deleteOps := &HeaderOps{Delete: []string{"Client-Cert", "Client-Cert-Chain"}}
+		deleteOps.ApplyTo(hdr, repl)
+
+		if leafVal != "" {
+			setOps := &HeaderOps{
+				Set: http.Header{"Client-Cert": []string{"{http.request.tls.client.certificate_rfc9440}"}},
+			}
+			setOps.ApplyTo(hdr, repl)
+		}
+
+		if _, present := hdr["Client-Cert"]; present {
+			t.Errorf("Client-Cert should be absent on non-mTLS request, but it is present: %v", hdr["Client-Cert"])
+		}
+		if _, present := hdr["Client-Cert-Chain"]; present {
+			t.Errorf("Client-Cert-Chain should be absent on non-mTLS request, but it is present: %v", hdr["Client-Cert-Chain"])
+		}
+	})
+
+	t.Run("Client-Cert-Chain absent when leaf placeholder is empty (no chain-without-leaf)", func(t *testing.T) {
+		for _, tc := range []struct {
+			name  string
+			leaf  string
+			chain string
+		}{
+			{"no TLS (both empty)", "", ""},
+			{"unverified cert (leaf empty, chain non-empty edge-case)", "", chainVal},
+			{"verified leaf only, no intermediates", leafValue, ""},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				hdr := http.Header{}
+				repl := makeRepl(tc.leaf, tc.chain)
+
+				deleteOps := &HeaderOps{Delete: []string{"Client-Cert", "Client-Cert-Chain"}}
+				deleteOps.ApplyTo(hdr, repl)
+
+				if tc.leaf != "" {
+					setOps := &HeaderOps{
+						Set: http.Header{
+							"Client-Cert":       []string{"{http.request.tls.client.certificate_rfc9440}"},
+							"Client-Cert-Chain": []string{"{http.request.tls.client.certificate_chain_rfc9440}"},
+						},
+					}
+					setOps.ApplyTo(hdr, repl)
+				}
+
+				if tc.leaf == "" {
+					if _, present := hdr["Client-Cert"]; present {
+						t.Errorf("Client-Cert should be absent when leaf placeholder is empty")
+					}
+				}
+				if _, leafPresent := hdr["Client-Cert"]; !leafPresent {
+					if _, chainPresent := hdr["Client-Cert-Chain"]; chainPresent {
+						t.Errorf("Client-Cert-Chain present without Client-Cert — chain-without-leaf violation")
+					}
+				}
+				if tc.leaf != "" {
+					if got := hdr.Get("Client-Cert"); got != tc.leaf {
+						t.Errorf("Client-Cert: expected %q, got %q", tc.leaf, got)
+					}
+				}
+			})
+		}
+	})
+}

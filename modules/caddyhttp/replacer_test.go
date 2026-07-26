@@ -350,40 +350,61 @@ func TestCertificateRFC9440Placeholders(t *testing.T) {
 			expectLeafRFC: "",
 		},
 		{
-			name: "TLS but no client cert",
+			name: "TLS, no client cert (empty PeerCertificates and VerifiedChains)",
 			tlsState: &tls.ConnectionState{
 				HandshakeComplete: true,
 				PeerCertificates:  []*x509.Certificate{},
+				VerifiedChains:    nil,
 			},
 			expectChain:   "",
 			expectLeaf:    "",
 			expectLeafRFC: "",
 		},
 		{
-			name: "leaf only, no intermediates",
+			// REGRESSION TEST for Issue 2: client sent a cert but mTLS
+			// verification was not configured/required, so VerifiedChains
+			// is empty. The RFC 9440 placeholders must return empty string —
+			// forwarding an unverified cert as if it were authenticated
+			// would violate RFC 9440. This case would FAIL against the
+			// old code that used PeerCertificates.
+			name: "PeerCertificates populated but VerifiedChains empty (unverified)",
+			tlsState: &tls.ConnectionState{
+				HandshakeComplete: true,
+				PeerCertificates:  []*x509.Certificate{leaf, inter1},
+				VerifiedChains:    nil,
+			},
+			expectChain:   "",
+			expectLeaf:    base64.StdEncoding.EncodeToString(leaf.Raw),
+			expectLeafRFC: "",
+		},
+		{
+			name: "verified leaf only, no intermediates in chain",
 			tlsState: &tls.ConnectionState{
 				HandshakeComplete: true,
 				PeerCertificates:  []*x509.Certificate{leaf},
+				VerifiedChains:    [][]*x509.Certificate{{leaf}},
 			},
 			expectChain:   "",
 			expectLeaf:    base64.StdEncoding.EncodeToString(leaf.Raw),
 			expectLeafRFC: wrapCert(leaf),
 		},
 		{
-			name: "one intermediate",
+			name: "verified chain with one intermediate",
 			tlsState: &tls.ConnectionState{
 				HandshakeComplete: true,
 				PeerCertificates:  []*x509.Certificate{leaf, inter1},
+				VerifiedChains:    [][]*x509.Certificate{{leaf, inter1}},
 			},
 			expectChain:   wrapCert(inter1),
 			expectLeaf:    base64.StdEncoding.EncodeToString(leaf.Raw),
 			expectLeafRFC: wrapCert(leaf),
 		},
 		{
-			name: "two intermediates with comma-space join",
+			name: "verified chain with two intermediates, comma-space join",
 			tlsState: &tls.ConnectionState{
 				HandshakeComplete: true,
 				PeerCertificates:  []*x509.Certificate{leaf, inter1, inter2},
+				VerifiedChains:    [][]*x509.Certificate{{leaf, inter1, inter2}},
 			},
 			expectChain:   wrapCert(inter1) + ", " + wrapCert(inter2),
 			expectLeaf:    base64.StdEncoding.EncodeToString(leaf.Raw),
@@ -428,7 +449,7 @@ func TestCertificateRFC9440Placeholders(t *testing.T) {
 				}
 			}
 		}
-		if tc.tlsState != nil && len(tc.tlsState.PeerCertificates) > 2 {
+		if tc.tlsState != nil && len(tc.tlsState.VerifiedChains) > 0 && len(tc.tlsState.VerifiedChains[0]) > 2 {
 			if strings.HasPrefix(gotChain, ", ") || strings.HasSuffix(gotChain, ", ") {
 				t.Errorf("Test %d (%s): chain has leading/trailing separator: %q", i, tc.name, gotChain)
 			}
