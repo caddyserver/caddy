@@ -343,11 +343,11 @@ func (l *browseTemplateContext) applySortAndLimit(sortParam, orderParam, limitPa
 	l.Order = orderParam
 
 	// Only compute lowercase names when the selected sort comparator needs it;
- 	// avoid O(n) work when sorting by time or when no sorting is requested.
- 	if l.Sort == sortByName || l.Sort == sortByNameDirFirst || l.Sort == sortBySize {
- 		for i := range l.Items {
- 			l.Items[i].nameLower = strings.ToLower(l.Items[i].Name)
- 		}
+	// avoid O(n) work when sorting by time or when no sorting is requested.
+	if l.Sort == sortByName || l.Sort == sortByNameDirFirst || l.Sort == sortBySize {
+		for i := range l.Items {
+			l.Items[i].nameLower = strings.ToLower(l.Items[i].Name)
+		}
 	}
 
 	if l.Order == "desc" {
