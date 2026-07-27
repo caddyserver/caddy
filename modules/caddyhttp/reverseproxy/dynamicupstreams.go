@@ -12,15 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package network provides transport-neutral DNS-based discovery of upstream
-// targets, with result caching. It lives under modules/internal so it can be
-// shared between Caddy's own proxies (currently the HTTP reverse_proxy) without
-// each copying the resolution and caching logic.
+package reverseproxy
+
+// This file provides transport-neutral DNS-based discovery of upstream targets,
+// with result caching. The exported SRV/A helpers and the [Target] type are kept
+// here (rather than duplicated) so that other proxies — e.g. a layer4 proxy —
+// can reuse the same resolution and caching logic by importing this package.
 //
-// The package intentionally returns neutral [Target] values rather than any
-// proxy-specific upstream type; each caller builds its own upstream
+// The helpers intentionally return neutral [Target] values rather than a
+// reverse_proxy-specific upstream type; each caller builds its own upstream
 // representation from the targets.
-package network
 
 import (
 	"context"
