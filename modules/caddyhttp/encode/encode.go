@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"mime"
 	"net/http"
 	"slices"
 	"strconv"
@@ -34,6 +33,8 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
+
+const sseMediaType = "text/event-stream"
 
 func init() {
 	caddy.RegisterModule(Encode{})
@@ -263,12 +264,14 @@ func (rw *responseWriter) WriteHeader(status int) {
 		rw.disabled = true // partial representations must not be dynamically re-encoded
 	}
 
+	h := rw.Header()
+
 	// See #5849 and RFC 9110 section 15.4.5 (https://www.rfc-editor.org/rfc/rfc9110.html#section-15.4.5) - 304
 	// Not Modified must have certain headers set as if it was a 200 response, and according to the issue
 	// we would miss the Vary header in this case when compression was also enabled; note that we set this
 	// header in the responseWriter.init() method but that is only called if we are writing a response body
-	if status == http.StatusNotModified && !hasVaryValue(rw.Header(), "Accept-Encoding") {
-		rw.Header().Add("Vary", "Accept-Encoding")
+	if status == http.StatusNotModified && !hasVaryValue(h, "Accept-Encoding") {
+		h.Add("Vary", "Accept-Encoding")
 	}
 
 	// write status immediately if status is 2xx and the request is CONNECT
@@ -288,13 +291,25 @@ func (rw *responseWriter) WriteHeader(status int) {
 	// write header immediately for server-sent events responses, since the
 	// body may not be written for a while and the client needs the headers
 	// to establish the event stream; see #6293
-	if !rw.wroteHeader && (status < 100 || status > 199) {
-		if ct, _, err := mime.ParseMediaType(rw.Header().Get("Content-Type")); err == nil && ct == "text/event-stream" {
-			rw.init()
-			rw.ResponseWriter.WriteHeader(status)
-			rw.wroteHeader = true
-		}
+	if !rw.wroteHeader && (status < 100 || status > 199) && isSSE(h.Get("Content-Type")) {
+		rw.init()
+		rw.ResponseWriter.WriteHeader(status)
+		rw.wroteHeader = true
 	}
+}
+
+func isSSE(contentType string) bool {
+	if len(contentType) < len(sseMediaType) || !strings.EqualFold(contentType[:len(sseMediaType)], sseMediaType) {
+		return false
+	}
+
+	if len(contentType) == len(sseMediaType) {
+		return true
+	}
+
+	nextChar := contentType[len(sseMediaType)]
+
+	return nextChar == ';' || nextChar == ' '
 }
 
 // Match determines, if encoding should be done based on the ResponseMatcher.
