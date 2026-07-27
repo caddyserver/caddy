@@ -702,6 +702,36 @@ func TestRemoteAdminAccessControlPathSegmentMatching(t *testing.T) {
 			requestPath: "/pki/ca/prod",
 			wantErr:     false,
 		},
+		{
+			name:        "dot-dot traversal out of scope",
+			allowedPath: "/pki/ca/prod",
+			requestPath: "/pki/ca/prod/../../../../load",
+			wantErr:     true,
+		},
+		{
+			name:        "encoded traversal (net/url decodes %2e to . before path.Clean resolves ..)",
+			allowedPath: "/pki/ca/prod",
+			requestPath: "/pki/ca/prod/%2e%2e/load",
+			wantErr:     true,
+		},
+		{
+			name:        "sibling traversal",
+			allowedPath: "/pki/ca/prod",
+			requestPath: "/pki/ca/prod/../staging",
+			wantErr:     true,
+		},
+		{
+			name:        "collapsed slashes",
+			allowedPath: "/pki/ca/prod",
+			requestPath: "/pki//ca/prod",
+			wantErr:     false,
+		},
+		{
+			name:        "exact request with trailing slash",
+			allowedPath: "/pki/ca/prod",
+			requestPath: "/pki/ca/prod/",
+			wantErr:     false,
+		},
 	}
 
 	for i, test := range tests {

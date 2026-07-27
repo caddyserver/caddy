@@ -723,6 +723,9 @@ func (remote RemoteAdmin) enforceAccessControls(r *http.Request) error {
 }
 
 func adminPathAllowed(reqPath, allowedPath string) bool {
+	reqPath = path.Clean(reqPath)
+	allowedPath = path.Clean(allowedPath)
+
 	if allowedPath == "" || allowedPath == "/" {
 		return strings.HasPrefix(reqPath, allowedPath)
 	}
