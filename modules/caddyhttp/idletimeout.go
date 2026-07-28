@@ -27,18 +27,25 @@ import (
 // pushed forward before every Read call, instead of bounding the whole
 // body transfer with a single hard deadline. This way, a slow but
 // steadily-progressing upload is never killed, while a connection that
-// stalls (no bytes for the duration of timeout) is.
+// stalls (no bytes for the duration of timeout) is. hardDeadline, if
+// non-zero, caps how far the deadline can be pushed forward, so it
+// doesn't silently defeat an explicitly configured ReadTimeout ceiling.
 type idleTimeoutReader struct {
 	io.ReadCloser
-	ctrl        *http.ResponseController
-	timeout     time.Duration
-	unsupported bool
-	logger      *zap.Logger
+	ctrl         *http.ResponseController
+	timeout      time.Duration
+	hardDeadline time.Time
+	unsupported  bool
+	logger       *zap.Logger
 }
 
 func (r *idleTimeoutReader) Read(p []byte) (int, error) {
 	if !r.unsupported {
-		if err := r.ctrl.SetReadDeadline(time.Now().Add(r.timeout)); err != nil {
+		deadline := time.Now().Add(r.timeout)
+		if !r.hardDeadline.IsZero() && deadline.After(r.hardDeadline) {
+			deadline = r.hardDeadline
+		}
+		if err := r.ctrl.SetReadDeadline(deadline); err != nil {
 			r.unsupported = true
 			if c := r.logger.Check(zapcore.DebugLevel, "could not set read deadline"); c != nil {
 				c.Write(zap.Error(err))
@@ -53,13 +60,15 @@ func (r *idleTimeoutReader) Read(p []byte) (int, error) {
 // pushed forward before every Write call, the same way idleTimeoutReader
 // does for reads. A handler that pauses between writes (e.g. streaming
 // or SSE) is unaffected, since the deadline only bounds the duration of
-// the write operation actually in flight.
+// the write operation actually in flight. hardDeadline caps it the same
+// way it does for idleTimeoutReader.
 type idleTimeoutWriter struct {
 	*ResponseWriterWrapper
-	ctrl        *http.ResponseController
-	timeout     time.Duration
-	unsupported bool
-	logger      *zap.Logger
+	ctrl         *http.ResponseController
+	timeout      time.Duration
+	hardDeadline time.Time
+	unsupported  bool
+	logger       *zap.Logger
 }
 
 func (w *idleTimeoutWriter) resetDeadline() {
@@ -67,7 +76,11 @@ func (w *idleTimeoutWriter) resetDeadline() {
 		return
 	}
 
-	if err := w.ctrl.SetWriteDeadline(time.Now().Add(w.timeout)); err != nil {
+	deadline := time.Now().Add(w.timeout)
+	if !w.hardDeadline.IsZero() && deadline.After(w.hardDeadline) {
+		deadline = w.hardDeadline
+	}
+	if err := w.ctrl.SetWriteDeadline(deadline); err != nil {
 		w.unsupported = true
 		if c := w.logger.Check(zapcore.DebugLevel, "could not set write deadline"); c != nil {
 			c.Write(zap.Error(err))

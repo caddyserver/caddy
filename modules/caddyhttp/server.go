@@ -461,14 +461,26 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// if a read from the request body or a write to the response
 	// stalls for longer than the configured timeout; the deadline is
 	// reset on every successful read/write, so this doesn't affect
-	// legitimately slow clients as long as they keep making progress
+	// legitimately slow clients as long as they keep making progress.
+	// hardDeadline, anchored to this handler's start, caps how far
+	// that reset can push the deadline out, so an explicitly configured
+	// ReadTimeout/WriteTimeout ceiling still applies on top instead of
+	// being silently overwritten by the first read/write.
 	rc := http.NewResponseController(w)
+	var readHardDeadline, writeHardDeadline time.Time
+	if s.ReadTimeout > 0 {
+		readHardDeadline = start.Add(time.Duration(s.ReadTimeout))
+	}
+	if s.WriteTimeout > 0 {
+		writeHardDeadline = start.Add(time.Duration(s.WriteTimeout))
+	}
 	if s.ReadIdleTimeout > 0 && r.Body != nil {
 		r.Body = &idleTimeoutReader{
-			ReadCloser: r.Body,
-			ctrl:       rc,
-			timeout:    time.Duration(s.ReadIdleTimeout),
-			logger:     s.logger,
+			ReadCloser:   r.Body,
+			ctrl:         rc,
+			timeout:      time.Duration(s.ReadIdleTimeout),
+			hardDeadline: readHardDeadline,
+			logger:       s.logger,
 		}
 	}
 	if s.WriteIdleTimeout > 0 {
@@ -476,6 +488,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			ResponseWriterWrapper: &ResponseWriterWrapper{ResponseWriter: w},
 			ctrl:                  rc,
 			timeout:               time.Duration(s.WriteIdleTimeout),
+			hardDeadline:          writeHardDeadline,
 			logger:                s.logger,
 		}
 	}

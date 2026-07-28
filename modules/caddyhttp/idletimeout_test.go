@@ -86,6 +86,41 @@ func TestIdleTimeoutReader(t *testing.T) {
 	})
 }
 
+func TestIdleTimeoutReader_HardDeadlineCapsIdleReset(t *testing.T) {
+	const idle = 500 * time.Millisecond
+	const hard = 200 * time.Millisecond
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wrapped := &idleTimeoutReader{
+			ReadCloser:   r.Body,
+			ctrl:         http.NewResponseController(w),
+			timeout:      idle,
+			hardDeadline: time.Now().Add(hard),
+			logger:       zap.NewNop(),
+		}
+		_, err := io.Copy(io.Discard, wrapped)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusRequestTimeout)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	// each gap is under the idle timeout, so the connection is never
+	// idle, but the cumulative transfer time exceeds hardDeadline: an
+	// explicit hard ceiling must still cut it off despite the ongoing
+	// idle-reset activity
+	body := &pacedReader{delay: hard, chunkSize: 8, chunkCount: 8}
+	resp, err := http.Post(srv.URL, "application/octet-stream", body)
+	if err != nil {
+		// the connection may also be reset outright, which is fine
+		return
+	}
+	defer resp.Body.Close()
+	assert.NotEqual(t, http.StatusOK, resp.StatusCode)
+}
+
 func TestIdleTimeoutWriter(t *testing.T) {
 	const timeout = 150 * time.Millisecond
 
@@ -120,4 +155,46 @@ func TestIdleTimeoutWriter(t *testing.T) {
 	n, err := io.Copy(io.Discard, resp.Body)
 	require.NoError(t, err)
 	assert.EqualValues(t, 64, n)
+}
+
+func TestIdleTimeoutWriter_HardDeadlineCapsIdleReset(t *testing.T) {
+	const idle = 500 * time.Millisecond
+	const hard = 200 * time.Millisecond
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wrapped := &idleTimeoutWriter{
+			ResponseWriterWrapper: &ResponseWriterWrapper{ResponseWriter: w},
+			ctrl:                  http.NewResponseController(w),
+			timeout:               idle,
+			hardDeadline:          time.Now().Add(hard),
+			logger:                zap.NewNop(),
+		}
+		flusher, _ := wrapped.ResponseWriterWrapper.ResponseWriter.(http.Flusher)
+		for range 8 {
+			time.Sleep(hard)
+			if _, err := wrapped.Write(make([]byte, 8)); err != nil {
+				return
+			}
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+	}))
+	defer srv.Close()
+
+	// each write gap is under the idle timeout, so the connection is
+	// never idle, but the cumulative streaming time exceeds
+	// hardDeadline: an explicit hard ceiling must still cut it off,
+	// whether that surfaces as a failed request, a truncated body, or
+	// both
+	resp, err := http.Get(srv.URL)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+
+	n, err := io.Copy(io.Discard, resp.Body)
+	if err == nil {
+		assert.Less(t, n, int64(64))
+	}
 }
