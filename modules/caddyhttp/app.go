@@ -402,6 +402,12 @@ func (app *App) Provision(ctx caddy.Context) error {
 		if srv.ReadHeaderTimeout == 0 {
 			srv.ReadHeaderTimeout = defaultReadHeaderTimeout // see #6663
 		}
+		if srv.ReadTimeout == 0 {
+			srv.ReadTimeout = defaultReadTimeout
+		}
+		if srv.WriteTimeout == 0 {
+			srv.WriteTimeout = defaultWriteTimeout
+		}
 	}
 	ctx.Context = oldContext
 	return nil
@@ -471,9 +477,12 @@ func (app *App) Start() error {
 
 	for srvName, srv := range app.Servers {
 		srv.server = &http.Server{
-			ReadTimeout:       time.Duration(srv.ReadTimeout),
+			// ReadTimeout and WriteTimeout are deliberately not passed
+			// through here: Server.ReadTimeout/WriteTimeout enforce a
+			// single hard deadline over the whole body/response, which
+			// would defeat the idle-reset deadlines ServeHTTP applies
+			// per read/write (see idleTimeoutReader/idleTimeoutWriter).
 			ReadHeaderTimeout: time.Duration(srv.ReadHeaderTimeout),
-			WriteTimeout:      time.Duration(srv.WriteTimeout),
 			IdleTimeout:       time.Duration(srv.IdleTimeout),
 			MaxHeaderBytes:    srv.MaxHeaderBytes,
 			Handler:           srv,
@@ -856,6 +865,14 @@ const (
 	// long time even on legitimately slow connections or
 	// busy servers to read it.
 	defaultReadHeaderTimeout = caddy.Duration(time.Minute)
+
+	// defaultReadTimeout and defaultWriteTimeout mitigate slowloris-style
+	// attacks on the request body and response write. Unlike a hard
+	// deadline, these are safe defaults even for large payloads because
+	// Server.ReadTimeout/WriteTimeout deadlines are reset on every
+	// successful read/write; only a stalled connection is affected.
+	defaultReadTimeout  = caddy.Duration(time.Minute)
+	defaultWriteTimeout = caddy.Duration(time.Minute)
 )
 
 // Interface guards

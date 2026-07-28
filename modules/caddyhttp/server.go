@@ -60,18 +60,23 @@ type Server struct {
 	// of the base packet conn. They are applied in the given order.
 	PacketConnWrappersRaw []json.RawMessage `json:"packet_conn_wrappers,omitempty" caddy:"namespace=caddy.packetconns inline_key=wrapper"`
 
-	// How long to allow a read from a client's upload. Setting this
-	// to a short, non-zero value can mitigate slowloris attacks, but
-	// may also affect legitimately slow clients.
+	// How long to allow a read from a client's upload to stall before
+	// aborting the connection. The deadline is pushed forward on every
+	// successful read, so this mitigates slowloris-style attacks
+	// without penalizing large uploads from legitimately slow clients.
+	// Default is 1 minute.
 	ReadTimeout caddy.Duration `json:"read_timeout,omitempty"`
 
 	// ReadHeaderTimeout is like ReadTimeout but for request headers.
 	// Default is 1 minute.
 	ReadHeaderTimeout caddy.Duration `json:"read_header_timeout,omitempty"`
 
-	// WriteTimeout is how long to allow a write to a client. Note
-	// that setting this to a small value when serving large files
-	// may negatively affect legitimately slow clients.
+	// How long to allow a write to a client to stall before aborting
+	// the connection. Like ReadTimeout, the deadline is pushed forward
+	// on every successful write, so a handler that streams a large
+	// response, or pauses between writes (e.g. SSE), is unaffected as
+	// long as each individual write keeps making progress.
+	// Default is 1 minute.
 	WriteTimeout caddy.Duration `json:"write_timeout,omitempty"`
 
 	// IdleTimeout is the maximum time to wait for the next request
@@ -435,6 +440,29 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if c := s.logger.Check(zapcore.WarnLevel, "failed to enable full duplex"); c != nil {
 				c.Write(zap.Error(err))
 			}
+		}
+	}
+
+	// guard against slowloris-style attacks by aborting the connection
+	// if a read from the request body or a write to the response
+	// stalls for longer than the configured timeout; the deadline is
+	// reset on every successful read/write, so this doesn't affect
+	// legitimately slow clients as long as they keep making progress
+	rc := http.NewResponseController(w)
+	if s.ReadTimeout > 0 && r.Body != nil {
+		r.Body = &idleTimeoutReader{
+			ReadCloser: r.Body,
+			ctrl:       rc,
+			timeout:    time.Duration(s.ReadTimeout),
+			logger:     s.logger,
+		}
+	}
+	if s.WriteTimeout > 0 {
+		w = &idleTimeoutWriter{
+			ResponseWriterWrapper: &ResponseWriterWrapper{ResponseWriter: w},
+			ctrl:                  rc,
+			timeout:               time.Duration(s.WriteTimeout),
+			logger:                s.logger,
 		}
 	}
 
