@@ -49,8 +49,7 @@ type idleDeadline struct {
 	transferred  int64
 }
 
-func (d *idleDeadline) next() time.Time {
-	var deadline time.Time
+func (d *idleDeadline) next() (deadline time.Time) {
 	if d.minRate > 0 {
 		credit := time.Duration(d.transferred) * time.Second / time.Duration(d.minRate)
 		deadline = d.start.Add(d.timeout + credit)
@@ -60,7 +59,8 @@ func (d *idleDeadline) next() time.Time {
 	if !d.hardDeadline.IsZero() && deadline.After(d.hardDeadline) {
 		deadline = d.hardDeadline
 	}
-	return deadline
+
+	return
 }
 
 // idleTimeoutReader wraps a request body with idleDeadline, resetting
@@ -86,6 +86,7 @@ func (r *idleTimeoutReader) Read(p []byte) (int, error) {
 
 	n, err := r.ReadCloser.Read(p)
 	r.deadline.transferred += int64(n)
+
 	return n, err
 }
 
@@ -120,6 +121,7 @@ func (w *idleTimeoutWriter) Write(p []byte) (int, error) {
 
 	n, err := w.ResponseWriterWrapper.Write(p)
 	w.deadline.transferred += int64(n)
+
 	return n, err
 }
 
@@ -128,6 +130,7 @@ func (w *idleTimeoutWriter) ReadFrom(r io.Reader) (int64, error) {
 
 	n, err := w.ResponseWriterWrapper.ReadFrom(r)
 	w.deadline.transferred += n
+
 	return n, err
 }
 
