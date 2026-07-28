@@ -41,7 +41,9 @@ type serverOptions struct {
 	PacketConnWrappersRaw     []json.RawMessage
 	ReadTimeout               caddy.Duration
 	ReadHeaderTimeout         caddy.Duration
+	ReadIdleTimeout           caddy.Duration
 	WriteTimeout              caddy.Duration
+	WriteIdleTimeout          caddy.Duration
 	IdleTimeout               caddy.Duration
 	KeepAliveInterval         caddy.Duration
 	KeepAliveIdle             caddy.Duration
@@ -137,6 +139,16 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 					}
 					serverOpts.ReadTimeout = caddy.Duration(dur)
 
+				case "read_body_idle":
+					if !d.NextArg() {
+						return nil, d.ArgErr()
+					}
+					dur, err := caddy.ParseDuration(d.Val())
+					if err != nil {
+						return nil, d.Errf("parsing read_body_idle timeout duration: %v", err)
+					}
+					serverOpts.ReadIdleTimeout = caddy.Duration(dur)
+
 				case "read_header":
 					if !d.NextArg() {
 						return nil, d.ArgErr()
@@ -156,6 +168,16 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 						return nil, d.Errf("parsing write timeout duration: %v", err)
 					}
 					serverOpts.WriteTimeout = caddy.Duration(dur)
+
+				case "write_idle":
+					if !d.NextArg() {
+						return nil, d.ArgErr()
+					}
+					dur, err := caddy.ParseDuration(d.Val())
+					if err != nil {
+						return nil, d.Errf("parsing write_idle timeout duration: %v", err)
+					}
+					serverOpts.WriteIdleTimeout = caddy.Duration(dur)
 
 				case "idle":
 					if !d.NextArg() {
@@ -381,7 +403,9 @@ func applyServerOptions(
 		server.PacketConnWrappersRaw = opts.PacketConnWrappersRaw
 		server.ReadTimeout = opts.ReadTimeout
 		server.ReadHeaderTimeout = opts.ReadHeaderTimeout
+		server.ReadIdleTimeout = opts.ReadIdleTimeout
 		server.WriteTimeout = opts.WriteTimeout
+		server.WriteIdleTimeout = opts.WriteIdleTimeout
 		server.IdleTimeout = opts.IdleTimeout
 		server.KeepAliveInterval = opts.KeepAliveInterval
 		server.KeepAliveIdle = opts.KeepAliveIdle

@@ -60,24 +60,38 @@ type Server struct {
 	// of the base packet conn. They are applied in the given order.
 	PacketConnWrappersRaw []json.RawMessage `json:"packet_conn_wrappers,omitempty" caddy:"namespace=caddy.packetconns inline_key=wrapper"`
 
-	// How long to allow a read from a client's upload to stall before
-	// aborting the connection. The deadline is pushed forward on every
-	// successful read, so this mitigates slowloris-style attacks
-	// without penalizing large uploads from legitimately slow clients.
-	// Default is 1 minute.
+	// How long to allow a read from a client's upload. Setting this
+	// to a short, non-zero value can mitigate slowloris attacks, but
+	// may also affect legitimately slow clients.
 	ReadTimeout caddy.Duration `json:"read_timeout,omitempty"`
 
 	// ReadHeaderTimeout is like ReadTimeout but for request headers.
 	// Default is 1 minute.
 	ReadHeaderTimeout caddy.Duration `json:"read_header_timeout,omitempty"`
 
-	// How long to allow a write to a client to stall before aborting
-	// the connection. Like ReadTimeout, the deadline is pushed forward
-	// on every successful write, so a handler that streams a large
-	// response, or pauses between writes (e.g. SSE), is unaffected as
-	// long as each individual write keeps making progress.
+	// How long to allow a read from a client's upload to stall before
+	// aborting the connection, reset on every successful read. Unlike
+	// ReadTimeout, which bounds the whole transfer with a single
+	// deadline, this only fires if the connection actually stalls, so
+	// it mitigates slowloris-style attacks without penalizing large
+	// uploads from legitimately slow clients. Combine with ReadTimeout
+	// for a hard ceiling on top.
 	// Default is 1 minute.
+	ReadIdleTimeout caddy.Duration `json:"read_idle_timeout,omitempty"`
+
+	// WriteTimeout is how long to allow a write to a client. Note
+	// that setting this to a small value when serving large files
+	// may negatively affect legitimately slow clients.
 	WriteTimeout caddy.Duration `json:"write_timeout,omitempty"`
+
+	// How long to allow a write to a client to stall before aborting
+	// the connection, reset on every successful write, the same way
+	// ReadIdleTimeout works for reads. A handler that streams a large
+	// response, or pauses between writes (e.g. SSE), is unaffected as
+	// long as each individual write keeps making progress. Combine
+	// with WriteTimeout for a hard ceiling on top.
+	// Default is 1 minute.
+	WriteIdleTimeout caddy.Duration `json:"write_idle_timeout,omitempty"`
 
 	// IdleTimeout is the maximum time to wait for the next request
 	// when keep-alives are enabled. If zero, a default timeout of
@@ -449,19 +463,19 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// reset on every successful read/write, so this doesn't affect
 	// legitimately slow clients as long as they keep making progress
 	rc := http.NewResponseController(w)
-	if s.ReadTimeout > 0 && r.Body != nil {
+	if s.ReadIdleTimeout > 0 && r.Body != nil {
 		r.Body = &idleTimeoutReader{
 			ReadCloser: r.Body,
 			ctrl:       rc,
-			timeout:    time.Duration(s.ReadTimeout),
+			timeout:    time.Duration(s.ReadIdleTimeout),
 			logger:     s.logger,
 		}
 	}
-	if s.WriteTimeout > 0 {
+	if s.WriteIdleTimeout > 0 {
 		w = &idleTimeoutWriter{
 			ResponseWriterWrapper: &ResponseWriterWrapper{ResponseWriter: w},
 			ctrl:                  rc,
-			timeout:               time.Duration(s.WriteTimeout),
+			timeout:               time.Duration(s.WriteIdleTimeout),
 			logger:                s.logger,
 		}
 	}
