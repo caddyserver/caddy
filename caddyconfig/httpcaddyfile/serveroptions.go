@@ -42,8 +42,10 @@ type serverOptions struct {
 	ReadTimeout               caddy.Duration
 	ReadHeaderTimeout         caddy.Duration
 	ReadIdleTimeout           caddy.Duration
+	ReadMinRate               int64
 	WriteTimeout              caddy.Duration
 	WriteIdleTimeout          caddy.Duration
+	WriteMinRate              int64
 	IdleTimeout               caddy.Duration
 	KeepAliveInterval         caddy.Duration
 	KeepAliveIdle             caddy.Duration
@@ -149,6 +151,16 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 					}
 					serverOpts.ReadIdleTimeout = caddy.Duration(dur)
 
+				case "read_body_min_rate":
+					if !d.NextArg() {
+						return nil, d.ArgErr()
+					}
+					rate, err := strconv.ParseInt(d.Val(), 10, 64)
+					if err != nil {
+						return nil, d.Errf("parsing read_body_min_rate bytes/second: %v", err)
+					}
+					serverOpts.ReadMinRate = rate
+
 				case "read_header":
 					if !d.NextArg() {
 						return nil, d.ArgErr()
@@ -178,6 +190,16 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 						return nil, d.Errf("parsing write_idle timeout duration: %v", err)
 					}
 					serverOpts.WriteIdleTimeout = caddy.Duration(dur)
+
+				case "write_min_rate":
+					if !d.NextArg() {
+						return nil, d.ArgErr()
+					}
+					rate, err := strconv.ParseInt(d.Val(), 10, 64)
+					if err != nil {
+						return nil, d.Errf("parsing write_min_rate bytes/second: %v", err)
+					}
+					serverOpts.WriteMinRate = rate
 
 				case "idle":
 					if !d.NextArg() {
@@ -404,8 +426,10 @@ func applyServerOptions(
 		server.ReadTimeout = opts.ReadTimeout
 		server.ReadHeaderTimeout = opts.ReadHeaderTimeout
 		server.ReadIdleTimeout = opts.ReadIdleTimeout
+		server.ReadMinRate = opts.ReadMinRate
 		server.WriteTimeout = opts.WriteTimeout
 		server.WriteIdleTimeout = opts.WriteIdleTimeout
+		server.WriteMinRate = opts.WriteMinRate
 		server.IdleTimeout = opts.IdleTimeout
 		server.KeepAliveInterval = opts.KeepAliveInterval
 		server.KeepAliveIdle = opts.KeepAliveIdle

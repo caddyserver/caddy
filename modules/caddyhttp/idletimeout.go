@@ -23,29 +23,60 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-// idleTimeoutReader wraps a request body so that the read deadline is
-// pushed forward before every Read call, instead of bounding the whole
-// body transfer with a single hard deadline. This way, a slow but
-// steadily-progressing upload is never killed, while a connection that
-// stalls (no bytes for the duration of timeout) is. hardDeadline, if
-// non-zero, caps how far the deadline can be pushed forward, so it
-// doesn't silently defeat an explicitly configured ReadTimeout ceiling.
+// idleDeadline computes the next read/write deadline for the idle-reset
+// mechanism shared by idleTimeoutReader and idleTimeoutWriter.
+//
+// With minRate == 0, the deadline is simply pushed forward on every
+// call (now+timeout): a slow but steadily-progressing transfer is never
+// killed, while a connection that stalls (no bytes for the duration of
+// timeout) is. This alone doesn't bound a transfer that trickles just
+// enough data to never go idle.
+//
+// With minRate > 0, the allowance instead grows from a fixed start
+// based on bytes transferred so far (1/minRate seconds of extra
+// allowance per byte), matching Apache mod_reqtimeout's MinRate: a
+// trickle that doesn't sustain minRate bytes/sec falls behind real
+// time and gets cut, even though no single call ever stalls.
+//
+// hardDeadline, if non-zero, caps the result either way, so this can't
+// silently defeat an explicitly configured ReadTimeout/WriteTimeout
+// ceiling.
+type idleDeadline struct {
+	start        time.Time
+	timeout      time.Duration
+	minRate      int64
+	hardDeadline time.Time
+	transferred  int64
+}
+
+func (d *idleDeadline) next() time.Time {
+	var deadline time.Time
+	if d.minRate > 0 {
+		credit := time.Duration(d.transferred) * time.Second / time.Duration(d.minRate)
+		deadline = d.start.Add(d.timeout + credit)
+	} else {
+		deadline = time.Now().Add(d.timeout)
+	}
+	if !d.hardDeadline.IsZero() && deadline.After(d.hardDeadline) {
+		deadline = d.hardDeadline
+	}
+	return deadline
+}
+
+// idleTimeoutReader wraps a request body with idleDeadline, resetting
+// the read deadline before every Read call instead of bounding the
+// whole body transfer with a single hard deadline.
 type idleTimeoutReader struct {
 	io.ReadCloser
-	ctrl         *http.ResponseController
-	timeout      time.Duration
-	hardDeadline time.Time
-	unsupported  bool
-	logger       *zap.Logger
+	ctrl        *http.ResponseController
+	deadline    idleDeadline
+	unsupported bool
+	logger      *zap.Logger
 }
 
 func (r *idleTimeoutReader) Read(p []byte) (int, error) {
 	if !r.unsupported {
-		deadline := time.Now().Add(r.timeout)
-		if !r.hardDeadline.IsZero() && deadline.After(r.hardDeadline) {
-			deadline = r.hardDeadline
-		}
-		if err := r.ctrl.SetReadDeadline(deadline); err != nil {
+		if err := r.ctrl.SetReadDeadline(r.deadline.next()); err != nil {
 			r.unsupported = true
 			if c := r.logger.Check(zapcore.DebugLevel, "could not set read deadline"); c != nil {
 				c.Write(zap.Error(err))
@@ -53,22 +84,22 @@ func (r *idleTimeoutReader) Read(p []byte) (int, error) {
 		}
 	}
 
-	return r.ReadCloser.Read(p)
+	n, err := r.ReadCloser.Read(p)
+	r.deadline.transferred += int64(n)
+	return n, err
 }
 
-// idleTimeoutWriter wraps a ResponseWriter so that the write deadline is
-// pushed forward before every Write call, the same way idleTimeoutReader
-// does for reads. A handler that pauses between writes (e.g. streaming
-// or SSE) is unaffected, since the deadline only bounds the duration of
-// the write operation actually in flight. hardDeadline caps it the same
-// way it does for idleTimeoutReader.
+// idleTimeoutWriter wraps a ResponseWriter with idleDeadline, resetting
+// the write deadline before every Write call, the same way
+// idleTimeoutReader does for reads. A handler that pauses between
+// writes (e.g. streaming or SSE) is unaffected, since with minRate == 0
+// the deadline only bounds the duration of the write actually in flight.
 type idleTimeoutWriter struct {
 	*ResponseWriterWrapper
-	ctrl         *http.ResponseController
-	timeout      time.Duration
-	hardDeadline time.Time
-	unsupported  bool
-	logger       *zap.Logger
+	ctrl        *http.ResponseController
+	deadline    idleDeadline
+	unsupported bool
+	logger      *zap.Logger
 }
 
 func (w *idleTimeoutWriter) resetDeadline() {
@@ -76,11 +107,7 @@ func (w *idleTimeoutWriter) resetDeadline() {
 		return
 	}
 
-	deadline := time.Now().Add(w.timeout)
-	if !w.hardDeadline.IsZero() && deadline.After(w.hardDeadline) {
-		deadline = w.hardDeadline
-	}
-	if err := w.ctrl.SetWriteDeadline(deadline); err != nil {
+	if err := w.ctrl.SetWriteDeadline(w.deadline.next()); err != nil {
 		w.unsupported = true
 		if c := w.logger.Check(zapcore.DebugLevel, "could not set write deadline"); c != nil {
 			c.Write(zap.Error(err))
@@ -91,13 +118,17 @@ func (w *idleTimeoutWriter) resetDeadline() {
 func (w *idleTimeoutWriter) Write(p []byte) (int, error) {
 	w.resetDeadline()
 
-	return w.ResponseWriterWrapper.Write(p)
+	n, err := w.ResponseWriterWrapper.Write(p)
+	w.deadline.transferred += int64(n)
+	return n, err
 }
 
 func (w *idleTimeoutWriter) ReadFrom(r io.Reader) (int64, error) {
 	w.resetDeadline()
 
-	return w.ResponseWriterWrapper.ReadFrom(r)
+	n, err := w.ResponseWriterWrapper.ReadFrom(r)
+	w.deadline.transferred += n
+	return n, err
 }
 
 // Interface guards

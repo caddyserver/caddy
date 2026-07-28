@@ -51,7 +51,7 @@ func TestIdleTimeoutReader(t *testing.T) {
 		wrapped := &idleTimeoutReader{
 			ReadCloser: r.Body,
 			ctrl:       http.NewResponseController(w),
-			timeout:    timeout,
+			deadline:   idleDeadline{timeout: timeout},
 			logger:     zap.NewNop(),
 		}
 		_, err := io.Copy(io.Discard, wrapped)
@@ -92,11 +92,13 @@ func TestIdleTimeoutReader_HardDeadlineCapsIdleReset(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		wrapped := &idleTimeoutReader{
-			ReadCloser:   r.Body,
-			ctrl:         http.NewResponseController(w),
-			timeout:      idle,
-			hardDeadline: time.Now().Add(hard),
-			logger:       zap.NewNop(),
+			ReadCloser: r.Body,
+			ctrl:       http.NewResponseController(w),
+			deadline: idleDeadline{
+				timeout:      idle,
+				hardDeadline: time.Now().Add(hard),
+			},
+			logger: zap.NewNop(),
 		}
 		_, err := io.Copy(io.Discard, wrapped)
 		if err != nil {
@@ -121,6 +123,81 @@ func TestIdleTimeoutReader_HardDeadlineCapsIdleReset(t *testing.T) {
 	assert.NotEqual(t, http.StatusOK, resp.StatusCode)
 }
 
+func TestIdleTimeoutReader_MinRateCatchesTrickle(t *testing.T) {
+	const idle = 250 * time.Millisecond
+	const chunkDelay = 150 * time.Millisecond
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wrapped := &idleTimeoutReader{
+			ReadCloser: r.Body,
+			ctrl:       http.NewResponseController(w),
+			deadline: idleDeadline{
+				start:   time.Now(),
+				timeout: idle,
+				// a huge min rate means even a full-size read call
+				// earns virtually no extra credit, so a byte-sized
+				// trickle can't keep the connection alive past idle
+				minRate: 100_000_000,
+			},
+			logger: zap.NewNop(),
+		}
+		_, err := io.Copy(io.Discard, wrapped)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusRequestTimeout)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	// each individual gap (150ms) is under the idle window (250ms), so
+	// pure idle-reset alone would never trip; MinRate must still catch
+	// this trickle since it never earns meaningful credit
+	body := &pacedReader{delay: chunkDelay, chunkSize: 1, chunkCount: 6}
+	resp, err := http.Post(srv.URL, "application/octet-stream", body)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	assert.NotEqual(t, http.StatusOK, resp.StatusCode)
+}
+
+func TestIdleTimeoutReader_MinRateAllowsSustainedRate(t *testing.T) {
+	const idle = 250 * time.Millisecond
+	const chunkDelay = 100 * time.Millisecond
+	const minRate = 1000 // bytes/second
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wrapped := &idleTimeoutReader{
+			ReadCloser: r.Body,
+			ctrl:       http.NewResponseController(w),
+			deadline: idleDeadline{
+				start:   time.Now(),
+				timeout: idle,
+				minRate: minRate,
+			},
+			logger: zap.NewNop(),
+		}
+		_, err := io.Copy(io.Discard, wrapped)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusRequestTimeout)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	// 200 bytes every 100ms is 2000 bytes/second, comfortably above the
+	// 1000 bytes/second minRate, so credit earned per chunk (200ms)
+	// outpaces the real time elapsed per chunk (100ms): this transfer
+	// must complete despite exceeding the idle window cumulatively
+	body := &pacedReader{delay: chunkDelay, chunkSize: 200, chunkCount: 8}
+	resp, err := http.Post(srv.URL, "application/octet-stream", body)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
 func TestIdleTimeoutWriter(t *testing.T) {
 	const timeout = 150 * time.Millisecond
 
@@ -128,7 +205,7 @@ func TestIdleTimeoutWriter(t *testing.T) {
 		wrapped := &idleTimeoutWriter{
 			ResponseWriterWrapper: &ResponseWriterWrapper{ResponseWriter: w},
 			ctrl:                  http.NewResponseController(w),
-			timeout:               timeout,
+			deadline:              idleDeadline{timeout: timeout},
 			logger:                zap.NewNop(),
 		}
 		flusher, _ := wrapped.ResponseWriterWrapper.ResponseWriter.(http.Flusher)
@@ -165,9 +242,11 @@ func TestIdleTimeoutWriter_HardDeadlineCapsIdleReset(t *testing.T) {
 		wrapped := &idleTimeoutWriter{
 			ResponseWriterWrapper: &ResponseWriterWrapper{ResponseWriter: w},
 			ctrl:                  http.NewResponseController(w),
-			timeout:               idle,
-			hardDeadline:          time.Now().Add(hard),
-			logger:                zap.NewNop(),
+			deadline: idleDeadline{
+				timeout:      idle,
+				hardDeadline: time.Now().Add(hard),
+			},
+			logger: zap.NewNop(),
 		}
 		flusher, _ := wrapped.ResponseWriterWrapper.ResponseWriter.(http.Flusher)
 		for range 8 {

@@ -79,6 +79,15 @@ type Server struct {
 	// Default is 1 minute.
 	ReadIdleTimeout caddy.Duration `json:"read_idle_timeout,omitempty"`
 
+	// ReadMinRate, if set, requires the client to sustain at least this
+	// many bytes/second, averaged from the start of the request body
+	// read, or the connection is aborted. Unlike ReadIdleTimeout alone,
+	// this also catches a trickle that sends just enough to never go
+	// idle, but never accumulates real throughput (a "MinRate" in
+	// Apache mod_reqtimeout terms). If zero, no rate is enforced and
+	// ReadIdleTimeout resets to a flat window on every read instead.
+	ReadMinRate int64 `json:"read_min_rate,omitempty"`
+
 	// WriteTimeout is how long to allow a write to a client. Note
 	// that setting this to a small value when serving large files
 	// may negatively affect legitimately slow clients.
@@ -92,6 +101,9 @@ type Server struct {
 	// with WriteTimeout for a hard ceiling on top.
 	// Default is 1 minute.
 	WriteIdleTimeout caddy.Duration `json:"write_idle_timeout,omitempty"`
+
+	// WriteMinRate is like ReadMinRate, but for writes to the client.
+	WriteMinRate int64 `json:"write_min_rate,omitempty"`
 
 	// IdleTimeout is the maximum time to wait for the next request
 	// when keep-alives are enabled. If zero, a default timeout of
@@ -476,20 +488,28 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.ReadIdleTimeout > 0 && r.Body != nil {
 		r.Body = &idleTimeoutReader{
-			ReadCloser:   r.Body,
-			ctrl:         rc,
-			timeout:      time.Duration(s.ReadIdleTimeout),
-			hardDeadline: readHardDeadline,
-			logger:       s.logger,
+			ReadCloser: r.Body,
+			ctrl:       rc,
+			deadline: idleDeadline{
+				start:        start,
+				timeout:      time.Duration(s.ReadIdleTimeout),
+				minRate:      s.ReadMinRate,
+				hardDeadline: readHardDeadline,
+			},
+			logger: s.logger,
 		}
 	}
 	if s.WriteIdleTimeout > 0 {
 		w = &idleTimeoutWriter{
 			ResponseWriterWrapper: &ResponseWriterWrapper{ResponseWriter: w},
 			ctrl:                  rc,
-			timeout:               time.Duration(s.WriteIdleTimeout),
-			hardDeadline:          writeHardDeadline,
-			logger:                s.logger,
+			deadline: idleDeadline{
+				start:        start,
+				timeout:      time.Duration(s.WriteIdleTimeout),
+				minRate:      s.WriteMinRate,
+				hardDeadline: writeHardDeadline,
+			},
+			logger: s.logger,
 		}
 	}
 
