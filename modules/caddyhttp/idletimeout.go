@@ -116,22 +116,53 @@ func (w *idleTimeoutWriter) resetDeadline() {
 	}
 }
 
+// maxWriteChunk bounds how much a single underlying Write/ReadFrom call
+// is allowed to cover. SetWriteDeadline bounds the whole call it precedes,
+// not just a stall within it: net.Conn.Write loops internally until the
+// entire buffer is sent (unlike Read, which returns after one syscall),
+// and ResponseWriter.ReadFrom hands the entire remaining source to the
+// connection in one call, be it via sendfile or an internal buffered
+// copy loop. Without chunking, a single large Write or a large body
+// copied via io.Copy would have its whole transfer bounded by one
+// deadline, silently truncating a slow-but-healthy transfer exactly
+// like a hard WriteTimeout would. 64 KiB still preserves most of the
+// sendfile fast path's benefit (net/sendfile.go special-cases
+// *io.LimitedReader to keep using sendfile per chunk).
+const maxWriteChunk = 64 * 1024
+
 func (w *idleTimeoutWriter) Write(p []byte) (int, error) {
-	w.resetDeadline()
-
-	n, err := w.ResponseWriterWrapper.Write(p)
-	w.deadline.transferred += int64(n)
-
-	return n, err
+	var total int
+	for len(p) > 0 {
+		chunk := p
+		if len(chunk) > maxWriteChunk {
+			chunk = chunk[:maxWriteChunk]
+		}
+		w.resetDeadline()
+		n, err := w.ResponseWriterWrapper.Write(chunk)
+		total += n
+		w.deadline.transferred += int64(n)
+		p = p[n:]
+		if err != nil {
+			return total, err
+		}
+	}
+	return total, nil
 }
 
 func (w *idleTimeoutWriter) ReadFrom(r io.Reader) (int64, error) {
-	w.resetDeadline()
-
-	n, err := w.ResponseWriterWrapper.ReadFrom(r)
-	w.deadline.transferred += n
-
-	return n, err
+	var total int64
+	for {
+		w.resetDeadline()
+		n, err := w.ResponseWriterWrapper.ReadFrom(io.LimitReader(r, maxWriteChunk))
+		total += n
+		w.deadline.transferred += n
+		if err != nil {
+			return total, err
+		}
+		if n < maxWriteChunk {
+			return total, nil
+		}
+	}
 }
 
 // Interface guards

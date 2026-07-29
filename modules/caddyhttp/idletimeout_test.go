@@ -15,6 +15,7 @@
 package caddyhttp
 
 import (
+	"bytes"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -276,4 +277,78 @@ func TestIdleTimeoutWriter_HardDeadlineCapsIdleReset(t *testing.T) {
 	if err == nil {
 		assert.Less(t, n, int64(64))
 	}
+}
+
+// readFromCounter is a fake http.ResponseWriter that records how many
+// times ReadFrom was called on it and the size of the largest call, so
+// tests can assert on chunking behavior deterministically instead of
+// depending on real TCP timing.
+type readFromCounter struct {
+	*httptest.ResponseRecorder
+	calls        int
+	maxCall      int
+	total        int64
+	writeCalls   int
+	maxWriteCall int
+}
+
+func (c *readFromCounter) SetWriteDeadline(time.Time) error { return nil }
+
+func (c *readFromCounter) ReadFrom(r io.Reader) (int64, error) {
+	c.calls++
+	n, err := io.Copy(io.Discard, r)
+	c.total += n
+	if int(n) > c.maxCall {
+		c.maxCall = int(n)
+	}
+	return n, err
+}
+
+func (c *readFromCounter) Write(p []byte) (int, error) {
+	c.writeCalls++
+	if len(p) > c.maxWriteCall {
+		c.maxWriteCall = len(p)
+	}
+	return c.ResponseRecorder.Write(p)
+}
+
+func TestIdleTimeoutWriter_ReadFromChunksLargeTransfer(t *testing.T) {
+	const size = maxWriteChunk*3 + 100 // 3 full chunks plus a partial tail
+
+	counter := &readFromCounter{ResponseRecorder: httptest.NewRecorder()}
+	wrapped := &idleTimeoutWriter{
+		ResponseWriterWrapper: &ResponseWriterWrapper{ResponseWriter: counter},
+		ctrl:                  http.NewResponseController(counter),
+		deadline:              idleDeadline{timeout: time.Second},
+		logger:                zap.NewNop(),
+	}
+
+	n, err := wrapped.ReadFrom(bytes.NewReader(make([]byte, size)))
+	require.NoError(t, err)
+	assert.EqualValues(t, size, n)
+	assert.EqualValues(t, size, counter.total)
+	assert.LessOrEqual(t, counter.maxCall, maxWriteChunk,
+		"no single underlying ReadFrom call should cover more than maxWriteChunk bytes, "+
+			"since SetWriteDeadline bounds the whole call it precedes, not just a stall within it")
+	assert.Equal(t, 4, counter.calls, "expected 3 full chunks plus a partial tail chunk")
+}
+
+func TestIdleTimeoutWriter_WriteChunksLargePayload(t *testing.T) {
+	const size = maxWriteChunk*2 + 1
+
+	counter := &readFromCounter{ResponseRecorder: httptest.NewRecorder()}
+	wrapped := &idleTimeoutWriter{
+		ResponseWriterWrapper: &ResponseWriterWrapper{ResponseWriter: counter},
+		ctrl:                  http.NewResponseController(counter),
+		deadline:              idleDeadline{timeout: time.Second},
+		logger:                zap.NewNop(),
+	}
+
+	n, err := wrapped.Write(make([]byte, size))
+	require.NoError(t, err)
+	assert.EqualValues(t, size, n)
+	assert.EqualValues(t, size, counter.ResponseRecorder.Body.Len())
+	assert.LessOrEqual(t, counter.maxWriteCall, maxWriteChunk,
+		"no single underlying Write call should cover more than maxWriteChunk bytes")
+	assert.Equal(t, 3, counter.writeCalls, "expected 2 full chunks plus a 1-byte tail chunk")
 }
