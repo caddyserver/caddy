@@ -143,24 +143,22 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 					serverOpts.ReadTimeout = caddy.Duration(dur)
 
 				case "read_body_idle":
-					if !d.NextArg() {
+					args := d.RemainingArgs()
+					if len(args) < 1 || len(args) > 2 {
 						return nil, d.ArgErr()
 					}
-					dur, err := caddy.ParseDuration(d.Val())
+					dur, err := caddy.ParseDuration(args[0])
 					if err != nil {
 						return nil, d.Errf("parsing read_body_idle timeout duration: %v", err)
 					}
 					serverOpts.ReadIdleTimeout = caddy.Duration(dur)
-
-				case "read_body_min_rate":
-					if !d.NextArg() {
-						return nil, d.ArgErr()
+					if len(args) == 2 {
+						rate, err := strconv.ParseInt(args[1], 10, 64)
+						if err != nil {
+							return nil, d.Errf("parsing read_body_idle min_rate bytes/second: %v", err)
+						}
+						serverOpts.ReadMinRate = rate
 					}
-					rate, err := strconv.ParseInt(d.Val(), 10, 64)
-					if err != nil {
-						return nil, d.Errf("parsing read_body_min_rate bytes/second: %v", err)
-					}
-					serverOpts.ReadMinRate = rate
 
 				case "read_header":
 					if !d.NextArg() {
@@ -183,24 +181,22 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 					serverOpts.WriteTimeout = caddy.Duration(dur)
 
 				case "write_idle":
-					if !d.NextArg() {
+					args := d.RemainingArgs()
+					if len(args) < 1 || len(args) > 2 {
 						return nil, d.ArgErr()
 					}
-					dur, err := caddy.ParseDuration(d.Val())
+					dur, err := caddy.ParseDuration(args[0])
 					if err != nil {
 						return nil, d.Errf("parsing write_idle timeout duration: %v", err)
 					}
 					serverOpts.WriteIdleTimeout = caddy.Duration(dur)
-
-				case "write_min_rate":
-					if !d.NextArg() {
-						return nil, d.ArgErr()
+					if len(args) == 2 {
+						rate, err := strconv.ParseInt(args[1], 10, 64)
+						if err != nil {
+							return nil, d.Errf("parsing write_idle min_rate bytes/second: %v", err)
+						}
+						serverOpts.WriteMinRate = rate
 					}
-					rate, err := strconv.ParseInt(d.Val(), 10, 64)
-					if err != nil {
-						return nil, d.Errf("parsing write_min_rate bytes/second: %v", err)
-					}
-					serverOpts.WriteMinRate = rate
 
 				case "write_max_chunk":
 					var sizeStr string
