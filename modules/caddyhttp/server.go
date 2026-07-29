@@ -105,6 +105,13 @@ type Server struct {
 	// WriteMinRate is like ReadMinRate, but for writes to the client.
 	WriteMinRate int64 `json:"write_min_rate,omitempty"`
 
+	// MaxWriteChunk bounds how many bytes a single underlying write
+	// operation is allowed to cover, so that WriteIdleTimeout/WriteMinRate
+	// can actually apply between chunks of a large response instead of
+	// being bounded by one deadline for the whole thing (nginx's
+	// sendfile_max_chunk exists for the same reason). Default: 64 KiB.
+	MaxWriteChunk int `json:"max_write_chunk,omitempty"`
+
 	// IdleTimeout is the maximum time to wait for the next request
 	// when keep-alives are enabled. If zero, a default timeout of
 	// 5m is applied to help avoid resource exhaustion.
@@ -487,29 +494,30 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeHardDeadline = start.Add(time.Duration(s.WriteTimeout))
 	}
 	if s.ReadIdleTimeout > 0 && r.Body != nil {
-		r.Body = &idleTimeoutReader{
+		r.Body = &IdleTimeoutReader{
 			ReadCloser: r.Body,
-			ctrl:       rc,
-			deadline: idleDeadline{
-				start:        start,
-				timeout:      time.Duration(s.ReadIdleTimeout),
-				minRate:      s.ReadMinRate,
-				hardDeadline: readHardDeadline,
+			Ctrl:       rc,
+			Deadline: IdleDeadline{
+				Start:        start,
+				Timeout:      time.Duration(s.ReadIdleTimeout),
+				MinRate:      s.ReadMinRate,
+				HardDeadline: readHardDeadline,
 			},
-			logger: s.logger,
+			Logger: s.logger,
 		}
 	}
 	if s.WriteIdleTimeout > 0 {
-		w = &idleTimeoutWriter{
+		w = &IdleTimeoutWriter{
 			ResponseWriterWrapper: &ResponseWriterWrapper{ResponseWriter: w},
-			ctrl:                  rc,
-			deadline: idleDeadline{
-				start:        start,
-				timeout:      time.Duration(s.WriteIdleTimeout),
-				minRate:      s.WriteMinRate,
-				hardDeadline: writeHardDeadline,
+			Ctrl:                  rc,
+			Deadline: IdleDeadline{
+				Start:        start,
+				Timeout:      time.Duration(s.WriteIdleTimeout),
+				MinRate:      s.WriteMinRate,
+				HardDeadline: writeHardDeadline,
 			},
-			logger: s.logger,
+			MaxChunk: s.MaxWriteChunk,
+			Logger:   s.logger,
 		}
 	}
 

@@ -49,11 +49,11 @@ func TestIdleTimeoutReader(t *testing.T) {
 	const timeout = 150 * time.Millisecond
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		wrapped := &idleTimeoutReader{
+		wrapped := &IdleTimeoutReader{
 			ReadCloser: r.Body,
-			ctrl:       http.NewResponseController(w),
-			deadline:   idleDeadline{timeout: timeout},
-			logger:     zap.NewNop(),
+			Ctrl:       http.NewResponseController(w),
+			Deadline:   IdleDeadline{Timeout: timeout},
+			Logger:     zap.NewNop(),
 		}
 		_, err := io.Copy(io.Discard, wrapped)
 		if err != nil {
@@ -92,14 +92,14 @@ func TestIdleTimeoutReader_HardDeadlineCapsIdleReset(t *testing.T) {
 	const hard = 200 * time.Millisecond
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		wrapped := &idleTimeoutReader{
+		wrapped := &IdleTimeoutReader{
 			ReadCloser: r.Body,
-			ctrl:       http.NewResponseController(w),
-			deadline: idleDeadline{
-				timeout:      idle,
-				hardDeadline: time.Now().Add(hard),
+			Ctrl:       http.NewResponseController(w),
+			Deadline: IdleDeadline{
+				Timeout:      idle,
+				HardDeadline: time.Now().Add(hard),
 			},
-			logger: zap.NewNop(),
+			Logger: zap.NewNop(),
 		}
 		_, err := io.Copy(io.Discard, wrapped)
 		if err != nil {
@@ -129,18 +129,18 @@ func TestIdleTimeoutReader_MinRateCatchesTrickle(t *testing.T) {
 	const chunkDelay = 150 * time.Millisecond
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		wrapped := &idleTimeoutReader{
+		wrapped := &IdleTimeoutReader{
 			ReadCloser: r.Body,
-			ctrl:       http.NewResponseController(w),
-			deadline: idleDeadline{
-				start:   time.Now(),
-				timeout: idle,
+			Ctrl:       http.NewResponseController(w),
+			Deadline: IdleDeadline{
+				Start:   time.Now(),
+				Timeout: idle,
 				// a huge min rate means even a full-size read call
 				// earns virtually no extra credit, so a byte-sized
 				// trickle can't keep the connection alive past idle
-				minRate: 100_000_000,
+				MinRate: 100_000_000,
 			},
-			logger: zap.NewNop(),
+			Logger: zap.NewNop(),
 		}
 		_, err := io.Copy(io.Discard, wrapped)
 		if err != nil {
@@ -169,15 +169,15 @@ func TestIdleTimeoutReader_MinRateAllowsSustainedRate(t *testing.T) {
 	const minRate = 1000 // bytes/second
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		wrapped := &idleTimeoutReader{
+		wrapped := &IdleTimeoutReader{
 			ReadCloser: r.Body,
-			ctrl:       http.NewResponseController(w),
-			deadline: idleDeadline{
-				start:   time.Now(),
-				timeout: idle,
-				minRate: minRate,
+			Ctrl:       http.NewResponseController(w),
+			Deadline: IdleDeadline{
+				Start:   time.Now(),
+				Timeout: idle,
+				MinRate: minRate,
 			},
-			logger: zap.NewNop(),
+			Logger: zap.NewNop(),
 		}
 		_, err := io.Copy(io.Discard, wrapped)
 		if err != nil {
@@ -203,11 +203,11 @@ func TestIdleTimeoutWriter(t *testing.T) {
 	const timeout = 150 * time.Millisecond
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		wrapped := &idleTimeoutWriter{
+		wrapped := &IdleTimeoutWriter{
 			ResponseWriterWrapper: &ResponseWriterWrapper{ResponseWriter: w},
-			ctrl:                  http.NewResponseController(w),
-			deadline:              idleDeadline{timeout: timeout},
-			logger:                zap.NewNop(),
+			Ctrl:                  http.NewResponseController(w),
+			Deadline:              IdleDeadline{Timeout: timeout},
+			Logger:                zap.NewNop(),
 		}
 		flusher, _ := wrapped.ResponseWriterWrapper.ResponseWriter.(http.Flusher)
 		for range 8 {
@@ -240,14 +240,14 @@ func TestIdleTimeoutWriter_HardDeadlineCapsIdleReset(t *testing.T) {
 	const hard = 200 * time.Millisecond
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		wrapped := &idleTimeoutWriter{
+		wrapped := &IdleTimeoutWriter{
 			ResponseWriterWrapper: &ResponseWriterWrapper{ResponseWriter: w},
-			ctrl:                  http.NewResponseController(w),
-			deadline: idleDeadline{
-				timeout:      idle,
-				hardDeadline: time.Now().Add(hard),
+			Ctrl:                  http.NewResponseController(w),
+			Deadline: IdleDeadline{
+				Timeout:      idle,
+				HardDeadline: time.Now().Add(hard),
 			},
-			logger: zap.NewNop(),
+			Logger: zap.NewNop(),
 		}
 		flusher, _ := wrapped.ResponseWriterWrapper.ResponseWriter.(http.Flusher)
 		for range 8 {
@@ -313,42 +313,63 @@ func (c *readFromCounter) Write(p []byte) (int, error) {
 }
 
 func TestIdleTimeoutWriter_ReadFromChunksLargeTransfer(t *testing.T) {
-	const size = maxWriteChunk*3 + 100 // 3 full chunks plus a partial tail
+	const size = DefaultMaxWriteChunk*3 + 100 // 3 full chunks plus a partial tail
 
 	counter := &readFromCounter{ResponseRecorder: httptest.NewRecorder()}
-	wrapped := &idleTimeoutWriter{
+	wrapped := &IdleTimeoutWriter{
 		ResponseWriterWrapper: &ResponseWriterWrapper{ResponseWriter: counter},
-		ctrl:                  http.NewResponseController(counter),
-		deadline:              idleDeadline{timeout: time.Second},
-		logger:                zap.NewNop(),
+		Ctrl:                  http.NewResponseController(counter),
+		Deadline:              IdleDeadline{Timeout: time.Second},
+		Logger:                zap.NewNop(),
 	}
 
 	n, err := wrapped.ReadFrom(bytes.NewReader(make([]byte, size)))
 	require.NoError(t, err)
 	assert.EqualValues(t, size, n)
 	assert.EqualValues(t, size, counter.total)
-	assert.LessOrEqual(t, counter.maxCall, maxWriteChunk,
-		"no single underlying ReadFrom call should cover more than maxWriteChunk bytes, "+
+	assert.LessOrEqual(t, counter.maxCall, DefaultMaxWriteChunk,
+		"no single underlying ReadFrom call should cover more than DefaultMaxWriteChunk bytes, "+
 			"since SetWriteDeadline bounds the whole call it precedes, not just a stall within it")
 	assert.Equal(t, 4, counter.calls, "expected 3 full chunks plus a partial tail chunk")
 }
 
 func TestIdleTimeoutWriter_WriteChunksLargePayload(t *testing.T) {
-	const size = maxWriteChunk*2 + 1
+	const size = DefaultMaxWriteChunk*2 + 1
 
 	counter := &readFromCounter{ResponseRecorder: httptest.NewRecorder()}
-	wrapped := &idleTimeoutWriter{
+	wrapped := &IdleTimeoutWriter{
 		ResponseWriterWrapper: &ResponseWriterWrapper{ResponseWriter: counter},
-		ctrl:                  http.NewResponseController(counter),
-		deadline:              idleDeadline{timeout: time.Second},
-		logger:                zap.NewNop(),
+		Ctrl:                  http.NewResponseController(counter),
+		Deadline:              IdleDeadline{Timeout: time.Second},
+		Logger:                zap.NewNop(),
 	}
 
 	n, err := wrapped.Write(make([]byte, size))
 	require.NoError(t, err)
 	assert.EqualValues(t, size, n)
 	assert.EqualValues(t, size, counter.ResponseRecorder.Body.Len())
-	assert.LessOrEqual(t, counter.maxWriteCall, maxWriteChunk,
-		"no single underlying Write call should cover more than maxWriteChunk bytes")
+	assert.LessOrEqual(t, counter.maxWriteCall, DefaultMaxWriteChunk,
+		"no single underlying Write call should cover more than DefaultMaxWriteChunk bytes")
 	assert.Equal(t, 3, counter.writeCalls, "expected 2 full chunks plus a 1-byte tail chunk")
+}
+
+func TestIdleTimeoutWriter_MaxChunkOverride(t *testing.T) {
+	const size = 1000
+	const maxChunk = 100
+
+	counter := &readFromCounter{ResponseRecorder: httptest.NewRecorder()}
+	wrapped := &IdleTimeoutWriter{
+		ResponseWriterWrapper: &ResponseWriterWrapper{ResponseWriter: counter},
+		Ctrl:                  http.NewResponseController(counter),
+		Deadline:              IdleDeadline{Timeout: time.Second},
+		MaxChunk:              maxChunk,
+		Logger:                zap.NewNop(),
+	}
+
+	n, err := wrapped.Write(make([]byte, size))
+	require.NoError(t, err)
+	assert.EqualValues(t, size, n)
+	assert.LessOrEqual(t, counter.maxWriteCall, maxChunk,
+		"a configured MaxChunk should override DefaultMaxWriteChunk")
+	assert.Equal(t, size/maxChunk, counter.writeCalls)
 }

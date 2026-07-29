@@ -408,6 +408,9 @@ func (app *App) Provision(ctx caddy.Context) error {
 		if srv.WriteIdleTimeout == 0 {
 			srv.WriteIdleTimeout = defaultWriteIdleTimeout
 		}
+		if srv.MaxWriteChunk == 0 {
+			srv.MaxWriteChunk = DefaultMaxWriteChunk
+		}
 	}
 	ctx.Context = oldContext
 	return nil

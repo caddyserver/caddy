@@ -46,6 +46,7 @@ type serverOptions struct {
 	WriteTimeout              caddy.Duration
 	WriteIdleTimeout          caddy.Duration
 	WriteMinRate              int64
+	MaxWriteChunk             int
 	IdleTimeout               caddy.Duration
 	KeepAliveInterval         caddy.Duration
 	KeepAliveIdle             caddy.Duration
@@ -200,6 +201,17 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 						return nil, d.Errf("parsing write_min_rate bytes/second: %v", err)
 					}
 					serverOpts.WriteMinRate = rate
+
+				case "write_max_chunk":
+					var sizeStr string
+					if !d.AllArgs(&sizeStr) {
+						return nil, d.ArgErr()
+					}
+					size, err := humanize.ParseBytes(sizeStr)
+					if err != nil {
+						return nil, d.Errf("parsing write_max_chunk: %v", err)
+					}
+					serverOpts.MaxWriteChunk = int(size)
 
 				case "idle":
 					if !d.NextArg() {
@@ -430,6 +442,7 @@ func applyServerOptions(
 		server.WriteTimeout = opts.WriteTimeout
 		server.WriteIdleTimeout = opts.WriteIdleTimeout
 		server.WriteMinRate = opts.WriteMinRate
+		server.MaxWriteChunk = opts.MaxWriteChunk
 		server.IdleTimeout = opts.IdleTimeout
 		server.KeepAliveInterval = opts.KeepAliveInterval
 		server.KeepAliveIdle = opts.KeepAliveIdle
