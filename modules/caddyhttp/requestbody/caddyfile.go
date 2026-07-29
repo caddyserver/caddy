@@ -15,6 +15,7 @@
 package requestbody
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/dustin/go-humanize"
@@ -57,6 +58,17 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 			}
 			rb.ReadTimeout = timeout
 
+		case "read_min_rate":
+			var rateStr string
+			if !h.AllArgs(&rateStr) {
+				return nil, h.ArgErr()
+			}
+			rate, err := strconv.ParseInt(rateStr, 10, 64)
+			if err != nil {
+				return nil, h.Errf("parsing read_min_rate: %v", err)
+			}
+			rb.ReadMinRate = rate
+
 		case "write_timeout":
 			var timeoutStr string
 			if !h.AllArgs(&timeoutStr) {
@@ -67,6 +79,28 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				return nil, h.Errf("parsing write_timeout: %v", err)
 			}
 			rb.WriteTimeout = timeout
+
+		case "write_min_rate":
+			var rateStr string
+			if !h.AllArgs(&rateStr) {
+				return nil, h.ArgErr()
+			}
+			rate, err := strconv.ParseInt(rateStr, 10, 64)
+			if err != nil {
+				return nil, h.Errf("parsing write_min_rate: %v", err)
+			}
+			rb.WriteMinRate = rate
+
+		case "max_write_chunk":
+			var sizeStr string
+			if !h.AllArgs(&sizeStr) {
+				return nil, h.ArgErr()
+			}
+			size, err := humanize.ParseBytes(sizeStr)
+			if err != nil {
+				return nil, h.Errf("parsing max_write_chunk: %v", err)
+			}
+			rb.MaxWriteChunk = int(size)
 
 		case "set":
 			var setStr string

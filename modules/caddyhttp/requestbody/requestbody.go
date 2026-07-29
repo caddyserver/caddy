@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -38,11 +37,39 @@ type RequestBody struct {
 	// If more bytes are read, an error with HTTP status 413 is returned.
 	MaxSize int64 `json:"max_size,omitempty"`
 
+	// How long to allow a read from the request body to stall before
+	// aborting the connection, reset on every successful read (like the
+	// server-wide read_idle_timeout, but scoped to routes matching this
+	// handler). If zero, no idle timeout is applied here.
 	// EXPERIMENTAL. Subject to change/removal.
 	ReadTimeout time.Duration `json:"read_timeout,omitempty"`
 
+	// ReadMinRate requires the client to sustain at least this many
+	// bytes/second, averaged from the start of the read, or the
+	// connection is aborted (Apache mod_reqtimeout's MinRate). Only
+	// takes effect if ReadTimeout is also set.
+	// EXPERIMENTAL. Subject to change/removal.
+	ReadMinRate int64 `json:"read_min_rate,omitempty"`
+
+	// How long to allow a write to the client to stall before aborting
+	// the connection, reset on every successful write (like the
+	// server-wide write_idle_timeout, but scoped to routes matching this
+	// handler). If zero, no idle timeout is applied here.
 	// EXPERIMENTAL. Subject to change/removal.
 	WriteTimeout time.Duration `json:"write_timeout,omitempty"`
+
+	// WriteMinRate is like ReadMinRate, but for writes to the client.
+	// Only takes effect if WriteTimeout is also set.
+	// EXPERIMENTAL. Subject to change/removal.
+	WriteMinRate int64 `json:"write_min_rate,omitempty"`
+
+	// MaxWriteChunk bounds how many bytes a single underlying write
+	// operation is allowed to cover, so WriteTimeout/WriteMinRate can
+	// actually apply between chunks of a large response instead of
+	// being bounded by one deadline for the whole thing. If zero,
+	// caddyhttp.DefaultMaxWriteChunk is used.
+	// EXPERIMENTAL. Subject to change/removal.
+	MaxWriteChunk int `json:"max_write_chunk,omitempty"`
 
 	// This field permit to replace body on the fly
 	// EXPERIMENTAL. Subject to change/removal.
@@ -86,18 +113,30 @@ func (rb RequestBody) ServeHTTP(w http.ResponseWriter, r *http.Request, next cad
 	if rb.ReadTimeout > 0 || rb.WriteTimeout > 0 {
 		//nolint:bodyclose
 		rc := http.NewResponseController(w)
+		start := time.Now()
 		if rb.ReadTimeout > 0 {
-			if err := rc.SetReadDeadline(time.Now().Add(rb.ReadTimeout)); err != nil {
-				if c := rb.logger.Check(zapcore.ErrorLevel, "could not set read deadline"); c != nil {
-					c.Write(zap.Error(err))
-				}
+			r.Body = &caddyhttp.IdleTimeoutReader{
+				ReadCloser: r.Body,
+				Ctrl:       rc,
+				Deadline: caddyhttp.IdleDeadline{
+					Start:   start,
+					Timeout: rb.ReadTimeout,
+					MinRate: rb.ReadMinRate,
+				},
+				Logger: rb.logger,
 			}
 		}
 		if rb.WriteTimeout > 0 {
-			if err := rc.SetWriteDeadline(time.Now().Add(rb.WriteTimeout)); err != nil {
-				if c := rb.logger.Check(zapcore.ErrorLevel, "could not set write deadline"); c != nil {
-					c.Write(zap.Error(err))
-				}
+			w = &caddyhttp.IdleTimeoutWriter{
+				ResponseWriterWrapper: &caddyhttp.ResponseWriterWrapper{ResponseWriter: w},
+				Ctrl:                  rc,
+				Deadline: caddyhttp.IdleDeadline{
+					Start:   start,
+					Timeout: rb.WriteTimeout,
+					MinRate: rb.WriteMinRate,
+				},
+				MaxChunk: rb.MaxWriteChunk,
+				Logger:   rb.logger,
 			}
 		}
 	}
