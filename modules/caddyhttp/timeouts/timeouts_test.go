@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package requestbody
+package timeouts
 
 import (
 	"io"
@@ -55,14 +55,14 @@ func noError(h caddyhttp.Handler) http.HandlerFunc {
 	}
 }
 
-func TestRequestBody_ReadTimeoutIsIdleReset(t *testing.T) {
+func TestTimeouts_ReadTimeoutIsIdleReset(t *testing.T) {
 	const timeout = 150 * time.Millisecond
 
-	rb := RequestBody{ReadTimeout: timeout}
-	rb.logger = zap.NewNop()
+	tm := Timeouts{ReadTimeout: timeout}
+	tm.logger = zap.NewNop()
 
 	srv := httptest.NewServer(noError(caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
-		return rb.ServeHTTP(w, r, caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+		return tm.ServeHTTP(w, r, caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 			_, err := io.Copy(io.Discard, r.Body)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusRequestTimeout)
@@ -83,15 +83,15 @@ func TestRequestBody_ReadTimeoutIsIdleReset(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
-func TestRequestBody_WriteMaxChunkOverride(t *testing.T) {
+func TestTimeouts_WriteMaxChunkOverride(t *testing.T) {
 	const size = 10000
 	const maxChunk = 100
 
-	rb := RequestBody{WriteTimeout: time.Second, MaxWriteChunk: maxChunk}
-	rb.logger = zap.NewNop()
+	tm := Timeouts{WriteTimeout: time.Second, MaxWriteChunk: maxChunk}
+	tm.logger = zap.NewNop()
 
 	srv := httptest.NewServer(noError(caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
-		return rb.ServeHTTP(w, r, caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+		return tm.ServeHTTP(w, r, caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 			_, err := w.Write(make([]byte, size))
 			return err
 		}))
