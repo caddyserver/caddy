@@ -93,6 +93,11 @@ func (st ServerType) buildTLSApp(
 	}
 
 	forcedAutomatedNames := make(map[string]struct{}) // explicitly configured to be automated, even if covered by a wildcard
+	globalECHConfigured := false
+	if ech, ok := options["ech"].(*caddytls.ECH); ok {
+		tlsApp.EncryptedClientHello = ech
+		globalECHConfigured = true
+	}
 
 	for _, p := range pairings {
 		// avoid setting up TLS automation policies for a server that is HTTP-only
@@ -120,6 +125,50 @@ func (st ServerType) buildTLSApp(
 			sblockHosts := sblock.hostsFromKeys(false)
 			if len(sblockHosts) == 0 && catchAllAP != nil {
 				ap = catchAllAP
+			}
+
+			if echVals, ok := sblock.pile[tlsECHClass]; ok {
+				if tlsApp.EncryptedClientHello == nil {
+					tlsApp.EncryptedClientHello = new(caddytls.ECH)
+				}
+				if globalECHConfigured && tlsApp.EncryptedClientHello.Publication == nil {
+					tlsApp.EncryptedClientHello.Publication = append(
+						tlsApp.EncryptedClientHello.Publication,
+						newECHPublication(
+							echPublicNames(tlsApp.EncryptedClientHello.Configs),
+							nil,
+							options["dns"],
+							&warnings,
+						),
+					)
+				}
+				for _, echVal := range echVals {
+					siteECH := echVal.Value.(*caddytls.ECH)
+					for _, config := range siteECH.Configs {
+						if !slices.Contains(tlsApp.EncryptedClientHello.Configs, config) {
+							tlsApp.EncryptedClientHello.Configs = append(tlsApp.EncryptedClientHello.Configs, config)
+						}
+					}
+					if len(siteECH.Publication) == 0 {
+						tlsApp.EncryptedClientHello.Publication = append(
+							tlsApp.EncryptedClientHello.Publication,
+							newECHPublication(
+								echPublicNames(siteECH.Configs),
+								slices.Clone(sblockHosts),
+								options["dns"],
+								&warnings,
+							),
+						)
+						continue
+					}
+					for _, publication := range siteECH.Publication {
+						publication.Domains = slices.Clone(sblockHosts)
+						tlsApp.EncryptedClientHello.Publication = append(
+							tlsApp.EncryptedClientHello.Publication,
+							publication,
+						)
+					}
+				}
 			}
 
 			// on-demand tls
@@ -339,9 +388,28 @@ func (st ServerType) buildTLSApp(
 		tlsApp.Resolvers = globalResolvers.([]string)
 	}
 
-	// set up ECH from Caddyfile options
-	if ech, ok := options["ech"].(*caddytls.ECH); ok {
-		tlsApp.EncryptedClientHello = ech
+	// ECH outer server names need certificates, so include them in an
+	// automation policy that applies any global options.
+	if ech := tlsApp.EncryptedClientHello; ech != nil {
+		sort.Slice(ech.Configs, func(i, j int) bool {
+			return ech.Configs[i].PublicName < ech.Configs[j].PublicName
+		})
+		for _, publication := range ech.Publication {
+			slices.Sort(publication.Configs)
+			slices.Sort(publication.Domains)
+		}
+		sort.Slice(ech.Publication, func(i, j int) bool {
+			if configsComparison := slices.Compare(
+				ech.Publication[i].Configs,
+				ech.Publication[j].Configs,
+			); configsComparison != 0 {
+				return configsComparison < 0
+			}
+			return slices.Compare(
+				ech.Publication[i].Domains,
+				ech.Publication[j].Domains,
+			) < 0
+		})
 
 		// outer server names will need certificates, so make sure they're included
 		// in an automation policy for them that applies any global options
@@ -509,6 +577,39 @@ func (st ServerType) buildTLSApp(
 	}
 
 	return tlsApp, warnings, nil
+}
+
+func echPublicNames(configs []caddytls.ECHConfiguration) []string {
+	publicNames := make([]string, 0, len(configs))
+	for _, config := range configs {
+		publicNames = append(publicNames, config.PublicName)
+	}
+	return publicNames
+}
+
+func newECHPublication(
+	configs, domains []string,
+	globalDNS any,
+	warnings *[]caddyconfig.Warning,
+) *caddytls.ECHPublication {
+	publication := &caddytls.ECHPublication{
+		Configs: configs,
+		Domains: domains,
+	}
+	if globalDNS != nil {
+		publication.PublishersRaw = echDNSPublisher(globalDNS, warnings)
+	}
+	return publication
+}
+
+func echDNSPublisher(globalDNS any, warnings *[]caddyconfig.Warning) caddy.ModuleMap {
+	dnsModule := globalDNS.(caddy.Module)
+	providerName := dnsModule.CaddyModule().ID.Name()
+	return caddy.ModuleMap{
+		"dns": caddyconfig.JSON(caddytls.ECHDNSPublisher{
+			ProviderRaw: caddyconfig.JSONModuleObject(dnsModule, "name", providerName, warnings),
+		}, warnings),
+	}
 }
 
 type acmeCapable interface{ GetACMEIssuer() *caddytls.ACMEIssuer }
