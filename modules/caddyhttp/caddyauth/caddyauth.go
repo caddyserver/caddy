@@ -248,17 +248,21 @@ func (bw *bufferedResponseWriter) Write(data []byte) (int, error) {
 
 // ReadFrom captures the body (respecting the size cap) instead of the
 // embedded wrapper's pass-through to the real writer, which would leak the
-// provider's body past isolation.
+// provider's body past isolation. It returns the total number of bytes
+// consumed from r — retained and drained alike — and any read error,
+// per the io.ReaderFrom contract.
 func (bw *bufferedResponseWriter) ReadFrom(r io.Reader) (int64, error) {
 	bw.WriteHeader(http.StatusOK)
 	room := int64(maxBufferedAuthResponse - bw.buf.Len())
 	n, err := bw.buf.ReadFrom(io.LimitReader(r, room))
-	if err == nil {
-		if extra, _ := io.Copy(io.Discard, r); extra > 0 {
-			bw.overflowed = true
-		}
+	if err != nil {
+		return n, err
 	}
-	return n, err
+	extra, err := io.Copy(io.Discard, r)
+	if extra > 0 {
+		bw.overflowed = true
+	}
+	return n + extra, err
 }
 
 // FlushError suppresses flushing while a provider's response is buffered, so a

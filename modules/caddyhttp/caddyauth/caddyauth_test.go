@@ -16,8 +16,10 @@ package caddyauth
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -426,3 +428,42 @@ func TestBufferedResponseIsSizeCapped(t *testing.T) {
 	}
 	_ = succeeder
 }
+
+// ReadFrom must honor the io.ReaderFrom contract even when the size cap is
+// exceeded: report the total bytes consumed from the source (retained and
+// drained alike) and propagate any error encountered while draining.
+func TestBufferedWriterReadFromReportsTotalAndDrainError(t *testing.T) {
+	extra := int64(1234)
+	total := int64(maxBufferedAuthResponse) + extra
+	bw := newBufferedResponseWriter(httptest.NewRecorder())
+	n, err := bw.ReadFrom(bytes.NewReader(make([]byte, total)))
+	if err != nil {
+		t.Fatalf("ReadFrom() error = %v", err)
+	}
+	if n != total {
+		t.Errorf("ReadFrom() = %d, want total consumed %d", n, total)
+	}
+	if bw.buf.Len() != maxBufferedAuthResponse {
+		t.Errorf("retained %d bytes, want cap %d", bw.buf.Len(), maxBufferedAuthResponse)
+	}
+	if !bw.overflowed {
+		t.Error("expected overflow to be flagged when the source exceeds the buffer cap")
+	}
+
+	drainErr := errors.New("drain failure")
+	bw = newBufferedResponseWriter(httptest.NewRecorder())
+	n, err = bw.ReadFrom(io.MultiReader(
+		bytes.NewReader(make([]byte, maxBufferedAuthResponse)),
+		errorReader{err: drainErr},
+	))
+	if !errors.Is(err, drainErr) {
+		t.Errorf("ReadFrom() error = %v, want the drain error %v", err, drainErr)
+	}
+	if n != int64(maxBufferedAuthResponse) {
+		t.Errorf("ReadFrom() = %d, want %d bytes consumed before the error", n, maxBufferedAuthResponse)
+	}
+}
+
+type errorReader struct{ err error }
+
+func (er errorReader) Read([]byte) (int, error) { return 0, er.err }
