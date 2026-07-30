@@ -464,6 +464,7 @@ func (ServerType) extractNamedRoutes(
 	replacer ShorthandReplacer,
 ) ([]serverBlock, error) {
 	namedRoutes := map[string]*caddyhttp.Route{}
+	namedRouteInvokes := map[string][]string{}
 
 	gc := counter{new(int)}
 	state := make(map[string]any)
@@ -528,8 +529,19 @@ func (ServerType) extractNamedRoutes(
 			return nil, fmt.Errorf("cannot have duplicate named_routes: %s", key)
 		}
 		namedRoutes[key] = &route
+
+		// remember which named routes this named route invokes,
+		// so they can also be attached to any server that invokes
+		// this one
+		if state[namedRouteKey] != nil {
+			for name := range state[namedRouteKey].(map[string]struct{}) {
+				namedRouteInvokes[key] = append(namedRouteInvokes[key], name)
+			}
+			state[namedRouteKey] = nil
+		}
 	}
 	options["named_routes"] = namedRoutes
+	options["named_route_invokes"] = namedRouteInvokes
 
 	return filtered, nil
 }
@@ -721,6 +733,7 @@ func (st *ServerType) serversFromPairings(
 
 		// add named routes to the server if 'invoke' was used inside of it
 		configuredNamedRoutes := options["named_routes"].(map[string]*caddyhttp.Route)
+		namedRouteInvokes := options["named_route_invokes"].(map[string][]string)
 		for _, sblock := range p.serverBlocks {
 			if len(sblock.pile[namedRouteKey]) == 0 {
 				continue
@@ -729,11 +742,21 @@ func (st *ServerType) serversFromPairings(
 				if srv.NamedRoutes == nil {
 					srv.NamedRoutes = map[string]*caddyhttp.Route{}
 				}
-				name := value.Value.(string)
-				if configuredNamedRoutes[name] == nil {
-					return nil, fmt.Errorf("cannot invoke named route '%s', which was not defined", name)
+				// named routes may invoke other named routes, so
+				// resolve the set of invoked names transitively
+				names := []string{value.Value.(string)}
+				for len(names) > 0 {
+					name := names[0]
+					names = names[1:]
+					if _, ok := srv.NamedRoutes[name]; ok {
+						continue
+					}
+					if configuredNamedRoutes[name] == nil {
+						return nil, fmt.Errorf("cannot invoke named route '%s', which was not defined", name)
+					}
+					srv.NamedRoutes[name] = configuredNamedRoutes[name]
+					names = append(names, namedRouteInvokes[name]...)
 				}
-				srv.NamedRoutes[name] = configuredNamedRoutes[name]
 			}
 		}
 
