@@ -212,7 +212,7 @@ func (hba HTTPBasicAuth) promptForCredentials(w http.ResponseWriter, err error) 
 	if realm == "" {
 		realm = "restricted"
 	}
-	w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Basic realm="%s"`, realm))
+	w.Header().Set("Www-Authenticate", fmt.Sprintf(`Basic realm="%s"`, realm))
 	return User{}, false, err
 }
 
