@@ -869,6 +869,60 @@ vq+SH04xKhtFudVBAQ==`
 			},
 			wantErr: true,
 		},
+		{
+			name: "non-canonical path //",
+			cfg: &Config{
+				Admin: &AdminConfig{
+					Identity: &IdentityConfig{},
+					Remote: &RemoteAdmin{
+						Listen: "localhost:2021",
+						AccessControl: []*AdminAccess{
+							{
+								PublicKeys:  []string{testCert},
+								Permissions: []AdminPermissions{{Methods: []string{"GET"}, Paths: []string{"//"}}},
+							},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "non-canonical path /..",
+			cfg: &Config{
+				Admin: &AdminConfig{
+					Identity: &IdentityConfig{},
+					Remote: &RemoteAdmin{
+						Listen: "localhost:2021",
+						AccessControl: []*AdminAccess{
+							{
+								PublicKeys:  []string{testCert},
+								Permissions: []AdminPermissions{{Methods: []string{"GET"}, Paths: []string{"/.."}}},
+							},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "non-canonical path with double slashes",
+			cfg: &Config{
+				Admin: &AdminConfig{
+					Identity: &IdentityConfig{},
+					Remote: &RemoteAdmin{
+						Listen: "localhost:2021",
+						AccessControl: []*AdminAccess{
+							{
+								PublicKeys:  []string{testCert},
+								Permissions: []AdminPermissions{{Methods: []string{"GET"}, Paths: []string{"/foo//bar"}}},
+							},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, test := range tests {

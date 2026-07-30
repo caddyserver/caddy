@@ -554,6 +554,17 @@ func replaceRemoteAdminServer(ctx Context, cfg *Config) error {
 			accessControl.publicKeys = append(accessControl.publicKeys, cert.PublicKey)
 			clientCertPool.AddCert(cert)
 		}
+		for j, perm := range accessControl.Permissions {
+			for _, permPath := range perm.Paths {
+				if permPath == "" || permPath == "/" {
+					continue
+				}
+				cleanPath := path.Clean(permPath)
+				if cleanPath != permPath {
+					return fmt.Errorf("access control %d permission %d: path %q is not canonical (did you mean %q?)", i, j, permPath, cleanPath)
+				}
+			}
+		}
 	}
 
 	// create TLS config that will enforce mutual authentication
