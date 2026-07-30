@@ -107,17 +107,7 @@ func benchmarkDirectoryListing(b *testing.B, n int, listFn func(fsrv *FileServer
 	}
 }
 
-func BenchmarkDirectoryListingOld(b *testing.B) {
-	for _, n := range []int{100, 1_000, 10_000, 50_000} {
-		b.Run(fmt.Sprintf("entries=%d", n), func(b *testing.B) {
-			benchmarkDirectoryListing(b, n, func(fsrv *FileServer, ctx context.Context, fileSystem fs.FS, entries []fs.DirEntry, root string) *browseTemplateContext {
-				return fsrv.directoryListingOld(ctx, fileSystem, time.Time{}, entries, true, root, "/", caddy.NewReplacer())
-			})
-		})
-	}
-}
-
-func BenchmarkDirectoryListingNew(b *testing.B) {
+func BenchmarkDirectoryListing(b *testing.B) {
 	for _, n := range []int{100, 1_000, 10_000, 50_000} {
 		b.Run(fmt.Sprintf("entries=%d", n), func(b *testing.B) {
 			benchmarkDirectoryListing(b, n, func(fsrv *FileServer, ctx context.Context, fileSystem fs.FS, entries []fs.DirEntry, root string) *browseTemplateContext {
@@ -126,16 +116,6 @@ func BenchmarkDirectoryListingNew(b *testing.B) {
 		})
 	}
 }
-
-// ---------------------------------------------------------------------
-// Sort comparator benchmarks (byName/byNameDirFirst/bySize vs. their *Old
-// counterparts). These isolate the cost of the comparator itself: the
-// nameLower cache (when the comparator being measured needs it) is filled
-// outside the timed portion, since in production it's filled once by
-// applySortAndLimit rather than repeatedly inside Less. The combined,
-// real-world cost of filling the cache and sorting is what
-// BenchmarkDirectoryListingAndSort further down measures.
-// ---------------------------------------------------------------------
 
 // makeBenchItems builds n synthetic fileInfo items (no disk I/O), mixing
 // upper/lower case names and marking roughly 1 in 10 as directories, to
@@ -182,17 +162,7 @@ func benchmarkSort(b *testing.B, n int, prepare func(items []fileInfo), sortFn f
 	}
 }
 
-func BenchmarkSortByNameOld(b *testing.B) {
-	for _, n := range []int{100, 1_000, 10_000, 50_000} {
-		b.Run(fmt.Sprintf("entries=%d", n), func(b *testing.B) {
-			benchmarkSort(b, n, nil, func(items []fileInfo) {
-				sort.Sort(byNameOld(browseTemplateContext{Items: items}))
-			})
-		})
-	}
-}
-
-func BenchmarkSortByNameNew(b *testing.B) {
+func BenchmarkSortByName(b *testing.B) {
 	for _, n := range []int{100, 1_000, 10_000, 50_000} {
 		b.Run(fmt.Sprintf("entries=%d", n), func(b *testing.B) {
 			benchmarkSort(b, n, fillNameLower, func(items []fileInfo) {
@@ -202,17 +172,7 @@ func BenchmarkSortByNameNew(b *testing.B) {
 	}
 }
 
-func BenchmarkSortByNameDirFirstOld(b *testing.B) {
-	for _, n := range []int{100, 1_000, 10_000, 50_000} {
-		b.Run(fmt.Sprintf("entries=%d", n), func(b *testing.B) {
-			benchmarkSort(b, n, nil, func(items []fileInfo) {
-				sort.Sort(byNameDirFirstOld(browseTemplateContext{Items: items}))
-			})
-		})
-	}
-}
-
-func BenchmarkSortByNameDirFirstNew(b *testing.B) {
+func BenchmarkSortByNameDirFirst(b *testing.B) {
 	for _, n := range []int{100, 1_000, 10_000, 50_000} {
 		b.Run(fmt.Sprintf("entries=%d", n), func(b *testing.B) {
 			benchmarkSort(b, n, fillNameLower, func(items []fileInfo) {
@@ -222,17 +182,7 @@ func BenchmarkSortByNameDirFirstNew(b *testing.B) {
 	}
 }
 
-func BenchmarkSortBySizeOld(b *testing.B) {
-	for _, n := range []int{100, 1_000, 10_000, 50_000} {
-		b.Run(fmt.Sprintf("entries=%d", n), func(b *testing.B) {
-			benchmarkSort(b, n, nil, func(items []fileInfo) {
-				sort.Sort(bySizeOld(browseTemplateContext{Items: items}))
-			})
-		})
-	}
-}
-
-func BenchmarkSortBySizeNew(b *testing.B) {
+func BenchmarkSortBySize(b *testing.B) {
 	for _, n := range []int{100, 1_000, 10_000, 50_000} {
 		b.Run(fmt.Sprintf("entries=%d", n), func(b *testing.B) {
 			benchmarkSort(b, n, fillNameLower, func(items []fileInfo) {
@@ -244,8 +194,7 @@ func BenchmarkSortBySizeNew(b *testing.B) {
 
 // ---------------------------------------------------------------------
 // Overall benchmark: the whole real-world browse-request path - reading
-// directory entries into a listing and then sorting it - old (directoryListingOld
-// + applySortAndLimitOld) vs. new (directoryListing + applySortAndLimit).
+// directory entries into a listing and then sorting it.
 // ---------------------------------------------------------------------
 
 func benchmarkDirectoryListingAndSort(b *testing.B, n int, run func(fsrv *FileServer, ctx context.Context, fileSystem fs.FS, entries []fs.DirEntry, root string) *browseTemplateContext) {
@@ -262,19 +211,7 @@ func benchmarkDirectoryListingAndSort(b *testing.B, n int, run func(fsrv *FileSe
 	}
 }
 
-func BenchmarkDirectoryListingAndSortOld(b *testing.B) {
-	for _, n := range []int{100, 1_000, 10_000, 50_000} {
-		b.Run(fmt.Sprintf("entries=%d", n), func(b *testing.B) {
-			benchmarkDirectoryListingAndSort(b, n, func(fsrv *FileServer, ctx context.Context, fileSystem fs.FS, entries []fs.DirEntry, root string) *browseTemplateContext {
-				listing := fsrv.directoryListingOld(ctx, fileSystem, time.Time{}, entries, true, root, "/", caddy.NewReplacer())
-				listing.applySortAndLimitOld(sortByNameDirFirst, sortOrderAsc, "", "")
-				return listing
-			})
-		})
-	}
-}
-
-func BenchmarkDirectoryListingAndSortNew(b *testing.B) {
+func BenchmarkDirectoryListingAndSort(b *testing.B) {
 	for _, n := range []int{100, 1_000, 10_000, 50_000} {
 		b.Run(fmt.Sprintf("entries=%d", n), func(b *testing.B) {
 			benchmarkDirectoryListingAndSort(b, n, func(fsrv *FileServer, ctx context.Context, fileSystem fs.FS, entries []fs.DirEntry, root string) *browseTemplateContext {

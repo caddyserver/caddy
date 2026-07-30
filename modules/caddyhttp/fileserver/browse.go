@@ -333,22 +333,6 @@ func (fsrv *FileServer) makeBrowseTemplate(tplCtx *templateContext) (*template.T
 	return tpl, nil
 }
 
-// isSymlinkTargetDir returns true if f's symbolic link target
-// is a directory.
-//
-//nolint:unused // only called from directoryListingOld, kept temporarily for benchmark comparison; see browsetplcontext_bench_test.go
-func (fsrv *FileServer) isSymlinkTargetDir(fileSystem fs.FS, f fs.FileInfo, root, urlPath string) bool {
-	if !isSymlink(f) {
-		return false
-	}
-	target := caddyhttp.SanitizedPathJoin(root, path.Join(urlPath, f.Name()))
-	targetInfo, err := fs.Stat(fileSystem, target)
-	if err != nil {
-		return false
-	}
-	return targetInfo.IsDir()
-}
-
 // isSymlink return true if f is a symbolic link.
 func isSymlink(f fs.FileInfo) bool {
 	return f.Mode()&os.ModeSymlink != 0
