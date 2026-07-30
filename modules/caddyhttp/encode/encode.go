@@ -499,10 +499,10 @@ func hasVaryValue(hdr http.Header, target string) bool {
 // http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html.
 func AcceptedEncodings(r *http.Request, preferredOrder []string) []string {
 	acceptEncHeader := r.Header.Get("Accept-Encoding")
-	websocketKey := r.Header.Get("Sec-WebSocket-Key")
 	if acceptEncHeader == "" {
 		return []string{}
 	}
+	websocketKey := r.Header.Get("Sec-Websocket-Key")
 
 	prefs := []encodingPreference{}
 

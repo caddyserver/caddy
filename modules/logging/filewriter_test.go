@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
@@ -646,5 +647,71 @@ file /var/log/app.log {
 	var fw FileWriter
 	if err := fw.UnmarshalCaddyfile(d); err == nil {
 		t.Fatal("expected error for invalid dir_mode")
+	}
+}
+
+func TestCaddyfile_RollInterval(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		wantSecs float64
+		wantErr  bool
+	}{
+		{
+			name: "day unit",
+			input: `file /var/log/app.log {
+    roll_interval 1d
+}`,
+			wantSecs: 86400,
+		},
+		{
+			name: "hours unit",
+			input: `file /var/log/app.log {
+    roll_interval 24h
+}`,
+			wantSecs: 86400,
+		},
+		{
+			name: "minutes unit",
+			input: `file /var/log/app.log {
+    roll_interval 30m
+}`,
+			wantSecs: 1800,
+		},
+		{
+			name: "fractional days",
+			input: `file /var/log/app.log {
+    roll_interval 1.5d
+}`,
+			wantSecs: 129600,
+		},
+		{
+			name: "invalid duration",
+			input: `file /var/log/app.log {
+    roll_interval bogus
+}`,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := caddyfile.NewTestDispenser(tt.input)
+			var fw FileWriter
+			err := fw.UnmarshalCaddyfile(d)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error but got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			gotSecs := time.Duration(fw.RollInterval).Seconds()
+			if gotSecs != tt.wantSecs {
+				t.Errorf("got %v seconds, want %v", gotSecs, tt.wantSecs)
+			}
+		})
 	}
 }
