@@ -84,6 +84,28 @@ func BenchmarkResponseWriterWriteHeader(b *testing.B) {
 	}
 }
 
+func TestIsSSE(t *testing.T) {
+	for _, tc := range []struct {
+		contentType string
+		want        bool
+	}{
+		{"", false},
+		{"text/plain", false},
+		{"text/event-stream", true},
+		{"Text/Event-Stream", true},
+		{"text/event-stream; charset=utf-8", true},
+		{"text/event-stream ; charset=utf-8", true},
+		{"text/event-stream  ", true},
+		{"text/event-streamfoo", false},
+		{"text/event-stream nonsense", false},
+		{"text/event-stream x; charset=utf-8", false},
+	} {
+		if got := isSSE(tc.contentType); got != tc.want {
+			t.Errorf("isSSE(%q) = %v, want %v", tc.contentType, got, tc.want)
+		}
+	}
+}
+
 func TestPreferOrder(t *testing.T) {
 	testCases := []struct {
 		name     string

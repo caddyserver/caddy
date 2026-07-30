@@ -303,13 +303,13 @@ func isSSE(contentType string) bool {
 		return false
 	}
 
-	if len(contentType) == len(sseMediaType) {
-		return true
-	}
+	// After the media type, allow only optional whitespace followed by the
+	// end of the value or a parameter separator, so a longer type such as
+	// "text/event-streamfoo" or garbage like "text/event-stream nonsense"
+	// does not match. TrimLeft on the tail does not allocate.
+	rest := strings.TrimLeft(contentType[len(sseMediaType):], " \t")
 
-	nextChar := contentType[len(sseMediaType)]
-
-	return nextChar == ';' || nextChar == ' '
+	return rest == "" || rest[0] == ';'
 }
 
 // Match determines, if encoding should be done based on the ResponseMatcher.
