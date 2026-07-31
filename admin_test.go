@@ -870,7 +870,7 @@ vq+SH04xKhtFudVBAQ==`
 			wantErr: true,
 		},
 		{
-			name: "non-canonical path //",
+			name: "root path with single trailing slash (//)",
 			cfg: &Config{
 				Admin: &AdminConfig{
 					Identity: &IdentityConfig{},
@@ -885,7 +885,7 @@ vq+SH04xKhtFudVBAQ==`
 					},
 				},
 			},
-			wantErr: true,
+			wantErr: false,
 		},
 		{
 			name: "non-canonical path /..",
@@ -916,6 +916,24 @@ vq+SH04xKhtFudVBAQ==`
 							{
 								PublicKeys:  []string{testCert},
 								Permissions: []AdminPermissions{{Methods: []string{"GET"}, Paths: []string{"/foo//bar"}}},
+							},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "non-canonical path with double trailing slashes",
+			cfg: &Config{
+				Admin: &AdminConfig{
+					Identity: &IdentityConfig{},
+					Remote: &RemoteAdmin{
+						Listen: "localhost:2021",
+						AccessControl: []*AdminAccess{
+							{
+								PublicKeys:  []string{testCert},
+								Permissions: []AdminPermissions{{Methods: []string{"GET"}, Paths: []string{"/foo//"}}},
 							},
 						},
 					},
