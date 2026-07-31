@@ -424,9 +424,9 @@ func TestStripHTML(t *testing.T) {
 			expect: ``,
 		},
 		{
-		    // false start — second '<' increments depth, single '>' only closes one level
-		    input:  `<h1<b>hi`,
-		    expect: ``,
+			// false start — second '<' increments depth, single '>' only closes one level
+			input:  `<h1<b>hi`,
+			expect: ``,
 		},
 		{
 			// XSS bypass via double opening bracket
