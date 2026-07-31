@@ -100,7 +100,7 @@ func TestQueryFilterSingleValue(t *testing.T) {
 	}
 
 	out := f.Filter(zapcore.Field{String: "/path?foo=a&foo=b&bar=c&bar=d&baz=e&hash=hashed"})
-	if out.String != "/path?baz=e&foo=REDACTED&foo=REDACTED&hash=e3b0c442" {
+	if out.String != "/path?baz=e&foo=REDACTED&foo=REDACTED&hash=1a06df82" {
 		t.Fatalf("query parameters have not been filtered: %s", out.String)
 	}
 }
@@ -121,16 +121,16 @@ func TestQueryFilterMultiValue(t *testing.T) {
 	}
 
 	out := f.Filter(zapcore.Field{Interface: internal.LoggableStringArray{
-		"/path1?foo=a&foo=b&bar=c&bar=d&baz=e&hash=hashed",
-		"/path2?foo=c&foo=d&bar=e&bar=f&baz=g&hash=hashed",
+		"/path1?foo=a&foo=b&bar=c&bar=d&baz=e&hash=alpha",
+		"/path2?foo=c&foo=d&bar=e&bar=f&baz=g&hash=beta",
 	}})
 	arr, ok := out.Interface.(internal.LoggableStringArray)
 	if !ok {
 		t.Fatalf("field is wrong type: %T", out.Interface)
 	}
 
-	expected1 := "/path1?baz=e&foo=REDACTED&foo=REDACTED&hash=e3b0c442"
-	expected2 := "/path2?baz=g&foo=REDACTED&foo=REDACTED&hash=e3b0c442"
+	expected1 := "/path1?baz=e&foo=REDACTED&foo=REDACTED&hash=8ed3f6ad"
+	expected2 := "/path2?baz=g&foo=REDACTED&foo=REDACTED&hash=f44e64e7"
 	if arr[0] != expected1 {
 		t.Fatalf("query parameters in entry 0 have not been filtered correctly: got %s, expected %s", arr[0], expected1)
 	}

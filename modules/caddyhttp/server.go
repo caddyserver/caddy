@@ -825,8 +825,9 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 			TLSConfig:      tlsCfg,
 			MaxHeaderBytes: s.MaxHeaderBytes,
 			QUICConfig: &quic.Config{
-				Versions: []quic.Version{quic.Version1, quic.Version2},
-				Tracer:   h3qlog.DefaultConnectionTracer,
+				Versions:          []quic.Version{quic.Version1, quic.Version2},
+				InitialPacketSize: 1200,
+				Tracer:            h3qlog.DefaultConnectionTracer,
 			},
 			IdleTimeout: time.Duration(s.IdleTimeout),
 		}
