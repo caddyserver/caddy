@@ -20,6 +20,92 @@ func BenchmarkOpenResponseWriter(b *testing.B) {
 	}
 }
 
+// discardResponseWriter is a minimal http.ResponseWriter used to isolate
+// WriteHeader's own cost from a real transport.
+type discardResponseWriter struct {
+	header http.Header
+}
+
+func (w *discardResponseWriter) Header() http.Header         { return w.header }
+func (w *discardResponseWriter) Write(p []byte) (int, error) { return len(p), nil }
+func (w *discardResponseWriter) WriteHeader(int)             {}
+
+// BenchmarkResponseWriterWriteHeader covers the branches inside WriteHeader:
+// the plain/common case, the SSE Content-Type check (both when it doesn't
+// match and when it does and rw.init() runs), CONNECT 2xx, informational
+// (1xx), and 304 Not Modified (Vary bookkeeping).
+func BenchmarkResponseWriterWriteHeader(b *testing.B) {
+	benchCases := []struct {
+		name        string
+		encoding    string
+		isConnect   bool
+		status      int
+		contentType string
+	}{
+		{name: "plain", encoding: "test", status: http.StatusOK},
+		{name: "html", encoding: "test", status: http.StatusOK, contentType: "text/html; charset=utf-8"},
+		{name: "event-stream", encoding: "gzip", status: http.StatusOK, contentType: "text/event-stream"},
+		{name: "connect", encoding: "test", isConnect: true, status: http.StatusOK},
+		{name: "informational", encoding: "test", status: http.StatusEarlyHints},
+		{name: "not-modified", encoding: "test", status: http.StatusNotModified},
+	}
+
+	for _, bc := range benchCases {
+		b.Run(bc.name, func(b *testing.B) {
+			enc := new(Encode)
+			if bc.name == "event-stream" {
+				enc.writerPools = map[string]*sync.Pool{
+					"gzip": {New: func() any { return mockEncoder{} }},
+				}
+				ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+				defer cancel()
+				if err := enc.Provision(ctx); err != nil {
+					b.Fatalf("Provision() error = %v", err)
+				}
+			}
+
+			w := &discardResponseWriter{header: make(http.Header)}
+			rw := enc.openResponseWriter(bc.encoding, w, bc.isConnect)
+
+			for b.Loop() {
+				for k := range rw.Header() {
+					delete(rw.Header(), k)
+				}
+				if bc.contentType != "" {
+					rw.Header().Set("Content-Type", bc.contentType)
+				}
+				rw.wroteHeader = false
+				rw.statusCode = 0
+				rw.disabled = false
+				rw.w = nil
+				rw.WriteHeader(bc.status)
+			}
+		})
+	}
+}
+
+func TestIsSSE(t *testing.T) {
+	for _, tc := range []struct {
+		contentType string
+		want        bool
+	}{
+		{"", false},
+		{"text/plain", false},
+		{"text/event-stream", true},
+		{"Text/Event-Stream", true},
+		{"text/event-stream; charset=utf-8", true},
+		{"text/event-stream ; charset=utf-8", true},
+		{"text/event-stream  ", true},
+		{"text/event-streamfoo", false},
+		{"text/event-stream nonsense", false},
+		{"text/event-stream x; charset=utf-8", false},
+	} {
+		if got := isSSE(tc.contentType); got != tc.want {
+			t.Errorf("isSSE(%q) = %v, want %v", tc.contentType, got, tc.want)
+		}
+	}
+}
+
 func TestPreferOrder(t *testing.T) {
 	testCases := []struct {
 		name     string
