@@ -504,17 +504,18 @@ func AcceptedEncodings(r *http.Request, preferredOrder []string) []string {
 	}
 	websocketKey := r.Header.Get("Sec-Websocket-Key")
 
-	prefs := []encodingPreference{}
+	prefs := make([]encodingPreference, 0, strings.Count(acceptEncHeader, ",")+1)
 
 	for accepted := range strings.SplitSeq(acceptEncHeader, ",") {
-		parts := strings.Split(accepted, ";")
-		encName := strings.ToLower(strings.TrimSpace(parts[0]))
+		encName, params, found := strings.Cut(accepted, ";")
+		encName = strings.ToLower(strings.TrimSpace(encName))
 
 		// determine q-factor
 		qFactor := 1.0
-		if len(parts) > 1 {
-			qFactorStr := strings.ToLower(strings.TrimSpace(parts[1]))
-			if strings.HasPrefix(qFactorStr, "q=") {
+		if found {
+			qFactorStr, _, _ := strings.Cut(params, ";")
+			qFactorStr = strings.TrimSpace(qFactorStr)
+			if len(qFactorStr) >= 2 && strings.EqualFold(qFactorStr[:2], "q=") {
 				if qFactorFloat, err := strconv.ParseFloat(qFactorStr[2:], 32); err == nil {
 					if qFactorFloat >= 0 && qFactorFloat <= 1 {
 						qFactor = qFactorFloat
