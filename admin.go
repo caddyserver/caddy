@@ -735,15 +735,20 @@ func (remote RemoteAdmin) enforceAccessControls(r *http.Request) error {
 }
 
 func adminPathAllowed(reqPath, allowedPath string) bool {
+	reqPathHadTrailingSlash := strings.HasSuffix(reqPath, "/")
 	reqPath = path.Clean(reqPath)
 	if allowedPath == "" {
 		return true
 	}
+	allowedPathHadTrailingSlash := allowedPath != "/" && strings.HasSuffix(allowedPath, "/")
 	allowedPath = path.Clean(allowedPath)
 	if allowedPath == "/" {
 		return true
 	}
-	return reqPath == allowedPath || strings.HasPrefix(reqPath, allowedPath+"/")
+	if reqPath == allowedPath {
+		return !allowedPathHadTrailingSlash || reqPathHadTrailingSlash
+	}
+	return strings.HasPrefix(reqPath, allowedPath+"/")
 }
 
 func stopAdminServer(srv *http.Server) error {

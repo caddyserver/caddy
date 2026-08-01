@@ -685,6 +685,18 @@ func TestRemoteAdminAccessControlPathSegmentMatching(t *testing.T) {
 			wantErr:     false,
 		},
 		{
+			name:        "trailing slash scope excludes exact path without slash",
+			allowedPath: "/pki/ca/prod/",
+			requestPath: "/pki/ca/prod",
+			wantErr:     true,
+		},
+		{
+			name:        "trailing slash scope includes exact path with slash",
+			allowedPath: "/pki/ca/prod/",
+			requestPath: "/pki/ca/prod/",
+			wantErr:     false,
+		},
+		{
 			name:        "sibling with shared prefix",
 			allowedPath: "/pki/ca/prod",
 			requestPath: "/pki/ca/prod-backup",
@@ -703,8 +715,20 @@ func TestRemoteAdminAccessControlPathSegmentMatching(t *testing.T) {
 			wantErr:     false,
 		},
 		{
+			name:        "empty path preserves allow all",
+			allowedPath: "",
+			requestPath: "/pki/ca/prod",
+			wantErr:     false,
+		},
+		{
 			name:        "dot-dot traversal out of scope",
 			allowedPath: "/pki/ca/prod",
+			requestPath: "/pki/ca/prod/../../../../load",
+			wantErr:     true,
+		},
+		{
+			name:        "dot-dot traversal out of trailing slash scope",
+			allowedPath: "/pki/ca/prod/",
 			requestPath: "/pki/ca/prod/../../../../load",
 			wantErr:     true,
 		},
