@@ -870,7 +870,7 @@ vq+SH04xKhtFudVBAQ==`
 			wantErr: true,
 		},
 		{
-			name: "root path with single trailing slash (//)",
+			name: "non-canonical root path with trailing slash",
 			cfg: &Config{
 				Admin: &AdminConfig{
 					Identity: &IdentityConfig{},
@@ -880,6 +880,24 @@ vq+SH04xKhtFudVBAQ==`
 							{
 								PublicKeys:  []string{testCert},
 								Permissions: []AdminPermissions{{Methods: []string{"GET"}, Paths: []string{"//"}}},
+							},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "canonical subpath with trailing slash",
+			cfg: &Config{
+				Admin: &AdminConfig{
+					Identity: &IdentityConfig{},
+					Remote: &RemoteAdmin{
+						Listen: "localhost:2021",
+						AccessControl: []*AdminAccess{
+							{
+								PublicKeys:  []string{testCert},
+								Permissions: []AdminPermissions{{Methods: []string{"GET"}, Paths: []string{"/foo/"}}},
 							},
 						},
 					},

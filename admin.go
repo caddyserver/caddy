@@ -560,7 +560,8 @@ func replaceRemoteAdminServer(ctx Context, cfg *Config) error {
 					continue
 				}
 				cleanPath := path.Clean(permPath)
-				if cleanPath != permPath && strings.TrimSuffix(permPath, "/") != cleanPath {
+				hasCanonicalTrailingSlash := cleanPath != "/" && strings.TrimSuffix(permPath, "/") == cleanPath
+				if cleanPath != permPath && !hasCanonicalTrailingSlash {
 					return fmt.Errorf("access control %d permission %d: path %q is not canonical (did you mean %q?)", i, j, permPath, cleanPath)
 				}
 			}
