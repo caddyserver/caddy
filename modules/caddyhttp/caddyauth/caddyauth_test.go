@@ -379,27 +379,60 @@ func TestSingleProviderGetsRealWriter(t *testing.T) {
 	}
 }
 
-// With MULTIPLE providers the buffered writer must still be type-assertable to
-// the capability interfaces (via http.ResponseController), so external
-// providers that check for Flusher/Hijacker do not change behavior.
+// With MULTIPLE providers the buffered writer must still satisfy every
+// capability interface the real writer satisfies, so external providers that
+// check for Flusher/Hijacker/Pusher/ReaderFrom do not change behavior. Both
+// access paths are checked: a plain type assertion, which is what most
+// existing providers do, and http.ResponseController.
 func TestBufferedWriterPreservesCapabilities(t *testing.T) {
-	var canFlush, canHijack bool
+	var (
+		ran                                                           bool
+		assertFlusher, assertHijacker, assertPusher, assertReaderFrom bool
+		ctrlFlush, ctrlHijack                                         bool
+	)
 	probe := writingAuthenticator{write: func(w http.ResponseWriter) {
+		ran = true
+		flusher, ok := w.(http.Flusher)
+		assertFlusher = ok
+		if ok {
+			flusher.Flush() // must be suppressed, not forwarded
+		}
+		_, assertHijacker = w.(http.Hijacker)
+		_, assertPusher = w.(http.Pusher)
+		_, assertReaderFrom = w.(io.ReaderFrom)
+
 		ctrl := http.NewResponseController(w)
-		canFlush = ctrl.Flush() == nil // FlushError suppressed → nil while buffering
+		ctrlFlush = ctrl.Flush() == nil // FlushError suppressed → nil while buffering
 		_, _, herr := ctrl.Hijack()
-		canHijack = herr == nil
+		ctrlHijack = herr == nil
 	}}
-	succeeder := writingAuthenticator{authed: true}
+	// Neither provider authenticates: providers are iterated from a map, so a
+	// succeeding one could break out of the loop before the probe ever runs.
+	// Two non-authenticating providers still enable isolation (len > 1) and
+	// guarantee the probe is exercised on every run.
+	other := writingAuthenticator{}
 	cw := &capabilityWriter{ResponseWriter: httptest.NewRecorder()}
-	a := Authentication{Providers: map[string]Authenticator{"probe": probe, "succeed": succeeder}, logger: zap.NewNop()}
+	a := Authentication{Providers: map[string]Authenticator{"probe": probe, "other": other}, logger: zap.NewNop()}
 	req, _ := newRequestWithReplacer()
 	_ = a.ServeHTTP(cw, req, caddyhttp.HandlerFunc(func(http.ResponseWriter, *http.Request) error { return nil }))
-	if !canFlush {
-		t.Error("buffered writer is not Flushable via ResponseController")
+
+	if !ran {
+		t.Fatal("probe provider never ran; the test asserts nothing")
 	}
-	if !canHijack {
-		t.Error("buffered writer is not Hijackable via ResponseController")
+	for _, tc := range []struct {
+		name string
+		got  bool
+	}{
+		{"w.(http.Flusher)", assertFlusher},
+		{"w.(http.Hijacker)", assertHijacker},
+		{"w.(http.Pusher)", assertPusher},
+		{"w.(io.ReaderFrom)", assertReaderFrom},
+		{"http.ResponseController.Flush", ctrlFlush},
+		{"http.ResponseController.Hijack", ctrlHijack},
+	} {
+		if !tc.got {
+			t.Errorf("%s failed on the buffered writer but succeeds on the real writer", tc.name)
+		}
 	}
 	// Flush during buffering must be suppressed — it must NOT reach the real writer.
 	if cw.flushed {

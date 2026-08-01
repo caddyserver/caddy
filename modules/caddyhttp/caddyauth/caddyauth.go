@@ -15,9 +15,12 @@
 package caddyauth
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"io"
+	"maps"
+	"net"
 	"net/http"
 
 	"go.uber.org/zap"
@@ -144,9 +147,7 @@ func (a Authentication) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		// set only headers (like basic auth) still returns 401, not 200.
 		if isolate {
 			if replay := pickReplay(failed); replay != nil {
-				for field, vals := range replay.header {
-					w.Header()[field] = vals
-				}
+				maps.Copy(w.Header(), replay.header)
 				if replay.statusCode >= 300 && replay.statusCode < 400 {
 					w.WriteHeader(replay.statusCode)
 					_, _ = w.Write(replay.buf.Bytes())
@@ -163,9 +164,7 @@ func (a Authentication) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	// authenticated and continues down the handler chain, which produces the
 	// actual response. (A single provider already wrote its headers directly.)
 	if winner != nil {
-		for field, vals := range winner.header {
-			w.Header()[field] = vals
-		}
+		maps.Copy(w.Header(), winner.header)
 	}
 
 	setAuthUserPlaceholders(repl, "http.auth.user", user)
@@ -202,13 +201,17 @@ const maxBufferedAuthResponse = 1 << 20 // 1 MiB
 // bufferedResponseWriter captures a single provider's response — headers,
 // status, and a size-capped body — so it can be discarded or replayed once
 // the outcome of the whole provider set is known (only used when more than
-// one provider is configured). It embeds caddyhttp.ResponseWriterWrapper so
-// the underlying writer's capabilities (Pusher/ReaderFrom, and Flusher/
-// Hijacker via http.ResponseController) remain type-assertable; body writes,
-// however, are captured rather than streamed, and Flush is suppressed while
-// buffering. A provider that hijacks the connection mid-authentication
-// escapes to the real writer (isolation cannot apply once hijacked); auth
-// providers are not expected to stream or hijack during Authenticate.
+// one provider is configured).
+//
+// It implements every capability interface a provider may hold on the real
+// writer, so both plain type assertions (w.(http.Flusher)) and
+// http.ResponseController keep working exactly as they did before isolation:
+// Pusher and ReaderFrom come from the embedded caddyhttp.ResponseWriterWrapper,
+// Hijacker and Flusher are declared below. Body writes are captured rather
+// than streamed, and flushing is suppressed while buffering. A provider that
+// hijacks the connection mid-authentication escapes to the real writer
+// (isolation cannot apply once hijacked); auth providers are not expected to
+// stream or hijack during Authenticate.
 type bufferedResponseWriter struct {
 	*caddyhttp.ResponseWriterWrapper
 	header     http.Header
@@ -265,10 +268,26 @@ func (bw *bufferedResponseWriter) ReadFrom(r io.Reader) (int64, error) {
 	return n + extra, err
 }
 
-// FlushError suppresses flushing while a provider's response is buffered, so a
-// provider that flushes during Authenticate cannot prematurely commit the
-// response to the client (http.ResponseController.Flush uses this).
+// Flush implements http.Flusher. Flushing is suppressed while a provider's
+// response is buffered, so a provider that flushes during Authenticate cannot
+// prematurely commit the response to the client. It is declared explicitly
+// (rather than left to FlushError) so that providers doing a plain
+// w.(http.Flusher) assertion still find one, as they do on the real writer.
+func (bw *bufferedResponseWriter) Flush() {}
+
+// FlushError is the same suppression for http.ResponseController.Flush, which
+// prefers FlushError over Flush. See https://github.com/caddyserver/caddy/issues/6144.
 func (bw *bufferedResponseWriter) FlushError() error { return nil }
+
+// Hijack implements http.Hijacker by delegating to the real writer: once a
+// provider takes over the connection there is no response left to isolate.
+// This mirrors responseRecorder.Hijack in the caddyhttp package. The
+// controller is built on the embedded wrapper, whose Unwrap reaches the real
+// writer, and returns http.ErrNotSupported if that writer cannot hijack.
+func (bw *bufferedResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	//nolint:bodyclose
+	return http.NewResponseController(bw.ResponseWriterWrapper).Hijack()
+}
 
 func setAuthUserPlaceholders(repl *caddy.Replacer, namespace string, user User) {
 	repl.Set(namespace+".id", user.ID)
