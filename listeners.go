@@ -361,7 +361,7 @@ func ParseNetworkAddressWithDefaults(addr, defaultNetwork string, defaultPort ui
 		if end < start {
 			return NetworkAddress{}, fmt.Errorf("end port must not be less than start port")
 		}
-		if (end - start) > maxPortSpan {
+		if (end-start)+1 > maxPortSpan {
 			return NetworkAddress{}, fmt.Errorf("port range exceeds %d ports", maxPortSpan)
 		}
 	}

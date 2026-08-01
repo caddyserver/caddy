@@ -978,7 +978,9 @@ func (h adminHandler) originAllowed(origin *url.URL) bool {
 		if allowedOrigin.Scheme != "" && origin.Scheme != allowedOrigin.Scheme {
 			continue
 		}
-		if origin.Host == allowedOrigin.Host {
+		// Host comparison is case-insensitive per RFC 3986 §3.2.2; url.Parse
+		// does not normalize host case, so fold it here.
+		if strings.EqualFold(origin.Host, allowedOrigin.Host) {
 			return true
 		}
 	}
