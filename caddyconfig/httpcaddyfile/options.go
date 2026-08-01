@@ -596,8 +596,11 @@ func parseOptDNS(d *caddyfile.Dispenser, _ any) (any, error) {
 }
 
 func parseOptECH(d *caddyfile.Dispenser, _ any) (any, error) {
-	d.Next() // consume option name
+	return parseECH(d)
+}
 
+func parseECH(d *caddyfile.Dispenser) (*caddytls.ECH, error) {
+	d.Next() // consume option name
 	ech := new(caddytls.ECH)
 
 	publicNames := d.RemainingArgs()
