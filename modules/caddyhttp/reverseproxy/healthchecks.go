@@ -16,6 +16,9 @@ package reverseproxy
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -225,6 +228,33 @@ func (a *ActiveHealthChecks) Provision(ctx caddy.Context, h *Handler) error {
 // the minimum config necessary to be enabled.
 func (a *ActiveHealthChecks) IsEnabled() bool {
 	return a.Path != "" || a.URI != "" || a.Port != 0
+}
+
+// hostKeySuffix returns a stable fingerprint of the active health check
+// configuration. Active health checks with different configurations
+// (e.g. different URIs or headers) against the same dial address are
+// distinct health targets, so this suffix is appended to the host pool
+// key to keep their health state separate. The suffix is strictly
+// internal to pool identity: anything user-visible (metrics labels,
+// admin API output) must report the plain address — see hostKeyAddress.
+func (a *ActiveHealthChecks) hostKeySuffix() string {
+	cfg, err := json.Marshal(a)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(cfg)
+	return "#" + hex.EncodeToString(sum[:8])
+}
+
+// hostKeyAddress returns the dial address part of a host pool key,
+// stripping the internal health-check fingerprint appended by
+// hostKeySuffix, if any. Dial addresses cannot contain '#', so the
+// first '#' always begins the fingerprint.
+func hostKeyAddress(key string) string {
+	if i := strings.IndexByte(key, '#'); i >= 0 {
+		return key[:i]
+	}
+	return key
 }
 
 // PassiveHealthChecks holds configuration related to passive
