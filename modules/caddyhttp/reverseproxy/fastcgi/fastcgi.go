@@ -366,10 +366,14 @@ func (t Transport) buildEnv(r *http.Request) (envVars, error) {
 	}
 
 	if localAddr, ok := r.Context().Value(http.LocalAddrContextKey).(net.Addr); ok {
-		if localHost, _, err := net.SplitHostPort(localAddr.String()); err == nil {
-			env["SERVER_ADDR"] = localHost
+		var ipStr string
+		if host, _, err := net.SplitHostPort(localAddr.String()); err == nil {
+			ipStr = host
 		} else {
-			env["SERVER_ADDR"] = localAddr.String()
+			ipStr = localAddr.String()
+		}
+		if ip := net.ParseIP(ipStr); ip != nil {
+			env["SERVER_ADDR"] = ipStr
 		}
 	}
 

@@ -361,25 +361,73 @@ func TestSplitPosSecurityRegressionUnicodeBypass(t *testing.T) {
 }
 
 func TestBuildEnvServerAddr(t *testing.T) {
-	tr := Transport{
-		Root: "/var/www",
+	testCases := []struct {
+		name         string
+		localAddr    net.Addr
+		envVars      map[string]string
+		expectedAddr string
+		expectExists bool
+	}{
+		{
+			name:         "IPv4 TCP listener",
+			localAddr:    &net.TCPAddr{IP: net.ParseIP("10.0.0.12"), Port: 80},
+			expectedAddr: "10.0.0.12",
+			expectExists: true,
+		},
+		{
+			name:         "IPv6 TCP listener",
+			localAddr:    &net.TCPAddr{IP: net.ParseIP("2001:db8::1"), Port: 443},
+			expectedAddr: "2001:db8::1",
+			expectExists: true,
+		},
+		{
+			name:         "Missing local address context",
+			localAddr:    nil,
+			expectExists: false,
+		},
+		{
+			name:         "Unix listener",
+			localAddr:    &net.UnixAddr{Name: "/var/run/caddy.sock", Net: "unix"},
+			expectExists: false,
+		},
+		{
+			name:         "Explicitly configured SERVER_ADDR override",
+			localAddr:    &net.TCPAddr{IP: net.ParseIP("10.0.0.12"), Port: 80},
+			envVars:      map[string]string{"SERVER_ADDR": "192.168.1.100"},
+			expectedAddr: "192.168.1.100",
+			expectExists: true,
+		},
 	}
-	err := tr.Provision(caddy.Context{})
-	require.NoError(t, err)
 
-	req, err := http.NewRequest(http.MethodGet, "http://localhost/index.php", nil)
-	require.NoError(t, err)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tr := Transport{
+				Root:    "/var/www",
+				EnvVars: tc.envVars,
+			}
+			err := tr.Provision(caddy.Context{})
+			require.NoError(t, err)
 
-	req = req.WithContext(context.WithValue(req.Context(), caddyhttp.OriginalRequestCtxKey, *req))
-	repl := caddy.NewReplacer()
-	req = req.WithContext(context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl))
+			req, err := http.NewRequest(http.MethodGet, "http://localhost/index.php", nil)
+			require.NoError(t, err)
 
-	localAddr := &net.TCPAddr{IP: net.ParseIP("10.0.0.12"), Port: 80}
-	req = req.WithContext(context.WithValue(req.Context(), http.LocalAddrContextKey, localAddr))
+			req = req.WithContext(context.WithValue(req.Context(), caddyhttp.OriginalRequestCtxKey, *req))
+			repl := caddy.NewReplacer()
+			req = req.WithContext(context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl))
 
-	env, err := tr.buildEnv(req)
-	require.NoError(t, err)
+			if tc.localAddr != nil {
+				req = req.WithContext(context.WithValue(req.Context(), http.LocalAddrContextKey, tc.localAddr))
+			}
 
-	assert.Equal(t, "10.0.0.12", env["SERVER_ADDR"])
+			env, err := tr.buildEnv(req)
+			require.NoError(t, err)
+
+			val, exists := env["SERVER_ADDR"]
+			assert.Equal(t, tc.expectExists, exists)
+			if tc.expectExists {
+				assert.Equal(t, tc.expectedAddr, val)
+			}
+		})
+	}
 }
 
