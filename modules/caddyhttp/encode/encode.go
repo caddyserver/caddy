@@ -34,6 +34,8 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
+const sseMediaType = "text/event-stream"
+
 func init() {
 	caddy.RegisterModule(Encode{})
 }
@@ -262,12 +264,14 @@ func (rw *responseWriter) WriteHeader(status int) {
 		rw.disabled = true // partial representations must not be dynamically re-encoded
 	}
 
+	h := rw.Header()
+
 	// See #5849 and RFC 9110 section 15.4.5 (https://www.rfc-editor.org/rfc/rfc9110.html#section-15.4.5) - 304
 	// Not Modified must have certain headers set as if it was a 200 response, and according to the issue
 	// we would miss the Vary header in this case when compression was also enabled; note that we set this
 	// header in the responseWriter.init() method but that is only called if we are writing a response body
-	if status == http.StatusNotModified && !hasVaryValue(rw.Header(), "Accept-Encoding") {
-		rw.Header().Add("Vary", "Accept-Encoding")
+	if status == http.StatusNotModified && !hasVaryValue(h, "Accept-Encoding") {
+		h.Add("Vary", "Accept-Encoding")
 	}
 
 	// write status immediately if status is 2xx and the request is CONNECT
@@ -283,6 +287,29 @@ func (rw *responseWriter) WriteHeader(status int) {
 	if 100 <= status && status <= 199 {
 		rw.ResponseWriter.WriteHeader(status)
 	}
+
+	// write header immediately for server-sent events responses, since the
+	// body may not be written for a while and the client needs the headers
+	// to establish the event stream; see #6293
+	if !rw.wroteHeader && (status < 100 || status > 199) && isSSE(h.Get("Content-Type")) {
+		rw.init()
+		rw.ResponseWriter.WriteHeader(status)
+		rw.wroteHeader = true
+	}
+}
+
+func isSSE(contentType string) bool {
+	if len(contentType) < len(sseMediaType) || !strings.EqualFold(contentType[:len(sseMediaType)], sseMediaType) {
+		return false
+	}
+
+	// After the media type, allow only optional whitespace followed by the
+	// end of the value or a parameter separator, so a longer type such as
+	// "text/event-streamfoo" or garbage like "text/event-stream nonsense"
+	// does not match. TrimLeft on the tail does not allocate.
+	rest := strings.TrimLeft(contentType[len(sseMediaType):], " \t")
+
+	return rest == "" || rest[0] == ';'
 }
 
 // Match determines, if encoding should be done based on the ResponseMatcher.
@@ -499,22 +526,23 @@ func hasVaryValue(hdr http.Header, target string) bool {
 // http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html.
 func AcceptedEncodings(r *http.Request, preferredOrder []string) []string {
 	acceptEncHeader := r.Header.Get("Accept-Encoding")
-	websocketKey := r.Header.Get("Sec-WebSocket-Key")
 	if acceptEncHeader == "" {
 		return []string{}
 	}
+	websocketKey := r.Header.Get("Sec-Websocket-Key")
 
-	prefs := []encodingPreference{}
+	prefs := make([]encodingPreference, 0, strings.Count(acceptEncHeader, ",")+1)
 
 	for accepted := range strings.SplitSeq(acceptEncHeader, ",") {
-		parts := strings.Split(accepted, ";")
-		encName := strings.ToLower(strings.TrimSpace(parts[0]))
+		encName, params, found := strings.Cut(accepted, ";")
+		encName = strings.ToLower(strings.TrimSpace(encName))
 
 		// determine q-factor
 		qFactor := 1.0
-		if len(parts) > 1 {
-			qFactorStr := strings.ToLower(strings.TrimSpace(parts[1]))
-			if strings.HasPrefix(qFactorStr, "q=") {
+		if found {
+			qFactorStr, _, _ := strings.Cut(params, ";")
+			qFactorStr = strings.TrimSpace(qFactorStr)
+			if len(qFactorStr) >= 2 && strings.EqualFold(qFactorStr[:2], "q=") {
 				if qFactorFloat, err := strconv.ParseFloat(qFactorStr[2:], 32); err == nil {
 					if qFactorFloat >= 0 && qFactorFloat <= 1 {
 						qFactor = qFactorFloat
