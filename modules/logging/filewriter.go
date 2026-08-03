@@ -232,11 +232,13 @@ func (fw FileWriter) OpenWriter() (io.WriteCloser, error) {
 	// Ensure already existing files have the right mode, since OpenFile will not set the mode in such case.
 	if configuredMode := os.FileMode(fw.Mode); configuredMode != 0 {
 		if err != nil {
+			file.Close()
 			return nil, fmt.Errorf("unable to stat log file to see if we need to set permissions: %v", err)
 		}
 		// only chmod if the configured mode is different
 		if info.Mode()&os.ModePerm != configuredMode&os.ModePerm {
 			if err = os.Chmod(fw.Filename, configuredMode); err != nil {
+				file.Close()
 				return nil, err
 			}
 		}
