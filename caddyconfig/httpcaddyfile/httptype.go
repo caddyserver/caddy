@@ -25,6 +25,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/caddyserver/certmagic"
 	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
@@ -719,6 +720,7 @@ func (st *ServerType) serversFromPairings(
 		})
 
 		var hasCatchAllTLSConnPolicy, addressQualifiesForTLS bool
+		var emptyConnPolicies caddytls.ConnectionPolicies
 		autoHTTPSWillAddConnPolicy := srv.AutoHTTPS == nil || !srv.AutoHTTPS.Disabled
 
 		// if needed, the ServerLogConfig is initialized beforehand so
@@ -824,8 +826,24 @@ func (st *ServerType) serversFromPairings(
 					if !cp.SettingsEmpty() || mapContains(forceAutomatedNames, hosts) {
 						srv.TLSConnPolicies = append(srv.TLSConnPolicies, cp)
 						hasCatchAllTLSConnPolicy = len(hosts) == 0
+					} else if len(hosts) > 0 {
+						emptyConnPolicies = append(emptyConnPolicies, cp)
 					}
 				}
+			} else if specificHosts := slices.DeleteFunc(slices.Clone(hosts),
+				func(h string) bool { return h == "" || strings.Contains(h, "*") },
+			); len(specificHosts) > 0 {
+				// site blocks with no TLS connection policy of their own may
+				// still need an empty policy hoisted above a wildcard policy
+				// that requires client authentication, or that requirement
+				// would apply to their more specific hostnames too - see the
+				// hoisting loop below and issue #7860
+				slices.Sort(specificHosts)
+				emptyConnPolicies = append(emptyConnPolicies, &caddytls.ConnectionPolicy{
+					MatchersRaw: caddy.ModuleMap{
+						"sni": caddyconfig.JSON(specificHosts, warnings),
+					},
+				})
 			}
 
 			for _, addr := range sblock.parsedKeys {
@@ -988,6 +1006,55 @@ func (st *ServerType) serversFromPairings(
 		err := detectConflictingSchemes(srv, p.serverBlocks, options)
 		if err != nil {
 			return nil, err
+		}
+
+		// an empty connection policy is still needed for hostnames whose
+		// site blocks configure no TLS settings of their own, if a policy
+		// matching a wildcard hostname would otherwise impose CLIENT
+		// AUTHENTICATION on them; hoist the empty policy above the wildcard
+		// one so those hostnames are shielded from the client-auth
+		// requirement. Deliberately scoped to client auth: other wildcard
+		// policy settings (e.g. certificate selection) are ones the covered
+		// hostname generally WANTS to inherit - see issue #7860
+		for _, ecp := range emptyConnPolicies {
+			rawSNI, ok := ecp.MatchersRaw["sni"]
+			if !ok {
+				continue // no SNI matcher to reason about
+			}
+			var hosts caddytls.MatchServerName
+			if err := json.Unmarshal(rawSNI, &hosts); err != nil {
+				// an sni matcher that doesn't decode is unexpected; don't
+				// silently skip the shielding this policy may have needed
+				*warnings = append(*warnings, caddyconfig.Warning{
+					Message: fmt.Sprintf("decoding sni matcher while checking wildcard coverage: %v", err),
+				})
+				continue
+			}
+			for i, cp := range srv.TLSConnPolicies {
+				if cp.ClientAuthentication == nil {
+					continue
+				}
+				cpSNI, ok := cp.MatchersRaw["sni"]
+				if !ok {
+					continue
+				}
+				var sni caddytls.MatchServerName
+				if err := json.Unmarshal(cpSNI, &sni); err != nil {
+					*warnings = append(*warnings, caddyconfig.Warning{
+						Message: fmt.Sprintf("decoding sni matcher of existing connection policy while checking wildcard coverage: %v", err),
+					})
+					continue
+				}
+				coveredByWildcard := slices.ContainsFunc(hosts, func(host string) bool {
+					return slices.ContainsFunc(sni, func(name string) bool {
+						return strings.Contains(name, "*") && certmagic.MatchWildcard(host, name)
+					})
+				})
+				if coveredByWildcard {
+					srv.TLSConnPolicies = slices.Insert(srv.TLSConnPolicies, i, ecp)
+					break
+				}
+			}
 		}
 
 		// a catch-all TLS conn policy is necessary to ensure TLS can
