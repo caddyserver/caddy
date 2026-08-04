@@ -251,10 +251,8 @@ func (a *ActiveHealthChecks) hostKeySuffix() string {
 // hostKeySuffix, if any. Dial addresses cannot contain '#', so the
 // first '#' always begins the fingerprint.
 func hostKeyAddress(key string) string {
-	if i := strings.IndexByte(key, '#'); i >= 0 {
-		return key[:i]
-	}
-	return key
+	address, _, _ := strings.Cut(key, "#")
+	return address
 }
 
 // PassiveHealthChecks holds configuration related to passive
