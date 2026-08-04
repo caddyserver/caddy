@@ -250,7 +250,7 @@ func (c *TemplateContext) executeTemplateInBuffer(tplName string, buf *bytes.Buf
 	return c.tpl.Execute(buf, c)
 }
 
-func (c TemplateContext) funcPlaceholder(name string) string {
+func (c TemplateContext) funcPlaceholder(name string) (string, error) {
 	repl := c.Req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	// For safety, we don't want to allow the file placeholder in
@@ -258,8 +258,11 @@ func (c TemplateContext) funcPlaceholder(name string) string {
 	// if the template contents were not trusted.
 	repl = repl.WithoutFile()
 
-	value, _ := repl.GetString(name)
-	return value
+	value, _ := repl.Get(name)
+	if err, ok := value.(error); ok {
+		return "", err
+	}
+	return caddy.ToString(value), nil
 }
 
 func (TemplateContext) funcEnv(varName string) string {

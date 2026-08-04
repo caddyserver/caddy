@@ -198,7 +198,7 @@ func (m VarsMatcher) MatchWithError(r *http.Request) (bool, error) {
 		case fmt.Stringer:
 			varStr = vv.String()
 		case error:
-			varStr = vv.Error()
+			return false, vv
 		case nil:
 			varStr = ""
 		default:
@@ -335,7 +335,7 @@ func (m MatchVarsRE) MatchWithError(r *http.Request) (bool, error) {
 		case fmt.Stringer:
 			varStr = vv.String()
 		case error:
-			varStr = vv.Error()
+			return false, vv
 		case nil:
 			varStr = ""
 		default:
