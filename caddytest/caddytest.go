@@ -284,7 +284,7 @@ func validateTestPrerequisites(tc *Tester) error {
 		if _, err := fmt.Fprintf(f, initConfig, tc.config.AdminPort); err != nil {
 			return err
 		}
-
+		f.Close()
 		// start inprocess caddy server
 		os.Args = []string{"caddy", "run", "--config", f.Name(), "--adapter", "caddyfile"}
 		go func() {
