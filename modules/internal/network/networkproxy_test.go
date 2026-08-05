@@ -20,6 +20,7 @@ func TestProxyFromURLPlaceholderHostValidation(t *testing.T) {
 		name     string
 		url      string
 		hostRepl string
+		wantHost string
 		wantErr  bool
 	}{
 		{
@@ -35,15 +36,43 @@ func TestProxyFromURLPlaceholderHostValidation(t *testing.T) {
 			wantErr:  true,
 		},
 		{
+			// url.Parse puts the userinfo elsewhere, so Host is still just
+			// ":8080" here. The comment above the check doesn't name this
+			// form, but it is equally host-less and equally unusable.
+			name:     "userinfo but no host",
+			url:      "http://user:pass@{proxy.host}:8080",
+			hostRepl: "",
+			wantErr:  true,
+		},
+		{
 			name:     "host and port",
 			url:      "http://{proxy.host}:8080",
 			hostRepl: "proxy.example.com",
+			wantHost: "proxy.example.com",
 			wantErr:  false,
 		},
 		{
 			name:     "host without port",
 			url:      "http://{proxy.host}",
 			hostRepl: "proxy.example.com",
+			wantHost: "proxy.example.com",
+			wantErr:  false,
+		},
+		{
+			// Guards against a repair that splits Host on ":" instead of
+			// using Hostname(): an IPv6 literal is full of colons and must
+			// not be mistaken for a missing host.
+			name:     "IPv6 literal with port",
+			url:      "http://[{proxy.host}]:8080",
+			hostRepl: "::1",
+			wantHost: "::1",
+			wantErr:  false,
+		},
+		{
+			name:     "IPv6 literal without port",
+			url:      "http://[{proxy.host}]",
+			hostRepl: "2001:db8::1",
+			wantHost: "2001:db8::1",
 			wantErr:  false,
 		},
 	} {
@@ -77,9 +106,9 @@ func TestProxyFromURLPlaceholderHostValidation(t *testing.T) {
 			t.Errorf("Test %d (%s): expected a proxy URL for %q, got nil", i, tc.name, tc.url)
 			continue
 		}
-		if proxyURL.Hostname() != tc.hostRepl {
+		if proxyURL.Hostname() != tc.wantHost {
 			t.Errorf("Test %d (%s): expected host %q, got %q",
-				i, tc.name, tc.hostRepl, proxyURL.Hostname())
+				i, tc.name, tc.wantHost, proxyURL.Hostname())
 		}
 	}
 }
