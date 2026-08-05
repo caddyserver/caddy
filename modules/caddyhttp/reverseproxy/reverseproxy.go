@@ -692,6 +692,11 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 		}
 	}
 
+	// normalize websocket headers for compatibility with older servers
+	if upgradeType(r.Header) != "" {
+		normalizeWebsocketHeaders(r.Header)
+	}
+
 	// proxy the request to that upstream
 	proxyErr = h.reverseProxy(w, r, origReq, repl, dialInfo, next)
 	if proxyErr == nil {
@@ -840,7 +845,6 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	if reqUpgradeType != "" {
 		req.Header.Set("Connection", "Upgrade")
 		req.Header.Set("Upgrade", reqUpgradeType)
-		normalizeWebsocketHeaders(req.Header)
 	}
 
 	// Set up the PROXY protocol info
