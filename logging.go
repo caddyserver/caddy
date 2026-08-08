@@ -351,9 +351,15 @@ func (cl *BaseLog) provisionCommon(ctx Context, logging *Logging) error {
 		cl.writerOpener = StderrWriter{}
 	}
 	var err error
-	cl.writer, _, err = logging.openWriter(cl.writerOpener)
-	if err != nil {
-		return fmt.Errorf("opening log writer using %#v: %v", cl.writerOpener, err)
+	if ctx.cfg != nil && ctx.cfg.validateOnly && !IsWriterStandardStream(cl.writerOpener) {
+		// the config will never run, so don't create files
+		// or other side effects by opening the writer
+		cl.writer = notClosable{io.Discard}
+	} else {
+		cl.writer, _, err = logging.openWriter(cl.writerOpener)
+		if err != nil {
+			return fmt.Errorf("opening log writer using %#v: %v", cl.writerOpener, err)
+		}
 	}
 
 	// set up the log level

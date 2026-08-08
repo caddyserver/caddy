@@ -90,6 +90,11 @@ type Config struct {
 
 	cancelFunc context.CancelCauseFunc
 
+	// validateOnly indicates that the config is only being
+	// validated and will never be run, so provisioning should
+	// avoid side effects such as creating log files.
+	validateOnly bool
+
 	// fileSystems is a dict of fileSystems that will later be loaded from and added to.
 	fileSystems FileSystems
 }
@@ -744,6 +749,9 @@ func unsyncedStop(ctx Context) {
 // Validate loads, provisions, and validates
 // cfg, but does not start running it.
 func Validate(cfg *Config) error {
+	if cfg != nil {
+		cfg.validateOnly = true
+	}
 	_, err := run(cfg, false)
 	if err == nil {
 		cfg.cancelFunc(fmt.Errorf("validation complete")) // call Cleanup on all modules
