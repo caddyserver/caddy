@@ -179,6 +179,11 @@ type FileServer struct {
 
 	fsmap caddy.FileSystems
 
+	// set during provisioning: true when no Hide entry contains a
+	// placeholder, meaning the transformed hide list is constant and
+	// can be reused for every request instead of being rebuilt.
+	hideStatic bool
+
 	logger *zap.Logger
 }
 
@@ -209,9 +214,16 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 	}
 
 	// for hide paths that are static (i.e. no placeholders), we can transform them into
-	// absolute paths before the server starts for very slight performance improvement
+	// absolute paths before the server starts for very slight performance improvement; if
+	// every hide path is static, the fully transformed list is constant and can be reused
+	// for every request without rebuilding it (see transformHidePaths)
+	fsrv.hideStatic = true
 	for i, h := range fsrv.Hide {
-		if !strings.Contains(h, "{") && strings.Contains(h, separator) {
+		if strings.Contains(h, "{") {
+			fsrv.hideStatic = false
+			continue
+		}
+		if strings.Contains(h, separator) {
 			if abs, err := caddy.FastAbs(h); err == nil {
 				fsrv.Hide[i] = abs
 			}
@@ -664,6 +676,12 @@ func (fsrv *FileServer) mapDirOpenError(fileSystem fs.FS, originalErr error, nam
 // makes them absolute paths (if they contain a path separator), then returns a
 // new list of the transformed values.
 func (fsrv *FileServer) transformHidePaths(repl *caddy.Replacer) []string {
+	// when no hide path contains a placeholder, the list was already fully
+	// transformed during provisioning and is identical for every request,
+	// so we avoid re-allocating and re-resolving it here
+	if fsrv.hideStatic {
+		return fsrv.Hide
+	}
 	hide := make([]string, len(fsrv.Hide))
 	for i := range fsrv.Hide {
 		hide[i] = repl.ReplaceAll(fsrv.Hide[i], "")
