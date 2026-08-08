@@ -16,9 +16,11 @@ package caddytls
 
 import (
 	"encoding/json"
+	"slices"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/certmagic"
 )
 
 func TestAvoidDuplicateAutomation(t *testing.T) {
@@ -92,5 +94,67 @@ func TestAvoidDuplicateAutomation(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+func TestWildcardCoveredSubdomainKeepsExistingCert(t *testing.T) {
+	const subdomain = "covered.example.net"
+	const wildcard = "*.example.net"
+
+	tlsApp := &TLS{
+		Automation: &AutomationConfig{
+			Policies: []*AutomationPolicy{
+				{
+					IssuersRaw: []json.RawMessage{
+						[]byte(`{"module": "internal"}`),
+					},
+				},
+			},
+		},
+	}
+
+	var cfg caddy.Config
+	ctx, err := caddy.ProvisionContext(&cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tlsApp.Provision(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	// simulate subdomain already having a valid cert saved before any wildcard existed
+	ap := tlsApp.getAutomationPolicyForName(subdomain)
+	if err := ap.magic.ObtainCertSync(ctx.Context, subdomain); err != nil {
+		t.Fatalf("seeding certificate for %s: %v", subdomain, err)
+	}
+	issuerKey := ap.magic.Issuers[0].IssuerKey()
+
+	// simulate a fresh restart: cache is empty but the cert is still in storage
+	certCache.RemoveManaged([]certmagic.SubjectIssuer{{Subject: subdomain, IssuerKey: issuerKey}})
+	if cached := certCache.AllMatchingCertificates(subdomain); len(cached) != 0 {
+		t.Fatalf("test setup failed: expected no cached certificate for %s, got %d", subdomain, len(cached))
+	}
+
+	// a wildcard covering the subdomain is requested in the same batch, which
+	// used to make caddy skip the subdomain entirely without checking for an existing cert
+	err = tlsApp.Manage(map[string]struct{}{
+		subdomain: {},
+		wildcard:  {},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var foundSubdomainCert bool
+	for _, cert := range certCache.AllMatchingCertificates(subdomain) {
+		if slices.Contains(cert.Names, subdomain) {
+			foundSubdomainCert = true
+			break
+		}
+	}
+	if !foundSubdomainCert {
+		t.Errorf("expected existing certificate for %s specifically (not just a covering wildcard) "+
+			"to be loaded into the cache even though wildcard %s is also being managed",
+			subdomain, wildcard)
 	}
 }
