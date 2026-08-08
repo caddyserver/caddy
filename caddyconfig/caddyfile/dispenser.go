@@ -360,6 +360,15 @@ func (d *Dispenser) NewFromNextSegment() *Dispenser {
 // token until the end of the line or block that starts at
 // the end of the line.
 func (d *Dispenser) NextSegment() Segment {
+	segment, _ := d.NextSegmentWithConsumer(nil)
+	return segment
+}
+
+// Similar to the NextSegment(),
+// but running other functions to consume intermediate blocks.
+//
+//	consumer - Based on the value of d.Val(), determine whether to consume the energy, and return a consumed flag and an error.
+func (d *Dispenser) NextSegmentWithConsumer(consumer func(value string) (bool, error)) (Segment, error) {
 	tkns := Segment{d.Token()}
 	for d.NextArg() {
 		tkns = append(tkns, d.Token())
@@ -377,6 +386,18 @@ func (d *Dispenser) NextSegment() Segment {
 			d.Next()
 			openedBlock = true
 		}
+
+		// Since the boundaries are handled by the functions, NewDispenser is not needed here.
+		if consumer != nil {
+			ok, err := consumer(d.Val())
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				continue
+			}
+		}
+
 		tkns = append(tkns, d.Token())
 	}
 	if openedBlock {
@@ -387,7 +408,7 @@ func (d *Dispenser) NextSegment() Segment {
 		// next iteration of the enclosing loop will
 		// call Next() and consume it
 	}
-	return tkns
+	return tkns, nil
 }
 
 // Token returns the current token.

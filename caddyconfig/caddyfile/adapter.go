@@ -125,6 +125,14 @@ type ServerType interface {
 // type-asserted to the module's associated type for practical use
 // when setting up a config.
 func UnmarshalModule(d *Dispenser, moduleID string) (Unmarshaler, error) {
+	return UnmarshalModuleWithConsumer(d, moduleID, nil)
+}
+
+// Similar to UnmarshalModule(),
+// but running other functions consumes intermediate blocks during the execution of d.NextSegment().
+//
+//	consumer - Based on the value of d.Val(), determine whether to consume the energy, and return a consumed flag and an error.
+func UnmarshalModuleWithConsumer(d *Dispenser, moduleID string, consumer func(value string) (bool, error)) (Unmarshaler, error) {
 	mod, err := caddy.GetModule(moduleID)
 	if err != nil {
 		return nil, d.Errf("getting module named '%s': %v", moduleID, err)
@@ -134,7 +142,11 @@ func UnmarshalModule(d *Dispenser, moduleID string) (Unmarshaler, error) {
 	if !ok {
 		return nil, d.Errf("module %s is not a Caddyfile unmarshaler; is %T", mod.ID, inst)
 	}
-	err = unm.UnmarshalCaddyfile(d.NewFromNextSegment())
+	segment, err := d.NextSegmentWithConsumer(consumer)
+	if err != nil {
+		return nil, err
+	}
+	err = unm.UnmarshalCaddyfile(NewDispenser(segment))
 	if err != nil {
 		return nil, err
 	}
