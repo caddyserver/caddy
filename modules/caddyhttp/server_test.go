@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -13,10 +15,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/http3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 type writeFunc func(p []byte) (int, error)
@@ -1002,4 +1007,109 @@ func TestServer_DetermineTrustedProxy_MatchRightMostUntrustedFirst(t *testing.T)
 
 	assert.True(t, trusted)
 	assert.Equal(t, clientIP, "90.100.110.120")
+}
+
+// TestServer_BuildHTTP3ServerEnablesWebTransport asserts that with
+// EnableWebTransport=true the http3.Server advertises WebTransport in
+// its SETTINGS and wires the prerequisites webtransport.Server.Upgrade
+// relies on: DATAGRAM support, a non-nil ConnContext hook (used to stash
+// the underlying *quic.Conn for Upgrade to retrieve), and QUIC
+// stream-reset partial delivery.
+func TestServer_BuildHTTP3ServerEnablesWebTransport(t *testing.T) {
+	s := &Server{EnableWebTransport: true}
+	h3 := s.buildHTTP3Server(&tls.Config{})
+
+	assert.NotNil(t, h3, "expected non-nil http3.Server")
+	assert.True(t, h3.EnableDatagrams, "EnableDatagrams must be true for WebTransport DATAGRAMs")
+	assert.NotEmpty(t, h3.AdditionalSettings, "AdditionalSettings must advertise WebTransport enablement")
+	assert.NotNil(t, h3.ConnContext, "ConnContext must be set so webtransport.Server.Upgrade can retrieve the *quic.Conn")
+	assert.NotNil(t, h3.QUICConfig, "QUICConfig must be set")
+	assert.True(t, h3.QUICConfig.EnableStreamResetPartialDelivery, "EnableStreamResetPartialDelivery is required by webtransport-go")
+}
+
+// TestServer_BuildHTTP3ServerWithoutWebTransport asserts that with
+// EnableWebTransport=false (the default) the http3.Server does NOT
+// advertise WebTransport and does not enable the related QUIC/HTTP/3
+// features. This is the load-bearing regression guard: non-WT HTTP/3
+// deployments must pay zero cost for the WebTransport feature.
+func TestServer_BuildHTTP3ServerWithoutWebTransport(t *testing.T) {
+	s := &Server{}
+	h3 := s.buildHTTP3Server(&tls.Config{})
+
+	assert.NotNil(t, h3)
+	assert.False(t, h3.EnableDatagrams, "EnableDatagrams must be false when WebTransport is disabled")
+	assert.Empty(t, h3.AdditionalSettings, "AdditionalSettings must be empty when WebTransport is disabled")
+	assert.Nil(t, h3.ConnContext, "ConnContext must be nil when WebTransport is disabled")
+	assert.NotNil(t, h3.QUICConfig)
+	assert.False(t, h3.QUICConfig.EnableStreamResetPartialDelivery, "EnableStreamResetPartialDelivery must be false when WebTransport is disabled")
+}
+
+// TestServer_BuildHTTP3ServerAppliesHandlerAndTLS is a smoke test for the
+// non-WebTransport fields of the constructed http3.Server, guarding against a
+// refactor accidentally dropping them.
+func TestServer_BuildHTTP3ServerAppliesHandlerAndTLS(t *testing.T) {
+	s := &Server{MaxHeaderBytes: 4096}
+	tlsCfg := &tls.Config{}
+	h3 := s.buildHTTP3Server(tlsCfg)
+
+	assert.Same(t, s, h3.Handler, "http3.Server.Handler should be the caddyhttp.Server itself")
+	assert.Same(t, tlsCfg, h3.TLSConfig, "http3.Server.TLSConfig should be the config passed in")
+	assert.Equal(t, 4096, h3.MaxHeaderBytes)
+}
+
+// TestServer_BuildWebTransportServerWrapsHTTP3Server asserts that the
+// webtransport.Server wraps the correct http3.Server.
+func TestServer_BuildWebTransportServerWrapsHTTP3Server(t *testing.T) {
+	s := &Server{EnableWebTransport: true}
+	s.h3server = s.buildHTTP3Server(&tls.Config{})
+	wt := s.buildWebTransportServer()
+
+	assert.NotNil(t, wt, "expected non-nil webtransport.Server")
+	assert.Same(t, s.h3server, wt.H3, "webtransport.Server should wrap this server's http3.Server")
+}
+
+// TestServer_WebTransportServerNilUntilH3 asserts the accessor returns nil
+// when HTTP/3 has not been configured.
+func TestServer_WebTransportServerNilUntilH3(t *testing.T) {
+	s := &Server{}
+	assert.Nil(t, s.WebTransportServer(), "expected nil before HTTP/3 setup")
+}
+
+// stubQUICListenerWithoutWT implements http3.QUICListener and reports that
+// WebTransport is not supported. Accept returns immediately with an error so
+// that h3server.ServeListener exits promptly when the fallback path is taken.
+type stubQUICListenerWithoutWT struct{}
+
+func (stubQUICListenerWithoutWT) Accept(context.Context) (*quic.Conn, error) {
+	return nil, errors.New("stub: no connections")
+}
+
+func (stubQUICListenerWithoutWT) Addr() net.Addr {
+	return &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 9443}
+}
+
+func (stubQUICListenerWithoutWT) Close() error { return nil }
+
+func (stubQUICListenerWithoutWT) SupportsWebTransport() bool { return false }
+
+// TestServeH3AcceptLoopFallsBackWhenListenerLacksWebTransport verifies that
+// when EnableWebTransport is true but the QUIC listener was created without
+// DATAGRAM support, serveH3AcceptLoop falls back to plain HTTP/3 with a
+// warning instead of calling webtransport.Server.ServeQUICConn. wtServer is
+// intentionally nil so the WebTransport branch cannot be silently taken; the
+// logged warning proves the fallback path was used.
+func TestServeH3AcceptLoopFallsBackWhenListenerLacksWebTransport(t *testing.T) {
+	core, logs := observer.New(zapcore.WarnLevel)
+	s := &Server{
+		EnableWebTransport: true,
+		logger:             zap.New(core),
+		h3server:           &http3.Server{},
+		// wtServer left nil: WebTransport path would nil-panic
+	}
+	// Must not panic: fallback uses h3server.ServeListener, not wtServer.
+	s.serveH3AcceptLoop(stubQUICListenerWithoutWT{})
+
+	if logs.FilterMessageSnippet("WebTransport unavailable").Len() != 1 {
+		t.Errorf("expected fallback warning to be logged, got logs: %v", logs.All())
+	}
 }

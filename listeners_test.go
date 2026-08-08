@@ -15,7 +15,9 @@
 package caddy
 
 import (
+	"context"
 	"crypto/tls"
+	"net"
 	"reflect"
 	"testing"
 
@@ -709,4 +711,107 @@ func TestSplitUnixSocketPermissionsBits(t *testing.T) {
 			t.Errorf("Test %d: Expected perms '%s' but got '%s'", i, tc.expectFileMode, actualFileMode.Perm().String())
 		}
 	}
+}
+
+// TestListenQUICWebTransportCapability verifies that WebTransport QUIC
+// capabilities (DATAGRAM / stream-reset partial delivery) are fixed by the
+// first creator of a pooled QUIC listener, and that subsequent callers reuse
+// that configuration even if they request a different value.
+func TestListenQUICWebTransportCapability(t *testing.T) {
+	// closeTwice releases a ListenQUIC result: first Close stops accepting,
+	// second Close frees the pooled packet conn (see ListenQUIC docs).
+	closeTwice := func(t *testing.T, ln interface{ Close() error }) {
+		t.Helper()
+		if err := ln.Close(); err != nil {
+			t.Errorf("first Close: %v", err)
+		}
+		if err := ln.Close(); err != nil {
+			t.Errorf("second Close: %v", err)
+		}
+	}
+
+	supportsWT := func(t *testing.T, ln any) bool {
+		t.Helper()
+		wt, ok := ln.(interface{ SupportsWebTransport() bool })
+		if !ok {
+			t.Fatal("listener does not implement SupportsWebTransport()")
+		}
+		return wt.SupportsWebTransport()
+	}
+
+	t.Run("off-then-on", func(t *testing.T) {
+		na, err := ParseNetworkAddress("udp/127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("ParseNetworkAddress: %v", err)
+		}
+		tlsConf := &tls.Config{}
+		listenCfg := net.ListenConfig{}
+
+		ln1, err := na.ListenQUIC(context.Background(), 0, listenCfg, tlsConf, nil, nil, false)
+		if err != nil {
+			t.Fatalf("ListenQUIC(enableWebTransport=false): %v", err)
+		}
+		// Keep ln1 open so the pool entry stays; ln2 must reuse it.
+		ln2, err := na.ListenQUIC(context.Background(), 0, listenCfg, tlsConf, nil, nil, true)
+		if err != nil {
+			closeTwice(t, ln1)
+			t.Fatalf("ListenQUIC(enableWebTransport=true): %v", err)
+		}
+		defer closeTwice(t, ln1)
+		defer closeTwice(t, ln2)
+
+		if got := supportsWT(t, ln1); got {
+			t.Errorf("first listener SupportsWebTransport() = true, want false")
+		}
+		if got := supportsWT(t, ln2); got {
+			t.Errorf("second listener SupportsWebTransport() = true, want false (pool reuses first creator's config)")
+		}
+	})
+
+	t.Run("on-then-off", func(t *testing.T) {
+		// Use a different port so we never share a pool key with the
+		// off-then-on subtest, even if that subtest failed to release.
+		na, err := ParseNetworkAddress("udp/127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("ParseNetworkAddress: %v", err)
+		}
+		// Bind once to learn an ephemeral port, then use that fixed
+		// address as the pool key for both ListenQUIC calls. Using the
+		// same NetworkAddress value ensures both share one pool entry;
+		// :0 alone would also share a key, but a fixed port keeps this
+		// case independent of the other subtest's :0 pool entry once
+		// that entry is released.
+		probe, err := net.ListenPacket("udp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("ListenPacket probe: %v", err)
+		}
+		port := probe.LocalAddr().(*net.UDPAddr).Port
+		_ = probe.Close()
+
+		na.StartPort = uint(port)
+		na.EndPort = uint(port)
+
+		tlsConf := &tls.Config{}
+		listenCfg := net.ListenConfig{}
+
+		ln1, err := na.ListenQUIC(context.Background(), 0, listenCfg, tlsConf, nil, nil, true)
+		if err != nil {
+			t.Fatalf("ListenQUIC(enableWebTransport=true): %v", err)
+		}
+		ln2, err := na.ListenQUIC(context.Background(), 0, listenCfg, tlsConf, nil, nil, false)
+		if err != nil {
+			closeTwice(t, ln1)
+			t.Fatalf("ListenQUIC(enableWebTransport=false): %v", err)
+		}
+		defer closeTwice(t, ln1)
+		defer closeTwice(t, ln2)
+
+		// Superset listener is harmless: both report true.
+		if got := supportsWT(t, ln1); !got {
+			t.Errorf("first listener SupportsWebTransport() = false, want true")
+		}
+		if got := supportsWT(t, ln2); !got {
+			t.Errorf("second listener SupportsWebTransport() = false, want true (pool reuses first creator's config)")
+		}
+	})
 }
