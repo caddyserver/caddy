@@ -62,6 +62,12 @@ type Upstream struct {
 	healthCheckPolicy         *PassiveHealthChecks
 	cb                        CircuitBreaker
 	unhealthy                 atomic.Int32 // status from active health checker
+
+	// the key under which this upstream's Host is stored in the global
+	// hosts pool: the dial address, plus a fingerprint of the active
+	// health check config if one is enabled, since different active
+	// health checks against the same address are distinct health targets
+	hostKey string
 }
 
 // (pointer receiver necessary to avoid a race condition, since
@@ -125,8 +131,11 @@ func (u *Upstream) fillDialInfo(repl *caddy.Replacer) (DialInfo, error) {
 }
 
 func (u *Upstream) fillHost() {
+	if u.hostKey == "" {
+		u.hostKey = u.String()
+	}
 	host := new(Host)
-	existingHost, loaded := hosts.LoadOrStore(u.String(), host)
+	existingHost, loaded := hosts.LoadOrStore(u.hostKey, host)
 	if loaded {
 		host = existingHost.(*Host)
 	}

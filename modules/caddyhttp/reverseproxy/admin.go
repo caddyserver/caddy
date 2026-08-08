@@ -78,7 +78,7 @@ func (adminUpstreams) handleUpstreams(w http.ResponseWriter, r *http.Request) er
 	// Iterate over the static upstream pool (needs to be fast)
 	var rangeErr error
 	hosts.Range(func(key, val any) bool {
-		address, ok := key.(string)
+		poolKey, ok := key.(string)
 		if !ok {
 			rangeErr = caddy.APIError{
 				HTTPStatus: http.StatusInternalServerError,
@@ -86,6 +86,9 @@ func (adminUpstreams) handleUpstreams(w http.ResponseWriter, r *http.Request) er
 			}
 			return false
 		}
+		// pool keys may carry an internal health-check fingerprint
+		// (see hostKeySuffix); report only the plain dial address
+		address := hostKeyAddress(poolKey)
 
 		upstream, ok := val.(*Host)
 		if !ok {
