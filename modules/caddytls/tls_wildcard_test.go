@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/certmagic"
 )
 
 func TestAvoidDuplicateAutomation(t *testing.T) {
@@ -92,5 +93,63 @@ func TestAvoidDuplicateAutomation(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+func TestWildcardCoveredSubdomainKeepsExistingCert(t *testing.T) {
+	const subdomain = "covered.example.net"
+	const wildcard = "*.example.net"
+
+	tlsApp := &TLS{
+		Automation: &AutomationConfig{
+			Policies: []*AutomationPolicy{
+				{
+					IssuersRaw: []json.RawMessage{
+						[]byte(`{"module": "internal"}`),
+					},
+				},
+			},
+		},
+	}
+
+	var cfg caddy.Config
+	ctx, err := caddy.ProvisionContext(&cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tlsApp.Provision(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate "subdomain already has a valid certificate on disk", obtained
+	// at some point before any wildcard was ever added to the config.
+	ap := tlsApp.getAutomationPolicyForName(subdomain)
+	if err := ap.magic.ObtainCertSync(ctx.Context, subdomain); err != nil {
+		t.Fatalf("seeding certificate for %s: %v", subdomain, err)
+	}
+	issuerKey := ap.magic.Issuers[0].IssuerKey()
+
+	// Now simulate a fresh process start: nothing is in the in-memory cert
+	// cache yet (as it would be right after boot), but the certificate is
+	// still sitting in storage from before.
+	certCache.RemoveManaged([]certmagic.SubjectIssuer{{Subject: subdomain, IssuerKey: issuerKey}})
+	if cached := certCache.AllMatchingCertificates(subdomain); len(cached) != 0 {
+		t.Fatalf("test setup failed: expected no cached certificate for %s, got %d", subdomain, len(cached))
+	}
+
+	// A wildcard covering the subdomain is requested in the same batch. Prior
+	// to the fix, this made Caddy skip the subdomain entirely -- it would
+	// never even check whether a certificate already existed for it.
+	err = tlsApp.Manage(map[string]struct{}{
+		subdomain: {},
+		wildcard:  {},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if cached := certCache.AllMatchingCertificates(subdomain); len(cached) == 0 {
+		t.Errorf("expected existing certificate for %s to be loaded into the cache even though "+
+			"a covering wildcard (%s) is also being managed; see issue #7365", subdomain, wildcard)
 	}
 }

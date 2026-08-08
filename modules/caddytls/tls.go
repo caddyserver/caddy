@@ -18,7 +18,9 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -573,6 +575,13 @@ func (t *TLS) Manage(subjects map[string]struct{}) error {
 		// subdomains by adding the name to the 'automate' cert loader
 		if t.managingWildcardFor(subj, subjects) {
 			if _, ok := t.automateNames[subj]; !ok {
+				// not going to request a new cert for subj since a covering wildcard is being managed instead. But the wildcard may never succeed, so make sure we dont ignore a cert we already have in disk for that subj.
+				_, err := ap.magic.CacheManagedCertificate(t.ctx.Context, subj)
+				if err != nil && !errors.Is(err, fs.ErrNotExist) {
+					if c := t.logger.Check(zap.ErrorLevel, "loading existing certificate for wildcard covered subdomain"); c != nil {
+						c.Write(zap.String("domain", subj), zap.Error(err))
+					}
+				}
 				continue
 			}
 		}
