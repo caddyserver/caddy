@@ -379,7 +379,7 @@ a tar archive.
 
 	RegisterCommand(Command{
 		Name:  "fmt",
-		Usage: "[--overwrite] [--diff] [<path>]",
+		Usage: "[--overwrite] [--diff] [--imports] [<path>]",
 		Short: "Formats a Caddyfile",
 		Long: `
 Formats the Caddyfile by adding proper indentation and spaces to improve
@@ -393,6 +393,11 @@ lines will be prefixed with '-' and '+' where they differ. Note that
 unchanged lines are prefixed with two spaces for alignment, and that this
 is not a valid patch format.
 
+If --imports is specified, all files referenced by import directives will
+also be formatted. Each file's output is preceded by a header line (# <path>)
+when printing to stdout, so multiple files are distinguishable. The --imports
+flag cannot be used when reading from stdin.
+
 If you wish to use stdin instead of a regular file, use - as the path.
 When reading from stdin, the --overwrite flag has no effect: the result
 is always printed to stdout.
@@ -401,6 +406,7 @@ is always printed to stdout.
 			cmd.Flags().StringP("config", "c", "", "Configuration file")
 			cmd.Flags().BoolP("overwrite", "w", false, "Overwrite the input file with the results")
 			cmd.Flags().BoolP("diff", "d", false, "Print the differences between the input file and the formatted output")
+			cmd.Flags().Bool("imports", false, "Also format files referenced by import directives")
 			cmd.RunE = WrapCommandFuncForCobra(cmdFmt)
 		},
 	})
