@@ -165,6 +165,9 @@ type App struct {
 	logger *zap.Logger
 	tlsApp *caddytls.TLS
 
+	adminAddr  caddy.NetworkAddress
+	checkAdmin bool
+
 	// stopped indicates whether the app has stopped
 	// It can only happen if it has started successfully in the first place.
 	// Otherwise, Cleanup will call Stop to clean up resources.
@@ -187,6 +190,11 @@ func (app *App) Provision(ctx caddy.Context) error {
 	// store some references
 	app.logger = ctx.Logger()
 	app.ctx = ctx
+	var err error
+	app.adminAddr, app.checkAdmin, err = ctx.LocalAdminAddress()
+	if err != nil {
+		return fmt.Errorf("parsing local admin address: %v", err)
+	}
 
 	// provision TLS and events apps
 	tlsAppIface, err := ctx.App("tls")
@@ -418,14 +426,18 @@ func (app *App) Validate() error {
 			if err != nil {
 				return fmt.Errorf("invalid listener address '%s': %v", addr, err)
 			}
+			if app.checkAdmin && listenAddr.OverlapsWith(app.adminAddr) {
+				return fmt.Errorf("server %s: listener %q overlaps with admin API address %s (use another address or 'admin off')", srvName, addr, app.adminAddr)
+			}
 			// check that every address in the port range is unique to this server;
 			// we do not use <= here because PortRangeSize() adds 1 to EndPort for us
 			for i := uint(0); i < listenAddr.PortRangeSize(); i++ {
-				addr := caddy.JoinNetworkAddress(listenAddr.Network, listenAddr.Host, strconv.FormatUint(uint64(listenAddr.StartPort+i), 10))
-				if sn, ok := lnAddrs[addr]; ok {
-					return fmt.Errorf("server %s: listener address repeated: %s (already claimed by server '%s')", srvName, addr, sn)
+				port := listenAddr.StartPort + i
+				joinedAddr := caddy.JoinNetworkAddress(listenAddr.Network, listenAddr.Host, strconv.FormatUint(uint64(port), 10))
+				if sn, ok := lnAddrs[joinedAddr]; ok {
+					return fmt.Errorf("server %s: listener address repeated: %s (already claimed by server '%s')", srvName, joinedAddr, sn)
 				}
-				lnAddrs[addr] = srvName
+				lnAddrs[joinedAddr] = srvName
 			}
 		}
 

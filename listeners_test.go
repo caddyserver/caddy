@@ -710,3 +710,93 @@ func TestSplitUnixSocketPermissionsBits(t *testing.T) {
 		}
 	}
 }
+
+func TestOverlapsWith(t *testing.T) {
+	for i, tc := range []struct {
+		a, b   NetworkAddress
+		expect bool
+	}{
+		{
+			a:      NetworkAddress{Network: "tcp", Host: "localhost", StartPort: 2019, EndPort: 2019},
+			b:      NetworkAddress{Network: "tcp", Host: "localhost", StartPort: 2019, EndPort: 2019},
+			expect: true,
+		},
+		{
+			a:      NetworkAddress{Network: "tcp", Host: "localhost", StartPort: 2019, EndPort: 2020},
+			b:      NetworkAddress{Network: "tcp", Host: "localhost", StartPort: 2020, EndPort: 2021},
+			expect: true,
+		},
+		{
+			a:      NetworkAddress{Network: "tcp", Host: "localhost", StartPort: 2019, EndPort: 2019},
+			b:      NetworkAddress{Network: "tcp", Host: "localhost", StartPort: 2020, EndPort: 2020},
+			expect: false,
+		},
+		{
+			a:      NetworkAddress{Network: "tcp", Host: "127.0.0.1"},
+			b:      NetworkAddress{Network: "tcp", Host: "127.0.0.1"},
+			expect: true,
+		},
+		{
+			a:      NetworkAddress{Network: "tcp", Host: "localhost", StartPort: 2019, EndPort: 2019},
+			b:      NetworkAddress{Network: "tcp", Host: "", StartPort: 2019, EndPort: 2019},
+			expect: false,
+		},
+		{
+			a:      NetworkAddress{Network: "tcp", Host: "localhost", StartPort: 2019, EndPort: 2019},
+			b:      NetworkAddress{Network: "tcp", Host: "::1", StartPort: 2019, EndPort: 2019},
+			expect: false,
+		},
+		{
+			a:      NetworkAddress{Network: "plugin", Host: "same", StartPort: 2019, EndPort: 2019},
+			b:      NetworkAddress{Network: "plugin6", Host: "same", StartPort: 2019, EndPort: 2019},
+			expect: false,
+		},
+		{
+			a:      NetworkAddress{Network: "tcp4", Host: "::1", StartPort: 2019, EndPort: 2019},
+			b:      NetworkAddress{Network: "tcp", Host: "::1", StartPort: 2019, EndPort: 2019},
+			expect: false,
+		},
+		{
+			a:      NetworkAddress{Network: "tcp6", Host: "127.0.0.1", StartPort: 2019, EndPort: 2019},
+			b:      NetworkAddress{Network: "tcp", Host: "127.0.0.1", StartPort: 2019, EndPort: 2019},
+			expect: false,
+		},
+		{
+			a:      NetworkAddress{Network: "unix", Host: "/run/caddy/admin.sock"},
+			b:      NetworkAddress{Host: "127.0.0.1", StartPort: 2019, EndPort: 2019},
+			expect: false,
+		},
+		{
+			a:      NetworkAddress{Network: "unix", Host: "/run/caddy/admin.sock"},
+			b:      NetworkAddress{Network: "unix", Host: "/run/caddy/admin.sock"},
+			expect: true,
+		},
+		{
+			a:      NetworkAddress{Network: "unix", Host: "/run/caddy/admin.sock|0222"},
+			b:      NetworkAddress{Network: "unix", Host: "/run/caddy/admin.sock|0777"},
+			expect: true,
+		},
+		{
+			a:      NetworkAddress{Network: "unix", Host: "/run/caddy/admin.sock"},
+			b:      NetworkAddress{Network: "unixpacket", Host: "/run/caddy/admin.sock"},
+			expect: true,
+		},
+		{
+			a:      NetworkAddress{Network: "fd", Host: "3"},
+			b:      NetworkAddress{Network: "fdgram", Host: "3"},
+			expect: true,
+		},
+	} {
+		assertOverlap(t, i, tc.a, tc.b, tc.expect)
+	}
+}
+
+func assertOverlap(t *testing.T, i int, a, b NetworkAddress, expect bool) {
+	t.Helper()
+	if got := a.OverlapsWith(b); got != expect {
+		t.Errorf("Test %d: expected %v for %v vs %v, got %v", i, expect, a, b, got)
+	}
+	if got := b.OverlapsWith(a); got != expect {
+		t.Errorf("Test %d: expected %v (symmetric) for %v vs %v, got %v", i, expect, b, a, got)
+	}
+}
