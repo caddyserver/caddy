@@ -22,6 +22,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddypki"
+	"github.com/caddyserver/caddy/v2/modules/caddytls"
 )
 
 func init() {
@@ -258,6 +259,34 @@ func (st ServerType) buildPKIApp(
 		ca.ID = caddypki.DefaultCAID
 		ca.InstallTrust = &falseBool
 		pkiApp.CAs[ca.ID] = ca
+	}
+
+	// an explicit site-level internal issuer creates its own CA
+	// regardless of `auto_https`, so make sure `skip_install_trust`
+	// is honored for it too; otherwise the CA is created later at
+	// runtime with trust installation left on
+	if skipInstallTrust {
+		for _, p := range pairings {
+			for _, sblock := range p.serverBlocks {
+				for _, issuerCfgValue := range sblock.pile["tls.cert_issuer"] {
+					internalIssuer, ok := issuerCfgValue.Value.(*caddytls.InternalIssuer)
+					if !ok {
+						continue
+					}
+					caID := internalIssuer.CA
+					if caID == "" {
+						caID = caddypki.DefaultCAID
+					}
+					if _, ok := pkiApp.CAs[caID]; ok {
+						continue
+					}
+					ca := new(caddypki.CA)
+					ca.ID = caID
+					ca.InstallTrust = &falseBool
+					pkiApp.CAs[ca.ID] = ca
+				}
+			}
+		}
 	}
 
 	return pkiApp, warnings, nil
