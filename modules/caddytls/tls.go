@@ -132,7 +132,7 @@ type TLS struct {
 	// EXPERIMENTAL: Subject to change.
 	Resolvers []string `json:"resolvers,omitempty"`
 
-	dns                any // technically, it should be any/all of the libdns interfaces (RecordSetter, RecordAppender, etc.)
+	Dns                any // technically, it should be any/all of the libdns interfaces (RecordSetter, RecordAppender, etc.)
 	certificateLoaders []CertificateLoader
 	automateNames      map[string]struct{}
 	ctx                caddy.Context
@@ -190,7 +190,7 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		default:
 			return fmt.Errorf("DNS module does not implement the most common libdns interfaces: %T", dnsMod)
 		}
-		t.dns = dnsMod
+		t.Dns = dnsMod
 	}
 
 	// set up a new certificate cache; this (re)loads all certificates

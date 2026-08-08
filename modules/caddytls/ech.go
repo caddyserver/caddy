@@ -330,7 +330,7 @@ func (t *TLS) publishECHConfigs(logger *zap.Logger) error {
 	// configured, then this whole function is basically a no-op)
 	publicationList := t.EncryptedClientHello.Publication
 	if publicationList == nil {
-		if dnsProv, ok := t.dns.(ECHDNSProvider); ok {
+		if dnsProv, ok := t.Dns.(ECHDNSProvider); ok {
 			publicationList = []*ECHPublication{
 				{
 					publishers: []ECHPublisher{
