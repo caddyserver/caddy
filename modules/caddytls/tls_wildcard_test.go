@@ -16,6 +16,7 @@ package caddytls
 
 import (
 	"encoding/json"
+	"slices"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
@@ -121,25 +122,21 @@ func TestWildcardCoveredSubdomainKeepsExistingCert(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Simulate "subdomain already has a valid certificate on disk", obtained
-	// at some point before any wildcard was ever added to the config.
+	// simulate subdomain already having a valid cert saved before any wildcard existed
 	ap := tlsApp.getAutomationPolicyForName(subdomain)
 	if err := ap.magic.ObtainCertSync(ctx.Context, subdomain); err != nil {
 		t.Fatalf("seeding certificate for %s: %v", subdomain, err)
 	}
 	issuerKey := ap.magic.Issuers[0].IssuerKey()
 
-	// Now simulate a fresh process start: nothing is in the in-memory cert
-	// cache yet (as it would be right after boot), but the certificate is
-	// still sitting in storage from before.
+	// simulate a fresh restart: cache is empty but the cert is still in storage
 	certCache.RemoveManaged([]certmagic.SubjectIssuer{{Subject: subdomain, IssuerKey: issuerKey}})
 	if cached := certCache.AllMatchingCertificates(subdomain); len(cached) != 0 {
 		t.Fatalf("test setup failed: expected no cached certificate for %s, got %d", subdomain, len(cached))
 	}
 
-	// A wildcard covering the subdomain is requested in the same batch. Prior
-	// to the fix, this made Caddy skip the subdomain entirely -- it would
-	// never even check whether a certificate already existed for it.
+	// a wildcard covering the subdomain is requested in the same batch, which
+	// used to make caddy skip the subdomain entirely without checking for an existing cert
 	err = tlsApp.Manage(map[string]struct{}{
 		subdomain: {},
 		wildcard:  {},
@@ -148,8 +145,16 @@ func TestWildcardCoveredSubdomainKeepsExistingCert(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if cached := certCache.AllMatchingCertificates(subdomain); len(cached) == 0 {
-		t.Errorf("expected existing certificate for %s to be loaded into the cache even though "+
-			"a covering wildcard (%s) is also being managed; see issue #7365", subdomain, wildcard)
+	var foundSubdomainCert bool
+	for _, cert := range certCache.AllMatchingCertificates(subdomain) {
+		if slices.Contains(cert.Names, subdomain) {
+			foundSubdomainCert = true
+			break
+		}
+	}
+	if !foundSubdomainCert {
+		t.Errorf("expected existing certificate for %s specifically (not just a covering wildcard) "+
+			"to be loaded into the cache even though wildcard %s is also being managed",
+			subdomain, wildcard)
 	}
 }
