@@ -190,6 +190,125 @@ func TestValidateCookieFilter(t *testing.T) {
 	}
 }
 
+func TestSetCookieFilter(t *testing.T) {
+	f := SetCookieFilter{[]cookieFilterAction{
+		{replaceAction, "foo", "REDACTED"},
+		{deleteAction, "bar", ""},
+		{hashAction, "hash", ""},
+	}}
+
+	out := f.Filter(zapcore.Field{Interface: internal.LoggableStringArray{
+		`foo="a"; Path=/; Priority=High`,
+		"bar=c; Path=/; Secure",
+		"hash=hashed; Path=/; HttpOnly",
+		"baz=e; Path=/; SameSite=Strict",
+	}})
+	outval := out.Interface.(internal.LoggableStringArray)
+	expected := internal.LoggableStringArray{
+		`foo="REDACTED"; Path=/; Priority=High`,
+		"hash=1a06df82; Path=/; HttpOnly",
+		"baz=e; Path=/; SameSite=Strict",
+	}
+	if len(outval) != len(expected) {
+		t.Fatalf("unexpected number of Set-Cookie values: got %d, want %d", len(outval), len(expected))
+	}
+	for i := range expected {
+		if outval[i] != expected[i] {
+			t.Fatalf("Set-Cookie entry %d has not been filtered correctly: got %q, want %q", i, outval[i], expected[i])
+		}
+	}
+}
+
+func TestSetCookieFilterInvalidHeaderPassesThrough(t *testing.T) {
+	f := SetCookieFilter{[]cookieFilterAction{
+		{hashAction, "session", ""},
+	}}
+
+	out := f.Filter(zapcore.Field{Interface: internal.LoggableStringArray{
+		"not-a-cookie",
+	}})
+	outval := out.Interface.(internal.LoggableStringArray)
+	if outval[0] != "not-a-cookie" {
+		t.Fatalf("invalid Set-Cookie line should pass through unchanged: got %q", outval[0])
+	}
+}
+
+func TestSetCookieFilterHashWithoutAttributes(t *testing.T) {
+	f := SetCookieFilter{[]cookieFilterAction{
+		{hashAction, "session", ""},
+	}}
+
+	out := f.Filter(zapcore.Field{Interface: internal.LoggableStringArray{
+		"session=secret",
+	}})
+	outval := out.Interface.(internal.LoggableStringArray)
+	expected := "session=2bb80d53"
+	if outval[0] != expected {
+		t.Fatalf("cookie value was not hashed as expected: got %q, want %q", outval[0], expected)
+	}
+}
+
+func TestSetCookieFilterCookieNameMatchingIsCaseSensitive(t *testing.T) {
+	f := SetCookieFilter{[]cookieFilterAction{
+		{hashAction, "session", ""},
+	}}
+
+	out := f.Filter(zapcore.Field{Interface: internal.LoggableStringArray{
+		"Session=secret; Path=/",
+	}})
+	outval := out.Interface.(internal.LoggableStringArray)
+	expected := "Session=secret; Path=/"
+	if outval[0] != expected {
+		t.Fatalf("Set-Cookie value should remain unchanged when the cookie name does not match exactly: got %q, want %q", outval[0], expected)
+	}
+}
+
+func TestSetCookieFilterFirstMatchWins(t *testing.T) {
+	f := SetCookieFilter{[]cookieFilterAction{
+		{deleteAction, "session", ""},
+		{hashAction, "session", ""},
+	}}
+
+	out := f.Filter(zapcore.Field{Interface: internal.LoggableStringArray{
+		"session=secret; Path=/",
+	}})
+	outval := out.Interface.(internal.LoggableStringArray)
+	if len(outval) != 0 {
+		t.Fatalf("expected cookie to be deleted by first matching action, got %q", outval)
+	}
+}
+
+func TestSetCookieFilterHashEmptyValue(t *testing.T) {
+	f := SetCookieFilter{[]cookieFilterAction{
+		{hashAction, "session", ""},
+	}}
+
+	out := f.Filter(zapcore.Field{Interface: internal.LoggableStringArray{
+		"session=; Max-Age=0; Path=/; HttpOnly",
+	}})
+	outval := out.Interface.(internal.LoggableStringArray)
+	expected := "session=e3b0c442; Max-Age=0; Path=/; HttpOnly"
+	if outval[0] != expected {
+		t.Fatalf("empty cookie value was not hashed as expected: got %q, want %q", outval[0], expected)
+	}
+}
+
+func TestValidateSetCookieFilter(t *testing.T) {
+	f := SetCookieFilter{[]cookieFilterAction{
+		{},
+	}}
+	if f.Validate() == nil {
+		t.Fatalf("empty action type must be invalid")
+	}
+
+	f = SetCookieFilter{[]cookieFilterAction{
+		{Type: "foo"},
+	}}
+	if f.Validate() == nil {
+		t.Fatalf("unknown action type must be invalid")
+	}
+}
+
 func TestRegexpFilterSingleValue(t *testing.T) {
 	f := RegexpFilter{RawRegexp: `secret`, Value: "REDACTED"}
 	f.Provision(caddy.Context{})
