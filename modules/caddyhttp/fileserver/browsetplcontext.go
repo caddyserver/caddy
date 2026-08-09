@@ -74,6 +74,9 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, 
 	// this stays sequential
 	visible := make([]fs.DirEntry, 0, len(entries))
 	for _, entry := range entries {
+		if ctx.Err() != nil {
+			return tplCtx
+		}
 		if !fileHidden(entry.Name(), filesToHide) {
 			visible = append(visible, entry)
 		}
@@ -103,8 +106,9 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, 
 				continue
 			}
 
+			lo2, hi2 := lo, hi
 			wg.Go(func() {
-				for i := lo; i < hi; i++ {
+				for i := lo2; i < hi2; i++ {
 					if ctx.Err() != nil {
 						return
 					}
