@@ -117,6 +117,7 @@ func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 			fsrv.Browse = new(Browse)
 			d.Args(&fsrv.Browse.TemplateFile)
+			var concurrencySet bool
 			for nesting := d.Nesting(); d.NextBlock(nesting); {
 				switch d.Val() {
 				case "reveal_symlinks":
@@ -144,6 +145,23 @@ func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 						return d.Err("file_limit is already enabled")
 					}
 					fsrv.Browse.FileLimit = val
+				case "concurrency":
+					concurrency := d.RemainingArgs()
+					if len(concurrency) != 1 {
+						return d.Err("concurrency should have an integer value")
+					}
+					val, err := strconv.Atoi(concurrency[0])
+					if err != nil {
+						return d.Err("concurrency should have an integer value")
+					}
+					if val < 0 {
+						return d.Err("concurrency cannot be negative")
+					}
+					if concurrencySet {
+						return d.Err("concurrency already set")
+					}
+					fsrv.Browse.Concurrency = val
+					concurrencySet = true
 				default:
 					return d.Errf("unknown subdirective '%s'", d.Val())
 				}

@@ -24,6 +24,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dustin/go-humanize"
@@ -34,6 +35,26 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
+// readLinkFS extends fs.FS for filesystems that can resolve symlink targets.
+type readLinkFS interface {
+	fs.FS
+	ReadLink(name string) (string, error)
+}
+
+// direntResult holds the outcome of stat'ing a single directory entry
+// (statDirEntry). ok is false if the entry could not be stat'd and should
+// be skipped entirely; it's tracked explicitly (rather than relying on a
+// zero-value fileInfo) because a legitimately empty file has Size == 0.
+type direntResult struct {
+	fi      fileInfo
+	ownSize int64
+	ok      bool
+}
+
+// directoryListing gathers the entries of a directory into a
+// browseTemplateContext. fileSystem is invoked concurrently from multiple
+// goroutines (Stat, for symlink targets), so any fs.FS passed here must
+// support concurrent use; the standard OS-backed filesystem does.
 func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, parentModTime time.Time, entries []fs.DirEntry, canGoUp bool, root, urlPath string, repl *caddy.Replacer) *browseTemplateContext {
 	filesToHide := fsrv.transformHidePaths(repl)
 
@@ -49,95 +70,80 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, 
 		Items: make([]fileInfo, 0, len(entries)),
 	}
 
+	// pass 1: filter out hidden entries; cheap, no syscalls involved, so
+	// this stays sequential
+	visible := make([]fs.DirEntry, 0, len(entries))
 	for _, entry := range entries {
-		if err := ctx.Err(); err != nil {
-			break
+		if !fileHidden(entry.Name(), filesToHide) {
+			visible = append(visible, entry)
 		}
+	}
 
-		name := entry.Name()
+	// pass 2: gather per-entry info (Info/Stat/Readlink - all syscalls on
+	// most platforms) concurrently across a bounded set of workers, since
+	// this is the expensive part of building a listing for large
+	// directories
+	results := make([]direntResult, len(visible))
+	concurrency := defaultDirListingConcurrency
+	if fsrv.Browse.Concurrency > 0 {
+		concurrency = fsrv.Browse.Concurrency
+	}
+	if concurrency > len(visible) {
+		concurrency = len(visible)
+	}
 
-		if fileHidden(name, filesToHide) {
-			continue
-		}
+	if concurrency > 0 {
+		chunkSize := (len(visible) + concurrency - 1) / concurrency
 
-		info, err := entry.Info()
-		if err != nil {
-			if c := fsrv.logger.Check(zapcore.ErrorLevel, "could not get info about directory entry"); c != nil {
-				c.Write(zap.String("name", entry.Name()), zap.String("root", root))
+		var wg sync.WaitGroup
+		for w := 0; w < concurrency; w++ {
+			lo := w * chunkSize
+			hi := min(lo+chunkSize, len(visible))
+			if lo >= hi {
+				continue
 			}
+
+			wg.Go(func() {
+				for i := lo; i < hi; i++ {
+					if ctx.Err() != nil {
+						return
+					}
+					fi, ownSize, ok := fsrv.statDirEntry(fileSystem, visible[i], root, urlPath)
+					if ok {
+						results[i] = direntResult{fi: fi, ownSize: ownSize, ok: true}
+					}
+				}
+			})
+		}
+		wg.Wait()
+	}
+
+	// pass 3: aggregate the per-entry results in original order; cheap, no
+	// syscalls involved, so this stays sequential
+	for _, res := range results {
+		if !res.ok {
 			continue
 		}
+		fi := res.fi
 
 		// keep track of the most recently modified item in the listing
-		modTime := info.ModTime()
-		if tplCtx.lastModified.IsZero() || modTime.After(tplCtx.lastModified) {
-			tplCtx.lastModified = modTime
+		if tplCtx.lastModified.IsZero() || fi.ModTime.After(tplCtx.lastModified) {
+			tplCtx.lastModified = fi.ModTime
 		}
 
-		fileIsSymlink := isSymlink(info)
-		size := info.Size()
-
-		// for a symlink, a single stat of its target tells us both whether
-		// the target is a directory and what its size is
-		var targetInfo fs.FileInfo
-		var targetPath string
-		if fileIsSymlink {
-			targetPath = caddyhttp.SanitizedPathJoin(root, path.Join(urlPath, info.Name()))
-			// An error most likely means the symlink target doesn't exist,
-			// which isn't entirely unusual and shouldn't fail the listing.
-			// In this case, targetInfo stays nil and we fall back to
-			// treating it as a non-directory, using the symlink's own size.
-			targetInfo, _ = fs.Stat(fileSystem, targetPath)
-		}
-
-		isDir := entry.IsDir() || (targetInfo != nil && targetInfo.IsDir())
-
-		// add the slash after the escape of path to avoid escaping the slash as well
-		if isDir {
-			name += "/"
+		if fi.IsDir {
 			tplCtx.NumDirs++
 		} else {
 			tplCtx.NumFiles++
-		}
-
-		if !isDir {
-			// increase the total by the symlink's size, not the target's size,
-			// by incrementing before we follow the symlink
-			tplCtx.TotalFileSize += size
-		}
-
-		symlinkPath := ""
-		if fileIsSymlink {
-			if targetInfo != nil {
-				size = targetInfo.Size()
-			}
-
-			if fsrv.Browse.RevealSymlinks {
-				symLinkTarget, err := os.Readlink(targetPath)
-				if err == nil {
-					symlinkPath = symLinkTarget
-				}
-			}
-		}
-
-		if !isDir {
+			// increase the total by the symlink's own size, not the
+			// target's size
+			tplCtx.TotalFileSize += res.ownSize
 			// increase the total including the symlink target's size
-			tplCtx.TotalFileSizeFollowingSymlinks += size
+			tplCtx.TotalFileSizeFollowingSymlinks += fi.Size
 		}
 
-		u := url.URL{Path: "./" + name} // prepend with "./" to fix paths with ':' in the name
-
-		tplCtx.Items = append(tplCtx.Items, fileInfo{
-			IsDir:       isDir,
-			IsSymlink:   fileIsSymlink,
-			Name:        name,
-			Size:        size,
-			URL:         u.String(),
-			ModTime:     modTime.UTC(),
-			Mode:        info.Mode(),
-			Tpl:         tplCtx, // a reference up to the template context is useful
-			SymlinkPath: symlinkPath,
-		})
+		fi.Tpl = tplCtx // a reference up to the template context is useful
+		tplCtx.Items = append(tplCtx.Items, fi)
 	}
 
 	// this time is used for the Last-Modified header and comparing If-Modified-Since from client
@@ -145,6 +151,86 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, 
 	// see: https://github.com/caddyserver/caddy/issues/6828
 	tplCtx.lastModified = tplCtx.lastModified.UTC()
 	return tplCtx
+}
+
+// statDirEntry gathers the fileInfo for a single directory entry, including
+// resolving symlink targets. It performs filesystem syscalls (Info, and for
+// symlinks, an extra Stat and optionally Readlink), so it's designed to be
+// safe to call concurrently for different entries - it only reads fsrv's
+// config fields and doesn't mutate any shared state.
+//
+// It returns ok=false if the entry's info could not be obtained, in which
+// case the entry should be skipped from the listing (matching prior
+// behavior). ownSize is the entry's own size, ignoring any symlink target -
+// distinct from the returned fileInfo.Size, which follows symlinks.
+func (fsrv *FileServer) statDirEntry(fileSystem fs.FS, entry fs.DirEntry, root, urlPath string) (fi fileInfo, ownSize int64, ok bool) {
+	name := entry.Name()
+
+	info, err := entry.Info()
+	if err != nil {
+		if c := fsrv.logger.Check(zapcore.ErrorLevel, "could not get info about directory entry"); c != nil {
+			c.Write(zap.String("name", entry.Name()), zap.String("root", root))
+		}
+		return fileInfo{}, 0, false
+	}
+
+	modTime := info.ModTime()
+	fileIsSymlink := isSymlink(info)
+	size := info.Size()
+	ownSize = size
+
+	// for a symlink, a single stat of its target tells us both whether
+	// the target is a directory and what its size is
+	var targetInfo fs.FileInfo
+	var targetPath string
+	if fileIsSymlink {
+		targetPath = caddyhttp.SanitizedPathJoin(root, path.Join(urlPath, info.Name()))
+		// An error most likely means the symlink target doesn't exist,
+		// which isn't entirely unusual and shouldn't fail the listing.
+		// In this case, targetInfo stays nil and we fall back to
+		// treating it as a non-directory, using the symlink's own size.
+		targetInfo, _ = fs.Stat(fileSystem, targetPath)
+	}
+
+	isDir := entry.IsDir() || (targetInfo != nil && targetInfo.IsDir())
+
+	// add the slash after the escape of path to avoid escaping the slash as well
+	if isDir {
+		name += "/"
+	}
+
+	symlinkPath := ""
+	if fileIsSymlink {
+		if targetInfo != nil {
+			size = targetInfo.Size()
+		}
+
+		if fsrv.Browse.RevealSymlinks {
+			var symLinkTarget string
+			var err error
+			if rlFS, ok := fileSystem.(readLinkFS); ok {
+				symLinkTarget, err = rlFS.ReadLink(targetPath)
+			} else {
+				symLinkTarget, err = os.Readlink(targetPath)
+			}
+			if err == nil {
+				symlinkPath = symLinkTarget
+			}
+		}
+	}
+
+	u := url.URL{Path: "./" + name} // prepend with "./" to fix paths with ':' in the name
+
+	return fileInfo{
+		IsDir:       isDir,
+		IsSymlink:   fileIsSymlink,
+		Name:        name,
+		Size:        size,
+		URL:         u.String(),
+		ModTime:     modTime.UTC(),
+		Mode:        info.Mode(),
+		SymlinkPath: symlinkPath,
+	}, ownSize, true
 }
 
 // browseTemplateContext provides the template context for directory listings.
