@@ -255,6 +255,17 @@ func hostKeyAddress(key string) string {
 	return address
 }
 
+// hostKeyFingerprint returns the health-check fingerprint part of a host
+// pool key (see hostKeySuffix), or "" for a key with no fingerprint. It
+// is the PUBLIC discriminator for the separated health-state identity:
+// the admin endpoint and the upstreams_healthy metric both expose it, so
+// consumers can tell apart entries that share a dial address but belong
+// to different active health checks.
+func hostKeyFingerprint(key string) string {
+	_, fingerprint, _ := strings.Cut(key, "#")
+	return fingerprint
+}
+
 // PassiveHealthChecks holds configuration related to passive
 // health checks (that is, health checks which occur during
 // the normal flow of request proxying).
