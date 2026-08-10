@@ -255,6 +255,34 @@ func (na NetworkAddress) PortRangeSize() uint {
 	return (na.EndPort - na.StartPort) + 1
 }
 
+// OverlapsWith reports whether na and other use the same Caddy listener.
+// It compares configured listener identity rather than resolving hostnames or
+// predicting platform-specific IP wildcard behaviour. Unix socket types share
+// the same path namespace, so equal normalized paths overlap across types.
+func (na NetworkAddress) OverlapsWith(other NetworkAddress) bool {
+	if na.IsUnixNetwork() || other.IsUnixNetwork() {
+		return na.IsUnixNetwork() && other.IsUnixNetwork() && na.bindPath() == other.bindPath()
+	}
+	if na.IsFdNetwork() || other.IsFdNetwork() {
+		return na.IsFdNetwork() && other.IsFdNetwork() && na.Host == other.Host
+	}
+	return na.Network == other.Network &&
+		na.Host == other.Host &&
+		na.StartPort <= other.EndPort &&
+		other.StartPort <= na.EndPort
+}
+
+func (na NetworkAddress) bindPath() string {
+	if !na.IsUnixNetwork() {
+		return na.Host
+	}
+	path, _, err := internal.SplitUnixSocketPermissionsBits(na.Host)
+	if err != nil {
+		return na.Host
+	}
+	return path
+}
+
 func (na NetworkAddress) isLoopback() bool {
 	if na.IsUnixNetwork() || na.IsFdNetwork() {
 		return true

@@ -364,6 +364,23 @@ func (admin AdminConfig) allowedOrigins(addr NetworkAddress) []*url.URL {
 	return allowed
 }
 
+// LocalAdminAddress returns the configured local admin API listen address
+// and whether it is enabled.
+func (ctx Context) LocalAdminAddress() (NetworkAddress, bool, error) {
+	if !ctx.validateAdmin {
+		return NetworkAddress{}, false, nil
+	}
+	if ctx.cfg != nil && ctx.cfg.Admin != nil && ctx.cfg.Admin.Disabled {
+		return NetworkAddress{}, false, nil
+	}
+	listen := DefaultAdminListen
+	if ctx.cfg != nil && ctx.cfg.Admin != nil {
+		listen = ctx.cfg.Admin.Listen
+	}
+	addr, err := parseAdminListenAddr(listen, DefaultAdminListen)
+	return addr, true, err
+}
+
 // replaceLocalAdminServer replaces the running local admin server
 // according to the relevant configuration in cfg. If no configuration
 // for the admin endpoint exists in cfg, a default one is used, so
