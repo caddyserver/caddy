@@ -118,16 +118,31 @@ func TestWildcardCoveredSubdomainKeepsExistingCert(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	ctx, cancel := caddy.NewContext(ctx)
+
+	var addedToCache []certmagic.SubjectIssuer
+	t.Cleanup(func() {
+		cancel()
+		certCacheMu.RLock()
+		defer certCacheMu.RUnlock()
+		if certCache != nil {
+			certCache.RemoveManaged(addedToCache)
+		}
+	})
+
 	if err := tlsApp.Provision(ctx); err != nil {
 		t.Fatal(err)
 	}
 
 	// simulate subdomain already having a valid cert saved before any wildcard existed
 	ap := tlsApp.getAutomationPolicyForName(subdomain)
+	issuerKey := ap.magic.Issuers[0].IssuerKey()
+	// an empty issuer key matches any issuer, so this evicts every managed cert
+	// this test causes to be cached for these names
+	addedToCache = []certmagic.SubjectIssuer{{Subject: subdomain}, {Subject: wildcard}}
 	if err := ap.magic.ObtainCertSync(ctx.Context, subdomain); err != nil {
 		t.Fatalf("seeding certificate for %s: %v", subdomain, err)
 	}
-	issuerKey := ap.magic.Issuers[0].IssuerKey()
 
 	// simulate a fresh restart: cache is empty but the cert is still in storage
 	certCache.RemoveManaged([]certmagic.SubjectIssuer{{Subject: subdomain, IssuerKey: issuerKey}})
