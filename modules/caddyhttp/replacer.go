@@ -521,6 +521,38 @@ func getReqTLSReplacement(req *http.Request, key string) (any, bool) {
 			return pem.EncodeToMemory(&block), true
 		case "client.certificate_der_base64":
 			return base64.StdEncoding.EncodeToString(cert.Raw), true
+		// RFC 9440 byte-sequence encoding (:base64:) of the verified leaf
+		// certificate, for use in the Client-Cert header. Derived exclusively
+		// from VerifiedChains (not PeerCertificates); empty when mTLS
+		// verification did not succeed. See the App doc for safe usage
+		// guidance (inbound header stripping, absence on non-mTLS requests).
+		case "client.certificate_rfc9440":
+			verifiedCert := getVerifiedTLSPeerCert(req.TLS)
+			if verifiedCert == nil {
+				verifiedCert = new(x509.Certificate)
+			}
+			if len(verifiedCert.Raw) == 0 {
+				return "", true
+			}
+			return ":" + base64.StdEncoding.EncodeToString(verifiedCert.Raw) + ":", true
+		// RFC 9440 byte-sequence encoding (:base64:) of the verified intermediate chain
+		// (excluding the leaf), for use in Client-Cert-Chain. Derived from
+		// VerifiedChains; empty when no intermediates or no verified chain.
+		case "client.certificate_chain_rfc9440":
+			if req.TLS == nil || len(req.TLS.VerifiedChains) == 0 {
+				return "", true
+			}
+			chain := req.TLS.VerifiedChains[0]
+			if len(chain) <= 1 {
+				return "", true
+			}
+			intermediates := chain[1:]
+			parts := make([]string, 0, len(intermediates))
+			for _, ic := range intermediates {
+				parts = append(parts, ":"+base64.StdEncoding.EncodeToString(ic.Raw)+":")
+			}
+			return strings.Join(parts, ", "), true
+
 		default:
 			return nil, false
 		}
@@ -563,13 +595,23 @@ func marshalPublicKey(pubKey any) ([]byte, error) {
 	return nil, fmt.Errorf("unrecognized public key type: %T", pubKey)
 }
 
-// getTLSPeerCert retrieves the first peer certificate from a TLS session.
-// Returns nil if no peer cert is in use.
+// getTLSPeerCert returns the client's raw presented certificate
+// (PeerCertificates[0]), which may be unverified. Returns nil if none.
 func getTLSPeerCert(cs *tls.ConnectionState) *x509.Certificate {
 	if len(cs.PeerCertificates) == 0 {
 		return nil
 	}
 	return cs.PeerCertificates[0]
+}
+
+// getVerifiedTLSPeerCert returns the client's verified leaf certificate
+// (VerifiedChains[0][0]) from a successful mTLS handshake. Returns nil
+// if no verified chain is available.
+func getVerifiedTLSPeerCert(cs *tls.ConnectionState) *x509.Certificate {
+	if cs == nil || len(cs.VerifiedChains) == 0 || len(cs.VerifiedChains[0]) == 0 {
+		return nil
+	}
+	return cs.VerifiedChains[0][0]
 }
 
 type requestID struct {
