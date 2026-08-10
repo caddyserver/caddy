@@ -20,9 +20,11 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -463,11 +465,9 @@ func removeTLSALPN(srv *Server, target string) {
 // Start runs the app. It finishes automatic HTTPS if enabled,
 // including management of certificates.
 func (app *App) Start() error {
-	// get a logger compatible with http.Server
-	serverLogger, err := zap.NewStdLogAt(app.logger.Named("stdlib"), zap.DebugLevel)
-	if err != nil {
-		return fmt.Errorf("failed to set up server logger: %v", err)
-	}
+	// get a logger compatible with http.Server; recovered handler panics are
+	// routed to ERROR so they remain visible at the default log level (#7923)
+	serverLogger := serverErrorLogger(app.logger.Named("stdlib"))
 
 	for srvName, srv := range app.Servers {
 		srv.server = &http.Server{
@@ -662,12 +662,44 @@ func (app *App) Start() error {
 
 	// finish automatic HTTPS by finally beginning
 	// certificate management
-	err = app.automaticHTTPSPhase2()
+	err := app.automaticHTTPSPhase2()
 	if err != nil {
 		return fmt.Errorf("finalizing automatic HTTPS: %v", err)
 	}
 
 	return nil
+}
+
+// stdlibLogPrefixPanic is the prefix Go's net/http server uses when it writes a
+// recovered handler panic (and its stack trace) to http.Server.ErrorLog.
+// See the deferred recover in net/http.(*conn).serve.
+const stdlibLogPrefixPanic = "http: panic serving"
+
+// serverErrorLogger returns a *log.Logger suitable for http.Server.ErrorLog
+// that forwards the standard library's server messages to Caddy's structured
+// logger. Most of these messages are low-signal and logged at DEBUG, but
+// recovered handler panics indicate a real server-side error, so they are
+// logged at ERROR to stay visible at the default log level.
+func serverErrorLogger(logger *zap.Logger) *log.Logger {
+	return log.New(stdlibLogRouter{logger: logger}, "", 0)
+}
+
+// stdlibLogRouter is an io.Writer that routes standard library http.Server
+// error-log messages to the appropriate level on the wrapped structured logger.
+type stdlibLogRouter struct {
+	logger *zap.Logger
+}
+
+func (w stdlibLogRouter) Write(p []byte) (int, error) {
+	// log.Logger always appends a trailing newline; trim it so the structured
+	// message doesn't carry a dangling blank line.
+	msg := strings.TrimSuffix(string(p), "\n")
+	if strings.HasPrefix(msg, stdlibLogPrefixPanic) {
+		w.logger.Error(msg)
+	} else {
+		w.logger.Debug(msg)
+	}
+	return len(p), nil
 }
 
 // Stop gracefully shuts down the HTTP server.
