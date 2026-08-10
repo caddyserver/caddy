@@ -455,20 +455,29 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	repl := caddy.NewReplacer()
 	r = PrepareRequest(r, repl, w, s)
 
-	// clone the request for logging purposes before it enters any handler chain;
-	// this is necessary to capture the original request in case it gets modified
-	// during handling (cloning the request and using .WithLazy is considerably
-	// faster than using .With, which will JSON-encode the request immediately)
 	shouldLogCredentials := s.Logs != nil && s.Logs.ShouldLogCredentials
-	loggableReq := zap.Object("request", LoggableHTTPRequest{
-		Request:              r.Clone(r.Context()),
-		ShouldLogCredentials: shouldLogCredentials,
-	})
-	errLog := s.errorLogger.WithLazy(loggableReq)
+
+	// Capturing the request for logging requires a deep clone (headers, URL, etc.)
+	// before handlers can mutate it; only pay for that on requests we actually log,
+	// so the non-logging hot path avoids an unconditional clone per request. The
+	// error path below clones lazily if a request errors without access logging.
+	// Cloning and using .WithLazy is considerably faster than .With, which would
+	// JSON-encode the request immediately.
+	shouldLog := s.shouldLogRequest(r)
+
+	errLog := s.errorLogger
+	var loggableReq zap.Field
+	if shouldLog {
+		loggableReq = zap.Object("request", LoggableHTTPRequest{
+			Request:              r.Clone(r.Context()),
+			ShouldLogCredentials: shouldLogCredentials,
+		})
+		errLog = errLog.WithLazy(loggableReq)
+	}
 
 	var duration time.Duration
 
-	if s.shouldLogRequest(r) {
+	if shouldLog {
 		wrec := NewResponseRecorder(w, nil, nil)
 		w = wrec
 
@@ -512,6 +521,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r.RemoteAddr = origReq.RemoteAddr
 		r.RequestURI = origReq.RequestURI
 		cloneURL(origReq.URL, r.URL)
+	}
+
+	// if the request wasn't already snapshotted for access logging, attach it now
+	// so the error log still carries request details (method/URL are restored just
+	// above; headers may reflect handler modifications as no pre-handler snapshot exists)
+	if !shouldLog {
+		errLog = errLog.WithLazy(zap.Object("request", LoggableHTTPRequest{
+			Request:              r.Clone(r.Context()),
+			ShouldLogCredentials: shouldLogCredentials,
+		}))
 	}
 
 	// prepare the error log

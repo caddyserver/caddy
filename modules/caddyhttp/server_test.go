@@ -170,6 +170,34 @@ func BenchmarkServer_LogRequest_WithTrace(b *testing.B) {
 	}
 }
 
+// BenchmarkServer_ServeHTTP_NoLog measures the request hot path when access
+// logging is disabled and the request succeeds, i.e. the common case where no
+// request snapshot should be needed.
+func BenchmarkServer_ServeHTTP_NoLog(b *testing.B) {
+	s := &Server{
+		logger:      zap.NewNop(),
+		errorLogger: zap.NewNop(),
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			return nil
+		}),
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
+	req.Header.Set("Cookie", "session=abc123; theme=dark")
+	req.Header.Set("Referer", "https://example.com/previous")
+
+	rec := httptest.NewRecorder()
+
+	b.ReportAllocs()
+	for b.Loop() {
+		s.ServeHTTP(rec, req)
+	}
+}
+
 func TestServer_TrustedRealClientIP_NoTrustedHeaders(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	req.RemoteAddr = "192.0.2.1:12345"
