@@ -1,6 +1,9 @@
 package fastcgi
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -8,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
 func TestProvisionSplitPath(t *testing.T) {
@@ -354,4 +358,54 @@ func TestSplitPosSecurityRegressionUnicodeBypass(t *testing.T) {
 	for _, p := range payloads {
 		assert.Equalf(t, -1, tr.splitPos(p), "payload %q must not be detected as .php", p)
 	}
+}
+
+// TestBuildEnvDropsProxyHeader guards against the HTTPoxy vulnerability
+// (CVE-2016-5385): a client-supplied `Proxy` request header must never be
+// translated into the HTTP_PROXY environment variable, since many HTTP client
+// libraries used by FastCGI backends honor HTTP_PROXY for outbound requests,
+// which would let an attacker hijack the backend's traffic.
+// See https://httpoxy.org.
+func TestBuildEnvDropsProxyHeader(t *testing.T) {
+	t.Parallel()
+
+	newRequest := func(headers http.Header) *http.Request {
+		r := httptest.NewRequest(http.MethodGet, "http://example.com/index.php", nil)
+		// Set the header map directly so non-canonical casing is preserved,
+		// mimicking a header that reaches buildEnv unmodified.
+		r.Header = headers
+		ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer())
+		ctx = context.WithValue(ctx, caddyhttp.VarsCtxKey, map[string]any{})
+		ctx = context.WithValue(ctx, caddyhttp.OriginalRequestCtxKey, *r)
+		return r.WithContext(ctx)
+	}
+
+	for _, casing := range []string{"Proxy", "proxy", "pRoXy", "PROXY"} {
+		t.Run("casing "+casing, func(t *testing.T) {
+			r := newRequest(http.Header{
+				casing:       []string{"http://attacker.example:8080"},
+				"X-Safe-Hdr": []string{"kept"},
+			})
+
+			env, err := Transport{}.buildEnv(r)
+			require.NoError(t, err)
+
+			assert.NotContains(t, env, "HTTP_PROXY", "HTTP_PROXY must never be set from a client header")
+			// Sanity check that unrelated headers are still forwarded, i.e. the
+			// filter is narrow and doesn't break normal header passthrough.
+			assert.Equal(t, "kept", env["HTTP_X_SAFE_HDR"])
+		})
+	}
+
+	t.Run("configured HTTP_PROXY is preserved", func(t *testing.T) {
+		// The filter must only drop the *client* header; an explicitly
+		// configured env var is trusted and must survive.
+		r := newRequest(http.Header{"Proxy": []string{"http://attacker.example:8080"}})
+
+		tr := Transport{EnvVars: map[string]string{"HTTP_PROXY": "http://trusted.example:3128"}}
+		env, err := tr.buildEnv(r)
+		require.NoError(t, err)
+
+		assert.Equal(t, "http://trusted.example:3128", env["HTTP_PROXY"])
+	})
 }
