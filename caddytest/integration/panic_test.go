@@ -16,11 +16,12 @@ package integration
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -41,8 +42,6 @@ const (
 	// panicErrorLevel is the zap level string the JSON encoder emits for
 	// entries logged at error level.
 	panicErrorLevel = "error"
-	// panicLogFilename is the log file the booted server writes to.
-	panicLogFilename = "panic.log"
 	// panicListenAddr is the HTTP listener for the panic route.
 	panicListenAddr = ":9080"
 	// panicRequestURL hits the panic route.
@@ -59,6 +58,15 @@ const (
 // writes an "http: panic serving" line to http.Server.ErrorLog.
 type panicHandler struct{}
 
+type panicLogWriter struct{}
+
+type panicLogBuffer struct {
+	sync.Mutex
+	bytes.Buffer
+}
+
+var panicLogs panicLogBuffer
+
 func (panicHandler) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
 		ID:  panicTestHandlerID,
@@ -70,8 +78,50 @@ func (panicHandler) ServeHTTP(http.ResponseWriter, *http.Request, caddyhttp.Hand
 	panic("boom from panic_test handler")
 }
 
+func (panicLogWriter) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "caddy.logging.writers.panic_test",
+		New: func() caddy.Module { return new(panicLogWriter) },
+	}
+}
+
+func (panicLogWriter) String() string {
+	return "panic test log"
+}
+
+func (panicLogWriter) WriterKey() string {
+	return "panic_test"
+}
+
+func (panicLogWriter) OpenWriter() (io.WriteCloser, error) {
+	return &panicLogs, nil
+}
+
+func (b *panicLogBuffer) Write(p []byte) (int, error) {
+	b.Lock()
+	defer b.Unlock()
+	return b.Buffer.Write(p)
+}
+
+func (*panicLogBuffer) Close() error {
+	return nil
+}
+
+func (b *panicLogBuffer) reset() {
+	b.Lock()
+	defer b.Unlock()
+	b.Buffer.Reset()
+}
+
+func (b *panicLogBuffer) snapshot() []byte {
+	b.Lock()
+	defer b.Unlock()
+	return bytes.Clone(b.Buffer.Bytes())
+}
+
 func init() {
 	caddy.RegisterModule(panicHandler{})
+	caddy.RegisterModule(panicLogWriter{})
 }
 
 // TestHandlerPanicLogsAtError boots a real Caddy HTTP server whose route panics
@@ -81,7 +131,7 @@ func init() {
 // http.Server.ErrorLog through Caddy's structured logger. Regression test for
 // https://github.com/caddyserver/caddy/issues/7923.
 func TestHandlerPanicLogsAtError(t *testing.T) {
-	logPath := filepath.Join(t.TempDir(), panicLogFilename)
+	panicLogs.reset()
 
 	// Boot a real Caddy instance. caddy.Run provisions and calls App.Start
 	// synchronously, so the panic-log wiring runs before we send the request.
@@ -89,10 +139,11 @@ func TestHandlerPanicLogsAtError(t *testing.T) {
 		"admin": {"disabled": true},
 		"logging": {
 			"logs": {
-				"default": {
-					"writer": {"output": "file", "filename": "` + logPath + `"},
+				"panic_test": {
+					"writer": {"output": "panic_test"},
 					"encoder": {"format": "json"},
-					"level": "DEBUG"
+					"level": "DEBUG",
+					"include": ["http"]
 				}
 			}
 		},
@@ -127,19 +178,19 @@ func TestHandlerPanicLogsAtError(t *testing.T) {
 		resp.Body.Close()
 	}
 
-	if !waitForPanicLog(t, logPath) {
-		t.Fatalf("did not find an error-level %q entry in %s", panicLogPrefix, logPath)
+	if !waitForPanicLog(t) {
+		t.Fatalf("did not find an error-level %q entry", panicLogPrefix)
 	}
 }
 
-// waitForPanicLog polls the log file until it contains a JSON entry logged at
-// error level whose message begins with the net/http panic prefix, or the
+// waitForPanicLog polls the log output until it contains a JSON entry logged
+// at error level whose message begins with the net/http panic prefix, or the
 // timeout elapses.
-func waitForPanicLog(t *testing.T, logPath string) bool {
+func waitForPanicLog(t *testing.T) bool {
 	t.Helper()
 	deadline := time.Now().Add(panicLogPollTimeout)
 	for time.Now().Before(deadline) {
-		if scanForPanicEntry(t, logPath) {
+		if scanForPanicEntry(t) {
 			return true
 		}
 		time.Sleep(panicLogPollInterval)
@@ -147,16 +198,10 @@ func waitForPanicLog(t *testing.T, logPath string) bool {
 	return false
 }
 
-func scanForPanicEntry(t *testing.T, logPath string) bool {
+func scanForPanicEntry(t *testing.T) bool {
 	t.Helper()
-	f, err := os.Open(logPath)
-	if err != nil {
-		// The file may not exist yet before the first log line is written.
-		return false
-	}
-	defer f.Close()
 
-	scanner := bufio.NewScanner(f)
+	scanner := bufio.NewScanner(bytes.NewReader(panicLogs.snapshot()))
 	for scanner.Scan() {
 		var entry struct {
 			Level string `json:"level"`
