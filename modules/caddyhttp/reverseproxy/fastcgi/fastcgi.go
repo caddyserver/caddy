@@ -421,6 +421,14 @@ func (t Transport) buildEnv(r *http.Request) (envVars, error) {
 
 	// Add all HTTP headers to env variables
 	for field, val := range r.Header {
+
+		// HTTPoxy mitigation: client-supplied Proxy header must not
+		// be trusted for setting the HTTP_PROXY environment variable.
+		// See https://httpoxy.org for details.
+		if http.CanonicalHeaderKey(field) == "Proxy" {
+			continue
+		}
+		
 		header := strings.ToUpper(field)
 		header = headerNameReplacer.Replace(header)
 		env["HTTP_"+header] = strings.Join(val, ", ")
