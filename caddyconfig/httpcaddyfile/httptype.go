@@ -1008,14 +1008,15 @@ func (st *ServerType) serversFromPairings(
 			return nil, err
 		}
 
-		// an empty connection policy is still needed for hostnames whose
-		// site blocks configure no TLS settings of their own, if a policy
-		// matching a wildcard hostname would otherwise impose CLIENT
-		// AUTHENTICATION on them; hoist the empty policy above the wildcard
-		// one so those hostnames are shielded from the client-auth
-		// requirement. Deliberately scoped to client auth: other wildcard
-		// policy settings (e.g. certificate selection) are ones the covered
-		// hostname generally WANTS to inherit - see issue #7860
+		// hostnames whose site blocks configure no TLS settings of their own
+		// still need shielding if a policy matching a wildcard hostname would
+		// otherwise impose CLIENT AUTHENTICATION on them. Because connection
+		// policies are first-match, the shield hoisted above the wildcard
+		// policy must be a COPY of that policy with only client_authentication
+		// removed: an empty policy would not just lift the client-auth
+		// requirement but suppress every other setting the wildcard policy
+		// carries (certificate selection, protocol bounds, ALPN, ...), which
+		// the covered hostname does want to inherit - see issue #7860
 		for _, ecp := range emptyConnPolicies {
 			rawSNI, ok := ecp.MatchersRaw["sni"]
 			if !ok {
@@ -1051,7 +1052,10 @@ func (st *ServerType) serversFromPairings(
 					})
 				})
 				if coveredByWildcard {
-					srv.TLSConnPolicies = slices.Insert(srv.TLSConnPolicies, i, ecp)
+					shield := *cp
+					shield.ClientAuthentication = nil
+					shield.MatchersRaw = ecp.MatchersRaw
+					srv.TLSConnPolicies = slices.Insert(srv.TLSConnPolicies, i, &shield)
 					break
 				}
 			}
