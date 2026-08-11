@@ -1017,48 +1017,62 @@ func (st *ServerType) serversFromPairings(
 		// requirement but suppress every other setting the wildcard policy
 		// carries (certificate selection, protocol bounds, ALPN, ...), which
 		// the covered hostname does want to inherit - see issue #7860
+		// the wildcard names each client-auth policy matches, decoded once and
+		// index-aligned with srv.TLSConnPolicies; nil for a policy that needs
+		// no client auth or matches no wildcard
+		clientAuthWildcards := make([][]string, len(srv.TLSConnPolicies))
+		for i, cp := range srv.TLSConnPolicies {
+			if cp.ClientAuthentication == nil {
+				continue
+			}
+			names, ok := sniNames(cp, "of existing connection policy ", warnings)
+			if !ok {
+				continue
+			}
+			clientAuthWildcards[i] = slices.DeleteFunc(names, func(name string) bool {
+				return !strings.Contains(name, "*")
+			})
+		}
+
+		// each covering policy needs its OWN shield matching only the
+		// hostnames it covers: the hostnames of a single site block may be
+		// covered by DIFFERENT wildcards, and a shield hoisted above one
+		// policy must not match the hostnames belonging to another, or it
+		// would lift their client-auth requirement too
+		shieldedHosts := make([][]string, len(srv.TLSConnPolicies))
 		for _, ecp := range emptyConnPolicies {
-			rawSNI, ok := ecp.MatchersRaw["sni"]
+			hosts, ok := sniNames(ecp, "", warnings)
 			if !ok {
 				continue // no SNI matcher to reason about
 			}
-			var hosts caddytls.MatchServerName
-			if err := json.Unmarshal(rawSNI, &hosts); err != nil {
-				// an sni matcher that doesn't decode is unexpected; don't
-				// silently skip the shielding this policy may have needed
-				*warnings = append(*warnings, caddyconfig.Warning{
-					Message: fmt.Sprintf("decoding sni matcher while checking wildcard coverage: %v", err),
-				})
+			for _, host := range hosts {
+				// connection policies are first-match, so only the first
+				// covering policy is ever reached for this hostname
+				for i, wildcards := range clientAuthWildcards {
+					if slices.ContainsFunc(wildcards, func(name string) bool {
+						return certmagic.MatchWildcard(host, name)
+					}) {
+						shieldedHosts[i] = append(shieldedHosts[i], host)
+						break
+					}
+				}
+			}
+		}
+
+		// hoist the shields last to last, so that inserting one does not
+		// shift the index of a covering policy still to be shielded
+		for i := len(shieldedHosts) - 1; i >= 0; i-- {
+			hosts := shieldedHosts[i]
+			if len(hosts) == 0 {
 				continue
 			}
-			for i, cp := range srv.TLSConnPolicies {
-				if cp.ClientAuthentication == nil {
-					continue
-				}
-				cpSNI, ok := cp.MatchersRaw["sni"]
-				if !ok {
-					continue
-				}
-				var sni caddytls.MatchServerName
-				if err := json.Unmarshal(cpSNI, &sni); err != nil {
-					*warnings = append(*warnings, caddyconfig.Warning{
-						Message: fmt.Sprintf("decoding sni matcher of existing connection policy while checking wildcard coverage: %v", err),
-					})
-					continue
-				}
-				coveredByWildcard := slices.ContainsFunc(hosts, func(host string) bool {
-					return slices.ContainsFunc(sni, func(name string) bool {
-						return strings.Contains(name, "*") && certmagic.MatchWildcard(host, name)
-					})
-				})
-				if coveredByWildcard {
-					shield := *cp
-					shield.ClientAuthentication = nil
-					shield.MatchersRaw = ecp.MatchersRaw
-					srv.TLSConnPolicies = slices.Insert(srv.TLSConnPolicies, i, &shield)
-					break
-				}
+			slices.Sort(hosts)
+			shield := *srv.TLSConnPolicies[i]
+			shield.ClientAuthentication = nil
+			shield.MatchersRaw = caddy.ModuleMap{
+				"sni": caddyconfig.JSON(slices.Compact(hosts), warnings),
 			}
+			srv.TLSConnPolicies = slices.Insert(srv.TLSConnPolicies, i, &shield)
 		}
 
 		// a catch-all TLS conn policy is necessary to ensure TLS can
@@ -1097,6 +1111,25 @@ func (st *ServerType) serversFromPairings(
 	}
 
 	return servers, nil
+}
+
+// sniNames returns the server names a connection policy's sni matcher matches.
+// The bool is false when the policy has no sni matcher, or when it does not
+// decode - the latter is unexpected enough to warn about rather than silently
+// skip, since callers use it to decide whether a hostname needs shielding.
+func sniNames(cp *caddytls.ConnectionPolicy, what string, warnings *[]caddyconfig.Warning) ([]string, bool) {
+	raw, ok := cp.MatchersRaw["sni"]
+	if !ok {
+		return nil, false
+	}
+	var sni caddytls.MatchServerName
+	if err := json.Unmarshal(raw, &sni); err != nil {
+		*warnings = append(*warnings, caddyconfig.Warning{
+			Message: fmt.Sprintf("decoding sni matcher %swhile checking wildcard coverage: %v", what, err),
+		})
+		return nil, false
+	}
+	return sni, true
 }
 
 func detectConflictingSchemes(srv *caddyhttp.Server, serverBlocks []serverBlock, options map[string]any) error {
