@@ -137,8 +137,51 @@ type Server struct {
 	// multiple values (repeated field), all values are dropped
 	// as a safeguard against header injection.
 	//
+	// If the same logical header name is also allowlisted (in dot form)
+	// in ExpectedDotHeaders, both spellings are kept independently. Only
+	// do this if you know your backend doesn't fold both forms onto the
+	// same variable name; PHP/CGI-style backends do (see
+	// ExpectedDotHeaders), so allowlisting both there reintroduces the
+	// ambiguity this filter exists to remove.
+	//
+	// A header name containing both an underscore and a dot (e.g.
+	// "webhook_user.id") is never matched by a prefix glob here, even
+	// one whose prefix matches, because the free-form suffix a glob
+	// allows can't be vetted for an embedded dot; only an exact (non-glob)
+	// entry for that literal spelling is honored.
+	//
 	// TODO: This is an EXPERIMENTAL feature. Subject to change or removal.
 	ExpectedUnderscoreHeaders []string `json:"expected_underscore_headers,omitempty"`
+
+	// A list of header field names containing dots that should be
+	// preserved instead of being dropped. By default, Caddy drops ALL
+	// headers with dots to prevent ambiguity with backends that fold
+	// dots to underscores when registering CGI-style variables, e.g.
+	// PHP's $_SERVER (GHSA-49wc-4hcv-v58q). When this list is
+	// configured, only the specified headers are kept; their
+	// hyphenated variants are actively dropped to prevent confusion.
+	// Entries are case-insensitive. A trailing "*" acts as a prefix
+	// glob (e.g., "webhook.*" matches any header starting with
+	// "webhook."). If an allowlisted header arrives with multiple
+	// values (repeated field), all values are dropped as a safeguard
+	// against header injection.
+	//
+	// Dotted headers are legal HTTP tokens and some non-CGI backends
+	// (e.g. Node.js, Go) use them as ordinary, unrelated header names.
+	// If your backend is one of those, this poses no risk. Only
+	// PHP/CGI/FastCGI-style backends fold '.', '_', and '-' onto the
+	// same variable name; avoid allowlisting both the dot and
+	// underscore form of the same logical name if such a backend is in
+	// the request path, since Caddy will not stop you and the backend
+	// may then see either value depending on map iteration order.
+	//
+	// A header name containing both a dot and an underscore is never
+	// matched by a prefix glob here, for the same reason described on
+	// ExpectedUnderscoreHeaders; only an exact (non-glob) entry for
+	// that literal spelling is honored.
+	//
+	// TODO: This is an EXPERIMENTAL feature. Subject to change or removal.
+	ExpectedDotHeaders []string `json:"expected_dot_headers,omitempty"`
 
 	// Routes describes how this server will handle requests.
 	// Routes are executed sequentially. First a route's matchers
@@ -312,7 +355,12 @@ type Server struct {
 	// precomputed underscore header allowlist (built during provisioning)
 	underscoreExactAllow  map[string]struct{}
 	underscoreExactDrop   map[string]struct{}
-	underscorePrefixRules []underscoreRule
+	underscorePrefixRules []aliasPrefixRule
+
+	// precomputed dot header allowlist (built during provisioning)
+	dotExactAllow  map[string]struct{}
+	dotExactDrop   map[string]struct{}
+	dotPrefixRules []aliasPrefixRule
 
 	// registered callback functions
 	connStateFuncs   []func(net.Conn, http.ConnState)
@@ -321,30 +369,29 @@ type Server struct {
 	onStopFuncs      []func(context.Context) error // TODO: Experimental (Nov. 2023)
 }
 
-// underscoreRule pairs a canonical underscore prefix with its hyphenated
-// counterpart. Used for prefix-glob matching in the allowlist.
-type underscoreRule struct {
-	allow string // canonical underscore form, e.g. "Webhook_"
+// aliasPrefixRule pairs a canonical allowed prefix (underscore- or
+// dot-named) with its hyphenated counterpart. Used for prefix-glob
+// matching in the underscore/dot allowlists.
+type aliasPrefixRule struct {
+	allow string // canonical allowed form, e.g. "Webhook_" or "Webhook."
 	drop  string // canonical hyphenated form, e.g. "Webhook-"
 }
 
-// provisionUnderscoreHeaders validates the ExpectedUnderscoreHeaders
-// entries and builds the precomputed maps and prefix rules used by
-// the hot-path filter in serveHTTP.
-func (s *Server) provisionUnderscoreHeaders() error {
-	if len(s.ExpectedUnderscoreHeaders) == 0 {
-		return nil
-	}
+// provisionHeaderAliasAllowlist validates entries for a header-alias
+// allowlist (ExpectedUnderscoreHeaders or ExpectedDotHeaders) and builds
+// the precomputed maps and prefix rules used by the hot-path filter in
+// serveHTTP. sep is the separator the entries must contain ('_' or '.');
+// directive is the Caddyfile/JSON name used in error messages.
+func provisionHeaderAliasAllowlist(entries []string, sep rune, directive string) (exactAllow, exactDrop map[string]struct{}, prefixRules []aliasPrefixRule, err error) {
+	exactAllow = make(map[string]struct{}, len(entries))
+	exactDrop = make(map[string]struct{}, len(entries))
 
-	s.underscoreExactAllow = make(map[string]struct{}, len(s.ExpectedUnderscoreHeaders))
-	s.underscoreExactDrop = make(map[string]struct{}, len(s.ExpectedUnderscoreHeaders))
-
-	for _, entry := range s.ExpectedUnderscoreHeaders {
+	for _, entry := range entries {
 		// Reject non-ASCII bytes: Go's HTTP parser returns 400 for
 		// non-ASCII header names, so such entries can never match.
 		for i := 0; i < len(entry); i++ {
 			if entry[i] >= 0x80 {
-				return fmt.Errorf("expected_underscore_headers: entry %q contains non-ASCII characters", entry)
+				return nil, nil, nil, fmt.Errorf("%s: entry %q contains non-ASCII characters", directive, entry)
 			}
 		}
 
@@ -356,29 +403,55 @@ func (s *Server) provisionUnderscoreHeaders() error {
 
 		// Reject entries with '*' not at the trailing position.
 		if strings.ContainsRune(name, '*') {
-			return fmt.Errorf("expected_underscore_headers: entry %q has '*' in an invalid position (only a trailing '*' is allowed)", entry)
+			return nil, nil, nil, fmt.Errorf("%s: entry %q has '*' in an invalid position (only a trailing '*' is allowed)", directive, entry)
 		}
 
-		// The name (without trailing '*') must contain at least one underscore.
-		if !strings.ContainsRune(name, '_') {
-			return fmt.Errorf("expected_underscore_headers: entry %q does not contain an underscore", entry)
+		// The name (without trailing '*') must contain at least one separator.
+		if !strings.ContainsRune(name, sep) {
+			return nil, nil, nil, fmt.Errorf("%s: entry %q does not contain a %q", directive, entry, sep)
 		}
 
 		canonAllow := http.CanonicalHeaderKey(name)
-		canonDrop := http.CanonicalHeaderKey(strings.ReplaceAll(name, "_", "-"))
+		canonDrop := http.CanonicalHeaderKey(strings.ReplaceAll(name, string(sep), "-"))
 
 		if isGlob {
-			s.underscorePrefixRules = append(s.underscorePrefixRules, underscoreRule{
+			prefixRules = append(prefixRules, aliasPrefixRule{
 				allow: canonAllow,
 				drop:  canonDrop,
 			})
 		} else {
-			s.underscoreExactAllow[canonAllow] = struct{}{}
-			s.underscoreExactDrop[canonDrop] = struct{}{}
+			exactAllow[canonAllow] = struct{}{}
+			exactDrop[canonDrop] = struct{}{}
 		}
 	}
 
-	return nil
+	return exactAllow, exactDrop, prefixRules, nil
+}
+
+// provisionUnderscoreHeaders validates the ExpectedUnderscoreHeaders
+// entries and builds the precomputed maps and prefix rules used by
+// the hot-path filter in serveHTTP.
+func (s *Server) provisionUnderscoreHeaders() error {
+	if len(s.ExpectedUnderscoreHeaders) == 0 {
+		return nil
+	}
+	var err error
+	s.underscoreExactAllow, s.underscoreExactDrop, s.underscorePrefixRules, err =
+		provisionHeaderAliasAllowlist(s.ExpectedUnderscoreHeaders, '_', "expected_underscore_headers")
+	return err
+}
+
+// provisionDotHeaders validates the ExpectedDotHeaders entries and
+// builds the precomputed maps and prefix rules used by the hot-path
+// filter in serveHTTP.
+func (s *Server) provisionDotHeaders() error {
+	if len(s.ExpectedDotHeaders) == 0 {
+		return nil
+	}
+	var err error
+	s.dotExactAllow, s.dotExactDrop, s.dotPrefixRules, err =
+		provisionHeaderAliasAllowlist(s.ExpectedDotHeaders, '.', "expected_dot_headers")
+	return err
 }
 
 // isAllowedUnderscoreHeader reports whether key (a canonical header
@@ -395,14 +468,37 @@ func (s *Server) isAllowedUnderscoreHeader(key string) bool {
 	return false
 }
 
+// isAllowedDotHeader reports whether key (a canonical header name
+// containing a dot) is permitted by the allowlist.
+func (s *Server) isAllowedDotHeader(key string) bool {
+	if _, ok := s.dotExactAllow[key]; ok {
+		return true
+	}
+	for _, rule := range s.dotPrefixRules {
+		if strings.HasPrefix(key, rule.allow) {
+			return true
+		}
+	}
+	return false
+}
+
 // isHyphenatedVariant reports whether key (a canonical header name
-// without underscores) is the hyphenated variant of an allowlisted
-// underscore header and should therefore be dropped.
+// containing neither an underscore nor a dot) is the hyphenated variant
+// of an allowlisted underscore or dot header and should therefore be
+// dropped.
 func (s *Server) isHyphenatedVariant(key string) bool {
 	if _, ok := s.underscoreExactDrop[key]; ok {
 		return true
 	}
+	if _, ok := s.dotExactDrop[key]; ok {
+		return true
+	}
 	for _, rule := range s.underscorePrefixRules {
+		if strings.HasPrefix(key, rule.drop) {
+			return true
+		}
+	}
+	for _, rule := range s.dotPrefixRules {
 		if strings.HasPrefix(key, rule.drop) {
 			return true
 		}
@@ -604,44 +700,79 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
-	// Drop headers whose names contain `_`: once FastCGI/CGI/FrankenPHP etc. rewrites `-` to
-	// `_`, an underscore alias collides with the legitimate hyphenated header
-	// and can bypass `forward_auth copy_headers` (GHSA-f59h-q822-g45g).
+	// Drop headers whose names contain `_` or `.`: once FastCGI/CGI/FrankenPHP etc.
+	// rewrites `-` to `_` (and PHP additionally folds `.` to `_` when registering
+	// $_SERVER keys), an underscore or dot alias collides with the legitimate
+	// hyphenated header and can bypass `forward_auth copy_headers`
+	// (GHSA-f59h-q822-g45g, GHSA-49wc-4hcv-v58q).
 	//
-	// When an allowlist is configured, only the listed headers are kept and
-	// their hyphenated variants are actively dropped to prevent ambiguity.
-	if len(s.ExpectedUnderscoreHeaders) == 0 {
-		for k := range r.Header {
-			if strings.ContainsRune(k, '_') {
+	// The two allowlists (ExpectedUnderscoreHeaders, ExpectedDotHeaders) are
+	// otherwise independent: each only keeps headers spelled with its own
+	// character, and either allowlist actively drops the plain-hyphenated
+	// variant of its entries.
+	for k := range r.Header {
+		hasUnderscore := strings.ContainsRune(k, '_')
+		hasDot := strings.ContainsRune(k, '.')
+
+		switch {
+		case hasUnderscore && hasDot:
+			// A name containing both separators still collides with the
+			// hyphenated, underscore-only, and dot-only spellings once a
+			// CGI/FastCGI/PHP backend folds them onto the same variable
+			// name. A prefix glob can't vet its free-form suffix for an
+			// embedded "other" separator, so only an exact allowlist entry
+			// for this literal spelling is honored here.
+			_, underscoreOK := s.underscoreExactAllow[k]
+			_, dotOK := s.dotExactAllow[k]
+			if !underscoreOK && !dotOK {
+				delete(r.Header, k)
+
+				if c := s.logger.Check(zapcore.DebugLevel, "dropping header containing both underscore and dot"); c != nil {
+					c.Write(zap.String("header", k))
+				}
+			} else if n := len(r.Header[k]); n > 1 {
+				delete(r.Header, k)
+
+				if c := s.logger.Check(zapcore.WarnLevel, "dropping allowlisted underscore/dot header with repeated values (possible spoofing)"); c != nil {
+					c.Write(zap.String("header", k), zap.Int("count", n))
+				}
+			}
+
+		case hasUnderscore:
+			if len(s.ExpectedUnderscoreHeaders) == 0 || !s.isAllowedUnderscoreHeader(k) {
 				delete(r.Header, k)
 
 				if c := s.logger.Check(zapcore.DebugLevel, "dropping header containing underscore"); c != nil {
 					c.Write(zap.String("header", k))
 				}
-			}
-		}
-	} else {
-		for k := range r.Header {
-			if strings.ContainsRune(k, '_') {
-				if !s.isAllowedUnderscoreHeader(k) {
-					delete(r.Header, k)
-
-					if c := s.logger.Check(zapcore.DebugLevel, "dropping header containing underscore"); c != nil {
-						c.Write(zap.String("header", k))
-					}
-				} else if n := len(r.Header[k]); n > 1 {
-					delete(r.Header, k)
-
-					if c := s.logger.Check(zapcore.WarnLevel, "dropping allowlisted underscore header with repeated values (possible spoofing)"); c != nil {
-						c.Write(zap.String("header", k), zap.Int("count", n))
-					}
-				}
-			} else if s.isHyphenatedVariant(k) {
+			} else if n := len(r.Header[k]); n > 1 {
 				delete(r.Header, k)
 
-				if c := s.logger.Check(zapcore.DebugLevel, "dropping hyphenated variant of expected underscore header"); c != nil {
+				if c := s.logger.Check(zapcore.WarnLevel, "dropping allowlisted underscore header with repeated values (possible spoofing)"); c != nil {
+					c.Write(zap.String("header", k), zap.Int("count", n))
+				}
+			}
+
+		case hasDot:
+			if len(s.ExpectedDotHeaders) == 0 || !s.isAllowedDotHeader(k) {
+				delete(r.Header, k)
+
+				if c := s.logger.Check(zapcore.DebugLevel, "dropping header containing dot"); c != nil {
 					c.Write(zap.String("header", k))
 				}
+			} else if n := len(r.Header[k]); n > 1 {
+				delete(r.Header, k)
+
+				if c := s.logger.Check(zapcore.WarnLevel, "dropping allowlisted dot header with repeated values (possible spoofing)"); c != nil {
+					c.Write(zap.String("header", k), zap.Int("count", n))
+				}
+			}
+
+		case s.isHyphenatedVariant(k):
+			delete(r.Header, k)
+
+			if c := s.logger.Check(zapcore.DebugLevel, "dropping hyphenated variant of expected underscore/dot header"); c != nil {
+				c.Write(zap.String("header", k))
 			}
 		}
 	}
