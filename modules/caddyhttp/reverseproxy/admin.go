@@ -32,17 +32,9 @@ func init() {
 // reverse proxy upstreams in the pool.
 type adminUpstreams struct{}
 
-// upstreamStatus holds the status of a particular upstream. The endpoint
-// returns one entry per HEALTH TARGET — that is, per (address, active
-// health check config) pair, not per address: handlers that dial the same
-// address with different active health checks keep independent health
-// state (see hostKeySuffix), and collapsing them here would have to
-// invent aggregation semantics the consumer can't undo. Consumers must
-// treat (address, health_check) as the entry's identity; health_check is
-// "" for upstreams with no active health checks configured.
+// upstreamStatus holds the status of a particular upstream
 type upstreamStatus struct {
 	Address     string `json:"address"`
-	HealthCheck string `json:"health_check,omitempty"`
 	NumRequests int    `json:"num_requests"`
 	Fails       int    `json:"fails"`
 }
@@ -86,7 +78,7 @@ func (adminUpstreams) handleUpstreams(w http.ResponseWriter, r *http.Request) er
 	// Iterate over the static upstream pool (needs to be fast)
 	var rangeErr error
 	hosts.Range(func(key, val any) bool {
-		poolKey, ok := key.(string)
+		address, ok := key.(string)
 		if !ok {
 			rangeErr = caddy.APIError{
 				HTTPStatus: http.StatusInternalServerError,
@@ -94,11 +86,6 @@ func (adminUpstreams) handleUpstreams(w http.ResponseWriter, r *http.Request) er
 			}
 			return false
 		}
-		// pool keys carry the health-check fingerprint of their health
-		// target (see hostKeySuffix); split it out so the address stays
-		// plain and the fingerprint is the entry's public discriminator
-		address := hostKeyAddress(poolKey)
-		fingerprint := hostKeyFingerprint(poolKey)
 
 		upstream, ok := val.(*Host)
 		if !ok {
@@ -113,7 +100,6 @@ func (adminUpstreams) handleUpstreams(w http.ResponseWriter, r *http.Request) er
 
 		results = append(results, upstreamStatus{
 			Address:     address,
-			HealthCheck: fingerprint,
 			NumRequests: upstream.NumRequests(),
 			Fails:       upstream.Fails(),
 		})

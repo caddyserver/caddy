@@ -22,15 +22,7 @@ var reverseProxyMetrics = struct {
 func initReverseProxyMetrics(handler *Handler, registry *prometheus.Registry) {
 	const ns, sub = "caddy", "reverse_proxy"
 
-	// the metric's identity must match health-state identity: health state
-	// is kept per (dial address, active health check config) — see
-	// hostKeySuffix — so a series labeled by address alone would be written
-	// concurrently by every handler that shares the address, and the
-	// reported value would just be whichever updater ran last. The
-	// health_check label carries the config fingerprint ("" when no active
-	// checks), giving each health target its own series; aggregate across
-	// checks with sum/min by (upstream) as appropriate.
-	upstreamsLabels := []string{"upstream", "health_check"}
+	upstreamsLabels := []string{"upstream"}
 	reverseProxyMetrics.once.Do(func() {
 		reverseProxyMetrics.upstreamsHealthy = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: ns,
@@ -95,10 +87,7 @@ func (m *metricsUpstreamsHealthyUpdater) init() {
 
 func (m *metricsUpstreamsHealthyUpdater) update() {
 	for _, upstream := range m.handler.Upstreams {
-		labels := prometheus.Labels{
-			"upstream":     upstream.Dial,
-			"health_check": hostKeyFingerprint(upstream.hostKey),
-		}
+		labels := prometheus.Labels{"upstream": upstream.Dial}
 
 		gaugeValue := 0.0
 		if upstream.Healthy() {

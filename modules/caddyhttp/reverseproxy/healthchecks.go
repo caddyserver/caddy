@@ -16,9 +16,6 @@ package reverseproxy
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -228,42 +225,6 @@ func (a *ActiveHealthChecks) Provision(ctx caddy.Context, h *Handler) error {
 // the minimum config necessary to be enabled.
 func (a *ActiveHealthChecks) IsEnabled() bool {
 	return a.Path != "" || a.URI != "" || a.Port != 0
-}
-
-// hostKeySuffix returns a stable fingerprint of the active health check
-// configuration. Active health checks with different configurations
-// (e.g. different URIs or headers) against the same dial address are
-// distinct health targets, so this suffix is appended to the host pool
-// key to keep their health state separate. The suffix is strictly
-// internal to pool identity: anything user-visible (metrics labels,
-// admin API output) must report the plain address — see hostKeyAddress.
-func (a *ActiveHealthChecks) hostKeySuffix() string {
-	cfg, err := json.Marshal(a)
-	if err != nil {
-		return ""
-	}
-	sum := sha256.Sum256(cfg)
-	return "#" + hex.EncodeToString(sum[:8])
-}
-
-// hostKeyAddress returns the dial address part of a host pool key,
-// stripping the internal health-check fingerprint appended by
-// hostKeySuffix, if any. Dial addresses cannot contain '#', so the
-// first '#' always begins the fingerprint.
-func hostKeyAddress(key string) string {
-	address, _, _ := strings.Cut(key, "#")
-	return address
-}
-
-// hostKeyFingerprint returns the health-check fingerprint part of a host
-// pool key (see hostKeySuffix), or "" for a key with no fingerprint. It
-// is the PUBLIC discriminator for the separated health-state identity:
-// the admin endpoint and the upstreams_healthy metric both expose it, so
-// consumers can tell apart entries that share a dial address but belong
-// to different active health checks.
-func hostKeyFingerprint(key string) string {
-	_, fingerprint, _ := strings.Cut(key, "#")
-	return fingerprint
 }
 
 // PassiveHealthChecks holds configuration related to passive
@@ -500,7 +461,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 
 	markUnhealthy := func() {
 		// increment failures and then check if it has reached the threshold to mark unhealthy
-		err := upstream.Host.countHealthFail(1)
+		err := upstream.countHealthFail(1)
 		if err != nil {
 			if c := h.HealthChecks.Active.logger.Check(zapcore.ErrorLevel, "could not count active health failure"); c != nil {
 				c.Write(
@@ -510,11 +471,11 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 			}
 			return
 		}
-		if upstream.Host.activeHealthFails() >= h.HealthChecks.Active.Fails {
+		if upstream.activeHealthFails() >= h.HealthChecks.Active.Fails {
 			// dispatch an event that the host newly became unhealthy
 			if upstream.setHealthy(false) {
 				h.events.Emit(h.ctx, "unhealthy", map[string]any{"host": hostAddr})
-				upstream.Host.resetHealth()
+				upstream.resetHealth()
 			}
 		}
 	}
@@ -531,13 +492,13 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 			}
 			return
 		}
-		if upstream.Host.activeHealthPasses() >= h.HealthChecks.Active.Passes {
+		if upstream.activeHealthPasses() >= h.HealthChecks.Active.Passes {
 			if upstream.setHealthy(true) {
 				if c := h.HealthChecks.Active.logger.Check(zapcore.InfoLevel, "host is up"); c != nil {
 					c.Write(zap.String("host", hostAddr))
 				}
 				h.events.Emit(h.ctx, "healthy", map[string]any{"host": hostAddr})
-				upstream.Host.resetHealth()
+				upstream.resetHealth()
 			}
 		}
 	}

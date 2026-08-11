@@ -443,11 +443,7 @@ func (h *Handler) Cleanup() error {
 
 	// remove hosts from our config from the pool
 	for _, upstream := range h.Upstreams {
-		key := upstream.hostKey
-		if key == "" {
-			key = upstream.String()
-		}
-		_, _ = hosts.Delete(key)
+		_, _ = hosts.Delete(upstream.String())
 	}
 
 	return err
@@ -1455,10 +1451,6 @@ func (h Handler) provisionUpstream(upstream *Upstream, dynamic bool) {
 	if dynamic {
 		upstream.fillDynamicHost()
 	} else {
-		upstream.hostKey = upstream.String()
-		if h.HealthChecks != nil && h.HealthChecks.Active != nil && h.HealthChecks.Active.IsEnabled() {
-			upstream.hostKey += h.HealthChecks.Active.hostKeySuffix()
-		}
 		upstream.fillHost()
 	}
 
