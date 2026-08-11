@@ -307,3 +307,15 @@ func (p testPrecompressed) AcceptEncoding() string {
 func (p testPrecompressed) Suffix() string {
 	return p.suffix
 }
+
+func TestContentDigest(t *testing.T) {
+	fsrv := FileServer{
+		ContentDigest: []string{"sha-256"},
+	}
+	content := []byte("hello world")
+	rs := bytes.NewReader(content)
+	digest := fsrv.calculateContentDigest(rs)
+	if !strings.HasPrefix(digest, "sha-256=:") || !strings.HasSuffix(digest, ":") {
+		t.Errorf("expected RFC 9530 sha-256 digest format, got: %s", digest)
+	}
+}

@@ -16,6 +16,9 @@ package fileserver
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"crypto/sha512"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -176,6 +179,10 @@ type FileServer struct {
 	// Keep in mind that the Etag values in the files have to be quoted as per RFC7232.
 	// See https://datatracker.ietf.org/doc/html/rfc7232#section-2.3 for a few examples.
 	EtagFileExtensions []string `json:"etag_file_extensions,omitempty"`
+
+	// List of digest algorithms to use for RFC 9530 Content-Digest header generation.
+	// Supported values: "sha-256", "sha-512".
+	ContentDigest []string `json:"content_digest,omitempty"`
 
 	fsmap caddy.FileSystems
 
@@ -537,6 +544,14 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		respHeader.Set("Etag", etag)
 	}
 
+	if len(fsrv.ContentDigest) > 0 {
+		if rs, ok := file.(io.ReadSeeker); ok {
+			if digestHeader := fsrv.calculateContentDigest(rs); digestHeader != "" {
+				respHeader.Set("Content-Digest", digestHeader)
+			}
+		}
+	}
+
 	if respHeader.Get("Content-Type") == "" {
 		mtyp := mime.TypeByExtension(filepath.Ext(filename))
 		if mtyp == "" {
@@ -771,6 +786,30 @@ func calculateEtag(d os.FileInfo) string {
 	sb.WriteString(strconv.FormatInt(d.Size(), 36))
 	sb.WriteRune('"')
 	return sb.String()
+}
+
+func (fsrv *FileServer) calculateContentDigest(rs io.ReadSeeker) string {
+	var parts []string
+	for _, algo := range fsrv.ContentDigest {
+		algoLower := strings.ToLower(algo)
+		switch algoLower {
+		case "sha-256", "sha256":
+			h := sha256.New()
+			if _, err := io.Copy(h, rs); err == nil {
+				digest := base64.StdEncoding.EncodeToString(h.Sum(nil))
+				parts = append(parts, "sha-256=:"+digest+":")
+			}
+			_, _ = rs.Seek(0, io.SeekStart)
+		case "sha-512", "sha512":
+			h := sha512.New()
+			if _, err := io.Copy(h, rs); err == nil {
+				digest := base64.StdEncoding.EncodeToString(h.Sum(nil))
+				parts = append(parts, "sha-512=:"+digest+":")
+			}
+			_, _ = rs.Seek(0, io.SeekStart)
+		}
+	}
+	return strings.Join(parts, ", ")
 }
 
 // Finds the first corresponding etag file for a given file in the file system and return its content

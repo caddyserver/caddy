@@ -198,6 +198,13 @@ func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 			fsrv.EtagFileExtensions = etagFileExtensions
 
+		case "content_digest", "digest":
+			contentDigest := d.RemainingArgs()
+			if len(contentDigest) == 0 {
+				contentDigest = []string{"sha-256"}
+			}
+			fsrv.ContentDigest = contentDigest
+
 		default:
 			return d.Errf("unknown subdirective '%s'", d.Val())
 		}
