@@ -774,6 +774,10 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 		}
 	}
 
+	if err := normalizeEmptyHTTP3RequestBody(req); err != nil {
+		return nil, err
+	}
+
 	// if enabled, buffer client request; this should only be
 	// enabled if the upstream requires it and does not work
 	// with "slow clients" (gunicorn, etc.) - this obviously
@@ -875,6 +879,59 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	req.Header.Add("Via", strconv.Itoa(req.ProtoMajor)+"."+strconv.Itoa(req.ProtoMinor)+" Caddy")
 
 	return req, nil
+}
+
+// normalizeEmptyHTTP3RequestBody distinguishes an empty HTTP/3 request body
+// from a body whose length is unknown. HTTP/3 request headers do not indicate
+// whether DATA will follow, so server requests without a declared length have
+// a non-nil body and ContentLength -1 even when the stream is already empty.
+func normalizeEmptyHTTP3RequestBody(req *http.Request) error {
+	if req.ProtoMajor != 3 || req.ContentLength >= 0 || req.Body == nil ||
+		len(req.Trailer) > 0 || len(req.Header.Values("Trailer")) > 0 {
+		return nil
+	}
+
+	var firstByte [1]byte
+	n, err := req.Body.Read(firstByte[:])
+	switch {
+	case err == io.EOF && n == 0:
+		if err := req.Body.Close(); err != nil {
+			return fmt.Errorf("closing empty HTTP/3 request body: %w", err)
+		}
+		req.Body = http.NoBody
+		req.ContentLength = 0
+		req.GetBody = nil
+		req.TransferEncoding = nil
+	case err != nil && err != io.EOF:
+		_ = req.Body.Close()
+		return fmt.Errorf("probing HTTP/3 request body: %w", err)
+	case n == 0:
+		_ = req.Body.Close()
+		return fmt.Errorf("probing HTTP/3 request body: %w", io.ErrNoProgress)
+	default:
+		req.Body = &replayReadCloser{firstByte: firstByte[0], body: req.Body, replay: true}
+	}
+
+	return nil
+}
+
+type replayReadCloser struct {
+	firstByte byte
+	body      io.ReadCloser
+	replay    bool
+}
+
+func (r *replayReadCloser) Read(p []byte) (int, error) {
+	if r.replay && len(p) > 0 {
+		p[0] = r.firstByte
+		r.replay = false
+		return 1, nil
+	}
+	return r.body.Read(p)
+}
+
+func (r *replayReadCloser) Close() error {
+	return r.body.Close()
 }
 
 // addForwardedHeaders adds the de-facto standard X-Forwarded-*
