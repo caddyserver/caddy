@@ -296,3 +296,42 @@ func TestHTTPProtoNameNormalization(t *testing.T) {
 		}
 	}
 }
+
+// BenchmarkAddHTTPVarsToReplacer measures the per-request replacer setup, which
+// is the common path where the request UUID is never referenced.
+func BenchmarkAddHTTPVarsToReplacer(b *testing.B) {
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/foo?a=b", nil)
+	req.Header.Set("User-Agent", "test-agent")
+	ctx := context.WithValue(req.Context(), VarsCtxKey, make(map[string]any))
+	ctx = context.WithValue(ctx, ExtraLogFieldsCtxKey, new(ExtraLogFields))
+	req = req.WithContext(ctx)
+
+	b.ReportAllocs()
+	for b.Loop() {
+		repl := caddy.NewReplacer()
+		addHTTPVarsToReplacer(repl, req, nil)
+	}
+}
+
+// TestHTTPVarReplacementUUID verifies the lazily-allocated request UUID is
+// generated on first access and stays stable across references.
+func TestHTTPVarReplacementUUID(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	repl := caddy.NewReplacer()
+	ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+	ctx = context.WithValue(ctx, VarsCtxKey, make(map[string]any))
+	ctx = context.WithValue(ctx, ExtraLogFieldsCtxKey, new(ExtraLogFields))
+	req = req.WithContext(ctx)
+	addHTTPVarsToReplacer(repl, req, nil)
+
+	first, ok := repl.GetString("http.request.uuid")
+	if !ok || first == "" {
+		t.Fatalf("expected a non-empty uuid, got %q (ok=%t)", first, ok)
+	}
+
+	second, _ := repl.GetString("http.request.uuid")
+	if first != second {
+		t.Errorf("expected stable uuid across references: %q != %q", first, second)
+	}
+}
+

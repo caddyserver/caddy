@@ -49,9 +49,9 @@ func init() {
 // defined by adding a good, default TLS connection policy.
 //
 // Similar to how other popular web servers work, incoming request header fields
-// with underscores are ignored/dropped implicitly to mitigate security risks.
-// Specific headers to allow can be explicitly configured using
-// `expected_underscore_headers`.
+// with underscores or dots are ignored/dropped implicitly to mitigate security
+// risks. Specific headers to allow can be explicitly configured using
+// `expected_underscore_headers` and `expected_dot_headers`.
 //
 // ### Placeholders
 //
@@ -302,8 +302,11 @@ func (app *App) Provision(ctx caddy.Context) error {
 			srv.ClientIPHeaders = []string{"X-Forwarded-For"}
 		}
 
-		// precompute underscore header allowlist rules
+		// precompute underscore and dot header allowlist rules
 		if err := srv.provisionUnderscoreHeaders(); err != nil {
+			return fmt.Errorf("server %s: %v", srvName, err)
+		}
+		if err := srv.provisionDotHeaders(); err != nil {
 			return fmt.Errorf("server %s: %v", srvName, err)
 		}
 

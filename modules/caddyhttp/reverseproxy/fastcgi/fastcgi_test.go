@@ -310,10 +310,11 @@ func TestSplitPosUnicodeSecurityRegression(t *testing.T) {
 
 // TestHeaderNameReplacer asserts the CGI header-to-env normalization rule:
 // hyphens are mapped to underscores while every other character (including
-// spaces) is passed through. Spaces are not RFC 7230 tokens, so they cannot
-// reach this function from the wire; the only header names that survive
-// untouched at the server layer are sanitized by the underscore filter in
-// caddyhttp.Server.serveHTTP (see GHSA-f59h-q822-g45g).
+// spaces and dots) is passed through. Spaces are not RFC 7230 tokens, so they
+// cannot reach this function from the wire; the only header names that
+// survive untouched at the server layer are sanitized by the underscore/dot
+// filter in caddyhttp.Server.serveHTTP (see GHSA-f59h-q822-g45g,
+// GHSA-49wc-4hcv-v58q).
 func TestHeaderNameReplacer(t *testing.T) {
 	tests := []struct {
 		in, want string
@@ -323,6 +324,9 @@ func TestHeaderNameReplacer(t *testing.T) {
 		// Underscores are preserved (the server has already dropped any
 		// underscore-named headers when the filter is on).
 		{"Remote_User", "Remote_User"},
+		// Dots are preserved by this replacer too; the server-layer filter is
+		// what prevents a dotted alias (e.g. Remote.User) from reaching here.
+		{"Remote.User", "Remote.User"},
 		// Spaces are not rewritten because Go's HTTP parser rejects whitespace in
 		// header field names.
 		{"Foo Bar", "Foo Bar"},
