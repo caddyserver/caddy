@@ -61,7 +61,16 @@ type Upstream struct {
 	activeHealthCheckUpstream string
 	healthCheckPolicy         *PassiveHealthChecks
 	cb                        CircuitBreaker
-	unhealthy                 atomic.Int32 // status from active health checker
+
+	// state from the active health checker. It lives here rather than on
+	// the shared Host because the Host is keyed by dial address alone,
+	// while an active health check is configured per handler: two handlers
+	// dialing the same address with different health_uri or health_headers
+	// are checking distinct health targets, and must not push each other
+	// over their own consecutive pass/fail thresholds.
+	unhealthy    atomic.Int32
+	activePasses atomic.Int64
+	activeFails  atomic.Int64
 }
 
 // (pointer receiver necessary to avoid a race condition, since
@@ -173,10 +182,8 @@ func (u *Upstream) fillDynamicHost() {
 // Host is the basic, in-memory representation of the state of a remote host.
 // Its fields are accessed atomically and Host values must not be copied.
 type Host struct {
-	numRequests  atomic.Int64
-	fails        atomic.Int64
-	activePasses atomic.Int64
-	activeFails  atomic.Int64
+	numRequests atomic.Int64
+	fails       atomic.Int64
 }
 
 // NumRequests returns the number of active requests to the upstream.
@@ -187,16 +194,6 @@ func (h *Host) NumRequests() int {
 // Fails returns the number of recent failures with the upstream.
 func (h *Host) Fails() int {
 	return int(h.fails.Load())
-}
-
-// activeHealthPasses returns the number of consecutive active health check passes with the upstream.
-func (h *Host) activeHealthPasses() int {
-	return int(h.activePasses.Load())
-}
-
-// activeHealthFails returns the number of consecutive active health check failures with the upstream.
-func (h *Host) activeHealthFails() int {
-	return int(h.activeFails.Load())
 }
 
 // countRequest mutates the active request count by
@@ -219,10 +216,22 @@ func (h *Host) countFail(delta int) error {
 	return nil
 }
 
+// activeHealthPasses returns the number of consecutive passing
+// active health checks observed by this upstream's checker.
+func (u *Upstream) activeHealthPasses() int {
+	return int(u.activePasses.Load())
+}
+
+// activeHealthFails returns the number of consecutive failing
+// active health checks observed by this upstream's checker.
+func (u *Upstream) activeHealthFails() int {
+	return int(u.activeFails.Load())
+}
+
 // countHealthPass mutates the recent passes count by
 // delta. It returns an error if the adjustment fails.
-func (h *Host) countHealthPass(delta int) error {
-	result := h.activePasses.Add(int64(delta))
+func (u *Upstream) countHealthPass(delta int) error {
+	result := u.activePasses.Add(int64(delta))
 	if result < 0 {
 		return fmt.Errorf("count below 0: %d", result)
 	}
@@ -231,8 +240,8 @@ func (h *Host) countHealthPass(delta int) error {
 
 // countHealthFail mutates the recent failures count by
 // delta. It returns an error if the adjustment fails.
-func (h *Host) countHealthFail(delta int) error {
-	result := h.activeFails.Add(int64(delta))
+func (u *Upstream) countHealthFail(delta int) error {
+	result := u.activeFails.Add(int64(delta))
 	if result < 0 {
 		return fmt.Errorf("count below 0: %d", result)
 	}
@@ -240,9 +249,9 @@ func (h *Host) countHealthFail(delta int) error {
 }
 
 // resetHealth resets the health check counters.
-func (h *Host) resetHealth() {
-	h.activePasses.Store(0)
-	h.activeFails.Store(0)
+func (u *Upstream) resetHealth() {
+	u.activePasses.Store(0)
+	u.activeFails.Store(0)
 }
 
 // healthy returns true if the upstream is not actively marked as unhealthy.
