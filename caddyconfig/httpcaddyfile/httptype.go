@@ -1065,8 +1065,7 @@ func (st *ServerType) serversFromPairings(
 
 		// hoist the shields last to last, so that inserting one does not
 		// shift the index of a covering policy still to be shielded
-		for i := len(shieldedHosts) - 1; i >= 0; i-- {
-			hosts := shieldedHosts[i]
+		for i, hosts := range slices.Backward(shieldedHosts) {
 			if len(hosts) == 0 {
 				continue
 			}

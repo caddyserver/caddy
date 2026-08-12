@@ -436,8 +436,7 @@ func (s *Server) provisionUnderscoreHeaders() error {
 		return nil
 	}
 	var err error
-	s.underscoreExactAllow, s.underscoreExactDrop, s.underscorePrefixRules, err =
-		provisionHeaderAliasAllowlist(s.ExpectedUnderscoreHeaders, '_', "expected_underscore_headers")
+	s.underscoreExactAllow, s.underscoreExactDrop, s.underscorePrefixRules, err = provisionHeaderAliasAllowlist(s.ExpectedUnderscoreHeaders, '_', "expected_underscore_headers")
 	return err
 }
 
@@ -449,8 +448,7 @@ func (s *Server) provisionDotHeaders() error {
 		return nil
 	}
 	var err error
-	s.dotExactAllow, s.dotExactDrop, s.dotPrefixRules, err =
-		provisionHeaderAliasAllowlist(s.ExpectedDotHeaders, '.', "expected_dot_headers")
+	s.dotExactAllow, s.dotExactDrop, s.dotPrefixRules, err = provisionHeaderAliasAllowlist(s.ExpectedDotHeaders, '.', "expected_dot_headers")
 	return err
 }
 
@@ -905,7 +903,7 @@ func (s *Server) findLastRouteWithHostMatcher() int {
 	for i, route := range s.Routes {
 		// since we want to break out of an inner loop, use a closure
 		// to allow us to use 'return' when we found a host matcher
-		found := (func() bool {
+		found := func() bool {
 			for _, sets := range route.MatcherSets {
 				for _, matcher := range sets {
 					switch matcher.(type) {
@@ -916,7 +914,7 @@ func (s *Server) findLastRouteWithHostMatcher() int {
 				}
 			}
 			return false
-		})()
+		}()
 
 		// if we found the host matcher, change the lastIndex to
 		// just after the current route
@@ -1164,7 +1162,8 @@ func (s *Server) logRequest(
 
 			fieldCount := 6
 			fields = make([]zapcore.Field, 0, fieldCount+len(extra.fields))
-			fields = append(fields,
+			fields = append(
+				fields,
 				zap.Int("bytes_read", reqBodyLength),
 				zap.String("user_id", userID),
 				zap.Duration("duration", *duration),
