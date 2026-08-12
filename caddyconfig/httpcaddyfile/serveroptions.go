@@ -49,6 +49,7 @@ type serverOptions struct {
 	MaxHeaderBytes            int
 	EnableFullDuplex          bool
 	ExpectedUnderscoreHeaders []string
+	ExpectedDotHeaders        []string
 	Protocols                 []string
 	StrictSNIHost             *bool
 	TrustedProxiesRaw         json.RawMessage
@@ -226,6 +227,13 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 			}
 			serverOpts.ExpectedUnderscoreHeaders = args
 
+		case "expected_dot_headers":
+			args := d.RemainingArgs()
+			if len(args) == 0 {
+				return nil, d.ArgErr()
+			}
+			serverOpts.ExpectedDotHeaders = args
+
 		case "log_credentials":
 			if d.NextArg() {
 				return nil, d.ArgErr()
@@ -389,6 +397,7 @@ func applyServerOptions(
 		server.MaxHeaderBytes = opts.MaxHeaderBytes
 		server.EnableFullDuplex = opts.EnableFullDuplex
 		server.ExpectedUnderscoreHeaders = opts.ExpectedUnderscoreHeaders
+		server.ExpectedDotHeaders = opts.ExpectedDotHeaders
 		server.Protocols = opts.Protocols
 		server.StrictSNIHost = opts.StrictSNIHost
 		server.TrustedProxiesRaw = opts.TrustedProxiesRaw

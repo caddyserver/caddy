@@ -189,6 +189,34 @@ func check_validator_headers(modTime time.Time, expect_headers bool, t *testing.
 	}
 }
 
+// calculateEtag concatenates the base-36 mtime and size with no separator,
+// so distinct (mtime, size) pairs can produce the same digit string and
+// therefore the same ETag.
+func TestCalculateEtagCollision(t *testing.T) {
+	fileA := fakeFileInfo{size: 75, modTime: time.Unix(2, 0)}
+	fileB := fakeFileInfo{size: 3, modTime: time.Unix(72, 2)}
+
+	etagA := calculateEtag(fileA)
+	etagB := calculateEtag(fileB)
+
+	if etagA == etagB {
+		t.Fatalf("etag collision: distinct files (size=%d mtime=%s) and (size=%d mtime=%s) both produced ETag %s",
+			fileA.size, fileA.modTime, fileB.size, fileB.modTime, etagA)
+	}
+}
+
+type fakeFileInfo struct {
+	size    int64
+	modTime time.Time
+}
+
+func (f fakeFileInfo) Name() string       { return "fake" }
+func (f fakeFileInfo) Size() int64        { return f.size }
+func (f fakeFileInfo) Mode() os.FileMode  { return 0 }
+func (f fakeFileInfo) ModTime() time.Time { return f.modTime }
+func (f fakeFileInfo) IsDir() bool        { return false }
+func (f fakeFileInfo) Sys() any           { return nil }
+
 func TestPrecompressedRangeResponse(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "range.txt"), []byte("original response body"), 0o600); err != nil {

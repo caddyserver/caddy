@@ -527,6 +527,51 @@ func TestServer_serveHTTP_LogsDroppedUnderscoreHeader(t *testing.T) {
 	assert.Contains(t, buf.String(), `"header":"Remote_user"`)
 }
 
+// TestServer_serveHTTP_DropsDotHeader guards GHSA-49wc-4hcv-v58q: a
+// dot-named alias (e.g. `Remote.user`) of a hyphenated header must be
+// dropped too, since PHP's $_SERVER registration folds `.` to `_` just
+// like CGI/FastCGI folds `-` to `_`.
+func TestServer_serveHTTP_DropsDotHeader(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger: zap.NewNop(),
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["X-Real-Header"] = []string{"ok"}
+	req.Header["Remote.user"] = []string{"attacker"}
+	req.Header["Remote.groups"] = []string{"admin"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.NotContains(t, *got, "Remote.user")
+	assert.NotContains(t, *got, "Remote.groups")
+	assert.Equal(t, "ok", got.Get("X-Real-Header"))
+}
+
+// TestServer_serveHTTP_LogsDroppedDotHeader verifies each dropped dotted
+// header is emitted at debug level, same as the underscore case.
+func TestServer_serveHTTP_LogsDroppedDotHeader(t *testing.T) {
+	var buf bytes.Buffer
+	s := &Server{
+		logger: testLogger(buf.Write),
+		primaryHandlerChain: HandlerFunc(func(http.ResponseWriter, *http.Request) error {
+			return nil
+		}),
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["Remote.user"] = []string{"attacker"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.Contains(t, buf.String(), `"level":"debug"`)
+	assert.Contains(t, buf.String(), `"msg":"dropping header containing dot"`)
+	assert.Contains(t, buf.String(), `"header":"Remote.user"`)
+}
+
 // --- Allowlist: exact match ---
 
 func TestServer_serveHTTP_AllowlistKeepsExactMatch(t *testing.T) {
@@ -777,6 +822,277 @@ func TestServer_serveHTTP_LiteralAsteriskInHeader(t *testing.T) {
 	assert.Equal(t, "val", got.Get("Webhook_*"))
 }
 
+// --- Allowlist: dot headers (ExpectedDotHeaders), independent of underscore ---
+
+// TestServer_serveHTTP_DotAllowlistKeepsExactMatch verifies a dot-named
+// header explicitly allowlisted via ExpectedDotHeaders survives, mirroring
+// the underscore allowlist behavior.
+func TestServer_serveHTTP_DotAllowlistKeepsExactMatch(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:             zap.NewNop(),
+		ExpectedDotHeaders: []string{"user.id"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionDotHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["User.id"] = []string{"zeus"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.Equal(t, "zeus", got.Get("User.id"))
+}
+
+// TestServer_serveHTTP_DotAllowlistDropsHyphenatedVariant verifies the
+// hyphenated variant of an allowlisted dot header is dropped, same as for
+// the underscore allowlist.
+func TestServer_serveHTTP_DotAllowlistDropsHyphenatedVariant(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:             zap.NewNop(),
+		ExpectedDotHeaders: []string{"user.id"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionDotHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["User.id"] = []string{"zeus"}
+	req.Header.Set("User-Id", "attacker")
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.Equal(t, "zeus", got.Get("User.id"))
+	assert.NotContains(t, *got, "User-Id")
+}
+
+// TestServer_serveHTTP_DotAllowlistDropsUnderscoreVariant verifies that when
+// only the dot form is allowlisted, an underscore-form header of the same
+// logical name is NOT independently kept: ExpectedDotHeaders does not grant
+// any allowance to underscore-named headers, so it falls through to the
+// default underscore behavior (dropped, since ExpectedUnderscoreHeaders is
+// unset).
+func TestServer_serveHTTP_DotAllowlistDropsUnderscoreVariant(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:             zap.NewNop(),
+		ExpectedDotHeaders: []string{"user.id"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionDotHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["User.id"] = []string{"zeus"}
+	req.Header["User_id"] = []string{"attacker"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.Equal(t, "zeus", got.Get("User.id"))
+	assert.NotContains(t, *got, "User_id")
+}
+
+// TestServer_serveHTTP_DotAllowlistDropsUnlisted verifies an unlisted
+// dot-form header is dropped just like its underscore-form counterpart.
+func TestServer_serveHTTP_DotAllowlistDropsUnlisted(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:             zap.NewNop(),
+		ExpectedDotHeaders: []string{"user.id"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionDotHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["User.id"] = []string{"zeus"}
+	req.Header["Remote.user"] = []string{"attacker"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.Equal(t, "zeus", got.Get("User.id"))
+	assert.NotContains(t, *got, "Remote.user")
+}
+
+// TestServer_serveHTTP_DotPrefixGlobKeepsMatch verifies prefix-glob
+// matching works for dot headers the same way it does for underscore
+// headers.
+func TestServer_serveHTTP_DotPrefixGlobKeepsMatch(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:             zap.NewNop(),
+		ExpectedDotHeaders: []string{"webhook.*"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionDotHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["Webhook.event"] = []string{"push"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.Equal(t, "push", got.Get("Webhook.event"))
+}
+
+// --- Both allowlists configured together ---
+
+// TestServer_serveHTTP_BothAllowlistsCoexistForDifferentNames verifies
+// unrelated underscore and dot allowlist entries can coexist without
+// interfering with each other.
+func TestServer_serveHTTP_BothAllowlistsCoexistForDifferentNames(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:                    zap.NewNop(),
+		ExpectedUnderscoreHeaders: []string{"user_id"},
+		ExpectedDotHeaders:        []string{"webhook.event"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionUnderscoreHeaders())
+	require.NoError(t, s.provisionDotHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["User_id"] = []string{"zeus"}
+	req.Header["Webhook.event"] = []string{"push"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.Equal(t, "zeus", got.Get("User_id"))
+	assert.Equal(t, "push", got.Get("Webhook.event"))
+}
+
+// TestServer_serveHTTP_BothAllowlistsPermitSameLogicalName verifies Caddy
+// does not enforce mutual exclusion between the two allowlists: an
+// operator whose backend doesn't fold '.' and '_' onto the same variable
+// (e.g. a Node.js or Go app behind reverse_proxy, not a CGI/FastCGI/PHP
+// backend) may legitimately want both spellings of the same name kept as
+// distinct headers. It's their responsibility to know whether that's safe
+// for their backend; see the doc comments on ExpectedUnderscoreHeaders and
+// ExpectedDotHeaders.
+func TestServer_serveHTTP_BothAllowlistsPermitSameLogicalName(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:                    zap.NewNop(),
+		ExpectedUnderscoreHeaders: []string{"user_id"},
+		ExpectedDotHeaders:        []string{"user.id"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionUnderscoreHeaders())
+	require.NoError(t, s.provisionDotHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["User_id"] = []string{"alice"}
+	req.Header["User.id"] = []string{"bob"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.Equal(t, "alice", got.Get("User_id"))
+	assert.Equal(t, "bob", got.Get("User.id"))
+}
+
+// --- Headers with both underscore and dot in the same name ---
+
+// TestServer_serveHTTP_DropsMixedUnderscoreDotHeaderByDefault verifies a
+// header spelled with both an underscore and a dot (e.g. "Webhook_user.id")
+// is dropped by default, same as either separator alone.
+func TestServer_serveHTTP_DropsMixedUnderscoreDotHeaderByDefault(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger: zap.NewNop(),
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["Webhook_user.id"] = []string{"attacker"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.NotContains(t, *got, "Webhook_user.id")
+}
+
+// TestServer_serveHTTP_PrefixGlobDoesNotLeakMixedHeader guards against a
+// prefix glob unintentionally admitting a mixed-separator header: an
+// underscore prefix rule like "webhook_*" matches "Webhook_user.id" via
+// plain string prefix, but the embedded dot still collides at a
+// CGI/FastCGI/PHP backend the same way a bare dot-named header would, so
+// it must not slip through just because it also happens to start with an
+// allowlisted underscore prefix.
+func TestServer_serveHTTP_PrefixGlobDoesNotLeakMixedHeader(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:                    zap.NewNop(),
+		ExpectedUnderscoreHeaders: []string{"webhook_*"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionUnderscoreHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["Webhook_user.id"] = []string{"attacker"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.NotContains(t, *got, "Webhook_user.id")
+}
+
+// TestServer_serveHTTP_ExactAllowlistPermitsMixedHeader verifies that an
+// operator who explicitly vetted the exact mixed-separator spelling (not a
+// glob) can still allowlist it.
+func TestServer_serveHTTP_ExactAllowlistPermitsMixedHeader(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:                    zap.NewNop(),
+		ExpectedUnderscoreHeaders: []string{"webhook_user.id"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionUnderscoreHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["Webhook_user.id"] = []string{"ok"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.Equal(t, "ok", got.Get("Webhook_user.id"))
+}
+
+// TestServer_serveHTTP_ExactAllowlistDropsMixedHeaderRepeatedValues verifies
+// the repeated-value guard also applies to an exactly-allowlisted mixed
+// header.
+func TestServer_serveHTTP_ExactAllowlistDropsMixedHeaderRepeatedValues(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:                    zap.NewNop(),
+		ExpectedUnderscoreHeaders: []string{"webhook_user.id"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionUnderscoreHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["Webhook_user.id"] = []string{"ok", "injected"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.NotContains(t, *got, "Webhook_user.id")
+}
+
 // --- Combined allowlist ---
 
 func TestServer_serveHTTP_ExactAndPrefixCoexist(t *testing.T) {
@@ -895,7 +1211,7 @@ func TestServer_serveHTTP_LogsHyphenatedVariantDrop(t *testing.T) {
 
 	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
 	assert.Contains(t, buf.String(), `"level":"debug"`)
-	assert.Contains(t, buf.String(), `"msg":"dropping hyphenated variant of expected underscore header"`)
+	assert.Contains(t, buf.String(), `"msg":"dropping hyphenated variant of expected underscore/dot header"`)
 	assert.Contains(t, buf.String(), `"header":"User-Id"`)
 }
 
@@ -952,6 +1268,52 @@ func TestServer_provisionUnderscoreHeaders_DeduplicatesSilently(t *testing.T) {
 	s := &Server{ExpectedUnderscoreHeaders: []string{"user_id", "user_id"}}
 	require.NoError(t, s.provisionUnderscoreHeaders())
 	assert.Len(t, s.underscoreExactAllow, 1)
+}
+
+func TestServer_provisionDotHeaders_EmptyListIsNoOp(t *testing.T) {
+	s := &Server{ExpectedDotHeaders: []string{}}
+	assert.NoError(t, s.provisionDotHeaders())
+}
+
+func TestServer_provisionDotHeaders_RejectsNoDot(t *testing.T) {
+	s := &Server{ExpectedDotHeaders: []string{"content-type"}}
+	assert.Error(t, s.provisionDotHeaders())
+}
+
+func TestServer_provisionDotHeaders_RejectsBareWildcard(t *testing.T) {
+	s := &Server{ExpectedDotHeaders: []string{"*"}}
+	assert.Error(t, s.provisionDotHeaders())
+}
+
+func TestServer_provisionDotHeaders_RejectsMidGlob(t *testing.T) {
+	s := &Server{ExpectedDotHeaders: []string{"f*oo.bar"}}
+	assert.Error(t, s.provisionDotHeaders())
+}
+
+func TestServer_provisionDotHeaders_RejectsLeadingGlob(t *testing.T) {
+	s := &Server{ExpectedDotHeaders: []string{"*.foo"}}
+	assert.Error(t, s.provisionDotHeaders())
+}
+
+func TestServer_provisionDotHeaders_RejectsNonASCII(t *testing.T) {
+	s := &Server{ExpectedDotHeaders: []string{"uşer.id"}}
+	assert.Error(t, s.provisionDotHeaders())
+}
+
+func TestServer_provisionDotHeaders_ValidExact(t *testing.T) {
+	s := &Server{ExpectedDotHeaders: []string{"user.id"}}
+	assert.NoError(t, s.provisionDotHeaders())
+}
+
+func TestServer_provisionDotHeaders_ValidGlob(t *testing.T) {
+	s := &Server{ExpectedDotHeaders: []string{"webhook.*"}}
+	assert.NoError(t, s.provisionDotHeaders())
+}
+
+func TestServer_provisionDotHeaders_DeduplicatesSilently(t *testing.T) {
+	s := &Server{ExpectedDotHeaders: []string{"user.id", "user.id"}}
+	require.NoError(t, s.provisionDotHeaders())
+	assert.Len(t, s.dotExactAllow, 1)
 }
 
 // TestServer_SpaceInHeaderNameReturnsBadRequest documents why the underscore
