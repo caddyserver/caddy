@@ -995,6 +995,17 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 	// with a wildcard domain
 	customHostnames := []string{}
 	noHostname := false
+	// track single-valued subdirectives so that repeating one is an error
+	// rather than silently overriding the previous value; see
+	// https://caddy.community/t/logs-not-getting-written-to-journal/33852
+	seen := make(map[string]bool)
+	assertUnique := func(subdir string) error {
+		if seen[subdir] {
+			return h.Errf("'%s' subdirective specified more than once in the same log block", subdir)
+		}
+		seen[subdir] = true
+		return nil
+	}
 	for h.NextBlock(0) {
 		switch h.Val() {
 		case "hostnames":
@@ -1008,6 +1019,9 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 			customHostnames = append(customHostnames, args...)
 
 		case "output":
+			if err := assertUnique(h.Val()); err != nil {
+				return nil, err
+			}
 			if !h.NextArg() {
 				return nil, h.ArgErr()
 			}
@@ -1040,14 +1054,22 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 			cl.WriterRaw = caddyconfig.JSONModuleObject(wo, "output", moduleName, h.warnings)
 
 		case "sampling":
+			if err := assertUnique(h.Val()); err != nil {
+				return nil, err
+			}
 			d := h.Dispenser.NewFromNextSegment()
 			for d.NextArg() {
 				// consume any tokens on the same line, if any.
 			}
 
 			sampling := &caddy.LogSampling{}
+			samplingSeen := make(map[string]bool)
 			for nesting := d.Nesting(); d.NextBlock(nesting); {
 				subdir := d.Val()
+				if samplingSeen[subdir] {
+					return nil, d.Errf("'%s' specified more than once in the same sampling block", subdir)
+				}
+				samplingSeen[subdir] = true
 				switch subdir {
 				case "interval":
 					if !d.NextArg() {
@@ -1084,6 +1106,9 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 			cl.Sampling = sampling
 
 		case "core":
+			if err := assertUnique(h.Val()); err != nil {
+				return nil, err
+			}
 			if !h.NextArg() {
 				return nil, h.ArgErr()
 			}
@@ -1100,6 +1125,9 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 			cl.CoreRaw = caddyconfig.JSONModuleObject(core, "module", moduleName, h.warnings)
 
 		case "format":
+			if err := assertUnique(h.Val()); err != nil {
+				return nil, err
+			}
 			if !h.NextArg() {
 				return nil, h.ArgErr()
 			}
@@ -1116,6 +1144,9 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 			cl.EncoderRaw = caddyconfig.JSONModuleObject(enc, "format", moduleName, h.warnings)
 
 		case "level":
+			if err := assertUnique(h.Val()); err != nil {
+				return nil, err
+			}
 			if !h.NextArg() {
 				return nil, h.ArgErr()
 			}
@@ -1141,6 +1172,9 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 			}
 
 		case "no_hostname":
+			if err := assertUnique(h.Val()); err != nil {
+				return nil, err
+			}
 			if h.NextArg() {
 				return nil, h.ArgErr()
 			}

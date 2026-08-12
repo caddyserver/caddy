@@ -108,7 +108,7 @@ type FileWriter struct {
 	RollSizeMB int `json:"roll_size_mb,omitempty"`
 
 	// Roll log file after some time
-	RollInterval time.Duration `json:"roll_interval,omitempty"`
+	RollInterval caddy.Duration `json:"roll_interval,omitempty"`
 
 	// Roll log file at fix minutes
 	// For example []int{0, 30} will roll file at xx:00 and xx:30 each hour
@@ -287,7 +287,7 @@ func (fw FileWriter) OpenWriter() (io.WriteCloser, error) {
 		MaxBackups:       fw.RollKeep,
 		LocalTime:        fw.RollLocalTime,
 		Compression:      compression,
-		RotationInterval: fw.RollInterval,
+		RotationInterval: time.Duration(fw.RollInterval),
 		RotateAtMinutes:  fw.RollAtMinutes,
 		RotateAt:         fw.RollAt,
 		BackupTimeFormat: fw.BackupTimeFormat,
@@ -489,11 +489,11 @@ func (fw *FileWriter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if !d.AllArgs(&durationStr) {
 				return d.ArgErr()
 			}
-			duration, err := time.ParseDuration(durationStr)
+			duration, err := caddy.ParseDuration(durationStr)
 			if err != nil {
 				return d.Errf("parsing roll_interval duration: %v", err)
 			}
-			fw.RollInterval = duration
+			fw.RollInterval = caddy.Duration(duration)
 
 		case "roll_minutes":
 			// Accept either a single comma-separated argument or

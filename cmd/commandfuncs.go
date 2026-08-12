@@ -836,7 +836,7 @@ func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io
 		},
 	}
 
-	resp, err := client.Do(req) //nolint:gosec // the only SSRF here would be self-sabatoge I think
+	resp, err := client.Do(req) //nolint:gosec // the only SSRF here would be self-sabotage I think
 	if err != nil {
 		return nil, fmt.Errorf("performing request: %v", err)
 	}

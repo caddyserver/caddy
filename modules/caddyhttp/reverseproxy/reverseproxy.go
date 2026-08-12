@@ -872,7 +872,7 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	}
 
 	// Via header(s)
-	req.Header.Add("Via", fmt.Sprintf("%d.%d Caddy", req.ProtoMajor, req.ProtoMinor))
+	req.Header.Add("Via", strconv.Itoa(req.ProtoMajor)+"."+strconv.Itoa(req.ProtoMinor)+" Caddy")
 
 	return req, nil
 }
@@ -1253,7 +1253,7 @@ func (h *Handler) finalizeResponse(
 	if !strings.HasPrefix(strings.ToUpper(res.Proto), "HTTP/") {
 		protoPrefix = res.Proto[:strings.Index(res.Proto, "/")+1]
 	}
-	rw.Header().Add("Via", fmt.Sprintf("%s%d.%d Caddy", protoPrefix, res.ProtoMajor, res.ProtoMinor))
+	rw.Header().Add("Via", protoPrefix+strconv.Itoa(res.ProtoMajor)+"."+strconv.Itoa(res.ProtoMinor)+" Caddy")
 
 	// apply any response header operations
 	if h.Headers != nil && h.Headers.Response != nil {

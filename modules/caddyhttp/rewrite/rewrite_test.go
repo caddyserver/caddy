@@ -351,6 +351,19 @@ func TestRewrite(t *testing.T) {
 			input:  newRequest(t, "GET", "/foo/findme%2Fbar"),
 			expect: newRequest(t, "GET", "/foo/replaced%2Fbar"),
 		},
+		{
+			rule:   Rewrite{URISubstring: []substrReplacer{{Find: "%28", Replace: "("}}},
+			input:  newRequest(t, "GET", "/hello/%28%29"),
+			expect: newRequest(t, "GET", "/hello/(%29"),
+		},
+		{
+			rule: Rewrite{URISubstring: []substrReplacer{
+				{Find: "%28", Replace: "("},
+				{Find: "%29", Replace: ")"},
+			}},
+			input:  newRequest(t, "GET", "/hello/%28%29"),
+			expect: newRequest(t, "GET", "/hello/()"),
+		},
 
 		{
 			rule:   Rewrite{PathRegexp: []*regexReplacer{{Find: "/{2,}", Replace: "/"}}},
