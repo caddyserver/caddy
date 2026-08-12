@@ -293,7 +293,8 @@ func (st ServerType) Setup(
 	if filesystems, ok := options["filesystem"].(caddy.Module); ok {
 		cfg.AppsRaw["caddy.filesystems"] = caddyconfig.JSON(
 			filesystems,
-			&warnings)
+			&warnings,
+		)
 	}
 
 	if storageCvtr, ok := options["storage"].(caddy.StorageConverter); ok {
@@ -830,7 +831,8 @@ func (st *ServerType) serversFromPairings(
 						emptyConnPolicies = append(emptyConnPolicies, cp)
 					}
 				}
-			} else if specificHosts := slices.DeleteFunc(slices.Clone(hosts),
+			} else if specificHosts := slices.DeleteFunc(
+				slices.Clone(hosts),
 				func(h string) bool { return h == "" || strings.Contains(h, "*") },
 			); len(specificHosts) > 0 {
 				// site blocks with no TLS connection policy of their own may
@@ -894,7 +896,8 @@ func (st *ServerType) serversFromPairings(
 					listenerWrapper,
 					"wrapper",
 					listenerWrapper.(caddy.Module).CaddyModule().ID.Name(),
-					warnings)
+					warnings,
+				)
 				srv.ListenerWrappersRaw = append(srv.ListenerWrappersRaw, jsonListenerWrapper)
 			}
 
@@ -908,7 +911,8 @@ func (st *ServerType) serversFromPairings(
 					packetConnWrapper,
 					"wrapper",
 					packetConnWrapper.(caddy.Module).CaddyModule().ID.Name(),
-					warnings)
+					warnings,
+				)
 				srv.PacketConnWrappersRaw = append(srv.PacketConnWrappersRaw, jsonPacketConnWrapper)
 			}
 
