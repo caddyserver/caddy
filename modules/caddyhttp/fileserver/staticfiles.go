@@ -21,6 +21,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"io/fs"
 	weakrand "math/rand/v2"
@@ -182,6 +183,8 @@ type FileServer struct {
 
 	// List of digest algorithms to use for RFC 9530 Content-Digest header generation.
 	// Supported values: "sha-256", "sha-512".
+	// Note: Enabling Content-Digest requires reading file bytes into memory to compute hashes,
+	// which disables OS sendfile(2) zero-copy optimization on unencrypted HTTP connections.
 	ContentDigest []string `json:"content_digest,omitempty"`
 
 	fsmap caddy.FileSystems
@@ -546,7 +549,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 
 	if len(fsrv.ContentDigest) > 0 {
 		if rs, ok := file.(io.ReadSeeker); ok {
-			if digestHeader := fsrv.calculateContentDigest(rs); digestHeader != "" {
+			if digestHeader := fsrv.calculateContentDigest(rs, r, info.Size()); digestHeader != "" {
 				respHeader.Set("Content-Digest", digestHeader)
 			}
 		}
@@ -789,28 +792,99 @@ func calculateEtag(d os.FileInfo) string {
 	return sb.String()
 }
 
-func (fsrv *FileServer) calculateContentDigest(rs io.ReadSeeker) string {
+func (fsrv *FileServer) calculateContentDigest(rs io.ReadSeeker, r *http.Request, size int64) string {
 	var parts []string
 	for _, algo := range fsrv.ContentDigest {
 		algoLower := strings.ToLower(algo)
+		var h hash.Hash
 		switch algoLower {
 		case "sha-256", "sha256":
-			h := sha256.New()
-			if _, err := io.Copy(h, rs); err == nil {
-				digest := base64.StdEncoding.EncodeToString(h.Sum(nil))
-				parts = append(parts, "sha-256=:"+digest+":")
-			}
-			_, _ = rs.Seek(0, io.SeekStart)
+			h = sha256.New()
+			algoLower = "sha-256"
 		case "sha-512", "sha512":
-			h := sha512.New()
-			if _, err := io.Copy(h, rs); err == nil {
-				digest := base64.StdEncoding.EncodeToString(h.Sum(nil))
-				parts = append(parts, "sha-512=:"+digest+":")
+			h = sha512.New()
+			algoLower = "sha-512"
+		default:
+			continue
+		}
+
+		offset, length, isRange := getRequestedRange(r, size)
+		var err error
+		if isRange {
+			_, err = rs.Seek(offset, io.SeekStart)
+			if err == nil {
+				_, err = io.CopyN(h, rs, length)
 			}
-			_, _ = rs.Seek(0, io.SeekStart)
+		} else {
+			_, err = rs.Seek(0, io.SeekStart)
+			if err == nil {
+				_, err = io.Copy(h, rs)
+			}
+		}
+
+		_, _ = rs.Seek(0, io.SeekStart)
+		if err == nil {
+			digest := base64.StdEncoding.EncodeToString(h.Sum(nil))
+			parts = append(parts, algoLower+"=:"+digest+":")
 		}
 	}
 	return strings.Join(parts, ", ")
+}
+
+// getRequestedRange parses the Range header for single-range requests on 206 Partial Content
+func getRequestedRange(r *http.Request, size int64) (offset, length int64, isRange bool) {
+	if r == nil || size <= 0 {
+		return 0, 0, false
+	}
+	rangeHeader := r.Header.Get("Range")
+	if rangeHeader == "" || !strings.HasPrefix(rangeHeader, "bytes=") {
+		return 0, 0, false
+	}
+
+	byteSpec := strings.TrimPrefix(rangeHeader, "bytes=")
+	if strings.Contains(byteSpec, ",") {
+		// Multipart ranges are not supported for single Range representation digests
+		return 0, 0, false
+	}
+
+	parts := strings.Split(byteSpec, "-")
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+
+	startStr, endStr := parts[0], parts[1]
+	if startStr == "" {
+		// Suffix byte range: bytes=-N
+		suffixLen, err := strconv.ParseInt(endStr, 10, 64)
+		if err != nil || suffixLen <= 0 {
+			return 0, 0, false
+		}
+		if suffixLen > size {
+			suffixLen = size
+		}
+		return size - suffixLen, suffixLen, true
+	}
+
+	start, err := strconv.ParseInt(startStr, 10, 64)
+	if err != nil || start < 0 || start >= size {
+		return 0, 0, false
+	}
+
+	if endStr == "" {
+		// Range: bytes=N-
+		return start, size - start, true
+	}
+
+	end, err := strconv.ParseInt(endStr, 10, 64)
+	if err != nil || end < start {
+		return 0, 0, false
+	}
+
+	if end >= size {
+		end = size - 1
+	}
+
+	return start, end - start + 1, true
 }
 
 // Finds the first corresponding etag file for a given file in the file system and return its content

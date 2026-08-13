@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -336,14 +337,154 @@ func (p testPrecompressed) Suffix() string {
 	return p.suffix
 }
 
-func TestContentDigest(t *testing.T) {
+func TestContentDigestExactValues(t *testing.T) {
 	fsrv := FileServer{
-		ContentDigest: []string{"sha-256"},
+		ContentDigest: []string{"sha-256", "sha-512"},
 	}
 	content := []byte("hello world")
 	rs := bytes.NewReader(content)
-	digest := fsrv.calculateContentDigest(rs)
-	if !strings.HasPrefix(digest, "sha-256=:") || !strings.HasSuffix(digest, ":") {
-		t.Errorf("expected RFC 9530 sha-256 digest format, got: %s", digest)
+
+	// "hello world" sha256 base64: uU0nuZNNPgilLlLX2n2r+sSE7+N6U4DukIj3rOLvzek=
+	// "hello world" sha512 base64: MJ7MSJwS1utMxA9QyQLytNDtd+5RGnx6m808qG1M2G+YndNbxf9yab572QcvMFTBLFvhNBWB2zavfE1TXfG7wQ==
+	wantSHA256 := "uU0nuZNNPgilLlLX2n2r+sSE7+N6U4DukIj3rOLvzek="
+	wantSHA512 := "MJ7MSJwS1utMxA9QyQLytNDtd+5RGnx6m808qG1M2G+YndNbxf9yab572QcvMFTBLFvhNBWB2zavfE1TXfG7wQ=="
+
+	digest := fsrv.calculateContentDigest(rs, nil, int64(len(content)))
+	want := fmt.Sprintf("sha-256=:%s:, sha-512=:%s:", wantSHA256, wantSHA512)
+	if digest != want {
+		t.Errorf("calculateContentDigest = %q, want %q", digest, want)
 	}
+}
+
+func TestContentDigestIntegration(t *testing.T) {
+	root := t.TempDir()
+	content := []byte("caddy server content digest test payload")
+	if err := os.WriteFile(filepath.Join(root, "file.txt"), content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	sidecar := gzipBytes(t, []byte("caddy server content digest test payload"))
+	if err := os.WriteFile(filepath.Join(root, "file.txt.gz"), sidecar, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	fsrv := FileServer{
+		Root:               root,
+		CanonicalURIs:      new(bool),
+		ContentDigest:      []string{"sha-256"},
+		PrecompressedOrder: []string{"gzip"},
+	}
+
+	ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+	if err := fsrv.Provision(ctx); err != nil {
+		t.Fatal(err)
+	}
+	fsrv.precompressors = map[string]encode.Precompressed{
+		"gzip": testPrecompressed{encoding: "gzip", suffix: ".gz"},
+	}
+
+	// Full content sha-256: "caddy server content digest test payload" -> Base64
+	hFull := sha256.Sum256(content)
+	fullDigestWant := "sha-256=:" + base64.StdEncoding.EncodeToString(hFull[:]) + ":"
+
+	t.Run("GET full request", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/file.txt", nil)
+		r = r.WithContext(context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
+
+		if err := fsrv.ServeHTTP(w, r, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := w.Code; got != http.StatusOK {
+			t.Fatalf("status = %d, want 200", got)
+		}
+		if got := w.Header().Get("Content-Digest"); got != fullDigestWant {
+			t.Fatalf("Content-Digest = %q, want %q", got, fullDigestWant)
+		}
+	})
+
+	t.Run("HEAD request", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodHead, "/file.txt", nil)
+		r = r.WithContext(context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
+
+		if err := fsrv.ServeHTTP(w, r, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := w.Code; got != http.StatusOK {
+			t.Fatalf("status = %d, want 200", got)
+		}
+		if got := w.Header().Get("Content-Digest"); got != fullDigestWant {
+			t.Fatalf("Content-Digest = %q, want %q", got, fullDigestWant)
+		}
+	})
+
+	t.Run("206 Partial Content range request", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/file.txt", nil)
+		r.Header.Set("Range", "bytes=6-11")
+		r = r.WithContext(context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
+
+		if err := fsrv.ServeHTTP(w, r, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := w.Code; got != http.StatusPartialContent {
+			t.Fatalf("status = %d, want 206", got)
+		}
+
+		// RFC 9530: Digest on 206 must cover the selected representation range "server"
+		rangeBytes := content[6:12]
+		hRange := sha256.Sum256(rangeBytes)
+		wantRangeDigest := "sha-256=:" + base64.StdEncoding.EncodeToString(hRange[:]) + ":"
+
+		if got := w.Header().Get("Content-Digest"); got != wantRangeDigest {
+			t.Fatalf("Content-Digest = %q, want %q", got, wantRangeDigest)
+		}
+	})
+
+	t.Run("304 Not Modified request", func(t *testing.T) {
+		// First get Etag
+		w1 := httptest.NewRecorder()
+		r1 := httptest.NewRequest(http.MethodGet, "/file.txt", nil)
+		r1 = r1.WithContext(context.WithValue(r1.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
+		_ = fsrv.ServeHTTP(w1, r1, nil)
+		etag := w1.Header().Get("Etag")
+
+		// Send conditional request
+		w2 := httptest.NewRecorder()
+		r2 := httptest.NewRequest(http.MethodGet, "/file.txt", nil)
+		r2.Header.Set("If-None-Match", etag)
+		r2 = r2.WithContext(context.WithValue(r2.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
+
+		if err := fsrv.ServeHTTP(w2, r2, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := w2.Code; got != http.StatusNotModified {
+			t.Fatalf("status = %d, want 304", got)
+		}
+		if got := w2.Header().Get("Content-Digest"); got != fullDigestWant {
+			t.Fatalf("Content-Digest on 304 = %q, want %q", got, fullDigestWant)
+		}
+	})
+
+	t.Run("Precompressed gzip request", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/file.txt", nil)
+		r.Header.Set("Accept-Encoding", "gzip")
+		r = r.WithContext(context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
+
+		if err := fsrv.ServeHTTP(w, r, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := w.Code; got != http.StatusOK {
+			t.Fatalf("status = %d, want 200", got)
+		}
+
+		// Content-Digest for precompressed sidecar must match sidecar bytes digest
+		hSidecar := sha256.Sum256(sidecar)
+		wantSidecarDigest := "sha-256=:" + base64.StdEncoding.EncodeToString(hSidecar[:]) + ":"
+		if got := w.Header().Get("Content-Digest"); got != wantSidecarDigest {
+			t.Fatalf("Content-Digest precompressed = %q, want %q", got, wantSidecarDigest)
+		}
+	})
 }
