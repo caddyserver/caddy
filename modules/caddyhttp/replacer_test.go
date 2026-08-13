@@ -334,3 +334,4 @@ func TestHTTPVarReplacementUUID(t *testing.T) {
 		t.Errorf("expected stable uuid across references: %q != %q", first, second)
 	}
 }
+
