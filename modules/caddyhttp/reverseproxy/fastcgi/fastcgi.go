@@ -427,7 +427,7 @@ func (t Transport) buildEnv(r *http.Request) (envVars, error) {
 		if http.CanonicalHeaderKey(field) == "Proxy" {
 			continue
 		}
-		
+
 		header := strings.ToUpper(field)
 		header = headerNameReplacer.Replace(header)
 		env["HTTP_"+header] = strings.Join(val, ", ")
