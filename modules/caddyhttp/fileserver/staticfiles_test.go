@@ -348,7 +348,7 @@ func TestContentDigestExactValues(t *testing.T) {
 	// "hello world" sha256 base64: uU0nuZNNPgilLlLX2n2r+sSE7+N6U4DukIj3rOLvzek=
 	// "hello world" sha512 base64: MJ7MSJwS1utMxA9QyQLytNDtd+5RGnx6m808qG1M2G+YndNbxf9yab572QcvMFTBLFvhNBWB2zavfE1TXfG7wQ==
 	wantSHA256 := "uU0nuZNNPgilLlLX2n2r+sSE7+N6U4DukIj3rOLvzek="
-	wantSHA512 := "MJ7MSJwS1utMxA9QyQLytNDtd+5RGnx6m808qG1M2G+YndNbxf9yab572QcvMFTBLFvhNBWB2zavfE1TXfG7wQ=="
+	wantSHA512 := "MJ7MSJwS1utMxA9QyQLytNDtd+5RGnx6m808qG1M2G+YndNbxf9JlnDaNCVbRbDP2DDoH2Bdz33FVC6TrpzXbw=="
 
 	digest := fsrv.calculateContentDigest(rs, nil, int64(len(content)))
 	want := fmt.Sprintf("sha-256=:%s:, sha-512=:%s:", wantSHA256, wantSHA512)
