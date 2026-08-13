@@ -20,7 +20,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -31,6 +33,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/encode"
 )
 
@@ -338,6 +341,88 @@ func (p testPrecompressed) Suffix() string {
 	return p.suffix
 }
 
+func TestNormalizeContentDigestAlgos(t *testing.T) {
+	t.Run("default path keeps order and canonical names", func(t *testing.T) {
+		got, err := normalizeContentDigestAlgos([]string{"sha512", "SHA-256", "sha-512", "sha256"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := []string{"sha-512", "sha-256"}
+		if len(got) != len(want) {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("got %v, want %v", got, want)
+			}
+		}
+	})
+
+	t.Run("rejects unsupported algorithms", func(t *testing.T) {
+		_, err := normalizeContentDigestAlgos([]string{"sha-256", "md5"})
+		if err == nil {
+			t.Fatal("expected error for unsupported algorithm")
+		}
+		if !strings.Contains(err.Error(), "md5") {
+			t.Fatalf("error = %v, want mention of md5", err)
+		}
+	})
+
+	t.Run("rejects empty algorithm token", func(t *testing.T) {
+		_, err := normalizeContentDigestAlgos([]string{""})
+		if err == nil {
+			t.Fatal("expected error for empty algorithm")
+		}
+	})
+}
+
+func TestContentDigestCaddyfileValidateDedup(t *testing.T) {
+	t.Run("validates and deduplicates", func(t *testing.T) {
+		input := `file_server {
+	content_digest sha256 sha-512 sha-256 SHA512
+}`
+		d := caddyfile.NewTestDispenser(input)
+		var fsrv FileServer
+		if err := fsrv.UnmarshalCaddyfile(d); err != nil {
+			t.Fatal(err)
+		}
+		want := []string{"sha-256", "sha-512"}
+		if len(fsrv.ContentDigest) != len(want) {
+			t.Fatalf("ContentDigest = %v, want %v", fsrv.ContentDigest, want)
+		}
+		for i := range want {
+			if fsrv.ContentDigest[i] != want[i] {
+				t.Fatalf("ContentDigest = %v, want %v", fsrv.ContentDigest, want)
+			}
+		}
+	})
+
+	t.Run("default algorithm", func(t *testing.T) {
+		input := `file_server {
+	digest
+}`
+		d := caddyfile.NewTestDispenser(input)
+		var fsrv FileServer
+		if err := fsrv.UnmarshalCaddyfile(d); err != nil {
+			t.Fatal(err)
+		}
+		if len(fsrv.ContentDigest) != 1 || fsrv.ContentDigest[0] != "sha-256" {
+			t.Fatalf("ContentDigest = %v, want [sha-256]", fsrv.ContentDigest)
+		}
+	})
+
+	t.Run("rejects unsupported", func(t *testing.T) {
+		input := `file_server {
+	content_digest sha-256 blake3
+}`
+		d := caddyfile.NewTestDispenser(input)
+		var fsrv FileServer
+		if err := fsrv.UnmarshalCaddyfile(d); err == nil {
+			t.Fatal("expected error for unsupported algorithm")
+		}
+	})
+}
+
 func TestContentDigestExactValues(t *testing.T) {
 	fsrv := FileServer{
 		ContentDigest: []string{"sha-256", "sha-512"},
@@ -345,16 +430,159 @@ func TestContentDigestExactValues(t *testing.T) {
 	content := []byte("hello world")
 	rs := bytes.NewReader(content)
 
-	// "hello world" sha256 base64: uU0nuZNNPgilLlLX2n2r+sSE7+N6U4DukIj3rOLvzek=
-	// "hello world" sha512 base64: MJ7MSJwS1utMxA9QyQLytNDtd+5RGnx6m808qG1M2G+YndNbxf9yab572QcvMFTBLFvhNBWB2zavfE1TXfG7wQ==
+	// Known digests for "hello world" (RFC 9530 sf-binary base64).
 	wantSHA256 := "uU0nuZNNPgilLlLX2n2r+sSE7+N6U4DukIj3rOLvzek="
 	wantSHA512 := "MJ7MSJwS1utMxA9QyQLytNDtd+5RGnx6m808qG1M2G+YndNbxf9JlnDaNCVbRbDP2DDoH2Bdz33FVC6TrpzXbw=="
 
-	digest := fsrv.calculateContentDigest(rs, nil, int64(len(content)))
+	digest, err := fsrv.calculateContentDigest(rs, nil, int64(len(content)))
+	if err != nil {
+		t.Fatal(err)
+	}
 	want := fmt.Sprintf("sha-256=:%s:, sha-512=:%s:", wantSHA256, wantSHA512)
 	if digest != want {
 		t.Errorf("calculateContentDigest = %q, want %q", digest, want)
 	}
+
+	// Reader offset must be restored for subsequent ServeContent reads.
+	if off, _ := rs.Seek(0, io.SeekCurrent); off != 0 {
+		t.Fatalf("reader offset = %d, want 0 after digest", off)
+	}
+}
+
+func TestContentDigestRangeExactValues(t *testing.T) {
+	fsrv := FileServer{ContentDigest: []string{"sha-256"}}
+	content := []byte("hello world")
+
+	tests := []struct {
+		name       string
+		rangeHdr   string
+		wantBytes  []byte
+		wantIsFull bool
+	}{
+		{name: "closed range", rangeHdr: "bytes=0-4", wantBytes: []byte("hello")},
+		{name: "open end", rangeHdr: "bytes=6-", wantBytes: []byte("world")},
+		{name: "suffix", rangeHdr: "bytes=-5", wantBytes: []byte("world")},
+		{name: "unsatisfiable falls back to full", rangeHdr: "bytes=100-200", wantBytes: content, wantIsFull: true},
+		{name: "multipart falls back to full", rangeHdr: "bytes=0-1,3-4", wantBytes: content, wantIsFull: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rs := bytes.NewReader(content)
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			r.Header.Set("Range", tt.rangeHdr)
+
+			digest, err := fsrv.calculateContentDigest(rs, r, int64(len(content)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			sum := sha256.Sum256(tt.wantBytes)
+			want := "sha-256=:" + base64.StdEncoding.EncodeToString(sum[:]) + ":"
+			if digest != want {
+				t.Fatalf("Content-Digest = %q, want %q (bytes %q)", digest, want, tt.wantBytes)
+			}
+			if off, _ := rs.Seek(0, io.SeekCurrent); off != 0 {
+				t.Fatalf("reader offset = %d, want 0", off)
+			}
+		})
+	}
+}
+
+func TestContentDigestReadSeekFailures(t *testing.T) {
+	fsrv := FileServer{ContentDigest: []string{"sha-256"}}
+
+	t.Run("seek start failure", func(t *testing.T) {
+		rs := &errReadSeeker{seekErr: errors.New("seek refused")}
+		_, err := fsrv.calculateContentDigest(rs, nil, 11)
+		if err == nil {
+			t.Fatal("expected seek error")
+		}
+		if !strings.Contains(err.Error(), "seek") {
+			t.Fatalf("error = %v, want seek failure", err)
+		}
+	})
+
+	t.Run("read failure", func(t *testing.T) {
+		rs := &errReadSeeker{readErr: errors.New("read refused"), size: 11}
+		_, err := fsrv.calculateContentDigest(rs, nil, 11)
+		if err == nil {
+			t.Fatal("expected read error")
+		}
+		if !strings.Contains(err.Error(), "read") {
+			t.Fatalf("error = %v, want read failure", err)
+		}
+	})
+
+	t.Run("reset seek failure after successful hash", func(t *testing.T) {
+		rs := &errReadSeeker{size: 11, failReset: true, content: []byte("hello world")}
+		_, err := fsrv.calculateContentDigest(rs, nil, 11)
+		if err == nil {
+			t.Fatal("expected reset seek error")
+		}
+		if !strings.Contains(err.Error(), "reset") {
+			t.Fatalf("error = %v, want reset failure", err)
+		}
+	})
+
+	t.Run("range seek failure", func(t *testing.T) {
+		rs := &errReadSeeker{seekErr: errors.New("range seek refused")}
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.Header.Set("Range", "bytes=0-3")
+		_, err := fsrv.calculateContentDigest(rs, r, 11)
+		if err == nil {
+			t.Fatal("expected range seek error")
+		}
+	})
+}
+
+// errReadSeeker is a test double that can fail seek/read/reset operations.
+type errReadSeeker struct {
+	content   []byte
+	size      int64
+	off       int64
+	seekErr   error
+	readErr   error
+	failReset bool
+	seekCalls int
+}
+
+func (e *errReadSeeker) Read(p []byte) (int, error) {
+	if e.readErr != nil {
+		return 0, e.readErr
+	}
+	if e.off >= int64(len(e.content)) {
+		return 0, io.EOF
+	}
+	n := copy(p, e.content[e.off:])
+	e.off += int64(n)
+	return n, nil
+}
+
+func (e *errReadSeeker) Seek(offset int64, whence int) (int64, error) {
+	e.seekCalls++
+	if e.seekErr != nil {
+		return 0, e.seekErr
+	}
+	// After the first successful data read path, the final Seek(0) reset can be forced to fail.
+	if e.failReset && e.seekCalls > 1 && offset == 0 && whence == io.SeekStart {
+		return 0, errors.New("reset refused")
+	}
+	var abs int64
+	switch whence {
+	case io.SeekStart:
+		abs = offset
+	case io.SeekCurrent:
+		abs = e.off + offset
+	case io.SeekEnd:
+		abs = int64(len(e.content)) + offset
+	default:
+		return 0, errors.New("invalid whence")
+	}
+	if abs < 0 {
+		return 0, errors.New("negative position")
+	}
+	e.off = abs
+	return abs, nil
 }
 
 func TestContentDigestIntegration(t *testing.T) {
@@ -364,7 +592,7 @@ func TestContentDigestIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sidecar := gzipBytes(t, []byte("caddy server content digest test payload"))
+	sidecar := gzipBytes(t, content)
 	if err := os.WriteFile(filepath.Join(root, "file.txt.gz"), sidecar, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -384,14 +612,16 @@ func TestContentDigestIntegration(t *testing.T) {
 		"gzip": testPrecompressed{encoding: "gzip", suffix: ".gz"},
 	}
 
-	// Full content sha-256: "caddy server content digest test payload" -> Base64
 	hFull := sha256.Sum256(content)
 	fullDigestWant := "sha-256=:" + base64.StdEncoding.EncodeToString(hFull[:]) + ":"
 
+	withReplacer := func(r *http.Request) *http.Request {
+		return r.WithContext(context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
+	}
+
 	t.Run("GET full request", func(t *testing.T) {
 		w := httptest.NewRecorder()
-		r := httptest.NewRequest(http.MethodGet, "/file.txt", nil)
-		r = r.WithContext(context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
+		r := withReplacer(httptest.NewRequest(http.MethodGet, "/file.txt", nil))
 
 		if err := fsrv.ServeHTTP(w, r, nil); err != nil {
 			t.Fatal(err)
@@ -402,12 +632,14 @@ func TestContentDigestIntegration(t *testing.T) {
 		if got := w.Header().Get("Content-Digest"); got != fullDigestWant {
 			t.Fatalf("Content-Digest = %q, want %q", got, fullDigestWant)
 		}
+		if !bytes.Equal(w.Body.Bytes(), content) {
+			t.Fatalf("body mismatch after digest calculation")
+		}
 	})
 
 	t.Run("HEAD request", func(t *testing.T) {
 		w := httptest.NewRecorder()
-		r := httptest.NewRequest(http.MethodHead, "/file.txt", nil)
-		r = r.WithContext(context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
+		r := withReplacer(httptest.NewRequest(http.MethodHead, "/file.txt", nil))
 
 		if err := fsrv.ServeHTTP(w, r, nil); err != nil {
 			t.Fatal(err)
@@ -422,9 +654,8 @@ func TestContentDigestIntegration(t *testing.T) {
 
 	t.Run("206 Partial Content range request", func(t *testing.T) {
 		w := httptest.NewRecorder()
-		r := httptest.NewRequest(http.MethodGet, "/file.txt", nil)
+		r := withReplacer(httptest.NewRequest(http.MethodGet, "/file.txt", nil))
 		r.Header.Set("Range", "bytes=6-11")
-		r = r.WithContext(context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
 
 		if err := fsrv.ServeHTTP(w, r, nil); err != nil {
 			t.Fatal(err)
@@ -433,7 +664,7 @@ func TestContentDigestIntegration(t *testing.T) {
 			t.Fatalf("status = %d, want 206", got)
 		}
 
-		// RFC 9530: Digest on 206 must cover the selected representation range "server"
+		// RFC 9530: Content-Digest on 206 covers the selected range bytes ("server").
 		rangeBytes := content[6:12]
 		hRange := sha256.Sum256(rangeBytes)
 		wantRangeDigest := "sha-256=:" + base64.StdEncoding.EncodeToString(hRange[:]) + ":"
@@ -441,21 +672,44 @@ func TestContentDigestIntegration(t *testing.T) {
 		if got := w.Header().Get("Content-Digest"); got != wantRangeDigest {
 			t.Fatalf("Content-Digest = %q, want %q", got, wantRangeDigest)
 		}
+		if !bytes.Equal(w.Body.Bytes(), rangeBytes) {
+			t.Fatalf("206 body = %q, want %q", w.Body.Bytes(), rangeBytes)
+		}
+	})
+
+	t.Run("206 suffix range", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r := withReplacer(httptest.NewRequest(http.MethodGet, "/file.txt", nil))
+		r.Header.Set("Range", "bytes=-7")
+
+		if err := fsrv.ServeHTTP(w, r, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := w.Code; got != http.StatusPartialContent {
+			t.Fatalf("status = %d, want 206", got)
+		}
+		rangeBytes := content[len(content)-7:]
+		hRange := sha256.Sum256(rangeBytes)
+		wantRangeDigest := "sha-256=:" + base64.StdEncoding.EncodeToString(hRange[:]) + ":"
+		if got := w.Header().Get("Content-Digest"); got != wantRangeDigest {
+			t.Fatalf("Content-Digest = %q, want %q", got, wantRangeDigest)
+		}
 	})
 
 	t.Run("304 Not Modified request", func(t *testing.T) {
-		// First get Etag
 		w1 := httptest.NewRecorder()
-		r1 := httptest.NewRequest(http.MethodGet, "/file.txt", nil)
-		r1 = r1.WithContext(context.WithValue(r1.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
-		_ = fsrv.ServeHTTP(w1, r1, nil)
+		r1 := withReplacer(httptest.NewRequest(http.MethodGet, "/file.txt", nil))
+		if err := fsrv.ServeHTTP(w1, r1, nil); err != nil {
+			t.Fatal(err)
+		}
 		etag := w1.Header().Get("Etag")
+		if etag == "" {
+			t.Fatal("expected Etag from first response")
+		}
 
-		// Send conditional request
 		w2 := httptest.NewRecorder()
-		r2 := httptest.NewRequest(http.MethodGet, "/file.txt", nil)
+		r2 := withReplacer(httptest.NewRequest(http.MethodGet, "/file.txt", nil))
 		r2.Header.Set("If-None-Match", etag)
-		r2 = r2.WithContext(context.WithValue(r2.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
 
 		if err := fsrv.ServeHTTP(w2, r2, nil); err != nil {
 			t.Fatal(err)
@@ -470,9 +724,8 @@ func TestContentDigestIntegration(t *testing.T) {
 
 	t.Run("Precompressed gzip request", func(t *testing.T) {
 		w := httptest.NewRecorder()
-		r := httptest.NewRequest(http.MethodGet, "/file.txt", nil)
+		r := withReplacer(httptest.NewRequest(http.MethodGet, "/file.txt", nil))
 		r.Header.Set("Accept-Encoding", "gzip")
-		r = r.WithContext(context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
 
 		if err := fsrv.ServeHTTP(w, r, nil); err != nil {
 			t.Fatal(err)
@@ -481,11 +734,22 @@ func TestContentDigestIntegration(t *testing.T) {
 			t.Fatalf("status = %d, want 200", got)
 		}
 
-		// Content-Digest for precompressed sidecar must match sidecar bytes digest
+		// Content-Digest for precompressed sidecar must match sidecar bytes.
 		hSidecar := sha256.Sum256(sidecar)
 		wantSidecarDigest := "sha-256=:" + base64.StdEncoding.EncodeToString(hSidecar[:]) + ":"
 		if got := w.Header().Get("Content-Digest"); got != wantSidecarDigest {
 			t.Fatalf("Content-Digest precompressed = %q, want %q", got, wantSidecarDigest)
+		}
+		if got := w.Header().Get("Content-Encoding"); got != "gzip" {
+			t.Fatalf("Content-Encoding = %q, want gzip", got)
+		}
+	})
+
+	t.Run("Provision rejects unsupported algorithm from JSON config", func(t *testing.T) {
+		bad := FileServer{ContentDigest: []string{"sha-256", "md5"}}
+		ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+		if err := bad.Provision(ctx); err == nil {
+			t.Fatal("expected provision error for unsupported algorithm")
 		}
 	})
 }

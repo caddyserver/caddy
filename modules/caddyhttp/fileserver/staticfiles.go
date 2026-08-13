@@ -182,9 +182,13 @@ type FileServer struct {
 	EtagFileExtensions []string `json:"etag_file_extensions,omitempty"`
 
 	// List of digest algorithms to use for RFC 9530 Content-Digest header generation.
-	// Supported values: "sha-256", "sha-512".
-	// Note: Enabling Content-Digest requires reading file bytes into memory to compute hashes,
-	// which disables OS sendfile(2) zero-copy optimization on unencrypted HTTP connections.
+	// Supported values: "sha-256", "sha-512" (aliases "sha256", "sha512" are accepted).
+	// Algorithms are validated and deduplicated at provision time.
+	//
+	// Note: Enabling Content-Digest requires reading the file (or selected range)
+	// to compute hashes before the response is written. That means the OS
+	// sendfile(2) zero-copy fast path is not used on unencrypted HTTP
+	// connections (TLS already cannot use sendfile without kTLS).
 	ContentDigest []string `json:"content_digest,omitempty"`
 
 	fsmap caddy.FileSystems
@@ -271,6 +275,14 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 				return fmt.Errorf("only max 2 sort options are allowed, but got %d", idx+1)
 			}
 		}
+	}
+
+	if len(fsrv.ContentDigest) > 0 {
+		normalized, err := normalizeContentDigestAlgos(fsrv.ContentDigest)
+		if err != nil {
+			return err
+		}
+		fsrv.ContentDigest = normalized
 	}
 
 	return nil
@@ -549,7 +561,11 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 
 	if len(fsrv.ContentDigest) > 0 {
 		if rs, ok := file.(io.ReadSeeker); ok {
-			if digestHeader := fsrv.calculateContentDigest(rs, r, info.Size()); digestHeader != "" {
+			digestHeader, err := fsrv.calculateContentDigest(rs, r, info.Size())
+			if err != nil {
+				return caddyhttp.Error(http.StatusInternalServerError, err)
+			}
+			if digestHeader != "" {
 				respHeader.Set("Content-Digest", digestHeader)
 			}
 		}
@@ -792,46 +808,106 @@ func calculateEtag(d os.FileInfo) string {
 	return sb.String()
 }
 
-func (fsrv *FileServer) calculateContentDigest(rs io.ReadSeeker, r *http.Request, size int64) string {
-	var parts []string
-	for _, algo := range fsrv.ContentDigest {
-		algoLower := strings.ToLower(algo)
-		var h hash.Hash
-		switch algoLower {
-		case "sha-256", "sha256":
-			h = sha256.New()
-			algoLower = "sha-256"
-		case "sha-512", "sha512":
-			h = sha512.New()
-			algoLower = "sha-512"
-		default:
+// normalizeContentDigestAlgos validates supported algorithms and removes duplicates.
+// Canonical names follow the IANA "Hash Algorithms for HTTP Digest Fields" registry
+// (RFC 9530): "sha-256", "sha-512".
+func normalizeContentDigestAlgos(algos []string) ([]string, error) {
+	if len(algos) == 0 {
+		return nil, nil
+	}
+	seen := make(map[string]struct{}, len(algos))
+	out := make([]string, 0, len(algos))
+	for _, algo := range algos {
+		canonical, err := canonicalContentDigestAlgo(algo)
+		if err != nil {
+			return nil, err
+		}
+		if _, dup := seen[canonical]; dup {
 			continue
 		}
-
-		offset, length, isRange := getRequestedRange(r, size)
-		var err error
-		if isRange {
-			_, err = rs.Seek(offset, io.SeekStart)
-			if err == nil {
-				_, err = io.CopyN(h, rs, length)
-			}
-		} else {
-			_, err = rs.Seek(0, io.SeekStart)
-			if err == nil {
-				_, err = io.Copy(h, rs)
-			}
-		}
-
-		_, _ = rs.Seek(0, io.SeekStart)
-		if err == nil {
-			digest := base64.StdEncoding.EncodeToString(h.Sum(nil))
-			parts = append(parts, algoLower+"=:"+digest+":")
-		}
+		seen[canonical] = struct{}{}
+		out = append(out, canonical)
 	}
-	return strings.Join(parts, ", ")
+	return out, nil
 }
 
-// getRequestedRange parses the Range header for single-range requests on 206 Partial Content
+func canonicalContentDigestAlgo(algo string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(algo)) {
+	case "sha-256", "sha256":
+		return "sha-256", nil
+	case "sha-512", "sha512":
+		return "sha-512", nil
+	case "":
+		return "", fmt.Errorf("content digest algorithm must not be empty")
+	default:
+		return "", fmt.Errorf("unsupported content digest algorithm %q (supported: sha-256, sha-512)", algo)
+	}
+}
+
+func newContentDigestHash(algo string) (hash.Hash, error) {
+	switch algo {
+	case "sha-256":
+		return sha256.New(), nil
+	case "sha-512":
+		return sha512.New(), nil
+	default:
+		return nil, fmt.Errorf("unsupported content digest algorithm %q", algo)
+	}
+}
+
+// calculateContentDigest computes an RFC 9530 Content-Digest dictionary for the
+// bytes that will be conveyed as message content. For single-range requests that
+// yield 206 Partial Content, the digest covers only the selected range bytes.
+// Read and seek failures are returned so the caller can abort rather than serve
+// a wrong digest or a corrupted subsequent response body.
+func (fsrv *FileServer) calculateContentDigest(rs io.ReadSeeker, r *http.Request, size int64) (string, error) {
+	if len(fsrv.ContentDigest) == 0 {
+		return "", nil
+	}
+
+	offset, length, isRange := getRequestedRange(r, size)
+	var parts []string
+
+	for _, algo := range fsrv.ContentDigest {
+		h, err := newContentDigestHash(algo)
+		if err != nil {
+			return "", err
+		}
+
+		if isRange {
+			if _, err = rs.Seek(offset, io.SeekStart); err != nil {
+				return "", fmt.Errorf("content digest: seek to range offset %d: %w", offset, err)
+			}
+			if _, err = io.CopyN(h, rs, length); err != nil {
+				// Reset best-effort before returning so callers still have a clean offset if they ignore the error.
+				_, _ = rs.Seek(0, io.SeekStart)
+				return "", fmt.Errorf("content digest: read range [%d,%d): %w", offset, offset+length, err)
+			}
+		} else {
+			if _, err = rs.Seek(0, io.SeekStart); err != nil {
+				return "", fmt.Errorf("content digest: seek to start: %w", err)
+			}
+			if _, err = io.Copy(h, rs); err != nil {
+				_, _ = rs.Seek(0, io.SeekStart)
+				return "", fmt.Errorf("content digest: read content: %w", err)
+			}
+		}
+
+		// Always restore the offset so http.ServeContent can re-seek/read correctly.
+		if _, err = rs.Seek(0, io.SeekStart); err != nil {
+			return "", fmt.Errorf("content digest: reset file offset: %w", err)
+		}
+
+		digest := base64.StdEncoding.EncodeToString(h.Sum(nil))
+		parts = append(parts, algo+"=:"+digest+":")
+	}
+
+	return strings.Join(parts, ", "), nil
+}
+
+// getRequestedRange parses a single-range Range header for 206 Partial Content.
+// Multipart ranges and unsatisfiable/invalid ranges return isRange=false so the
+// full content is digested (matching a non-206 response path).
 func getRequestedRange(r *http.Request, size int64) (offset, length int64, isRange bool) {
 	if r == nil || size <= 0 {
 		return 0, 0, false
@@ -843,7 +919,8 @@ func getRequestedRange(r *http.Request, size int64) (offset, length int64, isRan
 
 	byteSpec := strings.TrimPrefix(rangeHeader, "bytes=")
 	if strings.Contains(byteSpec, ",") {
-		// Multipart ranges are not supported for single Range representation digests
+		// Multipart ranges produce multipart bodies; Content-Digest over the
+		// assembled multipart message is not computed here.
 		return 0, 0, false
 	}
 

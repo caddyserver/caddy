@@ -60,7 +60,14 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //	    precompressed <formats...>
 //	    status        <status>
 //	    disable_canonical_uris
+//	    content_digest [<algorithms...>]
 //	}
+//
+// content_digest (alias: digest) enables RFC 9530 Content-Digest response
+// headers. With no algorithms, sha-256 is used. Supported algorithms:
+// sha-256, sha-512. Unsupported values are rejected; duplicates are removed.
+// Computing digests reads file bytes before the response is written, so the
+// OS sendfile(2) zero-copy path is not used on unencrypted HTTP connections.
 //
 // The FinalizeUnmarshalCaddyfile method should be called after this
 // to finalize setup of hidden Caddyfiles.
@@ -203,7 +210,11 @@ func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if len(contentDigest) == 0 {
 				contentDigest = []string{"sha-256"}
 			}
-			fsrv.ContentDigest = contentDigest
+			normalized, err := normalizeContentDigestAlgos(contentDigest)
+			if err != nil {
+				return d.Err(err.Error())
+			}
+			fsrv.ContentDigest = normalized
 
 		default:
 			return d.Errf("unknown subdirective '%s'", d.Val())
