@@ -434,7 +434,7 @@ func TestContentDigestExactValues(t *testing.T) {
 	wantSHA256 := "uU0nuZNNPgilLlLX2n2r+sSE7+N6U4DukIj3rOLvzek="
 	wantSHA512 := "MJ7MSJwS1utMxA9QyQLytNDtd+5RGnx6m808qG1M2G+YndNbxf9JlnDaNCVbRbDP2DDoH2Bdz33FVC6TrpzXbw=="
 
-	digest, err := fsrv.calculateContentDigest(rs, nil, int64(len(content)))
+	digest, err := fsrv.calculateContentDigest(rs, int64(len(content)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -449,51 +449,12 @@ func TestContentDigestExactValues(t *testing.T) {
 	}
 }
 
-func TestContentDigestRangeExactValues(t *testing.T) {
-	fsrv := FileServer{ContentDigest: []string{"sha-256"}}
-	content := []byte("hello world")
-
-	tests := []struct {
-		name       string
-		rangeHdr   string
-		wantBytes  []byte
-		wantIsFull bool
-	}{
-		{name: "closed range", rangeHdr: "bytes=0-4", wantBytes: []byte("hello")},
-		{name: "open end", rangeHdr: "bytes=6-", wantBytes: []byte("world")},
-		{name: "suffix", rangeHdr: "bytes=-5", wantBytes: []byte("world")},
-		{name: "unsatisfiable falls back to full", rangeHdr: "bytes=100-200", wantBytes: content, wantIsFull: true},
-		{name: "multipart falls back to full", rangeHdr: "bytes=0-1,3-4", wantBytes: content, wantIsFull: true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			rs := bytes.NewReader(content)
-			r := httptest.NewRequest(http.MethodGet, "/", nil)
-			r.Header.Set("Range", tt.rangeHdr)
-
-			digest, err := fsrv.calculateContentDigest(rs, r, int64(len(content)))
-			if err != nil {
-				t.Fatal(err)
-			}
-			sum := sha256.Sum256(tt.wantBytes)
-			want := "sha-256=:" + base64.StdEncoding.EncodeToString(sum[:]) + ":"
-			if digest != want {
-				t.Fatalf("Content-Digest = %q, want %q (bytes %q)", digest, want, tt.wantBytes)
-			}
-			if off, _ := rs.Seek(0, io.SeekCurrent); off != 0 {
-				t.Fatalf("reader offset = %d, want 0", off)
-			}
-		})
-	}
-}
-
 func TestContentDigestReadSeekFailures(t *testing.T) {
 	fsrv := FileServer{ContentDigest: []string{"sha-256"}}
 
 	t.Run("seek start failure", func(t *testing.T) {
 		rs := &errReadSeeker{seekErr: errors.New("seek refused")}
-		_, err := fsrv.calculateContentDigest(rs, nil, 11)
+		_, err := fsrv.calculateContentDigest(rs, 11)
 		if err == nil {
 			t.Fatal("expected seek error")
 		}
@@ -504,7 +465,7 @@ func TestContentDigestReadSeekFailures(t *testing.T) {
 
 	t.Run("read failure", func(t *testing.T) {
 		rs := &errReadSeeker{readErr: errors.New("read refused"), size: 11}
-		_, err := fsrv.calculateContentDigest(rs, nil, 11)
+		_, err := fsrv.calculateContentDigest(rs, 11)
 		if err == nil {
 			t.Fatal("expected read error")
 		}
@@ -515,22 +476,12 @@ func TestContentDigestReadSeekFailures(t *testing.T) {
 
 	t.Run("reset seek failure after successful hash", func(t *testing.T) {
 		rs := &errReadSeeker{size: 11, failReset: true, content: []byte("hello world")}
-		_, err := fsrv.calculateContentDigest(rs, nil, 11)
+		_, err := fsrv.calculateContentDigest(rs, 11)
 		if err == nil {
 			t.Fatal("expected reset seek error")
 		}
 		if !strings.Contains(err.Error(), "reset") {
 			t.Fatalf("error = %v, want reset failure", err)
-		}
-	})
-
-	t.Run("range seek failure", func(t *testing.T) {
-		rs := &errReadSeeker{seekErr: errors.New("range seek refused")}
-		r := httptest.NewRequest(http.MethodGet, "/", nil)
-		r.Header.Set("Range", "bytes=0-3")
-		_, err := fsrv.calculateContentDigest(rs, r, 11)
-		if err == nil {
-			t.Fatal("expected range seek error")
 		}
 	})
 }
@@ -652,7 +603,7 @@ func TestContentDigestIntegration(t *testing.T) {
 		}
 	})
 
-	t.Run("206 Partial Content range request", func(t *testing.T) {
+	t.Run("206 Partial Content range request (omits Content-Digest)", func(t *testing.T) {
 		w := httptest.NewRecorder()
 		r := withReplacer(httptest.NewRequest(http.MethodGet, "/file.txt", nil))
 		r.Header.Set("Range", "bytes=6-11")
@@ -664,20 +615,16 @@ func TestContentDigestIntegration(t *testing.T) {
 			t.Fatalf("status = %d, want 206", got)
 		}
 
-		// RFC 9530: Content-Digest on 206 covers the selected range bytes ("server").
-		rangeBytes := content[6:12]
-		hRange := sha256.Sum256(rangeBytes)
-		wantRangeDigest := "sha-256=:" + base64.StdEncoding.EncodeToString(hRange[:]) + ":"
-
-		if got := w.Header().Get("Content-Digest"); got != wantRangeDigest {
-			t.Fatalf("Content-Digest = %q, want %q", got, wantRangeDigest)
+		if got := w.Header().Get("Content-Digest"); got != "" {
+			t.Fatalf("Content-Digest = %q, want empty for range requests", got)
 		}
+		rangeBytes := content[6:12]
 		if !bytes.Equal(w.Body.Bytes(), rangeBytes) {
 			t.Fatalf("206 body = %q, want %q", w.Body.Bytes(), rangeBytes)
 		}
 	})
 
-	t.Run("206 suffix range", func(t *testing.T) {
+	t.Run("206 suffix range (omits Content-Digest)", func(t *testing.T) {
 		w := httptest.NewRecorder()
 		r := withReplacer(httptest.NewRequest(http.MethodGet, "/file.txt", nil))
 		r.Header.Set("Range", "bytes=-7")
@@ -688,11 +635,8 @@ func TestContentDigestIntegration(t *testing.T) {
 		if got := w.Code; got != http.StatusPartialContent {
 			t.Fatalf("status = %d, want 206", got)
 		}
-		rangeBytes := content[len(content)-7:]
-		hRange := sha256.Sum256(rangeBytes)
-		wantRangeDigest := "sha-256=:" + base64.StdEncoding.EncodeToString(hRange[:]) + ":"
-		if got := w.Header().Get("Content-Digest"); got != wantRangeDigest {
-			t.Fatalf("Content-Digest = %q, want %q", got, wantRangeDigest)
+		if got := w.Header().Get("Content-Digest"); got != "" {
+			t.Fatalf("Content-Digest = %q, want empty for range requests", got)
 		}
 	})
 

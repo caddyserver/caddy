@@ -559,9 +559,13 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		respHeader.Set("Etag", etag)
 	}
 
-	if len(fsrv.ContentDigest) > 0 {
+	if len(fsrv.ContentDigest) > 0 && r.Header.Get("Range") == "" {
 		if rs, ok := file.(io.ReadSeeker); ok {
-			digestHeader, err := fsrv.calculateContentDigest(rs, r, info.Size())
+			fileSize := info.Size()
+			if stat, err := file.Stat(); err == nil {
+				fileSize = stat.Size()
+			}
+			digestHeader, err := fsrv.calculateContentDigest(rs, fileSize)
 			if err != nil {
 				return caddyhttp.Error(http.StatusInternalServerError, err)
 			}
@@ -856,16 +860,14 @@ func newContentDigestHash(algo string) (hash.Hash, error) {
 }
 
 // calculateContentDigest computes an RFC 9530 Content-Digest dictionary for the
-// bytes that will be conveyed as message content. For single-range requests that
-// yield 206 Partial Content, the digest covers only the selected range bytes.
+// bytes that will be conveyed as message content.
 // Read and seek failures are returned so the caller can abort rather than serve
 // a wrong digest or a corrupted subsequent response body.
-func (fsrv *FileServer) calculateContentDigest(rs io.ReadSeeker, r *http.Request, size int64) (string, error) {
+func (fsrv *FileServer) calculateContentDigest(rs io.ReadSeeker, size int64) (string, error) {
 	if len(fsrv.ContentDigest) == 0 {
 		return "", nil
 	}
 
-	offset, length, isRange := getRequestedRange(r, size)
 	var parts []string
 
 	for _, algo := range fsrv.ContentDigest {
@@ -874,23 +876,12 @@ func (fsrv *FileServer) calculateContentDigest(rs io.ReadSeeker, r *http.Request
 			return "", err
 		}
 
-		if isRange {
-			if _, err = rs.Seek(offset, io.SeekStart); err != nil {
-				return "", fmt.Errorf("content digest: seek to range offset %d: %w", offset, err)
-			}
-			if _, err = io.CopyN(h, rs, length); err != nil {
-				// Reset best-effort before returning so callers still have a clean offset if they ignore the error.
-				_, _ = rs.Seek(0, io.SeekStart)
-				return "", fmt.Errorf("content digest: read range [%d,%d): %w", offset, offset+length, err)
-			}
-		} else {
-			if _, err = rs.Seek(0, io.SeekStart); err != nil {
-				return "", fmt.Errorf("content digest: seek to start: %w", err)
-			}
-			if _, err = io.Copy(h, rs); err != nil {
-				_, _ = rs.Seek(0, io.SeekStart)
-				return "", fmt.Errorf("content digest: read content: %w", err)
-			}
+		if _, err = rs.Seek(0, io.SeekStart); err != nil {
+			return "", fmt.Errorf("content digest: seek to start: %w", err)
+		}
+		if _, err = io.Copy(h, rs); err != nil {
+			_, _ = rs.Seek(0, io.SeekStart)
+			return "", fmt.Errorf("content digest: read content: %w", err)
 		}
 
 		// Always restore the offset so http.ServeContent can re-seek/read correctly.
@@ -903,65 +894,6 @@ func (fsrv *FileServer) calculateContentDigest(rs io.ReadSeeker, r *http.Request
 	}
 
 	return strings.Join(parts, ", "), nil
-}
-
-// getRequestedRange parses a single-range Range header for 206 Partial Content.
-// Multipart ranges and unsatisfiable/invalid ranges return isRange=false so the
-// full content is digested (matching a non-206 response path).
-func getRequestedRange(r *http.Request, size int64) (offset, length int64, isRange bool) {
-	if r == nil || size <= 0 {
-		return 0, 0, false
-	}
-	rangeHeader := r.Header.Get("Range")
-	if rangeHeader == "" || !strings.HasPrefix(rangeHeader, "bytes=") {
-		return 0, 0, false
-	}
-
-	byteSpec := strings.TrimPrefix(rangeHeader, "bytes=")
-	if strings.Contains(byteSpec, ",") {
-		// Multipart ranges produce multipart bodies; Content-Digest over the
-		// assembled multipart message is not computed here.
-		return 0, 0, false
-	}
-
-	parts := strings.Split(byteSpec, "-")
-	if len(parts) != 2 {
-		return 0, 0, false
-	}
-
-	startStr, endStr := parts[0], parts[1]
-	if startStr == "" {
-		// Suffix byte range: bytes=-N
-		suffixLen, err := strconv.ParseInt(endStr, 10, 64)
-		if err != nil || suffixLen <= 0 {
-			return 0, 0, false
-		}
-		if suffixLen > size {
-			suffixLen = size
-		}
-		return size - suffixLen, suffixLen, true
-	}
-
-	start, err := strconv.ParseInt(startStr, 10, 64)
-	if err != nil || start < 0 || start >= size {
-		return 0, 0, false
-	}
-
-	if endStr == "" {
-		// Range: bytes=N-
-		return start, size - start, true
-	}
-
-	end, err := strconv.ParseInt(endStr, 10, 64)
-	if err != nil || end < start {
-		return 0, 0, false
-	}
-
-	if end >= size {
-		end = size - 1
-	}
-
-	return start, end - start + 1, true
 }
 
 // Finds the first corresponding etag file for a given file in the file system and return its content
