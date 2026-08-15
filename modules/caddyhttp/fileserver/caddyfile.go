@@ -66,8 +66,10 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 // content_digest (alias: digest) enables RFC 9530 Content-Digest response
 // headers. With no algorithms, sha-256 is used. Supported algorithms:
 // sha-256, sha-512. Unsupported values are rejected; duplicates are removed.
-// Computing digests reads file bytes before the response is written, so the
-// OS sendfile(2) zero-copy path is not used on unencrypted HTTP connections.
+// Digests are emitted only for full 200 responses over the selected on-disk
+// bytes (including precompressed sidecars). Computing digests reads those
+// bytes before the response is written, so the OS sendfile(2) zero-copy path
+// is not used on unencrypted HTTP connections.
 //
 // The FinalizeUnmarshalCaddyfile method should be called after this
 // to finalize setup of hidden Caddyfiles.
