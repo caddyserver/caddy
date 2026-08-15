@@ -224,9 +224,16 @@ func (fw FileWriter) OpenWriter() (io.WriteCloser, error) {
 	if err != nil {
 		return nil, err
 	}
+	closeFile := true
+	defer func() {
+		if closeFile {
+			_ = file.Close()
+		}
+	}()
 	info, err := file.Stat()
 	if roll {
-		file.Close() // timberjack will reopen it on its own
+		_ = file.Close() // timberjack will reopen it on its own
+		closeFile = false
 	}
 
 	// Ensure already existing files have the right mode, since OpenFile will not set the mode in such case.
@@ -244,6 +251,7 @@ func (fw FileWriter) OpenWriter() (io.WriteCloser, error) {
 
 	// if not rolling, then the plain file handle is all we need
 	if !roll {
+		closeFile = false
 		return file, nil
 	}
 
