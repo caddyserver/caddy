@@ -434,7 +434,7 @@ func TestContentDigestExactValues(t *testing.T) {
 	wantSHA256 := "uU0nuZNNPgilLlLX2n2r+sSE7+N6U4DukIj3rOLvzek="
 	wantSHA512 := "MJ7MSJwS1utMxA9QyQLytNDtd+5RGnx6m808qG1M2G+YndNbxf9JlnDaNCVbRbDP2DDoH2Bdz33FVC6TrpzXbw=="
 
-	digest, err := fsrv.calculateContentDigest(rs, int64(len(content)))
+	digest, err := fsrv.calculateContentDigest(rs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -454,7 +454,7 @@ func TestContentDigestReadSeekFailures(t *testing.T) {
 
 	t.Run("seek start failure", func(t *testing.T) {
 		rs := &errReadSeeker{seekErr: errors.New("seek refused")}
-		_, err := fsrv.calculateContentDigest(rs, 11)
+		_, err := fsrv.calculateContentDigest(rs)
 		if err == nil {
 			t.Fatal("expected seek error")
 		}
@@ -465,7 +465,7 @@ func TestContentDigestReadSeekFailures(t *testing.T) {
 
 	t.Run("read failure", func(t *testing.T) {
 		rs := &errReadSeeker{readErr: errors.New("read refused"), size: 11}
-		_, err := fsrv.calculateContentDigest(rs, 11)
+		_, err := fsrv.calculateContentDigest(rs)
 		if err == nil {
 			t.Fatal("expected read error")
 		}
@@ -476,7 +476,7 @@ func TestContentDigestReadSeekFailures(t *testing.T) {
 
 	t.Run("reset seek failure after successful hash", func(t *testing.T) {
 		rs := &errReadSeeker{size: 11, failReset: true, content: []byte("hello world")}
-		_, err := fsrv.calculateContentDigest(rs, 11)
+		_, err := fsrv.calculateContentDigest(rs)
 		if err == nil {
 			t.Fatal("expected reset seek error")
 		}
@@ -640,7 +640,7 @@ func TestContentDigestIntegration(t *testing.T) {
 		}
 	})
 
-	t.Run("304 Not Modified request", func(t *testing.T) {
+	t.Run("304 Not Modified omits Content-Digest", func(t *testing.T) {
 		w1 := httptest.NewRecorder()
 		r1 := withReplacer(httptest.NewRequest(http.MethodGet, "/file.txt", nil))
 		if err := fsrv.ServeHTTP(w1, r1, nil); err != nil {
@@ -661,8 +661,86 @@ func TestContentDigestIntegration(t *testing.T) {
 		if got := w2.Code; got != http.StatusNotModified {
 			t.Fatalf("status = %d, want 304", got)
 		}
-		if got := w2.Header().Get("Content-Digest"); got != fullDigestWant {
-			t.Fatalf("Content-Digest on 304 = %q, want %q", got, fullDigestWant)
+		// 304 has no message content; Content-Digest must not advertise the full-file hash.
+		if got := w2.Header().Get("Content-Digest"); got != "" {
+			t.Fatalf("Content-Digest on 304 = %q, want empty", got)
+		}
+	})
+
+	t.Run("If-Range match yields 206 without Content-Digest", func(t *testing.T) {
+		w1 := httptest.NewRecorder()
+		r1 := withReplacer(httptest.NewRequest(http.MethodGet, "/file.txt", nil))
+		if err := fsrv.ServeHTTP(w1, r1, nil); err != nil {
+			t.Fatal(err)
+		}
+		etag := w1.Header().Get("Etag")
+		if etag == "" {
+			t.Fatal("expected Etag")
+		}
+
+		w := httptest.NewRecorder()
+		r := withReplacer(httptest.NewRequest(http.MethodGet, "/file.txt", nil))
+		r.Header.Set("Range", "bytes=0-5")
+		r.Header.Set("If-Range", etag)
+
+		if err := fsrv.ServeHTTP(w, r, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := w.Code; got != http.StatusPartialContent {
+			t.Fatalf("status = %d, want 206", got)
+		}
+		if got := w.Header().Get("Content-Digest"); got != "" {
+			t.Fatalf("Content-Digest = %q, want empty for 206", got)
+		}
+	})
+
+	t.Run("If-Range mismatch yields 200 with full Content-Digest", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r := withReplacer(httptest.NewRequest(http.MethodGet, "/file.txt", nil))
+		r.Header.Set("Range", "bytes=0-5")
+		r.Header.Set("If-Range", `"definitely-not-the-etag"`)
+
+		if err := fsrv.ServeHTTP(w, r, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := w.Code; got != http.StatusOK {
+			t.Fatalf("status = %d, want 200", got)
+		}
+		if got := w.Header().Get("Content-Digest"); got != fullDigestWant {
+			t.Fatalf("Content-Digest = %q, want %q", got, fullDigestWant)
+		}
+		if !bytes.Equal(w.Body.Bytes(), content) {
+			t.Fatalf("body mismatch on If-Range fallback to full content")
+		}
+	})
+
+	t.Run("invalid Range omits Content-Digest", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r := withReplacer(httptest.NewRequest(http.MethodGet, "/file.txt", nil))
+		r.Header.Set("Range", "bytes=99999-100000")
+
+		if err := fsrv.ServeHTTP(w, r, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := w.Code; got != http.StatusRequestedRangeNotSatisfiable {
+			t.Fatalf("status = %d, want 416", got)
+		}
+		if got := w.Header().Get("Content-Digest"); got != "" {
+			t.Fatalf("Content-Digest = %q, want empty for 416", got)
+		}
+	})
+
+	t.Run("multipart Range omits Content-Digest", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r := withReplacer(httptest.NewRequest(http.MethodGet, "/file.txt", nil))
+		r.Header.Set("Range", "bytes=0-3,6-11")
+
+		if err := fsrv.ServeHTTP(w, r, nil); err != nil {
+			t.Fatal(err)
+		}
+		// ServeContent may emit multipart 206; either way digest must not claim full-file content.
+		if got := w.Header().Get("Content-Digest"); got != "" {
+			t.Fatalf("Content-Digest = %q, want empty for multipart range (status %d)", got, w.Code)
 		}
 	})
 
@@ -678,7 +756,7 @@ func TestContentDigestIntegration(t *testing.T) {
 			t.Fatalf("status = %d, want 200", got)
 		}
 
-		// Content-Digest for precompressed sidecar must match sidecar bytes.
+		// Content-Digest for precompressed sidecar must match sidecar bytes, not the original file.
 		hSidecar := sha256.Sum256(sidecar)
 		wantSidecarDigest := "sha-256=:" + base64.StdEncoding.EncodeToString(hSidecar[:]) + ":"
 		if got := w.Header().Get("Content-Digest"); got != wantSidecarDigest {
@@ -686,6 +764,27 @@ func TestContentDigestIntegration(t *testing.T) {
 		}
 		if got := w.Header().Get("Content-Encoding"); got != "gzip" {
 			t.Fatalf("Content-Encoding = %q, want gzip", got)
+		}
+		// Body is the compressed sidecar representation.
+		if !bytes.Equal(w.Body.Bytes(), sidecar) {
+			t.Fatalf("precompressed body mismatch")
+		}
+	})
+
+	t.Run("Precompressed with Range omits Content-Digest", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r := withReplacer(httptest.NewRequest(http.MethodGet, "/file.txt", nil))
+		r.Header.Set("Accept-Encoding", "gzip")
+		r.Header.Set("Range", "bytes=0-3")
+
+		if err := fsrv.ServeHTTP(w, r, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := w.Code; got != http.StatusPartialContent {
+			t.Fatalf("status = %d, want 206", got)
+		}
+		if got := w.Header().Get("Content-Digest"); got != "" {
+			t.Fatalf("Content-Digest = %q, want empty for precompressed range", got)
 		}
 	})
 

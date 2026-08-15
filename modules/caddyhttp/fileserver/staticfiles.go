@@ -185,8 +185,15 @@ type FileServer struct {
 	// Supported values: "sha-256", "sha-512" (aliases "sha256", "sha512" are accepted).
 	// Algorithms are validated and deduplicated at provision time.
 	//
-	// Note: Enabling Content-Digest requires reading the file (or selected range)
-	// to compute hashes before the response is written. That means the OS
+	// Content-Digest is emitted only for unconditional full-body 200 responses
+	// (including HEAD), hashing the bytes of the selected on-disk file (the
+	// precompressed sidecar when one is served). It is omitted for 206, 304,
+	// 416, and other non-200 outcomes chosen later by http.ServeContent
+	// (Range / If-Range / conditionals), because RFC 9530 requires the digest
+	// to match the actual message content.
+	//
+	// Note: Enabling Content-Digest requires reading those file bytes to
+	// compute hashes before the response is written. That means the OS
 	// sendfile(2) zero-copy fast path is not used on unencrypted HTTP
 	// connections (TLS already cannot use sendfile without kTLS).
 	ContentDigest []string `json:"content_digest,omitempty"`
@@ -559,18 +566,21 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		respHeader.Set("Etag", etag)
 	}
 
-	if len(fsrv.ContentDigest) > 0 && r.Header.Get("Range") == "" {
-		if rs, ok := file.(io.ReadSeeker); ok {
-			fileSize := info.Size()
-			if stat, err := file.Stat(); err == nil {
-				fileSize = stat.Size()
-			}
-			digestHeader, err := fsrv.calculateContentDigest(rs, fileSize)
-			if err != nil {
-				return caddyhttp.Error(http.StatusInternalServerError, err)
-			}
-			if digestHeader != "" {
-				respHeader.Set("Content-Digest", digestHeader)
+	// Precompute a full-file Content-Digest when ServeContent might still
+	// emit status 200 for this open file. Bare Range requests become 206/416
+	// only; If-Range may ignore Range and serve the full representation.
+	// The digest is attached only if the final status is 200 (see
+	// contentDigestResponseWriter) so 304/206/416 never advertise a wrong value.
+	var contentDigestHeader string
+	if len(fsrv.ContentDigest) > 0 {
+		mayBeFull200 := r.Header.Get("Range") == "" || r.Header.Get("If-Range") != ""
+		if mayBeFull200 {
+			if rs, ok := file.(io.ReadSeeker); ok {
+				var err error
+				contentDigestHeader, err = fsrv.calculateContentDigest(rs)
+				if err != nil {
+					return caddyhttp.Error(http.StatusInternalServerError, err)
+				}
 			}
 		}
 	}
@@ -606,6 +616,12 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		if err != nil {
 			return caddyhttp.Error(http.StatusInternalServerError, err)
 		}
+	}
+
+	// Attach Content-Digest only when ServeContent ends up writing 200.
+	// Must wrap before statusOverride so the override status is what we see.
+	if contentDigestHeader != "" {
+		w = &contentDigestResponseWriter{ResponseWriter: w, digest: contentDigestHeader}
 	}
 
 	// if we do have an override from the previous two parts, then
@@ -859,11 +875,12 @@ func newContentDigestHash(algo string) (hash.Hash, error) {
 	}
 }
 
-// calculateContentDigest computes an RFC 9530 Content-Digest dictionary for the
-// bytes that will be conveyed as message content.
+// calculateContentDigest computes an RFC 9530 Content-Digest dictionary over
+// the full contents of rs (the selected on-disk representation, including a
+// precompressed sidecar when that is what is open).
 // Read and seek failures are returned so the caller can abort rather than serve
 // a wrong digest or a corrupted subsequent response body.
-func (fsrv *FileServer) calculateContentDigest(rs io.ReadSeeker, size int64) (string, error) {
+func (fsrv *FileServer) calculateContentDigest(rs io.ReadSeeker) (string, error) {
 	if len(fsrv.ContentDigest) == 0 {
 		return "", nil
 	}
@@ -894,6 +911,39 @@ func (fsrv *FileServer) calculateContentDigest(rs io.ReadSeeker, size int64) (st
 	}
 
 	return strings.Join(parts, ", "), nil
+}
+
+// contentDigestResponseWriter attaches Content-Digest only when the final
+// response status is 200 OK. http.ServeContent resolves Range, If-Range, and
+// conditional requests after we hash the on-disk file; advertising that digest
+// on 206/304/416 would violate RFC 9530 (digest must cover message content).
+type contentDigestResponseWriter struct {
+	http.ResponseWriter
+	digest      string
+	headerWrote bool
+}
+
+func (cd *contentDigestResponseWriter) WriteHeader(status int) {
+	if !cd.headerWrote {
+		cd.headerWrote = true
+		if status == http.StatusOK {
+			cd.Header().Set("Content-Digest", cd.digest)
+		} else {
+			cd.Header().Del("Content-Digest")
+		}
+	}
+	cd.ResponseWriter.WriteHeader(status)
+}
+
+func (cd *contentDigestResponseWriter) Write(b []byte) (int, error) {
+	if !cd.headerWrote {
+		cd.WriteHeader(http.StatusOK)
+	}
+	return cd.ResponseWriter.Write(b)
+}
+
+func (cd *contentDigestResponseWriter) Unwrap() http.ResponseWriter {
+	return cd.ResponseWriter
 }
 
 // Finds the first corresponding etag file for a given file in the file system and return its content
