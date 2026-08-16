@@ -300,12 +300,17 @@ func Format(input []byte) []byte {
 		switch {
 		case ch == '{':
 			finishToken()
-			openBrace = true
-			openBraceSpace = spacePrior && !beginningOfLine
-			openBraceOwnLine = newLines > 0
-			if openBraceSpace && newLines == 0 {
-				write(' ')
+			// a brace that follows one still waiting to be written must not
+			// reset the spacing decided for the pending one, or the space
+			// already emitted for it gets written a second time
+			if !openBrace || openBraceWritten {
+				openBraceSpace = spacePrior && !beginningOfLine
+				if openBraceSpace && newLines == 0 {
+					write(' ')
+				}
 			}
+			openBrace = true
+			openBraceOwnLine = newLines > 0
 			openBraceWritten = false
 			if quotes == "`" {
 				write('{')
@@ -321,6 +326,11 @@ func Format(input []byte) []byte {
 				write('}')
 				continue
 			}
+			// this brace closed a block, so a '{' still marked open was not a
+			// literal one waiting for its pair; leaving it open would make the
+			// next '}' come out inline on this pass but as a block closer on
+			// the next one, so Format would never converge
+			openBrace = false
 			if last != '\n' {
 				nextLine()
 			}
@@ -365,6 +375,21 @@ func Format(input []byte) []byte {
 		write(ch)
 
 		beginningOfLine = false
+	}
+
+	// an open brace is only written once we know what follows it, so one that
+	// ends the input has not been written yet; emit it rather than dropping it
+	// from the output
+	if openBrace && !openBraceWritten {
+		for i := 0; i < min(newLines, 2); i++ {
+			nextLine()
+		}
+		if beginningOfLine {
+			indent()
+		} else if !unicode.IsSpace(last) {
+			write(' ')
+		}
+		write('{')
 	}
 
 	// the Caddyfile does not need any leading or trailing spaces, but...

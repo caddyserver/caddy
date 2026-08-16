@@ -495,6 +495,24 @@ import ./conf.d/matcher_not_my_subnet.caddy
 	order appsec after crowdsec
 }`,
 		},
+		{
+			description: "closing brace after an inline brace",
+			input:       `example.com{respond hi }}`,
+			expect: `example.com{respond hi
+}
+}`,
+		},
+		{
+			description: "open brace at the end of the input is not dropped",
+			input:       `{`,
+			expect:      `{`,
+		},
+		{
+			description: "open brace right after another one is not spaced twice",
+			input:       `example.com {{ respond hi`,
+			expect: `example.com {
+	respond hi`,
+		},
 	} {
 		// the formatter should output a trailing newline,
 		// even if the tests aren't written to expect that
@@ -507,6 +525,13 @@ import ./conf.d/matcher_not_my_subnet.caddy
 		if string(actual) != tc.expect {
 			t.Errorf("\n[TEST %d: %s]\n====== EXPECTED ======\n%s\n====== ACTUAL ======\n%s^^^^^^^^^^^^^^^^^^^^^",
 				i, tc.description, string(tc.expect), string(actual))
+		}
+
+		// formatting must converge: `caddy fmt` on already-formatted input
+		// has to be a no-op, or `--diff` never comes out empty
+		if reformatted := Format(actual); string(reformatted) != string(actual) {
+			t.Errorf("\n[TEST %d: %s] not idempotent\n====== ONCE ======\n%s\n====== TWICE ======\n%s^^^^^^^^^^^^^^^^^^^^^",
+				i, tc.description, string(actual), string(reformatted))
 		}
 	}
 }
