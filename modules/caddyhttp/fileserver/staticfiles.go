@@ -185,17 +185,20 @@ type FileServer struct {
 	// Supported values: "sha-256", "sha-512" (aliases "sha256", "sha512" are accepted).
 	// Algorithms are validated and deduplicated at provision time.
 	//
-	// Content-Digest is emitted only for unconditional full-body 200 responses
-	// (including HEAD), hashing the bytes of the selected on-disk file (the
-	// precompressed sidecar when one is served). It is omitted for 206, 304,
-	// 416, and other non-200 outcomes chosen later by http.ServeContent
-	// (Range / If-Range / conditionals), because RFC 9530 requires the digest
-	// to match the actual message content.
+	// Content-Digest is emitted only when the final status is 200, covering
+	// the actual message content (RFC 9530). For GET, that is the full
+	// selected on-disk representation (including a precompressed sidecar when
+	// one is served). For HEAD, the message body is empty, so the empty-content
+	// digest is used (see RFC 9530 Appendix B.2); the selected-representation
+	// hash belongs on Repr-Digest, which this handler does not set.
+	// It is omitted for 206, 304, 416, and other non-200 outcomes chosen later
+	// by http.ServeContent (Range / If-Range / conditionals).
 	//
-	// Note: Enabling Content-Digest requires reading those file bytes to
+	// Note: Enabling Content-Digest on GET requires reading those file bytes to
 	// compute hashes before the response is written. That means the OS
 	// sendfile(2) zero-copy fast path is not used on unencrypted HTTP
-	// connections (TLS already cannot use sendfile without kTLS).
+	// connections (TLS already cannot use sendfile without kTLS). HEAD only
+	// needs the empty-content digest and does not read the file for hashing.
 	ContentDigest []string `json:"content_digest,omitempty"`
 
 	fsmap caddy.FileSystems
@@ -566,21 +569,27 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		respHeader.Set("Etag", etag)
 	}
 
-	// Precompute a full-file Content-Digest when ServeContent might still
-	// emit status 200 for this open file. Bare Range requests become 206/416
-	// only; If-Range may ignore Range and serve the full representation.
-	// The digest is attached only if the final status is 200 (see
-	// contentDigestResponseWriter) so 304/206/416 never advertise a wrong value.
+	// Precompute Content-Digest when ServeContent might still emit status 200
+	// for this open file. Bare Range requests become 206/416 only; If-Range may
+	// ignore Range and serve the full representation. The digest is attached
+	// only if the final status is 200 (see contentDigestResponseWriter) so
+	// 304/206/416 never advertise a wrong value.
+	//
+	// GET: hash the selected on-disk bytes (message content for a full 200).
+	// HEAD: message content is empty — use the empty-content digest (RFC 9530
+	// Appendix B.2), not the file hash (that would be Repr-Digest).
 	var contentDigestHeader string
 	if len(fsrv.ContentDigest) > 0 {
 		mayBeFull200 := r.Header.Get("Range") == "" || r.Header.Get("If-Range") != ""
 		if mayBeFull200 {
-			if rs, ok := file.(io.ReadSeeker); ok {
-				var err error
+			var err error
+			if r.Method == http.MethodHead {
+				contentDigestHeader, err = fsrv.emptyContentDigest()
+			} else if rs, ok := file.(io.ReadSeeker); ok {
 				contentDigestHeader, err = fsrv.calculateContentDigest(rs)
-				if err != nil {
-					return caddyhttp.Error(http.StatusInternalServerError, err)
-				}
+			}
+			if err != nil {
+				return caddyhttp.Error(http.StatusInternalServerError, err)
 			}
 		}
 	}
@@ -875,41 +884,58 @@ func newContentDigestHash(algo string) (hash.Hash, error) {
 	}
 }
 
+// emptyContentDigest returns an RFC 9530 Content-Digest dictionary over the
+// empty byte sequence. HEAD responses have no message body, so this is the
+// correct Content-Digest value (RFC 9530 Appendix B.2). The selected
+// representation's hash would go on Repr-Digest instead.
+func (fsrv *FileServer) emptyContentDigest() (string, error) {
+	return fsrv.formatContentDigests(func(h hash.Hash) error {
+		// hash of zero bytes — Sum of a fresh hasher
+		return nil
+	})
+}
+
 // calculateContentDigest computes an RFC 9530 Content-Digest dictionary over
 // the full contents of rs (the selected on-disk representation, including a
 // precompressed sidecar when that is what is open).
 // Read and seek failures are returned so the caller can abort rather than serve
 // a wrong digest or a corrupted subsequent response body.
 func (fsrv *FileServer) calculateContentDigest(rs io.ReadSeeker) (string, error) {
+	return fsrv.formatContentDigests(func(h hash.Hash) error {
+		if _, err := rs.Seek(0, io.SeekStart); err != nil {
+			return fmt.Errorf("content digest: seek to start: %w", err)
+		}
+		if _, err := io.Copy(h, rs); err != nil {
+			_, _ = rs.Seek(0, io.SeekStart)
+			return fmt.Errorf("content digest: read content: %w", err)
+		}
+		// Always restore the offset so http.ServeContent can re-seek/read correctly.
+		if _, err := rs.Seek(0, io.SeekStart); err != nil {
+			return fmt.Errorf("content digest: reset file offset: %w", err)
+		}
+		return nil
+	})
+}
+
+// formatContentDigests builds the Content-Digest Structured Fields dictionary
+// for the configured algorithms, feeding each hasher via write.
+func (fsrv *FileServer) formatContentDigests(write func(hash.Hash) error) (string, error) {
 	if len(fsrv.ContentDigest) == 0 {
 		return "", nil
 	}
 
 	var parts []string
-
 	for _, algo := range fsrv.ContentDigest {
 		h, err := newContentDigestHash(algo)
 		if err != nil {
 			return "", err
 		}
-
-		if _, err = rs.Seek(0, io.SeekStart); err != nil {
-			return "", fmt.Errorf("content digest: seek to start: %w", err)
+		if err := write(h); err != nil {
+			return "", err
 		}
-		if _, err = io.Copy(h, rs); err != nil {
-			_, _ = rs.Seek(0, io.SeekStart)
-			return "", fmt.Errorf("content digest: read content: %w", err)
-		}
-
-		// Always restore the offset so http.ServeContent can re-seek/read correctly.
-		if _, err = rs.Seek(0, io.SeekStart); err != nil {
-			return "", fmt.Errorf("content digest: reset file offset: %w", err)
-		}
-
 		digest := base64.StdEncoding.EncodeToString(h.Sum(nil))
 		parts = append(parts, algo+"=:"+digest+":")
 	}
-
 	return strings.Join(parts, ", "), nil
 }
 

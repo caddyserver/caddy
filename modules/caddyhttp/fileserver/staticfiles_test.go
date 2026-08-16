@@ -19,6 +19,7 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -449,6 +450,24 @@ func TestContentDigestExactValues(t *testing.T) {
 	}
 }
 
+func TestEmptyContentDigest(t *testing.T) {
+	fsrv := FileServer{
+		ContentDigest: []string{"sha-256", "sha-512"},
+	}
+	// SHA-256/512 of empty input (RFC 9530 Appendix B.2 style empty content).
+	wantSHA256 := base64.StdEncoding.EncodeToString(sha256.New().Sum(nil))
+	wantSHA512 := base64.StdEncoding.EncodeToString(sha512.New().Sum(nil))
+
+	digest, err := fsrv.emptyContentDigest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("sha-256=:%s:, sha-512=:%s:", wantSHA256, wantSHA512)
+	if digest != want {
+		t.Fatalf("emptyContentDigest = %q, want %q", digest, want)
+	}
+}
+
 func TestContentDigestReadSeekFailures(t *testing.T) {
 	fsrv := FileServer{ContentDigest: []string{"sha-256"}}
 
@@ -588,7 +607,13 @@ func TestContentDigestIntegration(t *testing.T) {
 		}
 	})
 
-	t.Run("HEAD request", func(t *testing.T) {
+	t.Run("HEAD request uses empty-content digest", func(t *testing.T) {
+		// RFC 9530: Content-Digest covers message content. HEAD has an empty
+		// body, so the empty-content digest is required (Appendix B.2), not the
+		// selected-representation hash (that would be Repr-Digest).
+		hEmpty := sha256.Sum256(nil)
+		emptyDigestWant := "sha-256=:" + base64.StdEncoding.EncodeToString(hEmpty[:]) + ":"
+
 		w := httptest.NewRecorder()
 		r := withReplacer(httptest.NewRequest(http.MethodHead, "/file.txt", nil))
 
@@ -598,8 +623,11 @@ func TestContentDigestIntegration(t *testing.T) {
 		if got := w.Code; got != http.StatusOK {
 			t.Fatalf("status = %d, want 200", got)
 		}
-		if got := w.Header().Get("Content-Digest"); got != fullDigestWant {
-			t.Fatalf("Content-Digest = %q, want %q", got, fullDigestWant)
+		if got := w.Header().Get("Content-Digest"); got != emptyDigestWant {
+			t.Fatalf("Content-Digest = %q, want empty-content %q (not full-file %q)", got, emptyDigestWant, fullDigestWant)
+		}
+		if len(w.Body.Bytes()) != 0 {
+			t.Fatalf("HEAD body length = %d, want 0", len(w.Body.Bytes()))
 		}
 	})
 
