@@ -3,11 +3,15 @@ package reverseproxy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net"
+	"net/netip"
 	"net/url"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -193,6 +197,76 @@ func TestHTTPTransport_DialTLSContext_ProxyProtocol(t *testing.T) {
 			hasDialTLSContext := rt.DialTLSContext != nil
 			if hasDialTLSContext != tt.expectDialTLSContext {
 				t.Errorf("DialTLSContext set = %v, want %v", hasDialTLSContext, tt.expectDialTLSContext)
+			}
+		})
+	}
+}
+
+func TestHTTPTransport_DialContext_ProxyProtocolClosesConnectionOnError(t *testing.T) {
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+
+	validAddrPort := netip.MustParseAddrPort("192.0.2.1:1234")
+	tests := []struct {
+		name      string
+		version   string
+		proxyInfo *ProxyProtocolInfo
+	}{
+		{
+			name:    "missing proxy protocol info",
+			version: "v1",
+		},
+		{
+			name:      "unexpected proxy protocol version",
+			version:   "v3",
+			proxyInfo: &ProxyProtocolInfo{AddrPort: validAddrPort},
+		},
+		{
+			name:      "unexpected remote address type",
+			version:   "v1",
+			proxyInfo: &ProxyProtocolInfo{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatalf("listen: %v", err)
+			}
+			t.Cleanup(func() { listener.Close() })
+
+			readResult := make(chan error, 1)
+			go func() {
+				conn, err := listener.Accept()
+				if err != nil {
+					readResult <- err
+					return
+				}
+				defer conn.Close()
+				_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+				var buf [1]byte
+				_, err = conn.Read(buf[:])
+				readResult <- err
+			}()
+
+			dialCtx := context.WithValue(context.Background(), caddyhttp.VarsCtxKey, make(map[string]any))
+			if tt.proxyInfo != nil {
+				caddyhttp.SetVar(dialCtx, proxyProtocolInfoVarKey, *tt.proxyInfo)
+			}
+
+			rt, err := (&HTTPTransport{ProxyProtocol: tt.version}).NewTransport(ctx)
+			if err != nil {
+				t.Fatalf("NewTransport: %v", err)
+			}
+			conn, err := rt.DialContext(dialCtx, "tcp", listener.Addr().String())
+			if err == nil {
+				conn.Close()
+				t.Fatal("DialContext succeeded, want error")
+			}
+
+			if readErr := <-readResult; !errors.Is(readErr, io.EOF) {
+				t.Fatalf("server read error = %v, want EOF after client connection close", readErr)
 			}
 		})
 	}

@@ -3,6 +3,7 @@ package caddyhttp
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/dunglas/go-urlpattern"
@@ -39,6 +40,7 @@ type MatchURLPattern struct {
 	IgnoreCase bool `json:"ignore_case,omitempty"`
 
 	compiledPattern *urlpattern.URLPattern
+	mergeSlashes    bool
 }
 
 // CaddyModule returns the Caddy module information.
@@ -69,6 +71,19 @@ func (m *MatchURLPattern) Provision(_ caddy.Context) error {
 
 	m.compiledPattern = p
 
+	// Like the path matcher, collapse empty path segments in the request
+	// unless the pattern's path itself relies on them.
+	patternPath := m.Pattern
+	if idx := strings.Index(patternPath, "://"); idx != -1 {
+		patternPath = patternPath[idx+3:]
+		if slash := strings.IndexByte(patternPath, '/'); slash != -1 {
+			patternPath = patternPath[slash:]
+		} else {
+			patternPath = ""
+		}
+	}
+	m.mergeSlashes = !strings.Contains(patternPath, "//")
+
 	return nil
 }
 
@@ -82,6 +97,8 @@ func (m *MatchURLPattern) Match(r *http.Request) bool {
 // MatchWithError returns true if the request matches the URL pattern. The
 // request's origin (scheme://host) is the base against which the path is
 // resolved, so an absolute pattern or base_url can match on scheme and host.
+// The path is matched in its decoded, cleaned form so that the matcher sees
+// the same path that handlers resolve.
 //
 // On a match, captured groups are exposed as placeholders scoped by URL
 // component, mirroring the URLPattern result object: a named group :id in the
@@ -93,7 +110,16 @@ func (m *MatchURLPattern) MatchWithError(r *http.Request) (bool, error) {
 		scheme = "https"
 	}
 
-	result := m.compiledPattern.Exec(r.URL.RequestURI(), scheme+"://"+r.Host)
+	// Match the same path model that handlers resolve: the decoded path,
+	// normalized and cleaned (see #4407). Re-encoding through url.URL yields
+	// a canonical escaped form, so encoded traversal payloads such as
+	// "..%2f" cannot diverge from the path handlers actually use.
+	uri := url.URL{
+		Path:     CleanPath(normalizeWindowsPath(r.URL.Path), m.mergeSlashes),
+		RawQuery: r.URL.RawQuery,
+	}
+
+	result := m.compiledPattern.Exec(uri.RequestURI(), scheme+"://"+r.Host)
 	if result == nil {
 		return false, nil
 	}
