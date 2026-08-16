@@ -296,6 +296,12 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 			// decide whether to retry a request
 			return nil, DialError{err}
 		}
+		keepConn := false
+		defer func() {
+			if !keepConn {
+				_ = conn.Close()
+			}
+		}()
 
 		if h.ProxyProtocol != "" {
 			proxyProtocolInfo, ok := caddyhttp.GetVar(ctx, proxyProtocolInfoVarKey).(ProxyProtocolInfo)
@@ -363,6 +369,7 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 			}
 		}
 
+		keepConn = true
 		return conn, nil
 	}
 
