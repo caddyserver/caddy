@@ -22,6 +22,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddypki"
+	"github.com/caddyserver/caddy/v2/modules/caddytls"
 )
 
 func init() {
@@ -249,11 +250,31 @@ func (st ServerType) buildPKIApp(
 		}
 	}
 
+	// Detect whether any site block explicitly uses tls internal. When it
+	// does, the PKI app will provision the default local CA at runtime, so
+	// we must add it here with InstallTrust=false to honour skip_install_trust
+	// even when auto_https is completely disabled.
+	internalIssuerUsed := false
+	if skipInstallTrust {
+		outer:
+		for _, p := range pairings {
+			for _, sblock := range p.serverBlocks {
+				for _, issuerVal := range sblock.pile["tls.cert_issuer"] {
+					if _, ok := issuerVal.Value.(*caddytls.InternalIssuer); ok {
+						internalIssuerUsed = true
+						break outer
+					}
+				}
+			}
+		}
+	}
+
 	// if there was no CAs defined in any of the servers,
 	// and we were requested to not install trust, then
 	// add one for the default/local CA to do so
-	// only if auto_https is not completely disabled
-	if len(pkiApp.CAs) == 0 && skipInstallTrust && !autoHTTPSOff {
+	// only if auto_https is not completely disabled, or if a site
+	// explicitly uses tls internal (which always needs the local CA)
+	if len(pkiApp.CAs) == 0 && skipInstallTrust && (!autoHTTPSOff || internalIssuerUsed) {
 		ca := new(caddypki.CA)
 		ca.ID = caddypki.DefaultCAID
 		ca.InstallTrust = &falseBool
