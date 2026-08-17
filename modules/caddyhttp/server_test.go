@@ -4,24 +4,45 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/caddyserver/caddy/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
 type writeFunc func(p []byte) (int, error)
 
 type nopSyncer writeFunc
+
+func (s *syncBuffer) Write(p []byte) (n int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.String()
+}
 
 func (n nopSyncer) Write(p []byte) (int, error) {
 	return n(p)
@@ -64,7 +85,7 @@ func TestServer_LogRequest(t *testing.T) {
 
 	buf := bytes.Buffer{}
 	accLog := testLogger(buf.Write)
-	s.logRequest(accLog, req, wrec, &duration, repl, bodyReader, shouldLogCredentials)
+	s.logRequest(accLog, req, wrec, &duration, nil, repl, bodyReader, shouldLogCredentials)
 
 	assert.JSONEq(t, `{
 		"msg":"handled request", "level":"info", "bytes_read":0,
@@ -92,7 +113,7 @@ func TestServer_LogRequest_WithTrace(t *testing.T) {
 
 	buf := bytes.Buffer{}
 	accLog := testLogger(buf.Write)
-	s.logRequest(accLog, req, wrec, &duration, repl, bodyReader, shouldLogCredentials)
+	s.logRequest(accLog, req, wrec, &duration, nil, repl, bodyReader, shouldLogCredentials)
 
 	assert.JSONEq(t, `{
 		"msg":"handled request", "level":"info", "bytes_read":0,
@@ -121,7 +142,7 @@ func BenchmarkServer_LogRequest(b *testing.B) {
 	accLog := testLogger(buf.Write)
 
 	for b.Loop() {
-		s.logRequest(accLog, req, wrec, &duration, repl, bodyReader, false)
+		s.logRequest(accLog, req, wrec, &duration, nil, repl, bodyReader, false)
 	}
 }
 
@@ -142,7 +163,7 @@ func BenchmarkServer_LogRequest_NopLogger(b *testing.B) {
 	accLog := zap.NewNop()
 
 	for b.Loop() {
-		s.logRequest(accLog, req, wrec, &duration, repl, bodyReader, false)
+		s.logRequest(accLog, req, wrec, &duration, nil, repl, bodyReader, false)
 	}
 }
 
@@ -166,7 +187,7 @@ func BenchmarkServer_LogRequest_WithTrace(b *testing.B) {
 	accLog := testLogger(buf.Write)
 
 	for b.Loop() {
-		s.logRequest(accLog, req, wrec, &duration, repl, bodyReader, false)
+		s.logRequest(accLog, req, wrec, &duration, nil, repl, bodyReader, false)
 	}
 }
 
@@ -1364,4 +1385,63 @@ func TestServer_DetermineTrustedProxy_MatchRightMostUntrustedFirst(t *testing.T)
 
 	assert.True(t, trusted)
 	assert.Equal(t, clientIP, "90.100.110.120")
+}
+
+func TestServer_LogRequest_WithWriteError(t *testing.T) {
+	s := &Server{}
+	ctx := context.WithValue(context.Background(), ExtraLogFieldsCtxKey, new(ExtraLogFields))
+	req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+	wrec := NewResponseRecorder(rec, nil, nil)
+	duration := 50 * time.Millisecond
+	repl := NewTestReplacer(req)
+	bodyReader := &lengthReader{Source: req.Body}
+	buf := bytes.Buffer{}
+	accLog := testLogger(buf.Write)
+
+	writeErr := errors.New("write tcp: i/o timeout")
+	s.logRequest(accLog, req, wrec, &duration, &writeErr, repl, bodyReader, false)
+
+	assert.JSONEq(t, `{
+		"msg":"handled request", "level":"info", "bytes_read":0,
+		"duration":"50ms", "resp_headers": {}, "size":0,
+		"status":0, "user_id":"",
+		"write_error":"write tcp: i/o timeout"
+	}`, buf.String())
+}
+func TestServer_ServeHTTP_WriteTimeoutLogsWriteError(t *testing.T) {
+	var buf syncBuffer
+	accLog := testLogger(buf.Write)
+
+	s := &Server{
+		logger:       zap.NewNop(),
+		errorLogger:  zap.NewNop(),
+		accessLogger: accLog,
+		Logs:         &ServerLogConfig{},
+		WriteTimeout: caddy.Duration(150 * time.Millisecond),
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			time.Sleep(300 * time.Millisecond)
+			fmt.Fprint(w, "XX")
+			return nil
+		}),
+	}
+
+	ts := httptest.NewUnstartedServer(http.HandlerFunc(s.ServeHTTP))
+	ts.Config.WriteTimeout = 150 * time.Millisecond
+	ts.Start()
+	t.Cleanup(ts.Close)
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(ts.URL)
+	if err == nil {
+		resp.Body.Close() // Close immediately since we don't need body contents
+	}
+
+	// Poll until the background log worker finishes writing to syncBuffer
+	assert.Eventually(t, func() bool {
+		logOutput := buf.String()
+		return strings.Contains(logOutput, `"write_error"`) &&
+			strings.Contains(logOutput, "i/o timeout") &&
+			strings.Contains(logOutput, `"status":200`)
+	}, 1*time.Second, 10*time.Millisecond, "expected write timeout log entry")
 }

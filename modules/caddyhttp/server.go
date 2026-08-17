@@ -561,9 +561,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	errLog := s.errorLogger.WithLazy(loggableReq)
 
 	var duration time.Duration
+	var wrec ResponseRecorder
+	var writeErr error
 
 	if s.shouldLogRequest(r) {
-		wrec := NewResponseRecorder(w, nil, nil)
+		wrec = NewResponseRecorder(w, nil, nil)
 		w = wrec
 
 		// wrap the request body in a LengthReader
@@ -572,7 +574,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if r.Body != nil {
 			bodyReader = &lengthReader{Source: r.Body}
 			r.Body = bodyReader
-
 			// should always be true, private interface can only be referenced in the same package
 			if setReadSizer, ok := wrec.(interface{ setReadSize(*int) }); ok {
 				setReadSizer.setReadSize(&bodyReader.Length)
@@ -582,7 +583,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// capture the original version of the request
 		accLog := s.accessLogger.WithLazy(loggableReq)
 
-		defer s.logRequest(accLog, r, wrec, &duration, repl, bodyReader, shouldLogCredentials)
+		defer s.logRequest(accLog, r, wrec, &duration, &writeErr, repl, bodyReader, shouldLogCredentials)
 	}
 
 	// guarantee ACME HTTP challenges; handle them separately from any user-defined handlers
@@ -593,6 +594,21 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	err := s.serveHTTP(w, r)
 	duration = time.Since(start)
+
+	// if the request exceeded the configured HTTP/1.x write timeout,
+	// explicitly flush the response so that any terminal write error
+	// can be observed before access logging.
+	if wrec != nil &&
+		s.WriteTimeout > 0 &&
+		r.ProtoMajor == 1 &&
+		duration >= time.Duration(s.WriteTimeout) {
+		if flusher, ok := wrec.(interface{ FlushError() error }); ok {
+			writeErr = flusher.FlushError()
+			if errors.Is(writeErr, http.ErrHijacked) {
+				writeErr = nil
+			}
+		}
+	}
 
 	if err == nil {
 		return
@@ -1110,7 +1126,7 @@ func (s *Server) logTrace(mh MiddlewareHandler) {
 
 // logRequest logs the request to access logs, unless skipped.
 func (s *Server) logRequest(
-	accLog *zap.Logger, r *http.Request, wrec ResponseRecorder, duration *time.Duration,
+	accLog *zap.Logger, r *http.Request, wrec ResponseRecorder, duration *time.Duration, writeErr *error,
 	repl *caddy.Replacer, bodyReader *lengthReader, shouldLogCredentials bool,
 ) {
 	ctx := r.Context()
@@ -1174,6 +1190,9 @@ func (s *Server) logRequest(
 					ShouldLogCredentials: shouldLogCredentials,
 				}),
 			)
+			if writeErr != nil && *writeErr != nil {
+				fields = append(fields, zap.NamedError("write_error", *writeErr))
+			}
 			fields = append(fields, extra.fields...)
 		}
 
