@@ -456,3 +456,42 @@ func TestServeHTTPDefaultEncodingPreference(t *testing.T) {
 		t.Errorf("Expected Content-Encoding to be 'gzip' when explicitly preferred, got '%s'", contentEncoding2)
 	}
 }
+
+func TestEncodeStripsContentDigest(t *testing.T) {
+	enc := new(Encode)
+	enc.MinLength = 1
+	enc.writerPools = map[string]*sync.Pool{
+		"gzip": {New: func() any { return mockEncoder{} }},
+	}
+	// Prefer alone is enough when writerPools is pre-seeded (see other encode tests).
+	enc.Prefer = []string{"gzip"}
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+	if err := enc.Provision(ctx); err != nil {
+		t.Fatalf("Provision failed: %v", err)
+	}
+
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Accept-Encoding", "gzip")
+
+	w := httptest.NewRecorder()
+	w.Header().Set("Content-Type", "text/plain")
+
+	next := caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+		// Upstream (e.g. file_server) may attach Content-Digest over unencoded bytes.
+		w.Header().Set("Content-Digest", "sha-256=:dGVzdA==:")
+		w.WriteHeader(http.StatusOK)
+		_, err := w.Write([]byte("Hello, world! long enough to encode"))
+		return err
+	})
+
+	if err := enc.ServeHTTP(w, r, next); err != nil {
+		t.Fatalf("ServeHTTP: %v", err)
+	}
+	if got := w.Header().Get("Content-Encoding"); got != "gzip" {
+		t.Fatalf("Content-Encoding = %q, want gzip", got)
+	}
+	if got := w.Header().Get("Content-Digest"); got != "" {
+		t.Fatalf("Content-Digest = %q, want empty after dynamic encode", got)
+	}
+}
