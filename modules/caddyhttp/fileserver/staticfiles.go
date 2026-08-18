@@ -185,20 +185,22 @@ type FileServer struct {
 	// Supported values: "sha-256", "sha-512" (aliases "sha256", "sha512" are accepted).
 	// Algorithms are validated and deduplicated at provision time.
 	//
-	// Content-Digest is emitted only when the final status is 200, covering
-	// the actual message content (RFC 9530). For GET, that is the full
-	// selected on-disk representation (including a precompressed sidecar when
-	// one is served). For HEAD, the message body is empty, so the empty-content
-	// digest is used (see RFC 9530 Appendix B.2); the selected-representation
-	// hash belongs on Repr-Digest, which this handler does not set.
-	// It is omitted for 206, 304, 416, and other non-200 outcomes chosen later
-	// by http.ServeContent (Range / If-Range / conditionals).
+	// Content-Digest covers the actual message content written to the client
+	// (RFC 9530), not merely the on-disk file. Digests are computed over a
+	// buffered snapshot of the bytes http.ServeContent emits, so:
+	//   - GET 200 hashes the full selected representation (including a
+	//     precompressed sidecar when that is what is served)
+	//   - GET 206 hashes only the selected partial content (single or multipart)
+	//   - HEAD 200 uses the empty-content digest (Appendix B.2); the selected
+	//     representation hash belongs on Repr-Digest, which this handler does not set
+	//   - 304/416 and other non-content outcomes omit the field
 	//
-	// Note: Enabling Content-Digest on GET requires reading those file bytes to
-	// compute hashes before the response is written. That means the OS
-	// sendfile(2) zero-copy fast path is not used on unencrypted HTTP
-	// connections (TLS already cannot use sendfile without kTLS). HEAD only
-	// needs the empty-content digest and does not read the file for hashing.
+	// If a later middleware dynamically re-encodes the body (encode gzip/zstd),
+	// Content-Digest is omitted/stripped because the client bytes differ.
+	//
+	// Note: buffering the response body means the OS sendfile(2) zero-copy path
+	// is not used when Content-Digest is enabled (TLS already cannot use sendfile
+	// without kTLS).
 	ContentDigest []string `json:"content_digest,omitempty"`
 
 	fsmap caddy.FileSystems
@@ -572,31 +574,6 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		respHeader.Set("Etag", etag)
 	}
 
-	// Precompute Content-Digest when ServeContent might still emit status 200
-	// for this open file. Bare Range requests become 206/416 only; If-Range may
-	// ignore Range and serve the full representation. The digest is attached
-	// only if the final status is 200 (see contentDigestResponseWriter) so
-	// 304/206/416 never advertise a wrong value.
-	//
-	// GET: hash the selected on-disk bytes (message content for a full 200).
-	// HEAD: message content is empty — use the empty-content digest (RFC 9530
-	// Appendix B.2), not the file hash (that would be Repr-Digest).
-	var contentDigestHeader string
-	if len(fsrv.ContentDigest) > 0 {
-		mayBeFull200 := r.Header.Get("Range") == "" || r.Header.Get("If-Range") != ""
-		if mayBeFull200 {
-			var err error
-			if r.Method == http.MethodHead {
-				contentDigestHeader, err = fsrv.emptyContentDigest()
-			} else if rs, ok := file.(io.ReadSeeker); ok {
-				contentDigestHeader, err = fsrv.calculateContentDigest(rs)
-			}
-			if err != nil {
-				return caddyhttp.Error(http.StatusInternalServerError, err)
-			}
-		}
-	}
-
 	if respHeader.Get("Content-Type") == "" {
 		mtyp := mime.TypeByExtension(filepath.Ext(filename))
 		if mtyp == "" {
@@ -630,19 +607,24 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		}
 	}
 
-	// if we do have an override, wrap first so statusOverrideResponseWriter sits inside
+	// statusOverride sits inside the Content-Digest wrapper so the digest
+	// decision follows ServeContent's content path (200/206/304/416), not the
+	// overridden client status alone.
 	if statusCodeOverride > 0 {
 		w = statusOverrideResponseWriter{ResponseWriter: w, code: statusCodeOverride}
 	}
 
-	// Attach Content-Digest wrapper outside statusOverrideResponseWriter so that it observes
-	// the actual status code written to the client.
-	if contentDigestHeader != "" {
-		w = &contentDigestResponseWriter{
+	// Buffer ServeContent's output, hash the actual message content, then flush.
+	// This avoids TOCTOU between a pre-hash read and the bytes later written, and
+	// yields a correct digest for 206 partial content.
+	var digestWriter *contentDigestResponseWriter
+	if len(fsrv.ContentDigest) > 0 {
+		digestWriter = &contentDigestResponseWriter{
 			ResponseWriter: w,
-			digest:         contentDigestHeader,
+			algos:          fsrv.ContentDigest,
 			precompress:    precompressEncoding,
 		}
+		w = digestWriter
 	}
 
 	// let the standard library do what it does best; note, however,
@@ -660,6 +642,12 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		modTime = zeroTime
 	}
 	http.ServeContent(w, r, info.Name(), modTime, file.(io.ReadSeeker))
+
+	if digestWriter != nil {
+		if err := digestWriter.finalize(); err != nil {
+			return caddyhttp.Error(http.StatusInternalServerError, err)
+		}
+	}
 
 	return nil
 }
@@ -890,43 +878,16 @@ func newContentDigestHash(algo string) (hash.Hash, error) {
 	}
 }
 
-// emptyContentDigest returns an RFC 9530 Content-Digest dictionary over the
-// empty byte sequence. HEAD responses have no message body, so this is the
-// correct Content-Digest value (RFC 9530 Appendix B.2). The selected
-// representation's hash would go on Repr-Digest instead.
-func (fsrv *FileServer) emptyContentDigest() (string, error) {
-	if len(fsrv.ContentDigest) == 0 {
+// formatContentDigest builds an RFC 9530 Content-Digest Structured Fields
+// dictionary over content for the configured algorithms. All algorithms are
+// fed in a single pass via io.MultiWriter.
+func formatContentDigest(algos []string, content []byte) (string, error) {
+	if len(algos) == 0 {
 		return "", nil
 	}
-	var parts []string
-	for _, algo := range fsrv.ContentDigest {
-		h, err := newContentDigestHash(algo)
-		if err != nil {
-			return "", err
-		}
-		digest := base64.StdEncoding.EncodeToString(h.Sum(nil))
-		parts = append(parts, algo+"=:"+digest+":")
-	}
-	return strings.Join(parts, ", "), nil
-}
-
-// calculateContentDigest computes an RFC 9530 Content-Digest dictionary over
-// the full contents of rs (the selected on-disk representation, including a
-// precompressed sidecar when that is what is open).
-// Read and seek failures are returned so the caller can abort rather than serve
-// a wrong digest or a corrupted subsequent response body.
-//
-// All configured hash algorithms are fed simultaneously in a single pass via
-// io.MultiWriter to avoid TOCTOU (time-of-check to time-of-use) file modification
-// races across multiple reads.
-func (fsrv *FileServer) calculateContentDigest(rs io.ReadSeeker) (string, error) {
-	if len(fsrv.ContentDigest) == 0 {
-		return "", nil
-	}
-
-	hashers := make([]hash.Hash, len(fsrv.ContentDigest))
-	writers := make([]io.Writer, len(fsrv.ContentDigest))
-	for i, algo := range fsrv.ContentDigest {
+	hashers := make([]hash.Hash, len(algos))
+	writers := make([]io.Writer, len(algos))
+	for i, algo := range algos {
 		h, err := newContentDigestHash(algo)
 		if err != nil {
 			return "", err
@@ -934,65 +895,104 @@ func (fsrv *FileServer) calculateContentDigest(rs io.ReadSeeker) (string, error)
 		hashers[i] = h
 		writers[i] = h
 	}
-
-	mw := io.MultiWriter(writers...)
-
-	if _, err := rs.Seek(0, io.SeekStart); err != nil {
-		return "", fmt.Errorf("content digest: seek to start: %w", err)
+	if len(content) > 0 {
+		if _, err := io.MultiWriter(writers...).Write(content); err != nil {
+			return "", fmt.Errorf("content digest: hash content: %w", err)
+		}
 	}
-	if _, err := io.Copy(mw, rs); err != nil {
-		_, _ = rs.Seek(0, io.SeekStart)
-		return "", fmt.Errorf("content digest: read content: %w", err)
-	}
-	// Always restore the offset so http.ServeContent can re-seek/read correctly.
-	if _, err := rs.Seek(0, io.SeekStart); err != nil {
-		return "", fmt.Errorf("content digest: reset file offset: %w", err)
-	}
-
 	var parts []string
-	for i, algo := range fsrv.ContentDigest {
+	for i, algo := range algos {
 		digest := base64.StdEncoding.EncodeToString(hashers[i].Sum(nil))
 		parts = append(parts, algo+"=:"+digest+":")
 	}
 	return strings.Join(parts, ", "), nil
 }
 
-// contentDigestResponseWriter attaches Content-Digest only when the final
-// response status is 200 OK and no dynamic content encoding was applied.
-// http.ServeContent resolves Range, If-Range, and conditional requests after
-// we hash the on-disk file; advertising that digest on 206/304/416 would violate
-// RFC 9530 (digest must cover message content).
-// Furthermore, if later middleware dynamically compresses the body (e.g. encode gzip/zstd),
-// the client receives dynamically encoded bytes differing from the on-disk representation,
-// so Content-Digest must be omitted.
+// contentDigestResponseWriter buffers the body http.ServeContent writes, then
+// attaches Content-Digest over those exact bytes before flushing the response.
+// Digest is emitted for 200 and 206 when Content-Encoding is absent or matches
+// a static precompressed sidecar; 304/416/other statuses omit it. HEAD 200
+// yields the empty-content digest (RFC 9530 Appendix B.2).
 type contentDigestResponseWriter struct {
 	http.ResponseWriter
-	digest      string
+	algos       []string
 	precompress string
-	headerWrote bool
+	status      int
+	statusSet   bool
+	flushed     bool
+	buf         bytes.Buffer
 }
 
 func (cd *contentDigestResponseWriter) WriteHeader(status int) {
-	if !cd.headerWrote {
-		cd.headerWrote = true
-		enc := cd.Header().Get("Content-Encoding")
-		// Emit Content-Digest only on status 200 and when Content-Encoding is either empty or matches
-		// the static precompressed sidecar encoding configured prior to file_server execution.
-		// Dynamically added Content-Encoding (from encode gzip/zstd middleware) invalidates on-disk digests.
-		if status == http.StatusOK && (enc == "" || enc == cd.precompress) {
-			cd.Header().Set("Content-Digest", cd.digest)
-		} else {
-			cd.Header().Del("Content-Digest")
-		}
+	if cd.flushed {
+		cd.ResponseWriter.WriteHeader(status)
+		return
 	}
-	cd.ResponseWriter.WriteHeader(status)
+	if !cd.statusSet {
+		cd.status = status
+		cd.statusSet = true
+	}
 }
 
 func (cd *contentDigestResponseWriter) Write(b []byte) (int, error) {
-	if !cd.headerWrote {
+	if cd.flushed {
+		return cd.ResponseWriter.Write(b)
+	}
+	if !cd.statusSet {
 		cd.WriteHeader(http.StatusOK)
 	}
-	return cd.ResponseWriter.Write(b)
+	return cd.buf.Write(b)
+}
+
+// ReadFrom buffers r through Write so sendfile/ReadFrom paths still contribute
+// to the Content-Digest snapshot.
+func (cd *contentDigestResponseWriter) ReadFrom(r io.Reader) (int64, error) {
+	if cd.flushed {
+		if rf, ok := cd.ResponseWriter.(io.ReaderFrom); ok {
+			return rf.ReadFrom(r)
+		}
+		return io.Copy(cd.ResponseWriter, r)
+	}
+	if !cd.statusSet {
+		cd.WriteHeader(http.StatusOK)
+	}
+	return io.Copy(&cd.buf, r)
+}
+
+// finalize hashes the buffered message content, sets or clears Content-Digest,
+// then writes the real status line and body to the underlying ResponseWriter.
+func (cd *contentDigestResponseWriter) finalize() error {
+	if cd.flushed {
+		return nil
+	}
+	cd.flushed = true
+
+	status := cd.status
+	if !cd.statusSet {
+		status = http.StatusOK
+	}
+
+	enc := cd.Header().Get("Content-Encoding")
+	allowDigest := (status == http.StatusOK || status == http.StatusPartialContent) &&
+		(enc == "" || enc == cd.precompress)
+	if allowDigest {
+		digest, err := formatContentDigest(cd.algos, cd.buf.Bytes())
+		if err != nil {
+			return err
+		}
+		if digest != "" {
+			cd.Header().Set("Content-Digest", digest)
+		}
+	} else {
+		cd.Header().Del("Content-Digest")
+	}
+
+	cd.ResponseWriter.WriteHeader(status)
+	if cd.buf.Len() == 0 {
+		return nil
+	}
+	_, err := cd.ResponseWriter.Write(cd.buf.Bytes())
+	return err
 }
 
 func (cd *contentDigestResponseWriter) Unwrap() http.ResponseWriter {
