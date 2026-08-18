@@ -816,6 +816,27 @@ func TestContentDigestIntegration(t *testing.T) {
 		}
 	})
 
+	t.Run("Dynamic Content-Encoding omits Content-Digest", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r := withReplacer(httptest.NewRequest(http.MethodGet, "/file.txt", nil))
+
+		// Outer middleware (such as caddyhttp/encode) wraps ResponseWriter before calling file_server
+		// and sets Content-Encoding header during negotiation / handling.
+		outerWrapper := &dynamicCompressResponseWriter{ResponseWriter: w}
+		outerWrapper.Header().Set("Content-Encoding", "gzip")
+
+		if err := fsrv.ServeHTTP(outerWrapper, r, nil); err != nil {
+			t.Fatal(err)
+		}
+
+		if got := w.Code; got != http.StatusOK {
+			t.Fatalf("status = %d, want 200", got)
+		}
+		if got := w.Header().Get("Content-Digest"); got != "" {
+			t.Fatalf("Content-Digest = %q, want empty when dynamic Content-Encoding is present", got)
+		}
+	})
+
 	t.Run("Provision rejects unsupported algorithm from JSON config", func(t *testing.T) {
 		bad := FileServer{ContentDigest: []string{"sha-256", "md5"}}
 		ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
@@ -823,4 +844,18 @@ func TestContentDigestIntegration(t *testing.T) {
 			t.Fatal("expected provision error for unsupported algorithm")
 		}
 	})
+}
+
+type dynamicCompressResponseWriter struct {
+	http.ResponseWriter
+}
+
+func (d *dynamicCompressResponseWriter) WriteHeader(status int) {
+	d.ResponseWriter.Header().Set("Content-Encoding", "gzip")
+	d.ResponseWriter.WriteHeader(status)
+}
+
+func (d *dynamicCompressResponseWriter) Write(b []byte) (int, error) {
+	d.ResponseWriter.Header().Set("Content-Encoding", "gzip")
+	return d.ResponseWriter.Write(b)
 }
