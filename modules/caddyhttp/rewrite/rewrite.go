@@ -344,6 +344,12 @@ func buildQueryString(qs string, repl *caddy.Replacer) string {
 		// determine the end of this component, which will be at
 		// the next equal sign or ampersand, whichever comes first
 		nextEq, nextAmp := strings.Index(qs, "="), strings.Index(qs, "&")
+		if !wroteVal {
+			// we are consuming a value, and '=' only delimits a key from
+			// its value; any further '=' bytes are literal data, such as
+			// base64 padding in a signature. only '&' ends a value.
+			nextEq = -1
+		}
 		ampIsNext := nextAmp >= 0 && (nextAmp < nextEq || nextEq < 0)
 		end := len(qs) // assume no delimiter remains...
 		if ampIsNext {

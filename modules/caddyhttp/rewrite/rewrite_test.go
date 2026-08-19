@@ -396,6 +396,19 @@ func TestRewrite(t *testing.T) {
 			input:  newRequestWithHeader(t, "GET", "/anything", "X-Fwd", "ok?path={file./etc/passwd}"),
 			expect: newRequest(t, "GET", "/serve/ok?path=%7Bfile./etc/passwd%7D"),
 		},
+
+		// '=' delimits a key from its value only once; any further '=' bytes
+		// are literal data, such as base64 padding in a signature.
+		{
+			rule:   Rewrite{URI: "?sig=YWJjZA=="},
+			input:  newRequest(t, "GET", "/hello"),
+			expect: newRequest(t, "GET", "/hello?sig=YWJjZA=="),
+		},
+		{
+			rule:   Rewrite{URI: "?x=1&sig=YWJjZA=="},
+			input:  newRequest(t, "GET", "/hello"),
+			expect: newRequest(t, "GET", "/hello?x=1&sig=YWJjZA=="),
+		},
 	} {
 		// copy the original input just enough so that we can
 		// compare it after the rewrite to see if it changed
