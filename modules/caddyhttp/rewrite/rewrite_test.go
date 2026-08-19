@@ -454,6 +454,44 @@ func TestRewrite(t *testing.T) {
 			input:  newRequestWithHeader(t, "GET", "/orig", "X-Ph", "/f.jpg?X-Amz-Credential=AK%2Ffr-par%2Fs3&X-Amz-Signature=YWJjZA=="),
 			expect: newRequest(t, "GET", "/f.jpg?X-Amz-Credential=AK%2Ffr-par%2Fs3&X-Amz-Signature=YWJjZA=="),
 		},
+
+		// a fragment that arrives via a replacement value is dropped: everything
+		// after '#' is fragment (RFC 3986 section 4.2) and is never sent to the
+		// server, so it must not leak into the path or query.
+		{
+			rule:   Rewrite{URI: "{http.request.header.X-Ph}"},
+			input:  newRequestWithHeader(t, "GET", "/orig", "X-Ph", "/hello#frag"),
+			expect: newRequest(t, "GET", "/hello"),
+		},
+		{
+			rule:   Rewrite{URI: "{http.request.header.X-Ph}"},
+			input:  newRequestWithHeader(t, "GET", "/orig", "X-Ph", "/hello?a=b#frag"),
+			expect: newRequest(t, "GET", "/hello?a=b"),
+		},
+		{
+			// a '?' after the injected '#' is fragment, not a query delimiter
+			rule:   Rewrite{URI: "{http.request.header.X-Ph}"},
+			input:  newRequestWithHeader(t, "GET", "/orig", "X-Ph", "/hello#frag?notquery"),
+			expect: newRequest(t, "GET", "/hello"),
+		},
+		{
+			// a configured fragment still wins over an injected one
+			rule:   Rewrite{URI: "{http.request.header.X-Ph}#cfgfrag"},
+			input:  newRequestWithHeader(t, "GET", "/orig", "X-Ph", "/hello?a=b#frag"),
+			expect: newRequest(t, "GET", "/hello?a=b#cfgfrag"),
+		},
+		{
+			// an escaped '#' is not a fragment delimiter and is preserved
+			rule:   Rewrite{URI: "{http.request.header.X-Ph}"},
+			input:  newRequestWithHeader(t, "GET", "/orig", "X-Ph", "/hello%23frag"),
+			expect: newRequest(t, "GET", "/hello%23frag"),
+		},
+		{
+			// a fragment-only value leaves the original query alone
+			rule:   Rewrite{URI: "{http.request.header.X-Ph}"},
+			input:  newRequestWithHeader(t, "GET", "/orig?keep=me", "X-Ph", "/hello#frag"),
+			expect: newRequest(t, "GET", "/hello?keep=me"),
+		},
 	} {
 		// copy the original input just enough so that we can
 		// compare it after the rewrite to see if it changed

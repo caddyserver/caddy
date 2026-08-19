@@ -215,6 +215,16 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 			newPath = repl.ReplaceAll(path, "")
 		}
 
+		// a fragment may have snuck into the path component during
+		// replacements; everything after the first '#' is fragment
+		// (RFC 3986 section 4.2), which is never sent to the server,
+		// so drop it. this mirrors how a literal '#' in the configured
+		// URI is handled by the scan above, and prevents the fragment
+		// from being mistaken for part of the path or query below.
+		if before, _, found := strings.Cut(newPath, "#"); found {
+			newPath = before
+		}
+
 		// before continuing, we need to check if a query string
 		// snuck into the path component during replacements
 		queryInjected := false
