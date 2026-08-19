@@ -217,6 +217,7 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 
 		// before continuing, we need to check if a query string
 		// snuck into the path component during replacements
+		queryInjected := false
 		if before, after, found := strings.Cut(newPath, "?"); found {
 			// recompute; new path contains a query string
 			var injectedQuery string
@@ -233,6 +234,13 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 				injectedQuery = strings.ReplaceAll(injectedQuery, "{", "%7B")
 				injectedQuery = strings.ReplaceAll(injectedQuery, "}", "%7D")
 				query = injectedQuery
+
+				// the replacement value spoke about the query string, so the
+				// query must be written back even though the configured URI
+				// had no literal '?' to set qsStart. an injected query that
+				// is empty (a value ending in '?') clears the query, which is
+				// consistent with configuring a bare '?'.
+				queryInjected = true
 			}
 		}
 
@@ -253,7 +261,7 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 			}
 			r.URL.RawPath = "" // force recomputing when EscapedPath() is called
 		}
-		if qsStart >= 0 {
+		if qsStart >= 0 || queryInjected {
 			r.URL.RawQuery = newQuery
 		}
 		if fragStart >= 0 {

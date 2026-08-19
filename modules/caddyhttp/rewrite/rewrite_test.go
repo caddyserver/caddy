@@ -409,6 +409,51 @@ func TestRewrite(t *testing.T) {
 			input:  newRequest(t, "GET", "/hello"),
 			expect: newRequest(t, "GET", "/hello?x=1&sig=YWJjZA=="),
 		},
+
+		// a query string that arrives via a replacement value is honored even
+		// though the configured URI has no literal '?' (see issue #5208).
+		{
+			rule:   Rewrite{URI: "{http.request.header.X-Accel-Redirect}"},
+			input:  newRequestWithHeader(t, "GET", "/orig", "X-Accel-Redirect", "/hello?some=param&some_other=param"),
+			expect: newRequest(t, "GET", "/hello?some=param&some_other=param"),
+		},
+		{
+			// an injected query replaces the original one, as a configured query would
+			rule:   Rewrite{URI: "{http.request.header.X-Accel-Redirect}"},
+			input:  newRequestWithHeader(t, "GET", "/orig?keep=me", "X-Accel-Redirect", "/hello?some=param"),
+			expect: newRequest(t, "GET", "/hello?some=param"),
+		},
+		{
+			// a value ending in '?' clears the query, same as configuring a bare '?'
+			rule:   Rewrite{URI: "{http.request.header.X-Accel-Redirect}"},
+			input:  newRequestWithHeader(t, "GET", "/orig?keep=me", "X-Accel-Redirect", "/hello?"),
+			expect: newRequest(t, "GET", "/hello"),
+		},
+		{
+			// no '?' in the value means the query is not touched
+			rule:   Rewrite{URI: "{http.request.header.X-Accel-Redirect}"},
+			input:  newRequestWithHeader(t, "GET", "/orig?keep=me", "X-Accel-Redirect", "/hello"),
+			expect: newRequest(t, "GET", "/hello?keep=me"),
+		},
+		{
+			// an explicitly configured query still wins over an injected one
+			rule:   Rewrite{URI: "{http.request.header.X-Accel-Redirect}?a=b"},
+			input:  newRequestWithHeader(t, "GET", "/orig", "X-Accel-Redirect", "/hello?some=param"),
+			expect: newRequest(t, "GET", "/hello?a=b"),
+		},
+		{
+			// an escaped '?' in the request path does not split the URI, so the
+			// implicit rewrites of try_files and php_fastcgi stay safe
+			rule:   Rewrite{URI: "{http.request.uri.path}"},
+			input:  newRequest(t, "GET", "/bar%3Fbaz?keep=me"),
+			expect: newRequest(t, "GET", "/bar%3Fbaz?keep=me"),
+		},
+		{
+			// an S3 presigned URL arriving via a replacement value survives intact
+			rule:   Rewrite{URI: "{http.request.header.X-Ph}"},
+			input:  newRequestWithHeader(t, "GET", "/orig", "X-Ph", "/f.jpg?X-Amz-Credential=AK%2Ffr-par%2Fs3&X-Amz-Signature=YWJjZA=="),
+			expect: newRequest(t, "GET", "/f.jpg?X-Amz-Credential=AK%2Ffr-par%2Fs3&X-Amz-Signature=YWJjZA=="),
+		},
 	} {
 		// copy the original input just enough so that we can
 		// compare it after the rewrite to see if it changed
