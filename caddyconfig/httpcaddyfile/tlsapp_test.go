@@ -163,7 +163,7 @@ unprotected.example.com {
 	if diff := compareECHPublication(
 		ech.Publication[0],
 		[]string{"global-public.example.net"},
-		nil,
+		[]string{"unprotected.example.com"},
 	); diff != "" {
 		t.Fatal(diff)
 	}
@@ -226,6 +226,101 @@ func TestSiteBlockECHWithoutGlobalECH(t *testing.T) {
 	}
 }
 
+func TestSiteBlockECHRestrictsConfiguredGlobalPublication(t *testing.T) {
+	input := `{
+	ech global-public.example.net {
+		dns test
+	}
+}
+
+site.example.com {
+	tls {
+		ech site-public.example.net
+	}
+}
+
+global.example.com {
+}`
+
+	ech := adaptECH(t, input)
+	if len(ech.Publication) != 2 {
+		t.Fatalf("unexpected ECH publication count: got %d, want 2", len(ech.Publication))
+	}
+	if diff := compareECHPublication(
+		ech.Publication[0],
+		[]string{"global-public.example.net"},
+		[]string{"global.example.com"},
+	); diff != "" {
+		t.Fatal(diff)
+	}
+	if diff := compareECHPublication(
+		ech.Publication[1],
+		[]string{"site-public.example.net"},
+		[]string{"site.example.com"},
+	); diff != "" {
+		t.Fatal(diff)
+	}
+}
+
+func TestSiteBlockECHOmitGlobalPublicationWithoutDomains(t *testing.T) {
+	input := `{
+	ech global-public.example.net {
+		dns test
+	}
+}
+
+site.example.com {
+	tls {
+		ech site-public.example.net
+	}
+}`
+
+	ech := adaptECH(t, input)
+	if len(ech.Publication) != 1 {
+		t.Fatalf("unexpected ECH publication count: got %d, want 1", len(ech.Publication))
+	}
+	if diff := compareECHPublication(
+		ech.Publication[0],
+		[]string{"site-public.example.net"},
+		[]string{"site.example.com"},
+	); diff != "" {
+		t.Fatal(diff)
+	}
+}
+
+func TestSiteBlockECHAcrossListenerAddresses(t *testing.T) {
+	input := `{
+	dns test
+}
+
+https://a.example.com, https://b.example.com:8443 {
+	tls {
+		ech public.example.net {
+			dns test
+		}
+	}
+}`
+
+	ech := adaptECH(t, input)
+	if len(ech.Publication) != 2 {
+		t.Fatalf("unexpected ECH publication count: got %d, want 2", len(ech.Publication))
+	}
+	if diff := compareECHPublication(
+		ech.Publication[0],
+		[]string{"public.example.net"},
+		[]string{"a.example.com"},
+	); diff != "" {
+		t.Fatal(diff)
+	}
+	if diff := compareECHPublication(
+		ech.Publication[1],
+		[]string{"public.example.net"},
+		[]string{"b.example.com"},
+	); diff != "" {
+		t.Fatal(diff)
+	}
+}
+
 func TestSiteBlockECHRequiresPublicName(t *testing.T) {
 	input := `example.com {
 	tls {
@@ -247,6 +342,27 @@ func compareECHPublication(publication *caddytls.ECHPublication, configs, domain
 		return fmt.Sprintf("unexpected publication domains: got %v, want %v", publication.Domains, domains)
 	}
 	return ""
+}
+
+func adaptECH(t *testing.T, input string) *caddytls.ECH {
+	t.Helper()
+	adapter := caddyfile.Adapter{ServerType: ServerType{}}
+	output, _, err := adapter.Adapt([]byte(input), nil)
+	if err != nil {
+		t.Fatalf("adapting Caddyfile: %v", err)
+	}
+	var config struct {
+		Apps struct {
+			TLS *caddytls.TLS `json:"tls"`
+		} `json:"apps"`
+	}
+	if err := json.Unmarshal(output, &config); err != nil {
+		t.Fatalf("unmarshaling adapted config: %v", err)
+	}
+	if config.Apps.TLS == nil || config.Apps.TLS.EncryptedClientHello == nil {
+		t.Fatal("expected ECH configuration")
+	}
+	return config.Apps.TLS.EncryptedClientHello
 }
 
 type testDNSProvider struct{}

@@ -94,9 +94,17 @@ func (st ServerType) buildTLSApp(
 
 	forcedAutomatedNames := make(map[string]struct{}) // explicitly configured to be automated, even if covered by a wildcard
 	globalECHConfigured := false
+	var globalECHConfigs []string
 	if ech, ok := options["ech"].(*caddytls.ECH); ok {
 		tlsApp.EncryptedClientHello = ech
 		globalECHConfigured = true
+		globalECHConfigs = echPublicNames(ech.Configs)
+	}
+	globalECHPublicationCount := 0
+	globalECHDomains := make(map[string]struct{})
+	siteECHConfigured := false
+	if globalECHConfigured {
+		globalECHPublicationCount = len(tlsApp.EncryptedClientHello.Publication)
 	}
 
 	for _, p := range pairings {
@@ -126,21 +134,19 @@ func (st ServerType) buildTLSApp(
 			if len(sblockHosts) == 0 && catchAllAP != nil {
 				ap = catchAllAP
 			}
+			if globalECHConfigured {
+				if _, ok := sblock.pile[tlsECHClass]; ok {
+					siteECHConfigured = true
+				} else {
+					for _, host := range sblockHosts {
+						globalECHDomains[host] = struct{}{}
+					}
+				}
+			}
 
 			if echVals, ok := sblock.pile[tlsECHClass]; ok {
 				if tlsApp.EncryptedClientHello == nil {
 					tlsApp.EncryptedClientHello = new(caddytls.ECH)
-				}
-				if globalECHConfigured && tlsApp.EncryptedClientHello.Publication == nil {
-					tlsApp.EncryptedClientHello.Publication = append(
-						tlsApp.EncryptedClientHello.Publication,
-						newECHPublication(
-							echPublicNames(tlsApp.EncryptedClientHello.Configs),
-							nil,
-							options["dns"],
-							&warnings,
-						),
-					)
 				}
 				for _, echVal := range echVals {
 					siteECH := echVal.Value.(*caddytls.ECH)
@@ -162,10 +168,11 @@ func (st ServerType) buildTLSApp(
 						continue
 					}
 					for _, publication := range siteECH.Publication {
-						publication.Domains = slices.Clone(sblockHosts)
+						publicationCopy := *publication
+						publicationCopy.Domains = slices.Clone(sblockHosts)
 						tlsApp.EncryptedClientHello.Publication = append(
 							tlsApp.EncryptedClientHello.Publication,
-							publication,
+							&publicationCopy,
 						)
 					}
 				}
@@ -339,6 +346,38 @@ func (st ServerType) buildTLSApp(
 					certLoaders = append(certLoaders, clVal.Value.(caddytls.CertificateLoader))
 				}
 			}
+		}
+	}
+	if globalECHConfigured && siteECHConfigured {
+		domains := make([]string, 0, len(globalECHDomains))
+		for domain := range globalECHDomains {
+			domains = append(domains, domain)
+		}
+		if globalECHPublicationCount == 0 {
+			if len(domains) > 0 {
+				tlsApp.EncryptedClientHello.Publication = append(
+					tlsApp.EncryptedClientHello.Publication,
+					newECHPublication(
+						globalECHConfigs,
+						domains,
+						options["dns"],
+						&warnings,
+					),
+				)
+			}
+		} else {
+			publications := make([]*caddytls.ECHPublication, 0, len(tlsApp.EncryptedClientHello.Publication))
+			for _, publication := range tlsApp.EncryptedClientHello.Publication[:globalECHPublicationCount] {
+				if publication.Domains == nil {
+					if len(domains) == 0 {
+						continue
+					}
+					publication.Domains = slices.Clone(domains)
+				}
+				publications = append(publications, publication)
+			}
+			publications = append(publications, tlsApp.EncryptedClientHello.Publication[globalECHPublicationCount:]...)
+			tlsApp.EncryptedClientHello.Publication = publications
 		}
 	}
 
