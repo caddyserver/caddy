@@ -19,6 +19,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dustin/go-humanize"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -61,6 +63,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //	    status        <status>
 //	    disable_canonical_uris
 //	    content_digest [<algorithms...>]
+//	    content_digest_max_buffer <size>
 //	}
 //
 // content_digest (alias: digest) enables RFC 9530 Content-Digest response
@@ -68,9 +71,10 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 // sha-256, sha-512. Unsupported values are rejected; duplicates are removed.
 // Digests cover the actual message content ServeContent writes (200 full body
 // and 206 partial content, including precompressed sidecars). HEAD uses the
-// empty-content digest. The response body is buffered to hash the bytes that
-// are sent, so sendfile(2) is not used when this is enabled. Dynamic encode
-// middleware strips Content-Digest when it re-encodes the body.
+// empty-content digest. The response body is buffered up to
+// content_digest_max_buffer (default 4MiB) to hash the bytes that are sent;
+// larger responses stream without buffering and omit Content-Digest. Dynamic
+// encode middleware strips Content-Digest when it re-encodes the body.
 //
 // The FinalizeUnmarshalCaddyfile method should be called after this
 // to finalize setup of hidden Caddyfiles.
@@ -218,6 +222,17 @@ func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.Err(err.Error())
 			}
 			fsrv.ContentDigest = normalized
+
+		case "content_digest_max_buffer":
+			var sizeStr string
+			if !d.AllArgs(&sizeStr) {
+				return d.ArgErr()
+			}
+			size, err := humanize.ParseBytes(sizeStr)
+			if err != nil {
+				return d.Errf("parsing content_digest_max_buffer: %v", err)
+			}
+			fsrv.ContentDigestMaxBuffer = int64(size)
 
 		default:
 			return d.Errf("unknown subdirective '%s'", d.Val())

@@ -195,18 +195,33 @@ type FileServer struct {
 	//     representation hash belongs on Repr-Digest, which this handler does not set
 	//   - 304/416 and other non-content outcomes omit the field
 	//
+	// Buffering is bounded by ContentDigestMaxBuffer (default 4 MiB). Responses
+	// larger than the limit are streamed without buffering and omit Content-Digest.
+	//
 	// If a later middleware dynamically re-encodes the body (encode gzip/zstd),
 	// Content-Digest is omitted/stripped because the client bytes differ.
 	//
 	// Note: buffering the response body means the OS sendfile(2) zero-copy path
-	// is not used when Content-Digest is enabled (TLS already cannot use sendfile
-	// without kTLS).
+	// is not used when Content-Digest is enabled and the body fits in the buffer
+	// (TLS already cannot use sendfile without kTLS). Oversized responses fall
+	// back to the non-buffering path.
 	ContentDigest []string `json:"content_digest,omitempty"`
+
+	// Maximum number of response body bytes to buffer for Content-Digest.
+	// When the message content would exceed this limit (by Content-Length or
+	// while writing), the body is streamed without buffering and Content-Digest
+	// is omitted. Defaults to 4 MiB when Content-Digest is enabled and this is 0.
+	// Must not be negative.
+	ContentDigestMaxBuffer int64 `json:"content_digest_max_buffer,omitempty"`
 
 	fsmap caddy.FileSystems
 
 	logger *zap.Logger
 }
+
+// defaultContentDigestMaxBuffer is used when Content-Digest is enabled and
+// ContentDigestMaxBuffer is unset (0).
+const defaultContentDigestMaxBuffer int64 = 4 << 20 // 4 MiB
 
 // CaddyModule returns the Caddy module information.
 func (FileServer) CaddyModule() caddy.ModuleInfo {
@@ -295,6 +310,12 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 			return err
 		}
 		fsrv.ContentDigest = normalized
+		if fsrv.ContentDigestMaxBuffer < 0 {
+			return fmt.Errorf("content_digest_max_buffer must not be negative")
+		}
+		if fsrv.ContentDigestMaxBuffer == 0 {
+			fsrv.ContentDigestMaxBuffer = defaultContentDigestMaxBuffer
+		}
 	}
 
 	return nil
@@ -614,15 +635,21 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		w = statusOverrideResponseWriter{ResponseWriter: w, code: statusCodeOverride}
 	}
 
-	// Buffer ServeContent's output, hash the actual message content, then flush.
-	// This avoids TOCTOU between a pre-hash read and the bytes later written, and
-	// yields a correct digest for 206 partial content.
+	// Buffer ServeContent's output (up to ContentDigestMaxBuffer), hash the
+	// actual message content, then flush. Oversized bodies stream without a
+	// digest. This avoids TOCTOU between a pre-hash read and the bytes later
+	// written, and yields a correct digest for 206 partial content.
 	var digestWriter *contentDigestResponseWriter
 	if len(fsrv.ContentDigest) > 0 {
+		maxBuf := fsrv.ContentDigestMaxBuffer
+		if maxBuf <= 0 {
+			maxBuf = defaultContentDigestMaxBuffer
+		}
 		digestWriter = &contentDigestResponseWriter{
 			ResponseWriter: w,
 			algos:          fsrv.ContentDigest,
 			precompress:    precompressEncoding,
+			maxBuffer:      maxBuf,
 		}
 		w = digestWriter
 	}
@@ -908,8 +935,12 @@ func formatContentDigest(algos []string, content []byte) (string, error) {
 	return strings.Join(parts, ", "), nil
 }
 
-// contentDigestResponseWriter buffers the body http.ServeContent writes, then
-// attaches Content-Digest over those exact bytes before flushing the response.
+// contentDigestResponseWriter buffers the body http.ServeContent writes (up to
+// maxBuffer), then attaches Content-Digest over those exact bytes before
+// flushing the response. If the body would exceed maxBuffer—either by
+// Content-Length or while writing—the writer switches to a non-buffering
+// passthrough and omits Content-Digest.
+//
 // Digest is emitted for 200 and 206 when Content-Encoding is absent or matches
 // a static precompressed sidecar; 304/416/other statuses omit it. HEAD 200
 // yields the empty-content digest (RFC 9530 Appendix B.2).
@@ -917,9 +948,11 @@ type contentDigestResponseWriter struct {
 	http.ResponseWriter
 	algos       []string
 	precompress string
+	maxBuffer   int64
 	status      int
 	statusSet   bool
 	flushed     bool
+	omitDigest  bool
 	buf         bytes.Buffer
 }
 
@@ -932,6 +965,21 @@ func (cd *contentDigestResponseWriter) WriteHeader(status int) {
 		cd.status = status
 		cd.statusSet = true
 	}
+	// If ServeContent already advertised a body larger than the buffer budget,
+	// stream without digest instead of buffering.
+	if !cd.omitDigest && cd.maxBuffer > 0 {
+		if cl := cd.Header().Get("Content-Length"); cl != "" {
+			if n, err := strconv.ParseInt(cl, 10, 64); err == nil && n > cd.maxBuffer {
+				cd.omitDigest = true
+			}
+		}
+	}
+	if cd.omitDigest {
+		if err := cd.switchToPassthrough(); err != nil {
+			// WriteHeader cannot return an error; surface on the next Write.
+			return
+		}
+	}
 }
 
 func (cd *contentDigestResponseWriter) Write(b []byte) (int, error) {
@@ -940,12 +988,26 @@ func (cd *contentDigestResponseWriter) Write(b []byte) (int, error) {
 	}
 	if !cd.statusSet {
 		cd.WriteHeader(http.StatusOK)
+		if cd.flushed {
+			return cd.ResponseWriter.Write(b)
+		}
+	}
+	if cd.maxBuffer > 0 && int64(cd.buf.Len())+int64(len(b)) > cd.maxBuffer {
+		cd.omitDigest = true
+		if err := cd.switchToPassthrough(); err != nil {
+			return 0, err
+		}
+		return cd.ResponseWriter.Write(b)
 	}
 	return cd.buf.Write(b)
 }
 
 // ReadFrom buffers r through Write so sendfile/ReadFrom paths still contribute
-// to the Content-Digest snapshot.
+// to the Content-Digest snapshot while the size limit is enforced. After a
+// passthrough switch, the underlying ReaderFrom is used when available.
+//
+// While still buffering we must not call io.Copy(cd, r): Copy prefers
+// ReaderFrom and would recurse into this method.
 func (cd *contentDigestResponseWriter) ReadFrom(r io.Reader) (int64, error) {
 	if cd.flushed {
 		if rf, ok := cd.ResponseWriter.(io.ReaderFrom); ok {
@@ -953,14 +1015,35 @@ func (cd *contentDigestResponseWriter) ReadFrom(r io.Reader) (int64, error) {
 		}
 		return io.Copy(cd.ResponseWriter, r)
 	}
-	if !cd.statusSet {
-		cd.WriteHeader(http.StatusOK)
+	return io.Copy(struct{ io.Writer }{cd}, r)
+}
+
+// switchToPassthrough flushes any buffered bytes without a Content-Digest and
+// sends the real status line so subsequent writes stream to the client.
+func (cd *contentDigestResponseWriter) switchToPassthrough() error {
+	if cd.flushed {
+		return nil
 	}
-	return io.Copy(&cd.buf, r)
+	cd.flushed = true
+	cd.omitDigest = true
+	cd.Header().Del("Content-Digest")
+
+	status := cd.status
+	if !cd.statusSet {
+		status = http.StatusOK
+	}
+	cd.ResponseWriter.WriteHeader(status)
+	if cd.buf.Len() == 0 {
+		return nil
+	}
+	_, err := cd.ResponseWriter.Write(cd.buf.Bytes())
+	cd.buf.Reset()
+	return err
 }
 
 // finalize hashes the buffered message content, sets or clears Content-Digest,
 // then writes the real status line and body to the underlying ResponseWriter.
+// No-op if the body was already streamed via the over-limit passthrough path.
 func (cd *contentDigestResponseWriter) finalize() error {
 	if cd.flushed {
 		return nil
@@ -973,7 +1056,8 @@ func (cd *contentDigestResponseWriter) finalize() error {
 	}
 
 	enc := cd.Header().Get("Content-Encoding")
-	allowDigest := (status == http.StatusOK || status == http.StatusPartialContent) &&
+	allowDigest := !cd.omitDigest &&
+		(status == http.StatusOK || status == http.StatusPartialContent) &&
 		(enc == "" || enc == cd.precompress)
 	if allowDigest {
 		digest, err := formatContentDigest(cd.algos, cd.buf.Bytes())
