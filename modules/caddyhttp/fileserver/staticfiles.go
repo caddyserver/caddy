@@ -650,6 +650,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			algos:          fsrv.ContentDigest,
 			precompress:    precompressEncoding,
 			maxBuffer:      maxBuf,
+			isHead:         r.Method == http.MethodHead,
 		}
 		w = digestWriter
 	}
@@ -949,6 +950,7 @@ type contentDigestResponseWriter struct {
 	algos       []string
 	precompress string
 	maxBuffer   int64
+	isHead      bool
 	status      int
 	statusSet   bool
 	flushed     bool
@@ -966,8 +968,10 @@ func (cd *contentDigestResponseWriter) WriteHeader(status int) {
 		cd.statusSet = true
 	}
 	// If ServeContent already advertised a body larger than the buffer budget,
-	// stream without digest instead of buffering.
-	if !cd.omitDigest && cd.maxBuffer > 0 {
+	// stream without digest instead of buffering. This only applies to requests
+	// with a body (not HEAD, where Content-Length describes the representation
+	// payload but no body bytes are buffered or sent).
+	if !cd.isHead && !cd.omitDigest && cd.maxBuffer > 0 {
 		if cl := cd.Header().Get("Content-Length"); cl != "" {
 			if n, err := strconv.ParseInt(cl, 10, 64); err == nil && n > cd.maxBuffer {
 				cd.omitDigest = true

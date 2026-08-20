@@ -655,6 +655,28 @@ func TestContentDigestResponseWriterFinalize(t *testing.T) {
 			t.Fatalf("Content-Digest = %q, want %q", got, wantExact)
 		}
 	})
+
+	t.Run("HEAD request with large Content-Length still emits empty-content digest", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		cd := &contentDigestResponseWriter{
+			ResponseWriter: rec,
+			algos:          []string{"sha-256"},
+			maxBuffer:      8,
+			isHead:         true,
+		}
+		cd.Header().Set("Content-Length", "1048576") // 1MB > 8 bytes
+		cd.WriteHeader(http.StatusOK)
+		if cd.flushed || cd.omitDigest {
+			t.Fatal("HEAD should not omit digest based on representation Content-Length")
+		}
+		if err := cd.finalize(); err != nil {
+			t.Fatal(err)
+		}
+		wantEmpty := "sha-256=:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=:"
+		if got := rec.Header().Get("Content-Digest"); got != wantEmpty {
+			t.Fatalf("Content-Digest = %q, want %q", got, wantEmpty)
+		}
+	})
 }
 
 func TestContentDigestIntegration(t *testing.T) {
@@ -686,6 +708,8 @@ func TestContentDigestIntegration(t *testing.T) {
 
 	hFull := sha256.Sum256(content)
 	fullDigestWant := "sha-256=:" + base64.StdEncoding.EncodeToString(hFull[:]) + ":"
+	hEmpty := sha256.Sum256(nil)
+	emptyDigestWant := "sha-256=:" + base64.StdEncoding.EncodeToString(hEmpty[:]) + ":"
 
 	withReplacer := func(r *http.Request) *http.Request {
 		return r.WithContext(context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
@@ -713,8 +737,6 @@ func TestContentDigestIntegration(t *testing.T) {
 		// RFC 9530: Content-Digest covers message content. HEAD has an empty
 		// body, so the empty-content digest is required (Appendix B.2), not the
 		// selected-representation hash (that would be Repr-Digest).
-		hEmpty := sha256.Sum256(nil)
-		emptyDigestWant := "sha-256=:" + base64.StdEncoding.EncodeToString(hEmpty[:]) + ":"
 
 		w := httptest.NewRecorder()
 		r := withReplacer(httptest.NewRequest(http.MethodHead, "/file.txt", nil))
@@ -1093,6 +1115,39 @@ func TestContentDigestIntegration(t *testing.T) {
 		}
 		if got := w.Header().Get("Content-Digest"); got != "" {
 			t.Fatalf("Content-Digest = %q, want empty when over max buffer", got)
+		}
+	})
+
+	t.Run("oversized file on HEAD still emits empty-content digest", func(t *testing.T) {
+		root := t.TempDir()
+		big := bytes.Repeat([]byte("x"), 64)
+		bigPath := filepath.Join(root, "big.txt")
+		if err := os.WriteFile(bigPath, big, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		limited := FileServer{
+			Root:                   root,
+			CanonicalURIs:          new(bool),
+			ContentDigest:          []string{"sha-256"},
+			ContentDigestMaxBuffer: 16,
+		}
+		ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+		if err := limited.Provision(ctx); err != nil {
+			t.Fatal(err)
+		}
+		w := httptest.NewRecorder()
+		r := withReplacer(httptest.NewRequest(http.MethodHead, "/big.txt", nil))
+		if err := limited.ServeHTTP(w, r, nil); err != nil {
+			t.Fatal(err)
+		}
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", w.Code)
+		}
+		if len(w.Body.Bytes()) != 0 {
+			t.Fatalf("HEAD body length = %d, want 0", w.Body.Len())
+		}
+		if got := w.Header().Get("Content-Digest"); got != emptyDigestWant {
+			t.Fatalf("HEAD Content-Digest on oversized file = %q, want %q", got, emptyDigestWant)
 		}
 	})
 }
