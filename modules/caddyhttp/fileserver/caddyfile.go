@@ -65,16 +65,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //	    content_digest [<algorithms...>]
 //	    content_digest_max_buffer <size>
 //	}
-//
-// content_digest (alias: digest) enables RFC 9530 Content-Digest response
-// headers. With no algorithms, sha-256 is used. Supported algorithms:
-// sha-256, sha-512. Unsupported values are rejected; duplicates are removed.
-// Digests cover the actual message content ServeContent writes (200 full body
-// and 206 partial content, including precompressed sidecars). HEAD uses the
-// empty-content digest. The response body is buffered up to
-// content_digest_max_buffer (default 4MiB) to hash the bytes that are sent;
-// larger responses stream without buffering and omit Content-Digest. Dynamic
-// encode middleware strips Content-Digest when it re-encodes the body.
+
 //
 // The FinalizeUnmarshalCaddyfile method should be called after this
 // to finalize setup of hidden Caddyfiles.
