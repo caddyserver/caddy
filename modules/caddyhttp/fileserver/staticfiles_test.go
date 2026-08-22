@@ -18,17 +18,23 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"crypto/sha512"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/encode"
 )
 
@@ -334,4 +340,828 @@ func (p testPrecompressed) AcceptEncoding() string {
 
 func (p testPrecompressed) Suffix() string {
 	return p.suffix
+}
+
+func TestNormalizeContentDigestAlgos(t *testing.T) {
+	t.Run("default path keeps order and canonical names", func(t *testing.T) {
+		got, err := normalizeContentDigestAlgos([]string{"sha512", "SHA-256", "sha-512", "sha256"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := []string{"sha-512", "sha-256"}
+		if len(got) != len(want) {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("got %v, want %v", got, want)
+			}
+		}
+	})
+
+	t.Run("rejects unsupported algorithms", func(t *testing.T) {
+		_, err := normalizeContentDigestAlgos([]string{"sha-256", "md5"})
+		if err == nil {
+			t.Fatal("expected error for unsupported algorithm")
+		}
+		if !strings.Contains(err.Error(), "md5") {
+			t.Fatalf("error = %v, want mention of md5", err)
+		}
+	})
+
+	t.Run("rejects empty algorithm token", func(t *testing.T) {
+		_, err := normalizeContentDigestAlgos([]string{""})
+		if err == nil {
+			t.Fatal("expected error for empty algorithm")
+		}
+	})
+}
+
+func TestContentDigestCaddyfileValidateDedup(t *testing.T) {
+	t.Run("validates and deduplicates", func(t *testing.T) {
+		input := `file_server {
+	content_digest sha256 sha-512 sha-256 SHA512
+}`
+		d := caddyfile.NewTestDispenser(input)
+		var fsrv FileServer
+		if err := fsrv.UnmarshalCaddyfile(d); err != nil {
+			t.Fatal(err)
+		}
+		want := []string{"sha-256", "sha-512"}
+		if len(fsrv.ContentDigest) != len(want) {
+			t.Fatalf("ContentDigest = %v, want %v", fsrv.ContentDigest, want)
+		}
+		for i := range want {
+			if fsrv.ContentDigest[i] != want[i] {
+				t.Fatalf("ContentDigest = %v, want %v", fsrv.ContentDigest, want)
+			}
+		}
+	})
+
+	t.Run("default algorithm", func(t *testing.T) {
+		input := `file_server {
+	digest
+}`
+		d := caddyfile.NewTestDispenser(input)
+		var fsrv FileServer
+		if err := fsrv.UnmarshalCaddyfile(d); err != nil {
+			t.Fatal(err)
+		}
+		if len(fsrv.ContentDigest) != 1 || fsrv.ContentDigest[0] != "sha-256" {
+			t.Fatalf("ContentDigest = %v, want [sha-256]", fsrv.ContentDigest)
+		}
+	})
+
+	t.Run("rejects unsupported", func(t *testing.T) {
+		input := `file_server {
+	content_digest sha-256 blake3
+}`
+		d := caddyfile.NewTestDispenser(input)
+		var fsrv FileServer
+		if err := fsrv.UnmarshalCaddyfile(d); err == nil {
+			t.Fatal("expected error for unsupported algorithm")
+		}
+	})
+
+	t.Run("content_digest_max_buffer", func(t *testing.T) {
+		input := `file_server {
+	content_digest sha-256
+	content_digest_max_buffer 64KiB
+}`
+		d := caddyfile.NewTestDispenser(input)
+		var fsrv FileServer
+		if err := fsrv.UnmarshalCaddyfile(d); err != nil {
+			t.Fatal(err)
+		}
+		if fsrv.ContentDigestMaxBuffer != 64*1024 {
+			t.Fatalf("ContentDigestMaxBuffer = %d, want %d", fsrv.ContentDigestMaxBuffer, 64*1024)
+		}
+	})
+}
+
+func TestFormatContentDigestExactValues(t *testing.T) {
+	content := []byte("hello world")
+
+	// Known digests for "hello world" (RFC 9530 sf-binary base64).
+	wantSHA256 := "uU0nuZNNPgilLlLX2n2r+sSE7+N6U4DukIj3rOLvzek="
+	wantSHA512 := "MJ7MSJwS1utMxA9QyQLytNDtd+5RGnx6m808qG1M2G+YndNbxf9JlnDaNCVbRbDP2DDoH2Bdz33FVC6TrpzXbw=="
+
+	digest, err := formatContentDigest([]string{"sha-256", "sha-512"}, content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("sha-256=:%s:, sha-512=:%s:", wantSHA256, wantSHA512)
+	if digest != want {
+		t.Errorf("formatContentDigest = %q, want %q", digest, want)
+	}
+}
+
+func TestFormatContentDigestEmpty(t *testing.T) {
+	// SHA-256/512 of empty input (RFC 9530 Appendix B.2 style empty content).
+	wantSHA256 := base64.StdEncoding.EncodeToString(sha256.New().Sum(nil))
+	wantSHA512 := base64.StdEncoding.EncodeToString(sha512.New().Sum(nil))
+
+	digest, err := formatContentDigest([]string{"sha-256", "sha-512"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("sha-256=:%s:, sha-512=:%s:", wantSHA256, wantSHA512)
+	if digest != want {
+		t.Fatalf("formatContentDigest(empty) = %q, want %q", digest, want)
+	}
+}
+
+func TestContentDigestResponseWriterFinalize(t *testing.T) {
+	content := []byte("hello world")
+	wantSHA256 := "uU0nuZNNPgilLlLX2n2r+sSE7+N6U4DukIj3rOLvzek="
+	want := "sha-256=:" + wantSHA256 + ":"
+	maxBuf := int64(1 << 20)
+
+	t.Run("hashes buffered 200 body", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		cd := &contentDigestResponseWriter{ResponseWriter: rec, algos: []string{"sha-256"}, maxBuffer: maxBuf}
+		cd.WriteHeader(http.StatusOK)
+		if _, err := cd.Write(content); err != nil {
+			t.Fatal(err)
+		}
+		if err := cd.finalize(); err != nil {
+			t.Fatal(err)
+		}
+		if got := rec.Code; got != http.StatusOK {
+			t.Fatalf("status = %d, want 200", got)
+		}
+		if got := rec.Header().Get("Content-Digest"); got != want {
+			t.Fatalf("Content-Digest = %q, want %q", got, want)
+		}
+		if !bytes.Equal(rec.Body.Bytes(), content) {
+			t.Fatalf("body = %q, want %q", rec.Body.Bytes(), content)
+		}
+	})
+
+	t.Run("206 hashes partial body only", func(t *testing.T) {
+		partial := content[0:5]
+		h := sha256.Sum256(partial)
+		wantPartial := "sha-256=:" + base64.StdEncoding.EncodeToString(h[:]) + ":"
+
+		rec := httptest.NewRecorder()
+		cd := &contentDigestResponseWriter{ResponseWriter: rec, algos: []string{"sha-256"}, maxBuffer: maxBuf}
+		cd.WriteHeader(http.StatusPartialContent)
+		if _, err := cd.Write(partial); err != nil {
+			t.Fatal(err)
+		}
+		if err := cd.finalize(); err != nil {
+			t.Fatal(err)
+		}
+		if got := rec.Header().Get("Content-Digest"); got != wantPartial {
+			t.Fatalf("Content-Digest = %q, want %q", got, wantPartial)
+		}
+		if got := rec.Header().Get("Content-Digest"); got == want {
+			t.Fatal("206 digest must not equal full-body digest")
+		}
+	})
+
+	t.Run("304 omits digest", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		cd := &contentDigestResponseWriter{ResponseWriter: rec, algos: []string{"sha-256"}, maxBuffer: maxBuf}
+		cd.WriteHeader(http.StatusNotModified)
+		if err := cd.finalize(); err != nil {
+			t.Fatal(err)
+		}
+		if got := rec.Header().Get("Content-Digest"); got != "" {
+			t.Fatalf("Content-Digest = %q, want empty", got)
+		}
+	})
+
+	t.Run("dynamic Content-Encoding omits digest", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		cd := &contentDigestResponseWriter{ResponseWriter: rec, algos: []string{"sha-256"}, maxBuffer: maxBuf}
+		cd.Header().Set("Content-Encoding", "gzip")
+		cd.WriteHeader(http.StatusOK)
+		if _, err := cd.Write(content); err != nil {
+			t.Fatal(err)
+		}
+		if err := cd.finalize(); err != nil {
+			t.Fatal(err)
+		}
+		if got := rec.Header().Get("Content-Digest"); got != "" {
+			t.Fatalf("Content-Digest = %q, want empty under dynamic encoding", got)
+		}
+	})
+
+	t.Run("precompress encoding keeps digest", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		cd := &contentDigestResponseWriter{
+			ResponseWriter: rec,
+			algos:          []string{"sha-256"},
+			precompress:    "gzip",
+			maxBuffer:      maxBuf,
+		}
+		cd.Header().Set("Content-Encoding", "gzip")
+		cd.WriteHeader(http.StatusOK)
+		if _, err := cd.Write(content); err != nil {
+			t.Fatal(err)
+		}
+		if err := cd.finalize(); err != nil {
+			t.Fatal(err)
+		}
+		if got := rec.Header().Get("Content-Digest"); got != want {
+			t.Fatalf("Content-Digest = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("over maxBuffer via Write omits digest and streams body", func(t *testing.T) {
+		body := []byte("0123456789abcdef") // 16 bytes
+		rec := httptest.NewRecorder()
+		cd := &contentDigestResponseWriter{
+			ResponseWriter: rec,
+			algos:          []string{"sha-256"},
+			maxBuffer:      8,
+		}
+		cd.WriteHeader(http.StatusOK)
+		if _, err := cd.Write(body[:6]); err != nil {
+			t.Fatal(err)
+		}
+		if cd.flushed {
+			t.Fatal("should still be buffering under the limit")
+		}
+		if _, err := cd.Write(body[6:]); err != nil {
+			t.Fatal(err)
+		}
+		if !cd.flushed || !cd.omitDigest {
+			t.Fatal("expected passthrough after exceeding maxBuffer")
+		}
+		if err := cd.finalize(); err != nil {
+			t.Fatal(err)
+		}
+		if got := rec.Header().Get("Content-Digest"); got != "" {
+			t.Fatalf("Content-Digest = %q, want empty when over maxBuffer", got)
+		}
+		if !bytes.Equal(rec.Body.Bytes(), body) {
+			t.Fatalf("body = %q, want %q", rec.Body.Bytes(), body)
+		}
+		if got := rec.Code; got != http.StatusOK {
+			t.Fatalf("status = %d, want 200", got)
+		}
+	})
+
+	t.Run("Content-Length over maxBuffer omits digest without buffering", func(t *testing.T) {
+		body := []byte("0123456789abcdef")
+		rec := httptest.NewRecorder()
+		cd := &contentDigestResponseWriter{
+			ResponseWriter: rec,
+			algos:          []string{"sha-256"},
+			maxBuffer:      8,
+		}
+		cd.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		cd.WriteHeader(http.StatusOK)
+		if !cd.flushed || !cd.omitDigest {
+			t.Fatal("expected immediate passthrough when Content-Length exceeds maxBuffer")
+		}
+		if _, err := cd.Write(body); err != nil {
+			t.Fatal(err)
+		}
+		if err := cd.finalize(); err != nil {
+			t.Fatal(err)
+		}
+		if got := rec.Header().Get("Content-Digest"); got != "" {
+			t.Fatalf("Content-Digest = %q, want empty", got)
+		}
+		if !bytes.Equal(rec.Body.Bytes(), body) {
+			t.Fatalf("body = %q, want %q", rec.Body.Bytes(), body)
+		}
+	})
+
+	t.Run("exactly maxBuffer still digests", func(t *testing.T) {
+		body := []byte("01234567") // 8 bytes
+		h := sha256.Sum256(body)
+		wantExact := "sha-256=:" + base64.StdEncoding.EncodeToString(h[:]) + ":"
+		rec := httptest.NewRecorder()
+		cd := &contentDigestResponseWriter{
+			ResponseWriter: rec,
+			algos:          []string{"sha-256"},
+			maxBuffer:      8,
+		}
+		cd.WriteHeader(http.StatusOK)
+		if _, err := cd.Write(body); err != nil {
+			t.Fatal(err)
+		}
+		if cd.flushed {
+			t.Fatal("exact maxBuffer should remain buffered")
+		}
+		if err := cd.finalize(); err != nil {
+			t.Fatal(err)
+		}
+		if got := rec.Header().Get("Content-Digest"); got != wantExact {
+			t.Fatalf("Content-Digest = %q, want %q", got, wantExact)
+		}
+	})
+
+	t.Run("HEAD request with large Content-Length still emits empty-content digest", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		cd := &contentDigestResponseWriter{
+			ResponseWriter: rec,
+			algos:          []string{"sha-256"},
+			maxBuffer:      8,
+			isHead:         true,
+		}
+		cd.Header().Set("Content-Length", "1048576") // 1MB > 8 bytes
+		cd.WriteHeader(http.StatusOK)
+		if cd.flushed || cd.omitDigest {
+			t.Fatal("HEAD should not omit digest based on representation Content-Length")
+		}
+		if err := cd.finalize(); err != nil {
+			t.Fatal(err)
+		}
+		wantEmpty := "sha-256=:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=:"
+		if got := rec.Header().Get("Content-Digest"); got != wantEmpty {
+			t.Fatalf("Content-Digest = %q, want %q", got, wantEmpty)
+		}
+	})
+}
+
+func TestContentDigestIntegration(t *testing.T) {
+	root := t.TempDir()
+	content := []byte("caddy server content digest test payload")
+	if err := os.WriteFile(filepath.Join(root, "file.txt"), content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	sidecar := gzipBytes(t, content)
+	if err := os.WriteFile(filepath.Join(root, "file.txt.gz"), sidecar, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	fsrv := FileServer{
+		Root:               root,
+		CanonicalURIs:      new(bool),
+		ContentDigest:      []string{"sha-256"},
+		PrecompressedOrder: []string{"gzip"},
+	}
+
+	ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+	if err := fsrv.Provision(ctx); err != nil {
+		t.Fatal(err)
+	}
+	fsrv.precompressors = map[string]encode.Precompressed{
+		"gzip": testPrecompressed{encoding: "gzip", suffix: ".gz"},
+	}
+
+	hFull := sha256.Sum256(content)
+	fullDigestWant := "sha-256=:" + base64.StdEncoding.EncodeToString(hFull[:]) + ":"
+	hEmpty := sha256.Sum256(nil)
+	emptyDigestWant := "sha-256=:" + base64.StdEncoding.EncodeToString(hEmpty[:]) + ":"
+
+	withReplacer := func(r *http.Request) *http.Request {
+		return r.WithContext(context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
+	}
+
+	t.Run("GET full request", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r := withReplacer(httptest.NewRequest(http.MethodGet, "/file.txt", nil))
+
+		if err := fsrv.ServeHTTP(w, r, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := w.Code; got != http.StatusOK {
+			t.Fatalf("status = %d, want 200", got)
+		}
+		if got := w.Header().Get("Content-Digest"); got != fullDigestWant {
+			t.Fatalf("Content-Digest = %q, want %q", got, fullDigestWant)
+		}
+		if !bytes.Equal(w.Body.Bytes(), content) {
+			t.Fatalf("body mismatch after digest calculation")
+		}
+	})
+
+	t.Run("HEAD request uses empty-content digest", func(t *testing.T) {
+		// RFC 9530: Content-Digest covers message content. HEAD has an empty
+		// body, so the empty-content digest is required (Appendix B.2), not the
+		// selected-representation hash (that would be Repr-Digest).
+
+		w := httptest.NewRecorder()
+		r := withReplacer(httptest.NewRequest(http.MethodHead, "/file.txt", nil))
+
+		if err := fsrv.ServeHTTP(w, r, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := w.Code; got != http.StatusOK {
+			t.Fatalf("status = %d, want 200", got)
+		}
+		if got := w.Header().Get("Content-Digest"); got != emptyDigestWant {
+			t.Fatalf("Content-Digest = %q, want empty-content %q (not full-file %q)", got, emptyDigestWant, fullDigestWant)
+		}
+		if len(w.Body.Bytes()) != 0 {
+			t.Fatalf("HEAD body length = %d, want 0", len(w.Body.Bytes()))
+		}
+	})
+
+	t.Run("206 Partial Content range request digests selected bytes", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r := withReplacer(httptest.NewRequest(http.MethodGet, "/file.txt", nil))
+		r.Header.Set("Range", "bytes=6-11")
+
+		if err := fsrv.ServeHTTP(w, r, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := w.Code; got != http.StatusPartialContent {
+			t.Fatalf("status = %d, want 206", got)
+		}
+
+		rangeBytes := content[6:12]
+		if !bytes.Equal(w.Body.Bytes(), rangeBytes) {
+			t.Fatalf("206 body = %q, want %q", w.Body.Bytes(), rangeBytes)
+		}
+		hRange := sha256.Sum256(rangeBytes)
+		wantRangeDigest := "sha-256=:" + base64.StdEncoding.EncodeToString(hRange[:]) + ":"
+		if got := w.Header().Get("Content-Digest"); got != wantRangeDigest {
+			t.Fatalf("Content-Digest = %q, want partial %q (not full %q)", got, wantRangeDigest, fullDigestWant)
+		}
+	})
+
+	t.Run("206 suffix range digests selected bytes", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r := withReplacer(httptest.NewRequest(http.MethodGet, "/file.txt", nil))
+		r.Header.Set("Range", "bytes=-7")
+
+		if err := fsrv.ServeHTTP(w, r, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := w.Code; got != http.StatusPartialContent {
+			t.Fatalf("status = %d, want 206", got)
+		}
+		suffix := content[len(content)-7:]
+		if !bytes.Equal(w.Body.Bytes(), suffix) {
+			t.Fatalf("206 body = %q, want %q", w.Body.Bytes(), suffix)
+		}
+		hSuffix := sha256.Sum256(suffix)
+		wantSuffixDigest := "sha-256=:" + base64.StdEncoding.EncodeToString(hSuffix[:]) + ":"
+		if got := w.Header().Get("Content-Digest"); got != wantSuffixDigest {
+			t.Fatalf("Content-Digest = %q, want %q", got, wantSuffixDigest)
+		}
+	})
+
+	t.Run("304 Not Modified omits Content-Digest", func(t *testing.T) {
+		w1 := httptest.NewRecorder()
+		r1 := withReplacer(httptest.NewRequest(http.MethodGet, "/file.txt", nil))
+		if err := fsrv.ServeHTTP(w1, r1, nil); err != nil {
+			t.Fatal(err)
+		}
+		etag := w1.Header().Get("Etag")
+		if etag == "" {
+			t.Fatal("expected Etag from first response")
+		}
+
+		w2 := httptest.NewRecorder()
+		r2 := withReplacer(httptest.NewRequest(http.MethodGet, "/file.txt", nil))
+		r2.Header.Set("If-None-Match", etag)
+
+		if err := fsrv.ServeHTTP(w2, r2, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := w2.Code; got != http.StatusNotModified {
+			t.Fatalf("status = %d, want 304", got)
+		}
+		// 304 has no message content; Content-Digest must not advertise the full-file hash.
+		if got := w2.Header().Get("Content-Digest"); got != "" {
+			t.Fatalf("Content-Digest on 304 = %q, want empty", got)
+		}
+	})
+
+	t.Run("If-Range match yields 206 with partial Content-Digest", func(t *testing.T) {
+		w1 := httptest.NewRecorder()
+		r1 := withReplacer(httptest.NewRequest(http.MethodGet, "/file.txt", nil))
+		if err := fsrv.ServeHTTP(w1, r1, nil); err != nil {
+			t.Fatal(err)
+		}
+		etag := w1.Header().Get("Etag")
+		if etag == "" {
+			t.Fatal("expected Etag")
+		}
+
+		w := httptest.NewRecorder()
+		r := withReplacer(httptest.NewRequest(http.MethodGet, "/file.txt", nil))
+		r.Header.Set("Range", "bytes=0-5")
+		r.Header.Set("If-Range", etag)
+
+		if err := fsrv.ServeHTTP(w, r, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := w.Code; got != http.StatusPartialContent {
+			t.Fatalf("status = %d, want 206", got)
+		}
+		partial := content[0:6]
+		if !bytes.Equal(w.Body.Bytes(), partial) {
+			t.Fatalf("body = %q, want %q", w.Body.Bytes(), partial)
+		}
+		hPartial := sha256.Sum256(partial)
+		wantPartial := "sha-256=:" + base64.StdEncoding.EncodeToString(hPartial[:]) + ":"
+		if got := w.Header().Get("Content-Digest"); got != wantPartial {
+			t.Fatalf("Content-Digest = %q, want partial %q", got, wantPartial)
+		}
+	})
+
+	t.Run("If-Range mismatch yields 200 with full Content-Digest", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r := withReplacer(httptest.NewRequest(http.MethodGet, "/file.txt", nil))
+		r.Header.Set("Range", "bytes=0-5")
+		r.Header.Set("If-Range", `"definitely-not-the-etag"`)
+
+		if err := fsrv.ServeHTTP(w, r, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := w.Code; got != http.StatusOK {
+			t.Fatalf("status = %d, want 200", got)
+		}
+		if got := w.Header().Get("Content-Digest"); got != fullDigestWant {
+			t.Fatalf("Content-Digest = %q, want %q", got, fullDigestWant)
+		}
+		if !bytes.Equal(w.Body.Bytes(), content) {
+			t.Fatalf("body mismatch on If-Range fallback to full content")
+		}
+	})
+
+	t.Run("invalid Range omits Content-Digest", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r := withReplacer(httptest.NewRequest(http.MethodGet, "/file.txt", nil))
+		r.Header.Set("Range", "bytes=99999-100000")
+
+		if err := fsrv.ServeHTTP(w, r, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := w.Code; got != http.StatusRequestedRangeNotSatisfiable {
+			t.Fatalf("status = %d, want 416", got)
+		}
+		if got := w.Header().Get("Content-Digest"); got != "" {
+			t.Fatalf("Content-Digest = %q, want empty for 416", got)
+		}
+	})
+
+	t.Run("multipart Range digests actual multipart body", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r := withReplacer(httptest.NewRequest(http.MethodGet, "/file.txt", nil))
+		r.Header.Set("Range", "bytes=0-3,6-11")
+
+		if err := fsrv.ServeHTTP(w, r, nil); err != nil {
+			t.Fatal(err)
+		}
+		// Digest must cover the exact message content ServeContent wrote (multipart body),
+		// not the full source file.
+		body := w.Body.Bytes()
+		if len(body) == 0 {
+			t.Fatal("expected multipart body")
+		}
+		hBody := sha256.Sum256(body)
+		wantBodyDigest := "sha-256=:" + base64.StdEncoding.EncodeToString(hBody[:]) + ":"
+		if got := w.Header().Get("Content-Digest"); got != wantBodyDigest {
+			t.Fatalf("Content-Digest = %q, want body digest %q (status %d)", got, wantBodyDigest, w.Code)
+		}
+		if got := w.Header().Get("Content-Digest"); got == fullDigestWant {
+			t.Fatalf("multipart Content-Digest must not equal full-file digest")
+		}
+	})
+
+	t.Run("Precompressed gzip request", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r := withReplacer(httptest.NewRequest(http.MethodGet, "/file.txt", nil))
+		r.Header.Set("Accept-Encoding", "gzip")
+
+		if err := fsrv.ServeHTTP(w, r, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := w.Code; got != http.StatusOK {
+			t.Fatalf("status = %d, want 200", got)
+		}
+
+		// Content-Digest for precompressed sidecar must match sidecar bytes, not the original file.
+		hSidecar := sha256.Sum256(sidecar)
+		wantSidecarDigest := "sha-256=:" + base64.StdEncoding.EncodeToString(hSidecar[:]) + ":"
+		if got := w.Header().Get("Content-Digest"); got != wantSidecarDigest {
+			t.Fatalf("Content-Digest precompressed = %q, want %q", got, wantSidecarDigest)
+		}
+		if got := w.Header().Get("Content-Encoding"); got != "gzip" {
+			t.Fatalf("Content-Encoding = %q, want gzip", got)
+		}
+		// Body is the compressed sidecar representation.
+		if !bytes.Equal(w.Body.Bytes(), sidecar) {
+			t.Fatalf("precompressed body mismatch")
+		}
+	})
+
+	t.Run("Precompressed with Range digests partial sidecar bytes", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r := withReplacer(httptest.NewRequest(http.MethodGet, "/file.txt", nil))
+		r.Header.Set("Accept-Encoding", "gzip")
+		r.Header.Set("Range", "bytes=0-3")
+
+		if err := fsrv.ServeHTTP(w, r, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := w.Code; got != http.StatusPartialContent {
+			t.Fatalf("status = %d, want 206", got)
+		}
+		partialSidecar := sidecar[0:4]
+		if !bytes.Equal(w.Body.Bytes(), partialSidecar) {
+			t.Fatalf("body = %q, want %q", w.Body.Bytes(), partialSidecar)
+		}
+		hPartial := sha256.Sum256(partialSidecar)
+		wantPartial := "sha-256=:" + base64.StdEncoding.EncodeToString(hPartial[:]) + ":"
+		if got := w.Header().Get("Content-Digest"); got != wantPartial {
+			t.Fatalf("Content-Digest = %q, want %q", got, wantPartial)
+		}
+	})
+
+	t.Run("Dynamic Content-Encoding omits Content-Digest", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r := withReplacer(httptest.NewRequest(http.MethodGet, "/file.txt", nil))
+
+		// Outer middleware (such as caddyhttp/encode) wraps ResponseWriter before calling file_server
+		// and sets Content-Encoding header during negotiation / handling.
+		outerWrapper := &dynamicCompressResponseWriter{ResponseWriter: w}
+		outerWrapper.Header().Set("Content-Encoding", "gzip")
+
+		if err := fsrv.ServeHTTP(outerWrapper, r, nil); err != nil {
+			t.Fatal(err)
+		}
+
+		if got := w.Code; got != http.StatusOK {
+			t.Fatalf("status = %d, want 200", got)
+		}
+		if got := w.Header().Get("Content-Digest"); got != "" {
+			t.Fatalf("Content-Digest = %q, want empty when dynamic Content-Encoding is present", got)
+		}
+	})
+
+	t.Run("status override 200 with Range digests partial content path", func(t *testing.T) {
+		// Digest follows ServeContent's content path (206 partial bytes) even when a
+		// status override will rewrite the client-visible status after finalize.
+		override := FileServer{
+			Root:          root,
+			CanonicalURIs: new(bool),
+			ContentDigest: []string{"sha-256"},
+			StatusCode:    caddyhttp.WeakString("200"),
+		}
+		ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+		if err := override.Provision(ctx); err != nil {
+			t.Fatal(err)
+		}
+
+		w := httptest.NewRecorder()
+		r := withReplacer(httptest.NewRequest(http.MethodGet, "/file.txt", nil))
+		r.Header.Set("Range", "bytes=0-5")
+
+		if err := override.ServeHTTP(w, r, nil); err != nil {
+			t.Fatal(err)
+		}
+		// Client-visible status is overridden to 200; body is still the selected range.
+		if got := w.Code; got != http.StatusOK {
+			t.Fatalf("status = %d, want overridden 200", got)
+		}
+		partial := content[0:6]
+		if !bytes.Equal(w.Body.Bytes(), partial) {
+			t.Fatalf("body = %q, want partial %q", w.Body.Bytes(), partial)
+		}
+		hPartial := sha256.Sum256(partial)
+		wantPartial := "sha-256=:" + base64.StdEncoding.EncodeToString(hPartial[:]) + ":"
+		if got := w.Header().Get("Content-Digest"); got != wantPartial {
+			t.Fatalf("Content-Digest = %q, want partial %q (not full %q)", got, wantPartial, fullDigestWant)
+		}
+	})
+
+	t.Run("status override 200 with If-None-Match omits digest on 304 path", func(t *testing.T) {
+		w1 := httptest.NewRecorder()
+		r1 := withReplacer(httptest.NewRequest(http.MethodGet, "/file.txt", nil))
+		if err := fsrv.ServeHTTP(w1, r1, nil); err != nil {
+			t.Fatal(err)
+		}
+		etag := w1.Header().Get("Etag")
+		if etag == "" {
+			t.Fatal("expected Etag")
+		}
+
+		override := FileServer{
+			Root:          root,
+			CanonicalURIs: new(bool),
+			ContentDigest: []string{"sha-256"},
+			StatusCode:    caddyhttp.WeakString("200"),
+		}
+		ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+		if err := override.Provision(ctx); err != nil {
+			t.Fatal(err)
+		}
+
+		w := httptest.NewRecorder()
+		r := withReplacer(httptest.NewRequest(http.MethodGet, "/file.txt", nil))
+		r.Header.Set("If-None-Match", etag)
+
+		if err := override.ServeHTTP(w, r, nil); err != nil {
+			t.Fatal(err)
+		}
+		// ServeContent chose 304 (no body). Digest must stay omitted even if the
+		// status override rewrites the client-visible code to 200.
+		if len(w.Body.Bytes()) != 0 {
+			t.Fatalf("body length = %d, want 0 for conditional not-modified path", len(w.Body.Bytes()))
+		}
+		if got := w.Header().Get("Content-Digest"); got != "" {
+			t.Fatalf("Content-Digest = %q, want empty on 304 content path", got)
+		}
+	})
+
+	t.Run("Provision rejects unsupported algorithm from JSON config", func(t *testing.T) {
+		bad := FileServer{ContentDigest: []string{"sha-256", "md5"}}
+		ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+		if err := bad.Provision(ctx); err == nil {
+			t.Fatal("expected provision error for unsupported algorithm")
+		}
+	})
+
+	t.Run("Provision default max buffer", func(t *testing.T) {
+		fs := FileServer{ContentDigest: []string{"sha-256"}}
+		ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+		if err := fs.Provision(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if fs.ContentDigestMaxBuffer != defaultContentDigestMaxBuffer {
+			t.Fatalf("ContentDigestMaxBuffer = %d, want default %d", fs.ContentDigestMaxBuffer, defaultContentDigestMaxBuffer)
+		}
+	})
+
+	t.Run("oversized response omits Content-Digest", func(t *testing.T) {
+		// Body larger than a tiny max buffer: stream without digest.
+		big := bytes.Repeat([]byte("x"), 64)
+		bigPath := filepath.Join(root, "big.txt")
+		if err := os.WriteFile(bigPath, big, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		limited := FileServer{
+			Root:                   root,
+			CanonicalURIs:          new(bool),
+			ContentDigest:          []string{"sha-256"},
+			ContentDigestMaxBuffer: 16,
+		}
+		ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+		if err := limited.Provision(ctx); err != nil {
+			t.Fatal(err)
+		}
+		w := httptest.NewRecorder()
+		r := withReplacer(httptest.NewRequest(http.MethodGet, "/big.txt", nil))
+		if err := limited.ServeHTTP(w, r, nil); err != nil {
+			t.Fatal(err)
+		}
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", w.Code)
+		}
+		if !bytes.Equal(w.Body.Bytes(), big) {
+			t.Fatalf("body length = %d, want %d", w.Body.Len(), len(big))
+		}
+		if got := w.Header().Get("Content-Digest"); got != "" {
+			t.Fatalf("Content-Digest = %q, want empty when over max buffer", got)
+		}
+	})
+
+	t.Run("oversized file on HEAD still emits empty-content digest", func(t *testing.T) {
+		root := t.TempDir()
+		big := bytes.Repeat([]byte("x"), 64)
+		bigPath := filepath.Join(root, "big.txt")
+		if err := os.WriteFile(bigPath, big, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		limited := FileServer{
+			Root:                   root,
+			CanonicalURIs:          new(bool),
+			ContentDigest:          []string{"sha-256"},
+			ContentDigestMaxBuffer: 16,
+		}
+		ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+		if err := limited.Provision(ctx); err != nil {
+			t.Fatal(err)
+		}
+		w := httptest.NewRecorder()
+		r := withReplacer(httptest.NewRequest(http.MethodHead, "/big.txt", nil))
+		if err := limited.ServeHTTP(w, r, nil); err != nil {
+			t.Fatal(err)
+		}
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", w.Code)
+		}
+		if len(w.Body.Bytes()) != 0 {
+			t.Fatalf("HEAD body length = %d, want 0", w.Body.Len())
+		}
+		if got := w.Header().Get("Content-Digest"); got != emptyDigestWant {
+			t.Fatalf("HEAD Content-Digest on oversized file = %q, want %q", got, emptyDigestWant)
+		}
+	})
+}
+
+type dynamicCompressResponseWriter struct {
+	http.ResponseWriter
+}
+
+func (d *dynamicCompressResponseWriter) WriteHeader(status int) {
+	d.ResponseWriter.Header().Set("Content-Encoding", "gzip")
+	d.ResponseWriter.WriteHeader(status)
+}
+
+func (d *dynamicCompressResponseWriter) Write(b []byte) (int, error) {
+	d.ResponseWriter.Header().Set("Content-Encoding", "gzip")
+	return d.ResponseWriter.Write(b)
 }

@@ -177,10 +177,47 @@ type FileServer struct {
 	// See https://datatracker.ietf.org/doc/html/rfc7232#section-2.3 for a few examples.
 	EtagFileExtensions []string `json:"etag_file_extensions,omitempty"`
 
+	// List of digest algorithms to use for RFC 9530 Content-Digest header generation.
+	// Supported values: "sha-256", "sha-512" (aliases "sha256", "sha512" are accepted).
+	// Algorithms are validated and deduplicated at provision time.
+	//
+	// Content-Digest covers the actual message content written to the client
+	// (RFC 9530), not merely the on-disk file. Digests are computed over a
+	// buffered snapshot of the bytes http.ServeContent emits, so:
+	//   - GET 200 hashes the full selected representation (including a
+	//     precompressed sidecar when that is what is served)
+	//   - GET 206 hashes only the selected partial content (single or multipart)
+	//   - HEAD 200 uses the empty-content digest (Appendix B.2); the selected
+	//     representation hash belongs on Repr-Digest, which this handler does not set
+	//   - 304/416 and other non-content outcomes omit the field
+	//
+	// Buffering is bounded by ContentDigestMaxBuffer (default 4 MiB). Responses
+	// larger than the limit are streamed without buffering and omit Content-Digest.
+	//
+	// If a later middleware dynamically re-encodes the body (encode gzip/zstd),
+	// Content-Digest is omitted/stripped because the client bytes differ.
+	//
+	// Note: buffering the response body means the OS sendfile(2) zero-copy path
+	// is not used when Content-Digest is enabled and the body fits in the buffer
+	// (TLS already cannot use sendfile without kTLS). Oversized responses fall
+	// back to the non-buffering path.
+	ContentDigest []string `json:"content_digest,omitempty"`
+
+	// Maximum number of response body bytes to buffer for Content-Digest.
+	// When the message content would exceed this limit (by Content-Length or
+	// while writing), the body is streamed without buffering and Content-Digest
+	// is omitted. Defaults to 4 MiB when Content-Digest is enabled and this is 0.
+	// Must not be negative.
+	ContentDigestMaxBuffer int64 `json:"content_digest_max_buffer,omitempty"`
+
 	fsmap caddy.FileSystems
 
 	logger *zap.Logger
 }
+
+// defaultContentDigestMaxBuffer is used when Content-Digest is enabled and
+// ContentDigestMaxBuffer is unset (0).
+const defaultContentDigestMaxBuffer int64 = 4 << 20 // 4 MiB
 
 // CaddyModule returns the Caddy module information.
 func (FileServer) CaddyModule() caddy.ModuleInfo {
@@ -260,6 +297,20 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 			default:
 				return fmt.Errorf("only max 2 sort options are allowed, but got %d", idx+1)
 			}
+		}
+	}
+
+	if len(fsrv.ContentDigest) > 0 {
+		normalized, err := normalizeContentDigestAlgos(fsrv.ContentDigest)
+		if err != nil {
+			return err
+		}
+		fsrv.ContentDigest = normalized
+		if fsrv.ContentDigestMaxBuffer < 0 {
+			return fmt.Errorf("content_digest_max_buffer must not be negative")
+		}
+		if fsrv.ContentDigestMaxBuffer == 0 {
+			fsrv.ContentDigestMaxBuffer = defaultContentDigestMaxBuffer
 		}
 	}
 
@@ -433,6 +484,8 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	// see #5849
 	respHeader.Add("Vary", "Accept-Encoding")
 
+	var precompressEncoding string
+
 	// check for precompressed files
 	for _, ae := range encode.AcceptedEncodings(r, fsrv.PrecompressedOrder) {
 		precompress, ok := fsrv.precompressors[ae]
@@ -462,6 +515,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			continue
 		}
 		defer file.Close()
+		precompressEncoding = ae
 		respHeader.Set("Content-Encoding", ae)
 
 		// stdlib won't set Content-Length for non-range requests if Content-Encoding is set.
@@ -570,10 +624,31 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		}
 	}
 
-	// if we do have an override from the previous two parts, then
-	// we wrap the response writer to intercept the WriteHeader call
+	// statusOverride sits inside the Content-Digest wrapper so the digest
+	// decision follows ServeContent's content path (200/206/304/416), not the
+	// overridden client status alone.
 	if statusCodeOverride > 0 {
 		w = statusOverrideResponseWriter{ResponseWriter: w, code: statusCodeOverride}
+	}
+
+	// Buffer ServeContent's output (up to ContentDigestMaxBuffer), hash the
+	// actual message content, then flush. Oversized bodies stream without a
+	// digest. This avoids TOCTOU between a pre-hash read and the bytes later
+	// written, and yields a correct digest for 206 partial content.
+	var digestWriter *contentDigestResponseWriter
+	if len(fsrv.ContentDigest) > 0 {
+		maxBuf := fsrv.ContentDigestMaxBuffer
+		if maxBuf <= 0 {
+			maxBuf = defaultContentDigestMaxBuffer
+		}
+		digestWriter = &contentDigestResponseWriter{
+			ResponseWriter: w,
+			algos:          fsrv.ContentDigest,
+			precompress:    precompressEncoding,
+			maxBuffer:      maxBuf,
+			isHead:         r.Method == http.MethodHead,
+		}
+		w = digestWriter
 	}
 
 	// let the standard library do what it does best; note, however,
@@ -591,6 +666,12 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		modTime = zeroTime
 	}
 	http.ServeContent(w, r, info.Name(), modTime, file.(io.ReadSeeker))
+
+	if digestWriter != nil {
+		if err := digestWriter.finalize(); err != nil {
+			return caddyhttp.Error(http.StatusInternalServerError, err)
+		}
+	}
 
 	return nil
 }
@@ -773,6 +854,7 @@ func calculateEtag(d os.FileInfo) string {
 	sb.WriteRune('"')
 	return sb.String()
 }
+
 
 // Finds the first corresponding etag file for a given file in the file system and return its content
 func (fsrv *FileServer) getEtagFromFile(fileSystem fs.FS, filename string) (string, error) {

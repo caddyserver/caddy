@@ -19,6 +19,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dustin/go-humanize"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -60,7 +62,10 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //	    precompressed <formats...>
 //	    status        <status>
 //	    disable_canonical_uris
+//	    content_digest [<algorithms...>]
+//	    content_digest_max_buffer <size>
 //	}
+
 //
 // The FinalizeUnmarshalCaddyfile method should be called after this
 // to finalize setup of hidden Caddyfiles.
@@ -197,6 +202,28 @@ func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.ArgErr()
 			}
 			fsrv.EtagFileExtensions = etagFileExtensions
+
+		case "content_digest", "digest":
+			contentDigest := d.RemainingArgs()
+			if len(contentDigest) == 0 {
+				contentDigest = []string{"sha-256"}
+			}
+			normalized, err := normalizeContentDigestAlgos(contentDigest)
+			if err != nil {
+				return d.Err(err.Error())
+			}
+			fsrv.ContentDigest = normalized
+
+		case "content_digest_max_buffer":
+			var sizeStr string
+			if !d.AllArgs(&sizeStr) {
+				return d.ArgErr()
+			}
+			size, err := humanize.ParseBytes(sizeStr)
+			if err != nil {
+				return d.Errf("parsing content_digest_max_buffer: %v", err)
+			}
+			fsrv.ContentDigestMaxBuffer = int64(size)
 
 		default:
 			return d.Errf("unknown subdirective '%s'", d.Val())
