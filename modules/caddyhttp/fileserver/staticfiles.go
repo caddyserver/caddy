@@ -30,6 +30,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -266,6 +267,38 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 	return nil
 }
 
+// hasWindowsShortName reports whether any component of p has the syntax of an
+// NTFS 8.3 short name. Both slash types separate components on Windows, which
+// also ignores trailing dots and spaces in each component.
+func hasWindowsShortName(p string) bool {
+	for _, component := range strings.FieldsFunc(p, func(r rune) bool {
+		return r == '/' || r == '\\'
+	}) {
+		component = strings.TrimRight(component, ". ")
+		base, extension, hasExtension := strings.Cut(component, ".")
+		if utf8.RuneCountInString(base) > 8 ||
+			(hasExtension && (utf8.RuneCountInString(extension) > 3 || strings.Contains(extension, "."))) {
+			continue
+		}
+
+		tilde := strings.LastIndexByte(base, '~')
+		if tilde <= 0 || tilde == len(base)-1 {
+			continue
+		}
+		shortNameNumber := base[tilde+1:]
+		for _, c := range shortNameNumber {
+			if c < '0' || c > '9' {
+				shortNameNumber = ""
+				break
+			}
+		}
+		if shortNameNumber != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
@@ -275,8 +308,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			return caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("illegal ADS path"))
 		}
 		// reject paths with "8.3" short names
-		trimmedPath := strings.TrimRight(r.URL.Path, ". ") // Windows ignores trailing dots and spaces, sigh
-		if len(path.Base(trimmedPath)) <= 12 && strings.Contains(trimmedPath, "~") {
+		if hasWindowsShortName(r.URL.Path) {
 			return caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("illegal short name"))
 		}
 		// both of those could bypass file hiding or possibly leak information even if the file is not hidden
