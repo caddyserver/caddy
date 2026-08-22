@@ -271,19 +271,21 @@ func TestAdminHandlerServeHTTPRedactsSensitiveHeadersInLogs(t *testing.T) {
 	handler := adminHandler{
 		mux: http.NewServeMux(),
 	}
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/redaction-test", nil)
 	req.Header.Set("Authorization", "Bearer secret")
 	req.Header.Set("Cookie", "session=secret")
 	req.Header.Set("X-Test", "ok")
 	rr := httptest.NewRecorder()
 
+	Log().Info("unrelated test log")
 	handler.ServeHTTP(rr, req)
 
-	if logs.Len() == 0 {
-		t.Fatal("expected request log entry")
+	entries := logs.FilterMessage("received request").FilterField(zap.String("uri", req.RequestURI)).All()
+	if len(entries) != 1 {
+		t.Fatalf("request log entries = %d, want 1", len(entries))
 	}
 
-	ctx := logs.All()[0].ContextMap()
+	ctx := entries[0].ContextMap()
 	headers, ok := ctx["headers"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected headers field in log context, got %T", ctx["headers"])
