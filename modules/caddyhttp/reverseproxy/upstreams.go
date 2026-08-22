@@ -13,6 +13,7 @@ import (
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/caddyserver/caddy/v2"
 )
@@ -75,9 +76,12 @@ type SRVUpstreams struct {
 	// accepted values. For example, to restrict to IPv4, use "tcp4".
 	DialNetwork string `json:"dial_network,omitempty"`
 
-	resolver *net.Resolver
+	resolver srvResolver
 
 	logger *zap.Logger
+}
+type srvResolver interface {
+	LookupSRV(ctx context.Context, service, proto, name string) (cname string, addrs []*net.SRV, err error)
 }
 
 // CaddyModule returns the Caddy module information.
@@ -123,9 +127,12 @@ func (su *SRVUpstreams) ResetCache(r *http.Request) error {
 	srvsMu.Lock()
 	if r == nil {
 		srvs = make(map[string]srvLookup)
+		srvGen = make(map[string]uint64)
+		srvEpoch++
 	} else {
 		suAddr, _, _, _ := su.expandedAddr(r)
 		delete(srvs, suAddr)
+		srvGen[suAddr]++ // bump so an in-flight lookup for this key knows to drop its result
 	}
 	srvsMu.Unlock()
 	return nil
@@ -137,84 +144,111 @@ func (su SRVUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 	// first, use a cheap read-lock to return a cached result quickly
 	srvsMu.RLock()
 	cached := srvs[suAddr]
+	startEpoch := srvEpoch
+	startGen := srvGen[suAddr]
 	srvsMu.RUnlock()
 	if cached.isFresh() {
 		return allNew(cached.upstreams), nil
 	}
 
-	// otherwise, obtain a write-lock to update the cached value
-	srvsMu.Lock()
-	defer srvsMu.Unlock()
-
-	// check to see if it's still stale, since we're now in a different
-	// lock from when we first checked freshness; another goroutine might
-	// have refreshed it in the meantime before we re-obtained our lock
-	cached = srvs[suAddr]
-	if cached.isFresh() {
-		return allNew(cached.upstreams), nil
-	}
-
-	if c := su.logger.Check(zapcore.DebugLevel, "refreshing SRV upstreams"); c != nil {
-		c.Write(
-			zap.String("service", service),
-			zap.String("proto", proto),
-			zap.String("name", name),
-		)
-	}
-
-	_, records, err := su.resolver.LookupSRV(r.Context(), service, proto, name)
-	if err != nil {
-		// From LookupSRV docs: "If the response contains invalid names, those records are filtered
-		// out and an error will be returned alongside the remaining results, if any." Thus, we
-		// only return an error if no records were also returned.
-		if len(records) == 0 {
-			if su.GracePeriod > 0 {
-				if c := su.logger.Check(zapcore.ErrorLevel, "SRV lookup failed; using previously cached"); c != nil {
-					c.Write(zap.Error(err))
-				}
-				cached.freshness = time.Now().Add(time.Duration(su.GracePeriod) - time.Duration(su.Refresh))
-				srvs[suAddr] = cached
-				return allNew(cached.upstreams), nil
-			}
-			return nil, err
+	// dedupe lookups for the same key, other keys aren't affected
+	resultChan := srvGroup.DoChan(suAddr, func() (any, error) {
+		// might already be refreshed by whoever got here first
+		srvsMu.RLock()
+		c := srvs[suAddr]
+		srvsMu.RUnlock()
+		if c.isFresh() {
+			return c.upstreams, nil
 		}
-		if c := su.logger.Check(zapcore.WarnLevel, "SRV records filtered"); c != nil {
-			c.Write(zap.Error(err))
-		}
-	}
 
-	upstreams := make([]Upstream, len(records))
-	for i, rec := range records {
-		if c := su.logger.Check(zapcore.DebugLevel, "discovered SRV record"); c != nil {
-			c.Write(
-				zap.String("target", rec.Target),
-				zap.Uint16("port", rec.Port),
-				zap.Uint16("priority", rec.Priority),
-				zap.Uint16("weight", rec.Weight),
+		if logC := su.logger.Check(zapcore.DebugLevel, "refreshing SRV upstreams"); logC != nil {
+			logC.Write(
+				zap.String("service", service),
+				zap.String("proto", proto),
+				zap.String("name", name),
 			)
 		}
-		addr := net.JoinHostPort(rec.Target, strconv.Itoa(int(rec.Port)))
-		if su.DialNetwork != "" {
-			addr = su.DialNetwork + "/" + addr
+
+		// no lock held here, so a slow lookup doesn't block anything else
+		_, records, err := su.resolver.LookupSRV(r.Context(), service, proto, name)
+		if err != nil {
+			// From LookupSRV docs: "If the response contains invalid names, those records are filtered
+			// out and an error will be returned alongside the remaining results, if any." Thus, we
+			// only return an error if no records were also returned.
+			if len(records) == 0 {
+				if su.GracePeriod > 0 {
+					if logC := su.logger.Check(zapcore.ErrorLevel, "SRV lookup failed; using previously cached"); logC != nil {
+						logC.Write(zap.Error(err))
+					}
+					srvsMu.Lock()
+					// skip if reset happened while we were looking this up
+					if srvEpoch == startEpoch && srvGen[suAddr] == startGen {
+						c.freshness = time.Now().Add(time.Duration(su.GracePeriod) - time.Duration(su.Refresh))
+						srvs[suAddr] = c
+						delete(srvGen, suAddr)
+					}
+					srvsMu.Unlock()
+					return c.upstreams, nil
+				}
+				return nil, err
+			}
+			if logC := su.logger.Check(zapcore.WarnLevel, "SRV records filtered"); logC != nil {
+				logC.Write(zap.Error(err))
+			}
 		}
-		upstreams[i] = Upstream{Dial: addr}
-	}
 
-	// before adding a new one to the cache (as opposed to replacing stale one), make room if cache is full
-	if cached.freshness.IsZero() && len(srvs) >= 100 {
-		for randomKey := range srvs {
-			delete(srvs, randomKey)
-			break
+		upstreams := make([]Upstream, len(records))
+		for i, rec := range records {
+			if logC := su.logger.Check(zapcore.DebugLevel, "discovered SRV record"); logC != nil {
+				logC.Write(
+					zap.String("target", rec.Target),
+					zap.Uint16("port", rec.Port),
+					zap.Uint16("priority", rec.Priority),
+					zap.Uint16("weight", rec.Weight),
+				)
+			}
+			addr := net.JoinHostPort(rec.Target, strconv.Itoa(int(rec.Port)))
+			if su.DialNetwork != "" {
+				addr = su.DialNetwork + "/" + addr
+			}
+			upstreams[i] = Upstream{Dial: addr}
 		}
-	}
 
-	srvs[suAddr] = srvLookup{
-		srvUpstreams: su,
-		freshness:    time.Now(),
-		upstreams:    upstreams,
-	}
+		srvsMu.Lock()
+		// reset happened mid-lookup, don't write a stale result back
+		if srvEpoch != startEpoch || srvGen[suAddr] != startGen {
+			srvsMu.Unlock()
+			return upstreams, nil
+		}
 
-	return allNew(upstreams), nil
+		// before adding a new one to the cache (as opposed to replacing stale one), make room if cache is full
+		if c.freshness.IsZero() && len(srvs) >= 100 {
+			for randomKey := range srvs {
+				delete(srvs, randomKey)
+				break
+			}
+		}
+
+		srvs[suAddr] = srvLookup{
+			srvUpstreams: su,
+			freshness:    time.Now(),
+			upstreams:    upstreams,
+		}
+		delete(srvGen, suAddr)
+		srvsMu.Unlock()
+
+		return upstreams, nil
+	})
+
+	select {
+	case res := <-resultChan:
+		if res.Err != nil {
+			return nil, res.Err
+		}
+		return allNew(res.Val.([]Upstream)), nil
+	case <-r.Context().Done():
+		return nil, r.Context().Err()
+	}
 }
 
 func (su SRVUpstreams) String() string {
@@ -354,6 +388,23 @@ func (au *AUpstreams) Provision(ctx caddy.Context) error {
 	return nil
 }
 
+func (au *AUpstreams) ResetCache(r *http.Request) error {
+	if r == nil {
+		aAaaaMu.Lock()
+		aAaaa = make(map[string]aLookup)
+		aGen = make(map[string]uint64)
+		aEpoch++
+		aAaaaMu.Unlock()
+		return nil
+	}
+	auStr := au.expandedAddr(r)
+	aAaaaMu.Lock()
+	delete(aAaaa, auStr)
+	aGen[auStr]++
+	aAaaaMu.Unlock()
+	return nil
+}
+
 func (au AUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
@@ -367,24 +418,14 @@ func (au AUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 	// while keeping the cache-invalidation as simple as it currently is.
 	ipVersion := resolveIpVersion(au.Versions)
 
-	auStr := repl.ReplaceAll(au.String()+ipVersion, "")
+	auStr := au.expandedAddr(r)
 
 	// first, use a cheap read-lock to return a cached result quickly
 	aAaaaMu.RLock()
 	cached := aAaaa[auStr]
+	startEpoch := aEpoch
+	startGen := aGen[auStr]
 	aAaaaMu.RUnlock()
-	if cached.isFresh() {
-		return allNew(cached.upstreams), nil
-	}
-
-	// otherwise, obtain a write-lock to update the cached value
-	aAaaaMu.Lock()
-	defer aAaaaMu.Unlock()
-
-	// check to see if it's still stale, since we're now in a different
-	// lock from when we first checked freshness; another goroutine might
-	// have refreshed it in the meantime before we re-obtained our lock
-	cached = aAaaa[auStr]
 	if cached.isFresh() {
 		return allNew(cached.upstreams), nil
 	}
@@ -392,47 +433,84 @@ func (au AUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 	name := repl.ReplaceAll(au.Name, "")
 	port := repl.ReplaceAll(au.Port, "")
 
-	if c := au.logger.Check(zapcore.DebugLevel, "refreshing A upstreams"); c != nil {
-		c.Write(
-			zap.String("version", ipVersion),
-			zap.String("name", name),
-			zap.String("port", port),
-		)
-	}
-
-	ips, err := au.resolver.LookupIP(r.Context(), ipVersion, name)
-	if err != nil {
-		return nil, err
-	}
-
-	upstreams := make([]Upstream, len(ips))
-	for i, ip := range ips {
-		if c := au.logger.Check(zapcore.DebugLevel, "discovered A record"); c != nil {
-			c.Write(zap.String("ip", ip.String()))
+	// dedupe lookups for the same key, other keys aren't affected
+	resultChan := aGroup.DoChan(auStr, func() (any, error) {
+		aAaaaMu.RLock()
+		c := aAaaa[auStr]
+		aAaaaMu.RUnlock()
+		if c.isFresh() {
+			return c.upstreams, nil
 		}
-		upstreams[i] = Upstream{
-			Dial: net.JoinHostPort(ip.String(), port),
+
+		if logC := au.logger.Check(zapcore.DebugLevel, "refreshing A upstreams"); logC != nil {
+			logC.Write(
+				zap.String("version", ipVersion),
+				zap.String("name", name),
+				zap.String("port", port),
+			)
 		}
-	}
 
-	// before adding a new one to the cache (as opposed to replacing stale one), make room if cache is full
-	if cached.freshness.IsZero() && len(aAaaa) >= 100 {
-		for randomKey := range aAaaa {
-			delete(aAaaa, randomKey)
-			break
+		// no lock held here
+		ips, err := au.resolver.LookupIP(r.Context(), ipVersion, name)
+		if err != nil {
+			return nil, err
 		}
-	}
 
-	aAaaa[auStr] = aLookup{
-		aUpstreams: au,
-		freshness:  time.Now(),
-		upstreams:  upstreams,
-	}
+		upstreams := make([]Upstream, len(ips))
+		for i, ip := range ips {
+			if logC := au.logger.Check(zapcore.DebugLevel, "discovered A record"); logC != nil {
+				logC.Write(zap.String("ip", ip.String()))
+			}
+			upstreams[i] = Upstream{
+				Dial: net.JoinHostPort(ip.String(), port),
+			}
+		}
 
-	return allNew(upstreams), nil
+		aAaaaMu.Lock()
+		// reset happened mid-lookup, don't write a stale result back
+		if aEpoch != startEpoch || aGen[auStr] != startGen {
+			aAaaaMu.Unlock()
+			return upstreams, nil
+		}
+
+		// before adding a new one to the cache (as opposed to replacing stale one), make room if cache is full
+		if c.freshness.IsZero() && len(aAaaa) >= 100 {
+			for randomKey := range aAaaa {
+				delete(aAaaa, randomKey)
+				break
+			}
+		}
+
+		aAaaa[auStr] = aLookup{
+			aUpstreams: au,
+			freshness:  time.Now(),
+			upstreams:  upstreams,
+		}
+		delete(aGen, auStr)
+		aAaaaMu.Unlock()
+
+		return upstreams, nil
+	})
+
+	select {
+	case res := <-resultChan:
+		if res.Err != nil {
+			return nil, res.Err
+		}
+		return allNew(res.Val.([]Upstream)), nil
+	case <-r.Context().Done():
+		return nil, r.Context().Err()
+	}
 }
 
 func (au AUpstreams) String() string { return net.JoinHostPort(au.Name, au.Port) }
+
+// expandedAddr expands placeholders in the configured A/AAAA upstream domain
+// and returns the cache key used for this request.
+func (au AUpstreams) expandedAddr(r *http.Request) string {
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	return repl.ReplaceAll(au.String()+resolveIpVersion(au.Versions), "")
+}
 
 type aLookup struct {
 	aUpstreams AUpstreams
@@ -562,9 +640,16 @@ func allNew(upstreams []Upstream) []*Upstream {
 var (
 	srvs   = make(map[string]srvLookup)
 	srvsMu sync.RWMutex
+	// per-key gen bumped on targeted reset, epoch bumped on full reset
+	srvGen   = make(map[string]uint64)
+	srvEpoch uint64
+	srvGroup singleflight.Group
 
 	aAaaa   = make(map[string]aLookup)
 	aAaaaMu sync.RWMutex
+	aGen    = make(map[string]uint64)
+	aEpoch  uint64
+	aGroup  singleflight.Group
 )
 
 // Interface guards
@@ -574,4 +659,5 @@ var (
 	_ CachingUpstreamSource = (*SRVUpstreams)(nil)
 	_ caddy.Provisioner     = (*AUpstreams)(nil)
 	_ UpstreamSource        = (*AUpstreams)(nil)
+	_ CachingUpstreamSource = (*AUpstreams)(nil)
 )
