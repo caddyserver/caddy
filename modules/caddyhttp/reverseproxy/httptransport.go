@@ -29,6 +29,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pires/go-proxyproto"
@@ -37,6 +38,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/net/http2"
+	"golang.org/x/net/idna"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -164,6 +166,8 @@ type HTTPTransport struct {
 
 	h3Transport   *http3.Transport // TODO: EXPERIMENTAL (May 2024)
 	quicTransport *quic.Transport  // used by h3Transport if sni placeholder is used, otherwise nil
+
+	dynamicTLSConnLimiter *transportConnLimiter
 }
 
 // CaddyModule returns the Caddy module information.
@@ -178,6 +182,71 @@ var (
 	allowedVersions       = []string{"1.1", "2", "h2c", "3"}
 	allowedVersionsString = strings.Join(allowedVersions, ", ")
 )
+
+type proxyLookupCtxKey struct{}
+
+type proxyLookupResult struct {
+	url *url.URL
+	err error
+}
+
+type transportConnLimiter struct {
+	mu      sync.Mutex
+	limit   int
+	entries map[string]*transportConnLimitEntry
+}
+
+type transportConnLimitEntry struct {
+	permits chan struct{}
+	refs    int
+}
+
+func (l *transportConnLimiter) acquire(ctx context.Context, key string) (func(), error) {
+	l.mu.Lock()
+	entry := l.entries[key]
+	if entry == nil {
+		entry = &transportConnLimitEntry{permits: make(chan struct{}, l.limit)}
+		l.entries[key] = entry
+	}
+	entry.refs++
+	l.mu.Unlock()
+
+	select {
+	case entry.permits <- struct{}{}:
+		var once sync.Once
+		return func() {
+			once.Do(func() {
+				<-entry.permits
+				l.releaseRef(key, entry)
+			})
+		}, nil
+	case <-ctx.Done():
+		l.releaseRef(key, entry)
+		return nil, ctx.Err()
+	}
+}
+
+func (l *transportConnLimiter) releaseRef(key string, entry *transportConnLimitEntry) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	entry.refs--
+	if entry.refs == 0 && l.entries[key] == entry {
+		delete(l.entries, key)
+	}
+}
+
+type releaseConn struct {
+	net.Conn
+	release func()
+	once    sync.Once
+}
+
+func (c *releaseConn) Close() error {
+	err := c.Conn.Close()
+	c.once.Do(c.release)
+	return err
+}
 
 // Provision sets up h.Transport with a *http.Transport
 // that is ready to use.
@@ -205,6 +274,15 @@ func (h *HTTPTransport) Provision(ctx caddy.Context) error {
 
 // NewTransport builds a standard-lib-compatible http.Transport value from h.
 func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, error) {
+	if h.MaxConnsPerHost > 0 {
+		h.dynamicTLSConnLimiter = &transportConnLimiter{
+			limit:   h.MaxConnsPerHost,
+			entries: make(map[string]*transportConnLimitEntry),
+		}
+	} else {
+		h.dynamicTLSConnLimiter = nil
+	}
+
 	// Set keep-alive defaults if it wasn't otherwise configured
 	if h.KeepAlive == nil {
 		h.KeepAlive = new(KeepAlive)
@@ -393,16 +471,20 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 	}
 	// we need to keep track if a proxy is used for a request
 	proxyWrapper := func(req *http.Request) (*url.URL, error) {
-		if proxy == nil {
-			return nil, nil
+		var result proxyLookupResult
+		var cached bool
+		if result, cached = req.Context().Value(proxyLookupCtxKey{}).(proxyLookupResult); !cached {
+			if proxy == nil {
+				return nil, nil
+			}
+			result.url, result.err = proxy(req)
 		}
-		u, err := proxy(req)
-		if u == nil || err != nil {
-			return u, err
+		if result.url == nil || result.err != nil {
+			return result.url, result.err
 		}
 		// there must be a proxy for this request
-		caddyhttp.SetVar(req.Context(), proxyVarKey, u)
-		return u, nil
+		caddyhttp.SetVar(req.Context(), proxyVarKey, result.url)
+		return result.url, nil
 	}
 
 	rt := &http.Transport{
@@ -649,7 +731,73 @@ func (h *HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return h.h3Transport.RoundTrip(req)
 	}
 
-	return h.Transport.RoundTrip(req)
+	if req.URL.Scheme != "https" || h.TLS == nil || !strings.Contains(h.TLS.ServerName, "{") || h.Transport.Proxy == nil {
+		return h.Transport.RoundTrip(req)
+	}
+
+	proxyURL, proxyErr := h.Transport.Proxy(req)
+	requestCtx := context.WithValue(req.Context(), proxyLookupCtxKey{}, proxyLookupResult{url: proxyURL, err: proxyErr})
+	req = req.WithContext(requestCtx)
+	if proxyURL == nil || proxyErr != nil {
+		return h.Transport.RoundTrip(req)
+	}
+	// An HTTPS proxy and its upstream tunnel cannot use different TLS configs.
+	if strings.EqualFold(proxyURL.Scheme, "https") {
+		return h.Transport.RoundTrip(req)
+	}
+
+	// CONNECT tunnels bypass DialTLSContext, so expand the server name on an
+	// isolated transport instead of mutating the shared TLS config.
+	transport := h.Transport.Clone()
+	repl := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	transport.TLSClientConfig.ServerName = repl.ReplaceAll(transport.TLSClientConfig.ServerName, "")
+	transport.DisableKeepAlives = true
+
+	// Preserve max_conns_per_host across request-local transport clones.
+	if h.dynamicTLSConnLimiter != nil {
+		baseDialContext := transport.DialContext
+		connKey := dynamicTLSConnKey(req, proxyURL)
+		transport.MaxConnsPerHost = 0
+		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			release, err := h.dynamicTLSConnLimiter.acquire(ctx, connKey)
+			if err != nil {
+				return nil, err
+			}
+			conn, err := baseDialContext(ctx, network, addr)
+			if err != nil {
+				release()
+				return nil, err
+			}
+			return &releaseConn{Conn: conn, release: release}, nil
+		}
+	}
+
+	// Give HTTP/2 an isolated connection pool too.
+	if slices.Contains(h.Versions, "2") || slices.Contains(h.Versions, "h2c") {
+		transport.TLSNextProto = nil
+		if err := http2.ConfigureTransport(transport); err != nil {
+			return nil, fmt.Errorf("configuring HTTP/2 transport clone: %v", err)
+		}
+	}
+
+	return transport.RoundTrip(req)
+}
+
+func dynamicTLSConnKey(req *http.Request, proxyURL *url.URL) string {
+	port := req.URL.Port()
+	if port == "" {
+		port = "443"
+	}
+	targetHost := req.URL.Hostname()
+	if asciiHost, err := idna.Lookup.ToASCII(targetHost); err == nil {
+		targetHost = asciiHost
+	}
+	targetAddr := net.JoinHostPort(strings.ToLower(targetHost), port)
+	key := proxyURL.String() + "\x00" + req.URL.Scheme + "\x00" + targetAddr
+	if caddyhttp.GetVar(req.Context(), tlsH1OnlyVarKey) == true {
+		key += "\x00h1"
+	}
+	return key
 }
 
 // SetScheme ensures that the outbound request req
