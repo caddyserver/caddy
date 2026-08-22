@@ -419,7 +419,7 @@ func (d *Dispenser) ArgErr() error {
 // SyntaxErr creates a generic syntax error which explains what was
 // found and what was expected.
 func (d *Dispenser) SyntaxErr(expected string) error {
-	msg := fmt.Sprintf("syntax error: unexpected token '%s', expecting '%s', at %s:%d import chain: ['%s']", d.Val(), expected, d.File(), d.Line(), strings.Join(d.Token().imports, "','"))
+	msg := fmt.Sprintf("syntax error: unexpected token '%s', expecting '%s', at %s:%d import chain: ['%s']", d.Val(), expected, d.File(), d.Line(), strings.Join(cleanImports(d.Token().imports), "','"))
 	return errors.New(msg)
 }
 
@@ -442,7 +442,7 @@ func (d *Dispenser) Errf(format string, args ...any) error {
 // WrapErr takes an existing error and adds the Caddyfile file and line number.
 func (d *Dispenser) WrapErr(err error) error {
 	if len(d.Token().imports) > 0 {
-		return fmt.Errorf("%w, at %s:%d import chain ['%s']", err, d.File(), d.Line(), strings.Join(d.Token().imports, "','"))
+		return fmt.Errorf("%w, at %s:%d import chain ['%s']", err, d.File(), d.Line(), strings.Join(cleanImports(d.Token().imports), "','"))
 	}
 	return fmt.Errorf("%w, at %s:%d", err, d.File(), d.Line())
 }
@@ -535,3 +535,19 @@ func (d *Dispenser) isNextOnNewLine() bool {
 }
 
 const MatcherNameCtxKey = "matcher_name"
+
+func cleanImports(imports []string) []string {
+	cleaned := make([]string, len(imports))
+	for i, im := range imports {
+		if idx := strings.Index(im, "#"); idx != -1 {
+			if spaceIdx := strings.Index(im[idx:], " "); spaceIdx != -1 {
+				cleaned[i] = im[:idx] + im[idx+spaceIdx:]
+			} else {
+				cleaned[i] = im[:idx]
+			}
+		} else {
+			cleaned[i] = im
+		}
+	}
+	return cleaned
+}
