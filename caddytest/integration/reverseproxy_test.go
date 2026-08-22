@@ -2,8 +2,10 @@ package integration
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"runtime"
 	"strings"
@@ -891,5 +893,113 @@ func TestWeightedRoundRobinSelectionValidation(t *testing.T) {
 				tc.errMsg,
 			)
 		})
+	}
+}
+
+func TestReverseProxyResponseHandling(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/header", func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Length", "500")
+		writer.WriteHeader(500)
+		_ = http.NewResponseController(writer).Flush()
+		panic(http.ErrAbortHandler)
+	})
+	mux.HandleFunc("/partial", func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Length", "500")
+		writer.WriteHeader(500)
+		_, _ = io.WriteString(writer, "partial")
+		_ = http.NewResponseController(writer).Flush()
+		panic(http.ErrAbortHandler)
+	})
+	mux.HandleFunc("/full", func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Length", "500")
+		writer.WriteHeader(500)
+		for range 125 {
+			_, _ = io.WriteString(writer, "full")
+		}
+		_ = http.NewResponseController(writer).Flush()
+	})
+	mux.HandleFunc("/empty", func(writer http.ResponseWriter, request *http.Request) {
+		panic(http.ErrAbortHandler)
+	})
+	ts := httptest.NewUnstartedServer(mux)
+	ts.Start()
+	t.Cleanup(func() {
+		ts.Close()
+	})
+
+	tester := caddytest.NewTester(t)
+	tester.InitServer(fmt.Sprintf(`
+	{
+		skip_install_trust
+		admin localhost:2999
+		http_port 9080
+		https_port 9443
+		grace_period 1ns
+	}
+	http://localhost:9080 {
+		reverse_proxy %s
+	}
+	`, ts.URL), "caddyfile")
+
+	for _, tc := range []struct {
+		endpoint string
+		status   int
+		bodyType int // 0 = no body, 1 = partial, 2 = full
+		body     string
+	}{
+		{
+			endpoint: "/header",
+			status:   500,
+			bodyType: 0,
+			body:     "",
+		},
+		{
+			endpoint: "/partial",
+			status:   500,
+			bodyType: 1,
+			body:     "partial",
+		},
+		{
+			endpoint: "/full",
+			status:   500,
+			bodyType: 2,
+			body:     strings.Repeat("full", 125),
+		},
+		{
+			endpoint: "/empty",
+			status:   502,
+			bodyType: 2,
+			body:     "",
+		},
+	} {
+		req, err := http.NewRequest("GET", "http://localhost:9080"+tc.endpoint, nil)
+		if err != nil {
+			t.Fatalf("unable to create request %s for endpoint %s", err, tc.endpoint)
+		}
+
+		resp, err := tester.Client.Do(req)
+		if err != nil {
+			t.Fatalf("request failed: %s for endpoint %s", err, tc.endpoint)
+		}
+		if resp.StatusCode != tc.status {
+			t.Fatalf("unexpected status code for %s: got %d, want %d", tc.endpoint, resp.StatusCode, tc.status)
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		switch tc.bodyType {
+		case 0, 1:
+			if err == nil {
+				t.Fatalf("expected error reading body for %s, got none", tc.endpoint)
+			}
+		case 2:
+			if err != nil {
+				t.Fatalf("error reading body for %s: %s", tc.endpoint, err)
+			}
+		}
+		if string(body) != tc.body {
+			t.Fatalf("unexpected body for %s: got %q, want %q", tc.endpoint, string(body), tc.body)
+		}
 	}
 }
