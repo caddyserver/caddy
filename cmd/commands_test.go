@@ -15,12 +15,12 @@ func TestCommandsAreAvailable(t *testing.T) {
 		t.Fatal("default factory failed to build")
 	}
 
-	// check that the default factory has 17 commands; it doesn't
+	// check that the default factory has 18 commands; it doesn't
 	// include the commands registered through calls to init in
 	// other packages
 	cmds := Commands()
-	if len(cmds) != 17 {
-		t.Errorf("expected 17 commands, got %d", len(cmds))
+	if len(cmds) != 18 {
+		t.Errorf("expected 18 commands, got %d", len(cmds))
 	}
 
 	commandNames := slices.Collect(maps.Keys(cmds))
@@ -30,7 +30,7 @@ func TestCommandsAreAvailable(t *testing.T) {
 		"adapt", "add-package", "build-info", "completion",
 		"environ", "fmt", "list-modules", "manpage",
 		"reload", "remove-package", "run", "start",
-		"stop", "storage", "upgrade", "validate", "version",
+		"status", "stop", "storage", "upgrade", "validate", "version",
 	}
 
 	if !reflect.DeepEqual(expectedCommandNames, commandNames) {
