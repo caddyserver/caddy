@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/caddyserver/certmagic"
@@ -157,8 +158,8 @@ unprotected.example.com {
 	if !reflect.DeepEqual(ech.Configs, expectedConfigs) {
 		t.Fatalf("unexpected ECH configurations: got %v, want %v", ech.Configs, expectedConfigs)
 	}
-	if len(ech.Publication) != 4 {
-		t.Fatalf("unexpected ECH publication count: got %d, want 4", len(ech.Publication))
+	if len(ech.Publication) != 3 {
+		t.Fatalf("unexpected ECH publication count: got %d, want 3", len(ech.Publication))
 	}
 	if diff := compareECHPublication(
 		ech.Publication[0],
@@ -180,14 +181,7 @@ unprotected.example.com {
 	if diff := compareECHPublication(
 		ech.Publication[2],
 		[]string{"second-public.example.net"},
-		[]string{"second.example.com"},
-	); diff != "" {
-		t.Fatal(diff)
-	}
-	if diff := compareECHPublication(
-		ech.Publication[3],
-		[]string{"second-public.example.net"},
-		[]string{"shared.example.com"},
+		[]string{"second.example.com", "shared.example.com"},
 	); diff != "" {
 		t.Fatal(diff)
 	}
@@ -302,6 +296,197 @@ https://a.example.com, https://b.example.com:8443 {
 }`
 
 	ech := adaptECH(t, input)
+	if len(ech.Publication) != 1 {
+		t.Fatalf("unexpected ECH publication count: got %d, want 1", len(ech.Publication))
+	}
+	if diff := compareECHPublication(
+		ech.Publication[0],
+		[]string{"public.example.net"},
+		[]string{"a.example.com", "b.example.com"},
+	); diff != "" {
+		t.Fatal(diff)
+	}
+}
+
+func TestSiteBlockECHRejectsConflictingAssignments(t *testing.T) {
+	tests := map[string]string{
+		"configs": `example.com {
+	tls {
+		ech first-public.example.net {
+			dns test
+		}
+	}
+}
+
+example.com:8443 {
+	tls {
+		ech second-public.example.net {
+			dns test
+		}
+	}
+}`,
+		"publishers": `example.com {
+	tls {
+		ech public.example.net {
+			dns test
+		}
+	}
+}
+
+example.com:8443 {
+	tls {
+		ech public.example.net
+	}
+}`,
+	}
+
+	adapter := caddyfile.Adapter{ServerType: ServerType{}}
+	for name, input := range tests {
+		t.Run(name, func(t *testing.T) {
+			if _, _, err := adapter.Adapt([]byte(input), nil); err == nil {
+				t.Fatal("expected conflicting ECH assignments for the same hostname to fail")
+			} else if !strings.Contains(err.Error(), "example.com") {
+				t.Fatalf("expected conflict error to identify the hostname, got: %v", err)
+			}
+		})
+	}
+}
+
+func TestSiteBlockECHConsolidatesIdenticalHostAssignment(t *testing.T) {
+	input := `example.com {
+	tls {
+		ech public.example.net {
+			dns test
+		}
+	}
+}
+
+example.com:8443 {
+	tls {
+		ech public.example.net {
+			dns test
+		}
+	}
+}`
+
+	ech := adaptECH(t, input)
+	if len(ech.Publication) != 1 {
+		t.Fatalf("unexpected ECH publication count: got %d, want 1", len(ech.Publication))
+	}
+	if diff := compareECHPublication(
+		ech.Publication[0],
+		[]string{"public.example.net"},
+		[]string{"example.com"},
+	); diff != "" {
+		t.Fatal(diff)
+	}
+}
+
+func TestSiteBlockECHPreservesCatchAllAssignment(t *testing.T) {
+	input := `:443 {
+	tls {
+		ech public.example.net {
+			dns test
+		}
+	}
+}
+
+example.com:8443 {
+	tls {
+		ech public.example.net {
+			dns test
+		}
+	}
+}`
+
+	ech := adaptECH(t, input)
+	if len(ech.Publication) != 1 {
+		t.Fatalf("unexpected ECH publication count: got %d, want 1", len(ech.Publication))
+	}
+	if diff := compareECHPublication(
+		ech.Publication[0],
+		[]string{"public.example.net"},
+		nil,
+	); diff != "" {
+		t.Fatal(diff)
+	}
+}
+
+func TestSiteBlockECHRejectsCatchAllConflict(t *testing.T) {
+	tests := map[string]string{
+		"catch-all first": `:443 {
+	tls {
+		ech catch-all-public.example.net {
+			dns test
+		}
+	}
+}
+
+example.com:8443 {
+	tls {
+		ech named-public.example.net {
+			dns test
+		}
+	}
+}`,
+		"catch-all last": `example.com:8443 {
+	tls {
+		ech named-public.example.net {
+			dns test
+		}
+	}
+}
+
+:443 {
+	tls {
+		ech catch-all-public.example.net {
+			dns test
+		}
+	}
+}`,
+		"two catch-alls": `:443 {
+	tls {
+		ech first-public.example.net {
+			dns test
+		}
+	}
+}
+
+:8443 {
+	tls {
+		ech second-public.example.net {
+			dns test
+		}
+	}
+}`,
+	}
+
+	adapter := caddyfile.Adapter{ServerType: ServerType{}}
+	for name, input := range tests {
+		t.Run(name, func(t *testing.T) {
+			if _, _, err := adapter.Adapt([]byte(input), nil); err == nil {
+				t.Fatal("expected catch-all ECH assignments to conflict")
+			}
+		})
+	}
+}
+
+func TestSiteBlockECHSortsPublicationsWithIdenticalConfigsByDomain(t *testing.T) {
+	input := `b.example.com {
+	tls {
+		ech public.example.net
+	}
+}
+
+a.example.com {
+	tls {
+		ech public.example.net {
+			dns test
+		}
+	}
+}`
+
+	ech := adaptECH(t, input)
 	if len(ech.Publication) != 2 {
 		t.Fatalf("unexpected ECH publication count: got %d, want 2", len(ech.Publication))
 	}
@@ -318,6 +503,48 @@ https://a.example.com, https://b.example.com:8443 {
 		[]string{"b.example.com"},
 	); diff != "" {
 		t.Fatal(diff)
+	}
+}
+
+func TestConsolidateECHPublicationsRejectsCatchAllAfterNamedAssignment(t *testing.T) {
+	publications := []*caddytls.ECHPublication{
+		{
+			Configs: []string{"named-public.example.net"},
+			Domains: []string{"example.com"},
+		},
+		{
+			Configs: []string{"catch-all-public.example.net"},
+		},
+	}
+
+	if _, err := consolidateECHPublications(publications); err == nil {
+		t.Fatal("expected a named assignment followed by a catch-all assignment to conflict")
+	} else if !strings.Contains(err.Error(), "example.com") {
+		t.Fatalf("expected conflict error to identify the hostname, got: %v", err)
+	}
+}
+
+func TestSiteBlockECHRejectsGlobalAndSiteConflictForSameHost(t *testing.T) {
+	input := `{
+	dns test
+	ech global-public.example.net
+}
+
+https://example.com/api {
+	tls {
+		ech site-public.example.net {
+			dns test
+		}
+	}
+}
+
+https://example.com/app {
+	respond "hello"
+}`
+
+	adapter := caddyfile.Adapter{ServerType: ServerType{}}
+	if _, _, err := adapter.Adapt([]byte(input), nil); err == nil {
+		t.Fatal("expected global and site-specific ECH assignments for the same hostname to fail")
 	}
 }
 

@@ -17,6 +17,7 @@ package httpcaddyfile
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"slices"
@@ -31,6 +32,12 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
+)
+
+const (
+	echAssignmentNotFound              = -1
+	echAssignmentConflictFormat        = "hostname %s has conflicting ECH assignments"
+	echCatchAllAssignmentConflictError = "catch-all ECH publication has conflicting assignments"
 )
 
 func (st ServerType) buildTLSApp(
@@ -135,9 +142,7 @@ func (st ServerType) buildTLSApp(
 				ap = catchAllAP
 			}
 			if globalECHConfigured {
-				if _, ok := sblock.pile[tlsECHClass]; ok {
-					siteECHConfigured = true
-				} else {
+				if _, ok := sblock.pile[tlsECHClass]; !ok {
 					for _, host := range sblockHosts {
 						globalECHDomains[host] = struct{}{}
 					}
@@ -145,6 +150,7 @@ func (st ServerType) buildTLSApp(
 			}
 
 			if echVals, ok := sblock.pile[tlsECHClass]; ok {
+				siteECHConfigured = true
 				if tlsApp.EncryptedClientHello == nil {
 					tlsApp.EncryptedClientHello = new(caddytls.ECH)
 				}
@@ -378,6 +384,15 @@ func (st ServerType) buildTLSApp(
 			}
 			publications = append(publications, tlsApp.EncryptedClientHello.Publication[globalECHPublicationCount:]...)
 			tlsApp.EncryptedClientHello.Publication = publications
+		}
+	}
+	if siteECHConfigured {
+		var err error
+		tlsApp.EncryptedClientHello.Publication, err = consolidateECHPublications(
+			tlsApp.EncryptedClientHello.Publication,
+		)
+		if err != nil {
+			return nil, warnings, err
 		}
 	}
 
@@ -624,6 +639,61 @@ func echPublicNames(configs []caddytls.ECHConfiguration) []string {
 		publicNames = append(publicNames, config.PublicName)
 	}
 	return publicNames
+}
+
+func consolidateECHPublications(
+	publications []*caddytls.ECHPublication,
+) ([]*caddytls.ECHPublication, error) {
+	var consolidated []*caddytls.ECHPublication
+	domainAssignments := make(map[string]int)
+	catchAllAssignment := echAssignmentNotFound
+	for _, publication := range publications {
+		slices.Sort(publication.Configs)
+		assignment := echAssignmentNotFound
+		for i, existing := range consolidated {
+			if slices.Equal(existing.Configs, publication.Configs) &&
+				reflect.DeepEqual(existing.PublishersRaw, publication.PublishersRaw) {
+				assignment = i
+				break
+			}
+		}
+		if assignment == echAssignmentNotFound {
+			publicationCopy := *publication
+			publicationCopy.Configs = slices.Clone(publication.Configs)
+			publicationCopy.Domains = nil
+			consolidated = append(consolidated, &publicationCopy)
+			assignment = len(consolidated) - 1
+		}
+		if len(publication.Domains) == 0 {
+			if catchAllAssignment != echAssignmentNotFound && catchAllAssignment != assignment {
+				return nil, errors.New(echCatchAllAssignmentConflictError)
+			}
+			for domain, previousAssignment := range domainAssignments {
+				if previousAssignment != assignment {
+					return nil, fmt.Errorf(echAssignmentConflictFormat, domain)
+				}
+			}
+			catchAllAssignment = assignment
+			consolidated[assignment].Domains = nil
+			continue
+		}
+		for _, domain := range publication.Domains {
+			if catchAllAssignment != echAssignmentNotFound && catchAllAssignment != assignment {
+				return nil, fmt.Errorf(echAssignmentConflictFormat, domain)
+			}
+			if previousAssignment, ok := domainAssignments[domain]; ok {
+				if previousAssignment != assignment {
+					return nil, fmt.Errorf(echAssignmentConflictFormat, domain)
+				}
+				continue
+			}
+			domainAssignments[domain] = assignment
+			if catchAllAssignment != assignment {
+				consolidated[assignment].Domains = append(consolidated[assignment].Domains, domain)
+			}
+		}
+	}
+	return consolidated, nil
 }
 
 func newECHPublication(
