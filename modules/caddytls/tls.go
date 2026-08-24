@@ -18,6 +18,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -137,7 +138,8 @@ type TLS struct {
 	automateNames      map[string]struct{}
 	ctx                caddy.Context
 	storageCleanTicker *time.Ticker
-	storageCleanStop   chan struct{}
+	storageCleanCancel context.CancelFunc
+	storageCleanWg     sync.WaitGroup
 	logger             *zap.Logger
 	events             *caddyevents.App
 
@@ -465,12 +467,13 @@ func (t *TLS) Start() error {
 // Stop stops the TLS module and cleans up any allocations.
 func (t *TLS) Stop() error {
 	// stop the storage cleaner goroutine and ticker
-	if t.storageCleanStop != nil {
-		close(t.storageCleanStop)
+	if t.storageCleanCancel != nil {
+		t.storageCleanCancel()
 	}
 	if t.storageCleanTicker != nil {
 		t.storageCleanTicker.Stop()
 	}
+	t.storageCleanWg.Wait()
 	return nil
 }
 
@@ -907,29 +910,36 @@ func (t *TLS) HasCertificateForSubject(subject string) bool {
 // known storage units if it was not recently done, and then runs the
 // operation at every tick from t.storageCleanTicker.
 func (t *TLS) keepStorageClean() {
+	cleanCtx, cleanCancel := context.WithCancel(t.ctx.Context)
+	t.storageCleanCancel = cleanCancel
 	t.storageCleanTicker = time.NewTicker(t.storageCleanInterval())
-	t.storageCleanStop = make(chan struct{})
+	t.storageCleanWg.Add(1)
 	go func() {
+		defer t.storageCleanWg.Done()
 		defer func() {
 			if err := recover(); err != nil {
 				log.Printf("[PANIC] storage cleaner: %v\n%s", err, debug.Stack())
 			}
 		}()
-		t.cleanStorageUnits()
+		t.cleanStorageUnits(cleanCtx)
 		for {
 			select {
-			case <-t.storageCleanStop:
+			case <-cleanCtx.Done():
 				return
 			case <-t.storageCleanTicker.C:
-				t.cleanStorageUnits()
+				t.cleanStorageUnits(cleanCtx)
 			}
 		}
 	}()
 }
 
-func (t *TLS) cleanStorageUnits() {
+func (t *TLS) cleanStorageUnits(ctx context.Context) {
 	storageCleanMu.Lock()
 	defer storageCleanMu.Unlock()
+
+	if err := ctx.Err(); err != nil {
+		return
+	}
 
 	// TODO: This check might not be needed anymore now that CertMagic syncs
 	// and throttles storage cleaning globally across the cluster.
@@ -963,8 +973,11 @@ func (t *TLS) cleanStorageUnits() {
 	}
 
 	// start with the default/global storage
-	err = certmagic.CleanStorage(t.ctx, t.ctx.Storage(), options)
+	err = certmagic.CleanStorage(ctx, t.ctx.Storage(), options)
 	if err != nil {
+		if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+			return
+		}
 		// probably don't want to return early, since we should still
 		// see if any other storages can get cleaned up
 		if c := t.logger.Check(zapcore.ErrorLevel, "could not clean default/global storage"); c != nil {
@@ -978,12 +991,19 @@ func (t *TLS) cleanStorageUnits() {
 			if ap.storage == nil {
 				continue
 			}
-			if err := certmagic.CleanStorage(t.ctx, ap.storage, options); err != nil {
+			if err := certmagic.CleanStorage(ctx, ap.storage, options); err != nil {
+				if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+					return
+				}
 				if c := t.logger.Check(zapcore.ErrorLevel, "could not clean storage configured in automation policy"); c != nil {
 					c.Write(zap.Error(err))
 				}
 			}
 		}
+	}
+
+	if err := ctx.Err(); err != nil {
+		return
 	}
 
 	// remember last time storage was finished cleaning
