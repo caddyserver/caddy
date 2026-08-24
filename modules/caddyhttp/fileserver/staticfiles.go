@@ -30,7 +30,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -267,6 +266,21 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 	return nil
 }
 
+const windowsShortNamePunctuation = "$%'-_@~`!(){}^#&"
+
+func validWindowsShortNamePart(s string) bool {
+	for _, c := range s {
+		if (c >= 'a' && c <= 'z') ||
+			(c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9') ||
+			strings.ContainsRune(windowsShortNamePunctuation, c) {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 // hasWindowsShortName reports whether any component of p has the syntax of an
 // NTFS 8.3 short name. Both slash types separate components on Windows, which
 // also ignores trailing dots and spaces in each component.
@@ -276,8 +290,8 @@ func hasWindowsShortName(p string) bool {
 	}) {
 		component = strings.TrimRight(component, ". ")
 		base, extension, hasExtension := strings.Cut(component, ".")
-		if utf8.RuneCountInString(base) > 8 ||
-			(hasExtension && (utf8.RuneCountInString(extension) > 3 || strings.Contains(extension, "."))) {
+		if len(base) > 8 || !validWindowsShortNamePart(base) ||
+			(hasExtension && (len(extension) > 3 || !validWindowsShortNamePart(extension))) {
 			continue
 		}
 

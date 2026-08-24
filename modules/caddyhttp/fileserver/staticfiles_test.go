@@ -177,8 +177,33 @@ func TestHasWindowsShortName(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "permitted punctuation",
+			path: "/$%'-_~1.!#&",
+			want: true,
+		},
+		{
 			name: "ordinary tilde name",
 			path: "/ordinary~name/file.txt",
+			want: false,
+		},
+		{
+			name: "space in short name shape",
+			path: "/my f~1.txt",
+			want: false,
+		},
+		{
+			name: "space in long tilde name",
+			path: "/my file~1.txt",
+			want: false,
+		},
+		{
+			name: "non-ASCII short name shape",
+			path: "/café~1.txt",
+			want: false,
+		},
+		{
+			name: "forbidden punctuation",
+			path: "/MY+F~1.TXT",
 			want: false,
 		},
 		{

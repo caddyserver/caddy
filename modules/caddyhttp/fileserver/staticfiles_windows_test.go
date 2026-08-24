@@ -19,6 +19,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -29,9 +30,16 @@ import (
 
 func TestFileServerRejectsShortNameInParentComponent(t *testing.T) {
 	root := t.TempDir()
-	const ordinaryName = "ordinary~name-with-long-suffix.txt"
-	if err := os.WriteFile(filepath.Join(root, ordinaryName), []byte("ordinary tilde name"), 0o600); err != nil {
-		t.Fatal(err)
+	ordinaryNames := []string{
+		"ordinary~name-with-long-suffix.txt",
+		"my f~1.txt",
+		"my file~1.txt",
+		"café~1.txt",
+	}
+	for _, name := range ordinaryNames {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(name), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	fsrv := FileServer{
@@ -56,14 +64,18 @@ func TestFileServerRejectsShortNameInParentComponent(t *testing.T) {
 		t.Fatalf("status = %d, want %d", handlerErr.StatusCode, http.StatusBadRequest)
 	}
 
-	w := httptest.NewRecorder()
-	if err := fsrv.ServeHTTP(w, newPrecompressedRequest(t, "/"+ordinaryName), nil); err != nil {
-		t.Fatal(err)
-	}
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
-	}
-	if got, want := w.Body.String(), "ordinary tilde name"; got != want {
-		t.Fatalf("body = %q, want %q", got, want)
+	for _, name := range ordinaryNames {
+		t.Run(name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			if err := fsrv.ServeHTTP(w, newPrecompressedRequest(t, "/"+url.PathEscape(name)), nil); err != nil {
+				t.Fatal(err)
+			}
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+			}
+			if got := w.Body.String(); got != name {
+				t.Fatalf("body = %q, want %q", got, name)
+			}
+		})
 	}
 }
