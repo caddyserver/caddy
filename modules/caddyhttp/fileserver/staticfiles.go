@@ -247,19 +247,31 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 
 	if fsrv.Browse != nil {
 		// check sort options
-		for idx, sortOption := range fsrv.Browse.SortOptions {
-			switch idx {
-			case 0:
-				if sortOption != sortByName && sortOption != sortByNameDirFirst && sortOption != sortBySize && sortOption != sortByTime {
-					return fmt.Errorf("the first option must be one of the following: %s, %s, %s, %s, but got %s", sortByName, sortByNameDirFirst, sortBySize, sortByTime, sortOption)
+		var sortBy, sortOrder, sortMethod string
+		for _, sortOption := range fsrv.Browse.SortOptions {
+			switch sortOption {
+			case sortByName, sortByNameDirFirst, sortBySize, sortByTime:
+				if sortBy != "" {
+					return fmt.Errorf("multiple contradictory sort types given: %s and %s", sortBy, sortOption)
+				} else {
+					sortBy = sortOption
 				}
-			case 1:
-				if sortOption != sortOrderAsc && sortOption != sortOrderDesc {
-					return fmt.Errorf("the second option must be one of the following: %s, %s, but got %s", sortOrderAsc, sortOrderDesc, sortOption)
+			case sortOrderAsc, sortOrderDesc:
+				if sortOrder != "" {
+					return fmt.Errorf("multiple contradictory sort orders given: %s and %s", sortOrder, sortOption)
+				} else {
+					sortOrder = sortOption
 				}
-			default:
-				return fmt.Errorf("only max 2 sort options are allowed, but got %d", idx+1)
+			case sortMethodLexicographic, sortMethodNatural:
+				if sortMethod != "" {
+					return fmt.Errorf("multiple contradictory sort methods given: %s and %s", sortMethod, sortOption)
+				} else {
+					sortMethod = sortOption
+				}
 			}
+		}
+		if len(fsrv.Browse.SortOptions) > 0 && sortBy == "" { // If sort options are passed, we expect one of them to be sortBy
+			return fmt.Errorf("no sort type passed, expected one of %s, %s, %s, %s", sortByName, sortByNameDirFirst, sortBySize, sortByTime)
 		}
 	}
 
