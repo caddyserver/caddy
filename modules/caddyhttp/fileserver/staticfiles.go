@@ -30,6 +30,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -268,9 +269,13 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 
 const windowsShortNamePunctuation = "$%'-_@~`!(){}^#&"
 
-func validWindowsShortNamePart(s string) bool {
+// possibleWindowsShortNamePart reports whether s could be part of an 8.3
+// alias. Extended characters are allowed when Windows' allowextchar behavior
+// is enabled, so non-ASCII characters must be accepted here to fail closed.
+func possibleWindowsShortNamePart(s string) bool {
 	for _, c := range s {
-		if (c >= 'a' && c <= 'z') ||
+		if c >= utf8.RuneSelf ||
+			(c >= 'a' && c <= 'z') ||
 			(c >= 'A' && c <= 'Z') ||
 			(c >= '0' && c <= '9') ||
 			strings.ContainsRune(windowsShortNamePunctuation, c) {
@@ -290,8 +295,8 @@ func hasWindowsShortName(p string) bool {
 	}) {
 		component = strings.TrimRight(component, ". ")
 		base, extension, hasExtension := strings.Cut(component, ".")
-		if len(base) > 8 || !validWindowsShortNamePart(base) ||
-			(hasExtension && (len(extension) > 3 || !validWindowsShortNamePart(extension))) {
+		if utf8.RuneCountInString(base) > 8 || !possibleWindowsShortNamePart(base) ||
+			(hasExtension && (utf8.RuneCountInString(extension) > 3 || !possibleWindowsShortNamePart(extension))) {
 			continue
 		}
 

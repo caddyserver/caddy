@@ -34,7 +34,7 @@ func TestFileServerRejectsShortNameInParentComponent(t *testing.T) {
 		"ordinary~name-with-long-suffix.txt",
 		"my f~1.txt",
 		"my file~1.txt",
-		"café~1.txt",
+		"café~name.txt",
 	}
 	for _, name := range ordinaryNames {
 		if err := os.WriteFile(filepath.Join(root, name), []byte(name), 0o600); err != nil {
@@ -51,17 +51,24 @@ func TestFileServerRejectsShortNameInParentComponent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := fsrv.ServeHTTP(
-		httptest.NewRecorder(),
-		newPrecompressedRequest(t, "/PROTEC~1/this-is-a-long-final-filename.txt"),
-		nil,
-	)
-	var handlerErr caddyhttp.HandlerError
-	if !errors.As(err, &handlerErr) {
-		t.Fatalf("expected HandlerError, got %v", err)
-	}
-	if handlerErr.StatusCode != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d", handlerErr.StatusCode, http.StatusBadRequest)
+	for _, requestPath := range []string{
+		"/PROTEC~1/this-is-a-long-final-filename.txt",
+		"/public/caf%C3%A9~1/this-is-a-long-final-filename.txt",
+	} {
+		t.Run(requestPath, func(t *testing.T) {
+			err := fsrv.ServeHTTP(
+				httptest.NewRecorder(),
+				newPrecompressedRequest(t, requestPath),
+				nil,
+			)
+			var handlerErr caddyhttp.HandlerError
+			if !errors.As(err, &handlerErr) {
+				t.Fatalf("expected HandlerError, got %v", err)
+			}
+			if handlerErr.StatusCode != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d", handlerErr.StatusCode, http.StatusBadRequest)
+			}
+		})
 	}
 
 	for _, name := range ordinaryNames {

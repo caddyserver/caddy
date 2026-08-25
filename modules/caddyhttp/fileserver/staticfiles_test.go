@@ -197,8 +197,13 @@ func TestHasWindowsShortName(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "non-ASCII short name shape",
-			path: "/café~1.txt",
+			name: "non-ASCII short name shape in parent component",
+			path: "/public/café~1/this-is-a-long-final-filename.txt",
+			want: true,
+		},
+		{
+			name: "non-ASCII ordinary tilde name",
+			path: "/café~name.txt",
 			want: false,
 		},
 		{
