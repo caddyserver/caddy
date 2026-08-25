@@ -340,7 +340,6 @@ func CreateTestingTransport() *http.Transport {
 	dialer := net.Dialer{
 		Timeout:   5 * time.Second,
 		KeepAlive: 5 * time.Second,
-		DualStack: true,
 	}
 
 	dialContext := func(ctx context.Context, network, addr string) (net.Conn, error) {
