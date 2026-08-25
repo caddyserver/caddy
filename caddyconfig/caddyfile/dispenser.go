@@ -405,10 +405,11 @@ func (d *Dispenser) Reset() {
 	d.nesting = 0
 }
 
-// ArgErr returns an argument error, meaning that another
-// argument was expected but not found. In other words,
-// a line break or open curly brace was encountered instead of
-// an argument.
+// ArgErr returns an argument error, meaning that the wrong
+// number of arguments was given: either a required one was
+// missing, or an extra one was found. If an argument is
+// present but its value is invalid, use Errf or SyntaxErr
+// instead.
 func (d *Dispenser) ArgErr() error {
 	if isOpenCurlyBrace(d.Token()) {
 		return d.Err("unexpected token '{', expecting argument")
