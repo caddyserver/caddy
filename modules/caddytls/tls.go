@@ -46,6 +46,18 @@ func init() {
 var (
 	certCache   *certmagic.Cache
 	certCacheMu sync.RWMutex
+
+	// the TLS app that most recently provisioned the certificate
+	// cache; the cache's GetConfigForCert callback dereferences
+	// this so that reusing the cache across config reloads does
+	// not require replacing its options just to update the callback
+	certCacheApp *TLS
+
+	// the options the certificate cache was last created or
+	// updated with; setting options on a live cache races with
+	// its maintenance routines reading them, so it is only done
+	// when these values actually change
+	certCacheOpts certmagic.CacheOptions
 )
 
 // TLS provides TLS facilities including certificate
@@ -196,7 +208,10 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	// set up a new certificate cache; this (re)loads all certificates
 	cacheOpts := certmagic.CacheOptions{
 		GetConfigForCert: func(cert certmagic.Certificate) (*certmagic.Config, error) {
-			return t.getConfigForName(cert.Names[0]), nil
+			certCacheMu.RLock()
+			tlsApp := certCacheApp
+			certCacheMu.RUnlock()
+			return tlsApp.getConfigForName(cert.Names[0]), nil
 		},
 		Logger: t.logger.Named("cache"),
 	}
@@ -212,10 +227,15 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	}
 
 	certCacheMu.Lock()
+	certCacheApp = t
 	if certCache == nil {
 		certCache = certmagic.NewCache(cacheOpts)
-	} else {
+		certCacheOpts = cacheOpts
+	} else if cacheOpts.Capacity != certCacheOpts.Capacity ||
+		cacheOpts.OCSPCheckInterval != certCacheOpts.OCSPCheckInterval ||
+		cacheOpts.RenewCheckInterval != certCacheOpts.RenewCheckInterval {
 		certCache.SetOptions(cacheOpts)
+		certCacheOpts = cacheOpts
 	}
 	certCacheMu.Unlock()
 
