@@ -19,10 +19,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
-
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -38,17 +34,9 @@ type RequestBody struct {
 	// If more bytes are read, an error with HTTP status 413 is returned.
 	MaxSize int64 `json:"max_size,omitempty"`
 
-	// EXPERIMENTAL. Subject to change/removal.
-	ReadTimeout time.Duration `json:"read_timeout,omitempty"`
-
-	// EXPERIMENTAL. Subject to change/removal.
-	WriteTimeout time.Duration `json:"write_timeout,omitempty"`
-
 	// This field permit to replace body on the fly
 	// EXPERIMENTAL. Subject to change/removal.
 	Set string `json:"set,omitempty"`
-
-	logger *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -57,11 +45,6 @@ func (RequestBody) CaddyModule() caddy.ModuleInfo {
 		ID:  "http.handlers.request_body",
 		New: func() caddy.Module { return new(RequestBody) },
 	}
-}
-
-func (rb *RequestBody) Provision(ctx caddy.Context) error {
-	rb.logger = ctx.Logger()
-	return nil
 }
 
 func (rb RequestBody) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
@@ -82,24 +65,6 @@ func (rb RequestBody) ServeHTTP(w http.ResponseWriter, r *http.Request, next cad
 	}
 	if rb.MaxSize > 0 {
 		r.Body = errorWrapper{http.MaxBytesReader(w, r.Body, rb.MaxSize)}
-	}
-	if rb.ReadTimeout > 0 || rb.WriteTimeout > 0 {
-		//nolint:bodyclose
-		rc := http.NewResponseController(w)
-		if rb.ReadTimeout > 0 {
-			if err := rc.SetReadDeadline(time.Now().Add(rb.ReadTimeout)); err != nil {
-				if c := rb.logger.Check(zapcore.ErrorLevel, "could not set read deadline"); c != nil {
-					c.Write(zap.Error(err))
-				}
-			}
-		}
-		if rb.WriteTimeout > 0 {
-			if err := rc.SetWriteDeadline(time.Now().Add(rb.WriteTimeout)); err != nil {
-				if c := rb.logger.Check(zapcore.ErrorLevel, "could not set write deadline"); c != nil {
-					c.Write(zap.Error(err))
-				}
-			}
-		}
 	}
 	return next.ServeHTTP(w, r)
 }

@@ -1368,7 +1368,7 @@ func (m MatchProtocol) Match(r *http.Request) bool {
 func (m MatchProtocol) MatchWithError(r *http.Request) (bool, error) {
 	switch string(m) {
 	case "grpc":
-		return strings.HasPrefix(r.Header.Get("content-type"), "application/grpc"), nil
+		return strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc"), nil
 	case "https":
 		return r.TLS != nil, nil
 	case "http":

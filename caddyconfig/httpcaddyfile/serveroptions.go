@@ -41,7 +41,12 @@ type serverOptions struct {
 	PacketConnWrappersRaw     []json.RawMessage
 	ReadTimeout               caddy.Duration
 	ReadHeaderTimeout         caddy.Duration
+	ReadIdleTimeout           caddy.Duration
+	ReadMinRate               int64
 	WriteTimeout              caddy.Duration
+	WriteIdleTimeout          caddy.Duration
+	WriteMinRate              int64
+	MaxWriteChunk             int
 	IdleTimeout               caddy.Duration
 	KeepAliveInterval         caddy.Duration
 	KeepAliveIdle             caddy.Duration
@@ -49,6 +54,7 @@ type serverOptions struct {
 	MaxHeaderBytes            int
 	EnableFullDuplex          bool
 	ExpectedUnderscoreHeaders []string
+	ExpectedDotHeaders        []string
 	Protocols                 []string
 	StrictSNIHost             *bool
 	TrustedProxiesRaw         json.RawMessage
@@ -137,6 +143,24 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 					}
 					serverOpts.ReadTimeout = caddy.Duration(dur)
 
+				case "read_body_idle":
+					args := d.RemainingArgs()
+					if len(args) < 1 || len(args) > 2 {
+						return nil, d.ArgErr()
+					}
+					dur, err := caddy.ParseDuration(args[0])
+					if err != nil {
+						return nil, d.Errf("parsing read_body_idle timeout duration: %v", err)
+					}
+					serverOpts.ReadIdleTimeout = caddy.Duration(dur)
+					if len(args) == 2 {
+						rate, err := strconv.ParseInt(args[1], 10, 64)
+						if err != nil {
+							return nil, d.Errf("parsing read_body_idle min_rate bytes/second: %v", err)
+						}
+						serverOpts.ReadMinRate = rate
+					}
+
 				case "read_header":
 					if !d.NextArg() {
 						return nil, d.ArgErr()
@@ -156,6 +180,35 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 						return nil, d.Errf("parsing write timeout duration: %v", err)
 					}
 					serverOpts.WriteTimeout = caddy.Duration(dur)
+
+				case "write_idle":
+					args := d.RemainingArgs()
+					if len(args) < 1 || len(args) > 2 {
+						return nil, d.ArgErr()
+					}
+					dur, err := caddy.ParseDuration(args[0])
+					if err != nil {
+						return nil, d.Errf("parsing write_idle timeout duration: %v", err)
+					}
+					serverOpts.WriteIdleTimeout = caddy.Duration(dur)
+					if len(args) == 2 {
+						rate, err := strconv.ParseInt(args[1], 10, 64)
+						if err != nil {
+							return nil, d.Errf("parsing write_idle min_rate bytes/second: %v", err)
+						}
+						serverOpts.WriteMinRate = rate
+					}
+
+				case "write_max_chunk":
+					var sizeStr string
+					if !d.AllArgs(&sizeStr) {
+						return nil, d.ArgErr()
+					}
+					size, err := humanize.ParseBytes(sizeStr)
+					if err != nil {
+						return nil, d.Errf("parsing write_max_chunk: %v", err)
+					}
+					serverOpts.MaxWriteChunk = int(size)
 
 				case "idle":
 					if !d.NextArg() {
@@ -225,6 +278,13 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 				return nil, d.ArgErr()
 			}
 			serverOpts.ExpectedUnderscoreHeaders = args
+
+		case "expected_dot_headers":
+			args := d.RemainingArgs()
+			if len(args) == 0 {
+				return nil, d.ArgErr()
+			}
+			serverOpts.ExpectedDotHeaders = args
 
 		case "log_credentials":
 			if d.NextArg() {
@@ -381,7 +441,12 @@ func applyServerOptions(
 		server.PacketConnWrappersRaw = opts.PacketConnWrappersRaw
 		server.ReadTimeout = opts.ReadTimeout
 		server.ReadHeaderTimeout = opts.ReadHeaderTimeout
+		server.ReadIdleTimeout = opts.ReadIdleTimeout
+		server.ReadMinRate = opts.ReadMinRate
 		server.WriteTimeout = opts.WriteTimeout
+		server.WriteIdleTimeout = opts.WriteIdleTimeout
+		server.WriteMinRate = opts.WriteMinRate
+		server.MaxWriteChunk = opts.MaxWriteChunk
 		server.IdleTimeout = opts.IdleTimeout
 		server.KeepAliveInterval = opts.KeepAliveInterval
 		server.KeepAliveIdle = opts.KeepAliveIdle
@@ -389,6 +454,7 @@ func applyServerOptions(
 		server.MaxHeaderBytes = opts.MaxHeaderBytes
 		server.EnableFullDuplex = opts.EnableFullDuplex
 		server.ExpectedUnderscoreHeaders = opts.ExpectedUnderscoreHeaders
+		server.ExpectedDotHeaders = opts.ExpectedDotHeaders
 		server.Protocols = opts.Protocols
 		server.StrictSNIHost = opts.StrictSNIHost
 		server.TrustedProxiesRaw = opts.TrustedProxiesRaw

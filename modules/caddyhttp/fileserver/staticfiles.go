@@ -768,6 +768,7 @@ func calculateEtag(d os.FileInfo) string {
 	var sb strings.Builder
 	sb.WriteRune('"')
 	sb.WriteString(strconv.FormatInt(mtime.UnixNano(), 36))
+	sb.WriteRune('-')
 	sb.WriteString(strconv.FormatInt(d.Size(), 36))
 	sb.WriteRune('"')
 	return sb.String()
