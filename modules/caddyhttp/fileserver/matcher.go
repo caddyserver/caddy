@@ -622,7 +622,7 @@ func isCELTryFilesLiteral(e ast.Expr) bool {
 					return false
 				}
 			case "try_policy", "root":
-				if !(isCELStringExpr(mapVal)) {
+				if !isCELStringExpr(mapVal) {
 					return false
 				}
 			default:
