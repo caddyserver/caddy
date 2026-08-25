@@ -215,8 +215,19 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 			newPath = repl.ReplaceAll(path, "")
 		}
 
+		// a fragment may have snuck into the path component during
+		// replacements; everything after the first '#' is fragment
+		// (RFC 3986 section 4.2), which is never sent to the server,
+		// so drop it. this mirrors how a literal '#' in the configured
+		// URI is handled by the scan above, and prevents the fragment
+		// from being mistaken for part of the path or query below.
+		if before, _, found := strings.Cut(newPath, "#"); found {
+			newPath = before
+		}
+
 		// before continuing, we need to check if a query string
 		// snuck into the path component during replacements
+		queryInjected := false
 		if before, after, found := strings.Cut(newPath, "?"); found {
 			// recompute; new path contains a query string
 			var injectedQuery string
@@ -233,6 +244,13 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 				injectedQuery = strings.ReplaceAll(injectedQuery, "{", "%7B")
 				injectedQuery = strings.ReplaceAll(injectedQuery, "}", "%7D")
 				query = injectedQuery
+
+				// the replacement value spoke about the query string, so the
+				// query must be written back even though the configured URI
+				// had no literal '?' to set qsStart. an injected query that
+				// is empty (a value ending in '?') clears the query, which is
+				// consistent with configuring a bare '?'.
+				queryInjected = true
 			}
 		}
 
@@ -253,7 +271,7 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 			}
 			r.URL.RawPath = "" // force recomputing when EscapedPath() is called
 		}
-		if qsStart >= 0 {
+		if qsStart >= 0 || queryInjected {
 			r.URL.RawQuery = newQuery
 		}
 		if fragStart >= 0 {
@@ -344,6 +362,12 @@ func buildQueryString(qs string, repl *caddy.Replacer) string {
 		// determine the end of this component, which will be at
 		// the next equal sign or ampersand, whichever comes first
 		nextEq, nextAmp := strings.Index(qs, "="), strings.Index(qs, "&")
+		if !wroteVal {
+			// we are consuming a value, and '=' only delimits a key from
+			// its value; any further '=' bytes are literal data, such as
+			// base64 padding in a signature. only '&' ends a value.
+			nextEq = -1
+		}
 		ampIsNext := nextAmp >= 0 && (nextAmp < nextEq || nextEq < 0)
 		end := len(qs) // assume no delimiter remains...
 		if ampIsNext {

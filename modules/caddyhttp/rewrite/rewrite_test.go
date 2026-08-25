@@ -396,6 +396,102 @@ func TestRewrite(t *testing.T) {
 			input:  newRequestWithHeader(t, "GET", "/anything", "X-Fwd", "ok?path={file./etc/passwd}"),
 			expect: newRequest(t, "GET", "/serve/ok?path=%7Bfile./etc/passwd%7D"),
 		},
+
+		// '=' delimits a key from its value only once; any further '=' bytes
+		// are literal data, such as base64 padding in a signature.
+		{
+			rule:   Rewrite{URI: "?sig=YWJjZA=="},
+			input:  newRequest(t, "GET", "/hello"),
+			expect: newRequest(t, "GET", "/hello?sig=YWJjZA=="),
+		},
+		{
+			rule:   Rewrite{URI: "?x=1&sig=YWJjZA=="},
+			input:  newRequest(t, "GET", "/hello"),
+			expect: newRequest(t, "GET", "/hello?x=1&sig=YWJjZA=="),
+		},
+
+		// a query string that arrives via a replacement value is honored even
+		// though the configured URI has no literal '?' (see issue #5208).
+		{
+			rule:   Rewrite{URI: "{http.request.header.X-Accel-Redirect}"},
+			input:  newRequestWithHeader(t, "GET", "/orig", "X-Accel-Redirect", "/hello?some=param&some_other=param"),
+			expect: newRequest(t, "GET", "/hello?some=param&some_other=param"),
+		},
+		{
+			// an injected query replaces the original one, as a configured query would
+			rule:   Rewrite{URI: "{http.request.header.X-Accel-Redirect}"},
+			input:  newRequestWithHeader(t, "GET", "/orig?keep=me", "X-Accel-Redirect", "/hello?some=param"),
+			expect: newRequest(t, "GET", "/hello?some=param"),
+		},
+		{
+			// a value ending in '?' clears the query, same as configuring a bare '?'
+			rule:   Rewrite{URI: "{http.request.header.X-Accel-Redirect}"},
+			input:  newRequestWithHeader(t, "GET", "/orig?keep=me", "X-Accel-Redirect", "/hello?"),
+			expect: newRequest(t, "GET", "/hello"),
+		},
+		{
+			// no '?' in the value means the query is not touched
+			rule:   Rewrite{URI: "{http.request.header.X-Accel-Redirect}"},
+			input:  newRequestWithHeader(t, "GET", "/orig?keep=me", "X-Accel-Redirect", "/hello"),
+			expect: newRequest(t, "GET", "/hello?keep=me"),
+		},
+		{
+			// an explicitly configured query still wins over an injected one
+			rule:   Rewrite{URI: "{http.request.header.X-Accel-Redirect}?a=b"},
+			input:  newRequestWithHeader(t, "GET", "/orig", "X-Accel-Redirect", "/hello?some=param"),
+			expect: newRequest(t, "GET", "/hello?a=b"),
+		},
+		{
+			// an escaped '?' in the request path does not split the URI, so the
+			// implicit rewrites of try_files and php_fastcgi stay safe
+			rule:   Rewrite{URI: "{http.request.uri.path}"},
+			input:  newRequest(t, "GET", "/bar%3Fbaz?keep=me"),
+			expect: newRequest(t, "GET", "/bar%3Fbaz?keep=me"),
+		},
+		{
+			// an S3 presigned URL arriving via a replacement value survives intact
+			rule:   Rewrite{URI: "{http.request.header.X-Ph}"},
+			input:  newRequestWithHeader(t, "GET", "/orig", "X-Ph", "/f.jpg?X-Amz-Credential=AK%2Ffr-par%2Fs3&X-Amz-Signature=YWJjZA=="),
+			expect: newRequest(t, "GET", "/f.jpg?X-Amz-Credential=AK%2Ffr-par%2Fs3&X-Amz-Signature=YWJjZA=="),
+		},
+
+		// a fragment that arrives via a replacement value is dropped: everything
+		// after '#' is fragment (RFC 3986 section 4.2) and is never sent to the
+		// server, so it must not leak into the path or query.
+		{
+			rule:   Rewrite{URI: "{http.request.header.X-Ph}"},
+			input:  newRequestWithHeader(t, "GET", "/orig", "X-Ph", "/hello#frag"),
+			expect: newRequest(t, "GET", "/hello"),
+		},
+		{
+			rule:   Rewrite{URI: "{http.request.header.X-Ph}"},
+			input:  newRequestWithHeader(t, "GET", "/orig", "X-Ph", "/hello?a=b#frag"),
+			expect: newRequest(t, "GET", "/hello?a=b"),
+		},
+		{
+			// a '?' after the injected '#' is fragment, not a query delimiter
+			rule:   Rewrite{URI: "{http.request.header.X-Ph}"},
+			input:  newRequestWithHeader(t, "GET", "/orig", "X-Ph", "/hello#frag?notquery"),
+			expect: newRequest(t, "GET", "/hello"),
+		},
+		{
+			// a configured fragment still wins over an injected one
+			rule:   Rewrite{URI: "{http.request.header.X-Ph}#cfgfrag"},
+			input:  newRequestWithHeader(t, "GET", "/orig", "X-Ph", "/hello?a=b#frag"),
+			expect: newRequest(t, "GET", "/hello?a=b#cfgfrag"),
+		},
+		{
+			// an escaped '#' is not a fragment delimiter and is preserved
+			rule:   Rewrite{URI: "{http.request.header.X-Ph}"},
+			input:  newRequestWithHeader(t, "GET", "/orig", "X-Ph", "/hello%23frag"),
+			expect: newRequest(t, "GET", "/hello%23frag"),
+		},
+		{
+			// a fragment-only value leaves the original query alone
+			rule:   Rewrite{URI: "{http.request.header.X-Ph}"},
+			input:  newRequestWithHeader(t, "GET", "/orig?keep=me", "X-Ph", "/hello#frag"),
+			expect: newRequest(t, "GET", "/hello?keep=me"),
+		},
 	} {
 		// copy the original input just enough so that we can
 		// compare it after the rewrite to see if it changed
