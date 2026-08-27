@@ -311,16 +311,27 @@ func (ech *ECH) updateKeyList() {
 }
 
 // publishECHConfigs publishes any configs that are configured for publication and which haven't been published already.
-func (t *TLS) publishECHConfigs(logger *zap.Logger) error {
+func (t *TLS) publishECHConfigs(ctx context.Context, logger *zap.Logger) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if t.ctx.Context == nil {
+		return nil
+	}
 	// make publication exclusive, since we don't need to repeat this unnecessarily
 	storage := t.ctx.Storage()
+	if storage == nil {
+		return nil
+	}
 	const echLockName = "ech_publish"
-	if err := storage.Lock(t.ctx, echLockName); err != nil {
+	if err := storage.Lock(ctx, echLockName); err != nil {
 		return err
 	}
 	defer func() {
-		if err := storage.Unlock(t.ctx, echLockName); err != nil {
-			logger.Error("unable to unlock ECH provisioning in storage", zap.Error(err))
+		if err := storage.Unlock(context.WithoutCancel(ctx), echLockName); err != nil {
+			if !errors.Is(err, context.Canceled) && ctx.Err() == nil {
+				logger.Error("unable to unlock ECH provisioning in storage", zap.Error(err))
+			}
 		}
 	}()
 
@@ -446,7 +457,7 @@ func (t *TLS) publishECHConfigs(logger *zap.Logger) error {
 
 			// publish this ECH config list with this publisher
 			pubTime := time.Now()
-			err := publisher.PublishECHConfigList(t.ctx, dnsNamesToPublish, echCfgListBin)
+			err := publisher.PublishECHConfigList(ctx, dnsNamesToPublish, echCfgListBin)
 
 			var publishErrs PublishECHConfigListErrors
 			if errors.As(err, &publishErrs) {

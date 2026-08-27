@@ -137,9 +137,10 @@ type TLS struct {
 	certificateLoaders []CertificateLoader
 	automateNames      map[string]struct{}
 	ctx                caddy.Context
+	bgCtx              context.Context
+	bgCancel           context.CancelFunc
+	bgWg               sync.WaitGroup
 	storageCleanTicker *time.Ticker
-	storageCleanCancel context.CancelFunc
-	storageCleanWg     sync.WaitGroup
 	logger             *zap.Logger
 	events             *caddyevents.App
 
@@ -413,6 +414,10 @@ func (t *TLS) Start() error {
 		}
 	}
 
+	if t.bgCtx == nil {
+		t.bgCtx, t.bgCancel = context.WithCancel(t.ctx.Context)
+	}
+
 	// now that we are running, and all manual certificates have
 	// been loaded, time to load the automated/managed certificates
 	err := t.Manage(t.automateNames)
@@ -425,34 +430,51 @@ func (t *TLS) Start() error {
 
 		// publish ECH configs in the background; does not need to block
 		// server startup, as it could take a while; then keep keys rotated
-		go func() {
+		t.bgWg.Add(1)
+		go func(ctx context.Context) {
+			defer t.bgWg.Done()
+			defer func() {
+				if err := recover(); err != nil {
+					log.Printf("[PANIC] tls ech publisher: %v\n%s", err, debug.Stack())
+				}
+			}()
+
 			// publish immediately first
-			if err := t.publishECHConfigs(echLogger); err != nil {
-				echLogger.Error("publication(s) failed", zap.Error(err))
+			if err := t.publishECHConfigs(ctx, echLogger); err != nil {
+				if !errors.Is(err, context.Canceled) && ctx.Err() == nil {
+					echLogger.Error("publication(s) failed", zap.Error(err))
+				}
 			}
+
+			ticker := time.NewTicker(1 * time.Hour)
+			defer ticker.Stop()
 
 			// then every so often, rotate and publish if needed
 			// (both of these functions only do something if needed)
 			for {
 				select {
-				case <-time.After(1 * time.Hour):
+				case <-ticker.C:
 					// ensure old keys are rotated out
 					t.EncryptedClientHello.configsMu.Lock()
-					err = t.EncryptedClientHello.rotateECHKeys(t.ctx, echLogger, false)
+					err := t.EncryptedClientHello.rotateECHKeys(t.ctx, echLogger, false)
 					t.EncryptedClientHello.configsMu.Unlock()
 					if err != nil {
-						echLogger.Error("rotating ECH configs failed", zap.Error(err))
+						if !errors.Is(err, context.Canceled) && ctx.Err() == nil {
+							echLogger.Error("rotating ECH configs failed", zap.Error(err))
+						}
 						continue
 					}
-					err := t.publishECHConfigs(echLogger)
+					err = t.publishECHConfigs(ctx, echLogger)
 					if err != nil {
-						echLogger.Error("publication(s) failed", zap.Error(err))
+						if !errors.Is(err, context.Canceled) && ctx.Err() == nil {
+							echLogger.Error("publication(s) failed", zap.Error(err))
+						}
 					}
-				case <-t.ctx.Done():
+				case <-ctx.Done():
 					return
 				}
 			}
-		}()
+		}(t.bgCtx)
 	}
 
 	if !t.DisableStorageClean {
@@ -466,14 +488,16 @@ func (t *TLS) Start() error {
 
 // Stop stops the TLS module and cleans up any allocations.
 func (t *TLS) Stop() error {
-	// stop the storage cleaner goroutine and ticker
-	if t.storageCleanCancel != nil {
-		t.storageCleanCancel()
+	// cancel all background goroutines (storage cleaner, ECH rotation/publication, etc.)
+	if t.bgCancel != nil {
+		t.bgCancel()
 	}
 	if t.storageCleanTicker != nil {
 		t.storageCleanTicker.Stop()
 	}
-	t.storageCleanWg.Wait()
+	// wait for all background goroutines to finish before returning,
+	// ensuring no background storage users are active when module Cleanup() runs
+	t.bgWg.Wait()
 	return nil
 }
 
@@ -910,27 +934,28 @@ func (t *TLS) HasCertificateForSubject(subject string) bool {
 // known storage units if it was not recently done, and then runs the
 // operation at every tick from t.storageCleanTicker.
 func (t *TLS) keepStorageClean() {
-	cleanCtx, cleanCancel := context.WithCancel(t.ctx.Context)
-	t.storageCleanCancel = cleanCancel
+	if t.bgCtx == nil {
+		t.bgCtx, t.bgCancel = context.WithCancel(t.ctx.Context)
+	}
 	t.storageCleanTicker = time.NewTicker(t.storageCleanInterval())
-	t.storageCleanWg.Add(1)
-	go func() {
-		defer t.storageCleanWg.Done()
+	t.bgWg.Add(1)
+	go func(ctx context.Context) {
+		defer t.bgWg.Done()
 		defer func() {
 			if err := recover(); err != nil {
 				log.Printf("[PANIC] storage cleaner: %v\n%s", err, debug.Stack())
 			}
 		}()
-		t.cleanStorageUnits(cleanCtx)
+		t.cleanStorageUnits(ctx)
 		for {
 			select {
-			case <-cleanCtx.Done():
+			case <-ctx.Done():
 				return
 			case <-t.storageCleanTicker.C:
-				t.cleanStorageUnits(cleanCtx)
+				t.cleanStorageUnits(ctx)
 			}
 		}
-	}()
+	}(t.bgCtx)
 }
 
 func (t *TLS) cleanStorageUnits(ctx context.Context) {

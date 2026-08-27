@@ -57,3 +57,28 @@ func TestTLSStorageCleanUnitsCanceledContext(t *testing.T) {
 	// cleanStorageUnits with canceled context should return immediately
 	tlsApp.cleanStorageUnits(ctx.Context)
 }
+
+func TestTLSECHStopSynchronization(t *testing.T) {
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+
+	tlsApp := &TLS{
+		ctx:                  ctx,
+		logger:               zap.NewNop(),
+		Automation:           &AutomationConfig{},
+		EncryptedClientHello: &ECH{},
+		DisableStorageClean:  true,
+	}
+
+	err := tlsApp.Start()
+	if err != nil {
+		t.Fatalf("TLS.Start failed: %v", err)
+	}
+
+	// Stop must cancel ECH context and wait for background ECH worker to exit
+	err = tlsApp.Stop()
+	if err != nil {
+		t.Fatalf("TLS.Stop failed: %v", err)
+	}
+}
+
