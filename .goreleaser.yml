@@ -90,7 +90,7 @@ builds:
 
 signs:
   - cmd: cosign
-    signature: "${artifact}.sigstore"
+    signature: "${artifact}.sigstore.json"
     args: ["sign-blob", "--yes", "--bundle=${signature}", "${artifact}"]
     artifacts: all
 
