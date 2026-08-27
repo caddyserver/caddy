@@ -139,7 +139,7 @@ type TLS struct {
 	ctx                caddy.Context
 	bgCtx              context.Context
 	bgCancel           context.CancelFunc
-	bgWg               sync.WaitGroup
+	bgWg               *sync.WaitGroup
 	storageCleanTicker *time.Ticker
 	logger             *zap.Logger
 	events             *caddyevents.App
@@ -417,6 +417,9 @@ func (t *TLS) Start() error {
 	if t.bgCtx == nil {
 		t.bgCtx, t.bgCancel = context.WithCancel(t.ctx.Context)
 	}
+	if t.bgWg == nil {
+		t.bgWg = new(sync.WaitGroup)
+	}
 
 	// now that we are running, and all manual certificates have
 	// been loaded, time to load the automated/managed certificates
@@ -497,7 +500,9 @@ func (t *TLS) Stop() error {
 	}
 	// wait for all background goroutines to finish before returning,
 	// ensuring no background storage users are active when module Cleanup() runs
-	t.bgWg.Wait()
+	if t.bgWg != nil {
+		t.bgWg.Wait()
+	}
 	return nil
 }
 
@@ -936,6 +941,9 @@ func (t *TLS) HasCertificateForSubject(subject string) bool {
 func (t *TLS) keepStorageClean() {
 	if t.bgCtx == nil {
 		t.bgCtx, t.bgCancel = context.WithCancel(t.ctx.Context)
+	}
+	if t.bgWg == nil {
+		t.bgWg = new(sync.WaitGroup)
 	}
 	t.storageCleanTicker = time.NewTicker(t.storageCleanInterval())
 	t.bgWg.Add(1)
