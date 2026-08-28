@@ -119,6 +119,18 @@ func (su *SRVUpstreams) Provision(ctx caddy.Context) error {
 	return nil
 }
 
+func (su *SRVUpstreams) ResetCache(r *http.Request) error {
+	srvsMu.Lock()
+	if r == nil {
+		srvs = make(map[string]srvLookup)
+	} else {
+		suAddr, _, _, _ := su.expandedAddr(r)
+		delete(srvs, suAddr)
+	}
+	srvsMu.Unlock()
+	return nil
+}
+
 func (su SRVUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 	suAddr, service, proto, name := su.expandedAddr(r)
 
@@ -470,7 +482,9 @@ func (mu *MultiUpstreams) Provision(ctx caddy.Context) error {
 		if err != nil {
 			return fmt.Errorf("loading upstream source modules: %v", err)
 		}
-		for _, src := range mod.([]any) {
+		sources := mod.([]any)
+		mu.sources = make([]UpstreamSource, 0, len(sources))
+		for _, src := range sources {
 			mu.sources = append(mu.sources, src.(UpstreamSource))
 		}
 	}
@@ -523,6 +537,7 @@ type UpstreamResolver struct {
 // ParseAddresses parses all the configured network addresses
 // and ensures they're ready to be used.
 func (u *UpstreamResolver) ParseAddresses() error {
+	u.netAddrs = make([]caddy.NetworkAddress, 0, len(u.Addresses))
 	for _, v := range u.Addresses {
 		addr, err := caddy.ParseNetworkAddressWithDefaults(v, "udp", 53)
 		if err != nil {
@@ -554,8 +569,9 @@ var (
 
 // Interface guards
 var (
-	_ caddy.Provisioner = (*SRVUpstreams)(nil)
-	_ UpstreamSource    = (*SRVUpstreams)(nil)
-	_ caddy.Provisioner = (*AUpstreams)(nil)
-	_ UpstreamSource    = (*AUpstreams)(nil)
+	_ caddy.Provisioner     = (*SRVUpstreams)(nil)
+	_ UpstreamSource        = (*SRVUpstreams)(nil)
+	_ CachingUpstreamSource = (*SRVUpstreams)(nil)
+	_ caddy.Provisioner     = (*AUpstreams)(nil)
+	_ UpstreamSource        = (*AUpstreams)(nil)
 )

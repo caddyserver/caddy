@@ -445,6 +445,11 @@ block2 {
 			expect:      "block {respond \"All braces should remain: {{now | date `2006`}}\"}",
 		},
 		{
+			description: "Preserve quoted brace arguments",
+			input:       "block {\n\trespond \"{\"\n\trespond \"}\"\n}",
+			expect:      "block {\n\trespond \"{\"\n\trespond \"}\"\n}",
+		},
+		{
 			description: "Preserve quoted backticks and backticked quotes",
 			input:       "block { respond \"`\" } block { respond `\"`}",
 			expect:      "block {\n\trespond \"`\"\n}\n\nblock {\n\trespond `\"`\n}",

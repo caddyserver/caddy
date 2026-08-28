@@ -1,0 +1,76 @@
+:80 {
+	@books url_pattern /books/:id
+	respond @books "book {http.url_pattern.pathname.id}"
+
+	@scoped url_pattern /api/:version/* {
+		base_url https://example.com
+		ignore_case
+	}
+	respond @scoped "scoped"
+
+	@absolute url_pattern https://example.com/users/:name
+	respond @absolute "user {http.url_pattern.pathname.name}"
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"url_pattern": {
+										"pattern": "/books/:id"
+									}
+								}
+							],
+							"handle": [
+								{
+									"body": "book {http.url_pattern.pathname.id}",
+									"handler": "static_response"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"url_pattern": {
+										"pattern": "/api/:version/*",
+										"base_url": "https://example.com",
+										"ignore_case": true
+									}
+								}
+							],
+							"handle": [
+								{
+									"body": "scoped",
+									"handler": "static_response"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"url_pattern": {
+										"pattern": "https://example.com/users/:name"
+									}
+								}
+							],
+							"handle": [
+								{
+									"body": "user {http.url_pattern.pathname.name}",
+									"handler": "static_response"
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

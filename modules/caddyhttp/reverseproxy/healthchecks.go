@@ -438,9 +438,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 	// may be expected by handlers of this request
 	ctx := h.ctx.Context
 	ctx = context.WithValue(ctx, caddy.ReplacerCtxKey, caddy.NewReplacer())
-	ctx = context.WithValue(ctx, caddyhttp.VarsCtxKey, map[string]any{
-		dialInfoVarKey: dialInfo,
-	})
+	ctx = context.WithValue(ctx, dialInfoCtxKey, dialInfo)
 	req, err := http.NewRequestWithContext(ctx, h.HealthChecks.Active.Method, u.String(), requestBody)
 	if err != nil {
 		return fmt.Errorf("making request: %v", err)
@@ -463,7 +461,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 
 	markUnhealthy := func() {
 		// increment failures and then check if it has reached the threshold to mark unhealthy
-		err := upstream.Host.countHealthFail(1)
+		err := upstream.countHealthFail(1)
 		if err != nil {
 			if c := h.HealthChecks.Active.logger.Check(zapcore.ErrorLevel, "could not count active health failure"); c != nil {
 				c.Write(
@@ -473,11 +471,11 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 			}
 			return
 		}
-		if upstream.Host.activeHealthFails() >= h.HealthChecks.Active.Fails {
+		if upstream.activeHealthFails() >= h.HealthChecks.Active.Fails {
 			// dispatch an event that the host newly became unhealthy
 			if upstream.setHealthy(false) {
 				h.events.Emit(h.ctx, "unhealthy", map[string]any{"host": hostAddr})
-				upstream.Host.resetHealth()
+				upstream.resetHealth()
 			}
 		}
 	}
@@ -494,13 +492,13 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 			}
 			return
 		}
-		if upstream.Host.activeHealthPasses() >= h.HealthChecks.Active.Passes {
+		if upstream.activeHealthPasses() >= h.HealthChecks.Active.Passes {
 			if upstream.setHealthy(true) {
 				if c := h.HealthChecks.Active.logger.Check(zapcore.InfoLevel, "host is up"); c != nil {
 					c.Write(zap.String("host", hostAddr))
 				}
 				h.events.Emit(h.ctx, "healthy", map[string]any{"host": hostAddr})
-				upstream.Host.resetHealth()
+				upstream.resetHealth()
 			}
 		}
 	}
@@ -522,7 +520,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 		body = io.LimitReader(body, h.HealthChecks.Active.MaxSize)
 	}
 	defer func() {
-		// drain any remaining body so connection could be re-used
+		// drain any remaining body so connection could be reused
 		_, _ = io.Copy(io.Discard, body)
 		resp.Body.Close()
 	}()

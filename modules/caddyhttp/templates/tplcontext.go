@@ -312,35 +312,32 @@ func (c TemplateContext) Host() (string, error) {
 	return host, nil
 }
 
-// funcStripHTML returns s without HTML tags. It is fairly naive
-// but works with most valid HTML inputs.
+// funcStripHTML returns s without HTML tags. Similar to PHP's strip_tags()
 func (TemplateContext) funcStripHTML(s string) string {
 	var buf bytes.Buffer
-	var inTag, inQuotes bool
-	var tagStart int
-	for i, ch := range s {
-		if inTag {
-			if ch == '>' && !inQuotes {
-				inTag = false
-			} else if ch == '<' && !inQuotes {
-				// false start
-				buf.WriteString(s[tagStart:i])
-				tagStart = i
-			} else if ch == '"' {
-				inQuotes = !inQuotes
+	depth := 0
+	var quoteChar rune
+	for _, ch := range s {
+		switch {
+		case depth > 0 && quoteChar == 0 && (ch == '"' || ch == '\''):
+			// entering a quoted attribute value
+			quoteChar = ch
+		case depth > 0 && ch == quoteChar:
+			// leaving a quoted attribute value
+			quoteChar = 0
+		case ch == '<' && quoteChar == 0:
+			depth++
+		case ch == '>' && quoteChar == 0:
+			if depth > 0 {
+				depth--
+			} else {
+				buf.WriteRune(ch) // stray '>' with no opening '<', keep it
 			}
-			continue
+		default:
+			if depth == 0 {
+				buf.WriteRune(ch)
+			}
 		}
-		if ch == '<' {
-			inTag = true
-			tagStart = i
-			continue
-		}
-		buf.WriteRune(ch)
-	}
-	if inTag {
-		// false start
-		buf.WriteString(s[tagStart:])
 	}
 	return buf.String()
 }

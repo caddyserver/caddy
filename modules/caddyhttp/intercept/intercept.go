@@ -97,8 +97,6 @@ var bufPool = sync.Pool{
 	},
 }
 
-// TODO: handle status code replacement
-//
 // EXPERIMENTAL: Subject to change or removal.
 type interceptedResponseHandler struct {
 	caddyhttp.ResponseRecorder
@@ -106,17 +104,6 @@ type interceptedResponseHandler struct {
 	handler      caddyhttp.ResponseHandler
 	handlerIndex int
 	statusCode   int
-}
-
-// EXPERIMENTAL: Subject to change or removal.
-func (irh interceptedResponseHandler) WriteHeader(statusCode int) {
-	if irh.statusCode != 0 && (statusCode < 100 || statusCode >= 200) {
-		irh.ResponseRecorder.WriteHeader(irh.statusCode)
-
-		return
-	}
-
-	irh.ResponseRecorder.WriteHeader(statusCode)
 }
 
 // EXPERIMENTAL: Subject to change or removal.
@@ -142,7 +129,7 @@ func (ir Intercept) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 			rec.handlerIndex = i
 
 			// if configured to only change the status code,
-			// do that then stream
+			// buffer the response so we can substitute the status
 			if statusCodeStr := rh.StatusCode.String(); statusCodeStr != "" {
 				sc, err := strconv.Atoi(repl.ReplaceAll(statusCodeStr, ""))
 				if err != nil {
@@ -150,6 +137,8 @@ func (ir Intercept) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 				} else {
 					rec.statusCode = sc
 				}
+
+				return true
 			}
 
 			return rec.statusCode == 0
@@ -174,6 +163,23 @@ func (ir Intercept) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 
 	if c := ir.logger.Check(zapcore.DebugLevel, "handling response"); c != nil {
 		c.Write(zap.Int("handler", rec.handlerIndex))
+	}
+
+	// replace_status only: no routes to execute, just substitute status and write body
+	if rec.handler.Routes == nil {
+		if rec.statusCode == 0 {
+			w.WriteHeader(rec.Status())
+		} else {
+			w.WriteHeader(rec.statusCode)
+		}
+
+		if buf.Len() > 0 {
+			_, err := io.Copy(w, buf)
+
+			return err
+		}
+
+		return nil
 	}
 
 	// response recorder doesn't create a new copy of the original headers, they're
@@ -297,13 +303,8 @@ func (i *Intercept) FinalizeUnmarshalCaddyfile(helper httpcaddyfile.Helper) erro
 		d.Next()
 		args := d.RemainingArgs()
 
-		// TODO: Remove this check at some point in the future
-		if len(args) == 2 {
-			return d.Errf("configuring 'handle_response' for status code replacement is no longer supported. Use 'replace_status' instead.")
-		}
-
 		if len(args) > 1 {
-			return d.Errf("too many arguments for 'handle_response': %s", args)
+			return d.Errf("too many arguments for 'handle_response': only a single response matcher name is allowed, but got: %s", args)
 		}
 
 		var matcher *caddyhttp.ResponseMatcher

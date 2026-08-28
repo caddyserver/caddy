@@ -279,9 +279,11 @@ func validateTestPrerequisites(tc *Tester) error {
 			return err
 		}
 		tc.t.Cleanup(func() {
+			_ = f.Close()
 			os.Remove(f.Name()) //nolint:gosec // false positive, filename comes from std lib, no path traversal
 		})
 		if _, err := fmt.Fprintf(f, initConfig, tc.config.AdminPort); err != nil {
+			_ = f.Close()
 			return err
 		}
 
@@ -338,7 +340,6 @@ func CreateTestingTransport() *http.Transport {
 	dialer := net.Dialer{
 		Timeout:   5 * time.Second,
 		KeepAlive: 5 * time.Second,
-		DualStack: true,
 	}
 
 	dialContext := func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -518,7 +519,7 @@ func (tc *Tester) AssertResponseCode(req *http.Request, expectedStatusCode int) 
 	return resp
 }
 
-// AssertResponse request a URI and assert the status code and the body contains a string
+// AssertResponse requests a URI and asserts the status code and body.
 func (tc *Tester) AssertResponse(req *http.Request, expectedStatusCode int, expectedBody string) (*http.Response, string) {
 	tc.t.Helper()
 
@@ -541,7 +542,7 @@ func (tc *Tester) AssertResponse(req *http.Request, expectedStatusCode int, expe
 
 // Verb specific test functions
 
-// AssertGetResponse GET a URI and expect a statusCode and body text
+// AssertGetResponse requests a URI with GET and expects a status code and body text.
 func (tc *Tester) AssertGetResponse(requestURI string, expectedStatusCode int, expectedBody string) (*http.Response, string) {
 	tc.t.Helper()
 
@@ -553,7 +554,7 @@ func (tc *Tester) AssertGetResponse(requestURI string, expectedStatusCode int, e
 	return tc.AssertResponse(req, expectedStatusCode, expectedBody)
 }
 
-// AssertDeleteResponse request a URI and expect a statusCode and body text
+// AssertDeleteResponse requests a URI with DELETE and expects a status code and body text.
 func (tc *Tester) AssertDeleteResponse(requestURI string, expectedStatusCode int, expectedBody string) (*http.Response, string) {
 	tc.t.Helper()
 
@@ -565,7 +566,7 @@ func (tc *Tester) AssertDeleteResponse(requestURI string, expectedStatusCode int
 	return tc.AssertResponse(req, expectedStatusCode, expectedBody)
 }
 
-// AssertPostResponseBody POST to a URI and assert the response code and body
+// AssertPostResponseBody requests a URI with POST and asserts the response code and body.
 func (tc *Tester) AssertPostResponseBody(requestURI string, requestHeaders []string, requestBody *bytes.Buffer, expectedStatusCode int, expectedBody string) (*http.Response, string) {
 	tc.t.Helper()
 
@@ -580,7 +581,7 @@ func (tc *Tester) AssertPostResponseBody(requestURI string, requestHeaders []str
 	return tc.AssertResponse(req, expectedStatusCode, expectedBody)
 }
 
-// AssertPutResponseBody PUT to a URI and assert the response code and body
+// AssertPutResponseBody requests a URI with PUT and asserts the response code and body.
 func (tc *Tester) AssertPutResponseBody(requestURI string, requestHeaders []string, requestBody *bytes.Buffer, expectedStatusCode int, expectedBody string) (*http.Response, string) {
 	tc.t.Helper()
 
@@ -595,7 +596,7 @@ func (tc *Tester) AssertPutResponseBody(requestURI string, requestHeaders []stri
 	return tc.AssertResponse(req, expectedStatusCode, expectedBody)
 }
 
-// AssertPatchResponseBody PATCH to a URI and assert the response code and body
+// AssertPatchResponseBody requests a URI with PATCH and asserts the response code and body.
 func (tc *Tester) AssertPatchResponseBody(requestURI string, requestHeaders []string, requestBody *bytes.Buffer, expectedStatusCode int, expectedBody string) (*http.Response, string) {
 	tc.t.Helper()
 

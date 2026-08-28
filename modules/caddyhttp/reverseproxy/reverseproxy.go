@@ -449,6 +449,39 @@ func (h *Handler) Cleanup() error {
 	return err
 }
 
+// bodyNopCloserIfNotRead wraps a request body to prevent closing if not read, i.e., when
+// dialing to upstream fails.
+// It will close the body as normal if the body is read.
+type bodyNopCloserIfNotRead struct {
+	io.ReadCloser
+	read int // tracks the number of bytes read, -1 when first Read returns 0, io.EOF
+}
+
+func (b *bodyNopCloserIfNotRead) Read(p []byte) (int, error) {
+	if b.read == -1 {
+		return 0, io.EOF
+	}
+	n, err := b.ReadCloser.Read(p)
+	// first Read returns 0, io.EOF
+	if b.read == 0 && n == 0 && err == io.EOF {
+		b.read = -1
+	} else {
+		b.read += n
+	}
+	return n, err
+}
+
+func (b *bodyNopCloserIfNotRead) Close() error {
+	// don't close the body
+	if b.read == 0 {
+		return nil
+	}
+	// close as usual, when -1, any read will return EOF as the original read will do
+	// in other cases, the read will fail as body is closed because we do not want partial bodies to be sent to the upstream
+	// users can buffer the entire request body to allow the request to be resent
+	return b.ReadCloser.Close()
+}
+
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
@@ -488,20 +521,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	reqHost := clonedReq.Host
 	reqHeader := clonedReq.Header
 
-	// When retries are configured and there is a body, wrap it in
-	// io.NopCloser to prevent Go's transport from closing it on dial
-	// errors. cloneRequest does a shallow copy, so clonedReq.Body and
+	// If the request contained a body, wrap it in io.NopCloser
+	// to prevent Go's transport from closing it on dial errors.
+	// cloneRequest does a shallow copy, so clonedReq.Body and
 	// r.Body share the same io.ReadCloser — a dial-failure Close()
-	// would kill the original body for all subsequent retry attempts.
-	// The real body is closed by the HTTP server when the handler
-	// returns.
+	// would kill the original body for all subsequent retry
+	// attempts or subsequent handlers. The real body is closed by
+	// the HTTP server when the handler returns.
 	//
 	// If the body was already fully buffered (via request_buffers),
 	// we also extract the buffer so the retry loop can replay it
-	// from the beginning on each attempt. (see #6259, #7546)
+	// from the beginning on each attempt. (see #6259, #7546, #7713)
 	var bufferedReqBody *bytes.Buffer
-	if clonedReq.Body != nil && h.LoadBalancing != nil &&
-		(h.LoadBalancing.Retries > 0 || h.LoadBalancing.TryDuration > 0) {
+	if clonedReq.Body != nil {
 		if reqBodyBuf, ok := clonedReq.Body.(bodyReadCloser); ok && reqBodyBuf.body == nil && reqBodyBuf.buf != nil {
 			bufferedReqBody = reqBodyBuf.buf
 			reqBodyBuf.buf = nil
@@ -511,7 +543,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 				bufPool.Put(bufferedReqBody)
 			}()
 		} else {
-			clonedReq.Body = io.NopCloser(clonedReq.Body)
+			clonedReq.Body = &bodyNopCloserIfNotRead{ReadCloser: clonedReq.Body}
 		}
 	}
 
@@ -574,6 +606,17 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	// get the updated list of upstreams
 	upstreams := h.Upstreams
 	if h.DynamicUpstreams != nil {
+		if retries > 0 {
+			// after a failure (and thus during a retry), give dynamic upstream modules an opportunity
+			// to purge their relevant cache entries so we don't keep retrying bad upstreams
+			if cachingDynamicUpstreams, ok := h.DynamicUpstreams.(CachingUpstreamSource); ok {
+				if err := cachingDynamicUpstreams.ResetCache(r); err != nil {
+					if c := h.logger.Check(zapcore.ErrorLevel, "failed clearing dynamic upstream source's cache"); c != nil {
+						c.Write(zap.Error(err))
+					}
+				}
+			}
+		}
 		dUpstreams, err := h.DynamicUpstreams.GetUpstreams(r)
 		if err != nil {
 			if c := h.logger.Check(zapcore.ErrorLevel, "failed getting dynamic upstreams; falling back to static upstreams"); c != nil {
@@ -617,11 +660,6 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 		)
 	}
 
-	// attach to the request information about how to dial the upstream;
-	// this is necessary because the information cannot be sufficiently
-	// or satisfactorily represented in a URL
-	caddyhttp.SetVar(r.Context(), dialInfoVarKey, dialInfo)
-
 	// set placeholders with information about this upstream
 	repl.Set("http.reverse_proxy.upstream.address", dialInfo.String())
 	repl.Set("http.reverse_proxy.upstream.hostport", dialInfo.Address)
@@ -656,9 +694,15 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 
 	// proxy the request to that upstream
 	proxyErr = h.reverseProxy(w, r, origReq, repl, dialInfo, next)
-	if proxyErr == nil || errors.Is(proxyErr, context.Canceled) {
-		// context.Canceled happens when the downstream client
-		// cancels the request, which is not our failure
+	if proxyErr == nil {
+		return true, nil
+	}
+	if errors.Is(proxyErr, context.Canceled) {
+		// context.Canceled happens when the downstream client cancels the
+		// request, which is not our failure; don't retry or ding the upstream.
+		// Record a 499 (client closed request) so the access log reflects the
+		// disconnect instead of a misleading 0 status (see #7396).
+		w.WriteHeader(499)
 		return true, nil
 	}
 
@@ -828,7 +872,7 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	}
 
 	// Via header(s)
-	req.Header.Add("Via", fmt.Sprintf("%d.%d Caddy", req.ProtoMajor, req.ProtoMinor))
+	req.Header.Add("Via", strconv.Itoa(req.ProtoMajor)+"."+strconv.Itoa(req.ProtoMinor)+" Caddy")
 
 	return req, nil
 }
@@ -988,7 +1032,14 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 			return nil
 		},
 	}
-	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
+	// attach to the request information about how to dial the upstream;
+	// this is necessary because the information cannot be sufficiently
+	// or satisfactorily represented in a URL
+	// it's set before request is roundtripped to avoid a race condition when
+	// http.Transport reads a newer value to dial a new connection when that new
+	// value is updated by another reverse proxy handler, typically forward_auth.
+	ctx := context.WithValue(req.Context(), dialInfoCtxKey, di)
+	req = req.WithContext(httptrace.WithClientTrace(ctx, trace))
 
 	// do the round-trip
 	start := time.Now()
@@ -1172,6 +1223,22 @@ func (h *Handler) finalizeResponse(
 	start time.Time,
 	logger *zap.Logger,
 ) error {
+	// Strip hop-by-hop headers from the upstream response.
+	// For 101 Switching Protocols, save the Upgrade value
+	// first (handleUpgradeResponse needs it for validation)
+	// and restore it with a canonical Connection header.
+	upgradeVal := res.Header.Get("Upgrade")
+
+	removeConnectionHeaders(res.Header)
+	for _, h := range hopHeaders {
+		res.Header.Del(h)
+	}
+
+	if res.StatusCode == http.StatusSwitchingProtocols && upgradeVal != "" {
+		res.Header.Set("Upgrade", upgradeVal)
+		res.Header.Set("Connection", "Upgrade")
+	}
+
 	// deal with 101 Switching Protocols responses: (WebSocket, h2c, etc)
 	if res.StatusCode == http.StatusSwitchingProtocols {
 		var wg sync.WaitGroup
@@ -1180,19 +1247,13 @@ func (h *Handler) finalizeResponse(
 		return nil
 	}
 
-	removeConnectionHeaders(res.Header)
-
-	for _, h := range hopHeaders {
-		res.Header.Del(h)
-	}
-
 	// delete our Server header and use Via instead (see #6275)
 	rw.Header().Del("Server")
 	var protoPrefix string
 	if !strings.HasPrefix(strings.ToUpper(res.Proto), "HTTP/") {
 		protoPrefix = res.Proto[:strings.Index(res.Proto, "/")+1]
 	}
-	rw.Header().Add("Via", fmt.Sprintf("%s%d.%d Caddy", protoPrefix, res.ProtoMajor, res.ProtoMinor))
+	rw.Header().Add("Via", protoPrefix+strconv.Itoa(res.ProtoMajor)+"."+strconv.Itoa(res.ProtoMinor)+" Caddy")
 
 	// apply any response header operations
 	if h.Headers != nil && h.Headers.Response != nil {
@@ -1640,8 +1701,26 @@ type Selector interface {
 // may be called during each retry, multiple times per request, and as
 // such, needs to be instantaneous. The returned slice will not be
 // modified.
+//
+// For upstream sources that cache results, implement the
+// [CachingUpstreamSource] interface for optimal performance.
 type UpstreamSource interface {
 	GetUpstreams(*http.Request) ([]*Upstream, error)
+}
+
+// CachingUpstreamSource is an upstream source that caches its upstreams.
+// The relevant cache entry can be cleared/reset for a given request during
+// retries if a request fails. This can help ensure that failing backends
+// are not retried.
+//
+// EXPERIMENTAL: Subject to change.
+type CachingUpstreamSource interface {
+	UpstreamSource
+
+	// ResetCache clears any cache entry related to the given request.
+	// The next time GetUpstreams is called, it should have new upstream
+	// information for the given request.
+	ResetCache(*http.Request) error
 }
 
 // Hop-by-hop headers. These are removed when sent to the backend.

@@ -129,7 +129,11 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 				if !dispenser.NextArg() {
 					return nil, dispenser.ArgErr()
 				}
-				rpHandler.Rewrite.URI = dispenser.Val()
+				uri := dispenser.Val()
+				if rpHandler.Rewrite.URI != "" {
+					return nil, dispenser.Errf("cannot re-declare uri: %s", uri)
+				}
+				rpHandler.Rewrite.URI = uri
 				dispenser.DeleteN(2)
 
 			case "copy_headers":

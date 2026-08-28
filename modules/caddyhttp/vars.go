@@ -181,7 +181,7 @@ func (m VarsMatcher) MatchWithError(r *http.Request) (bool, error) {
 	vars := r.Context().Value(VarsCtxKey).(map[string]any)
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
-	var matcherValExpanded, varStr, v string
+	var matcherValExpanded, varStr string
 	var varValue any
 	for key, vals := range m {
 		if strings.HasPrefix(key, "{") &&
@@ -211,7 +211,7 @@ func (m VarsMatcher) MatchWithError(r *http.Request) (bool, error) {
 		// user input like {env.SECRET} to be evaluated.
 
 		// see if any of the values given in the matcher match the actual value
-		for _, v = range vals {
+		for _, v := range vals {
 			matcherValExpanded = repl.ReplaceAll(v, "")
 			if varStr == matcherValExpanded {
 				return true, nil

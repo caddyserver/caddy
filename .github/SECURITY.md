@@ -8,7 +8,7 @@ The Caddy project would like to make sure that it stays on top of all relevant a
 | Version     | Supported |
 | ----------- | ----------|
 | 2.latest    | ✔️        |
-| <= 2.latest | :x:       |
+| < 2.latest | :x:       |
 
 
 ## Acceptable Scope
@@ -24,6 +24,8 @@ We do not accept reports if the steps imply or require a compromised system or t
 Client-side exploits are out of scope. In other words, it is not a bug in Caddy if the web browser does something unsafe, even if the downloaded content was served by Caddy. (Those kinds of exploits can generally be mitigated by proper configuration of HTTP headers.) As a general rule, the content served by Caddy is not considered in scope because content is configurable by the site owner or the associated web application.
 
 Security bugs in code dependencies (including Go's standard library) are out of scope. Instead, if a dependency has patched a relevant security bug, please feel free to open a public issue or pull request to update that dependency in our code.
+
+Many reports are not security bugs and can be addressed by updating the documentation.
 
 We accept security reports and patches, but do not assign CVEs, for code that has not been released with a non-prerelease tag.
 
@@ -47,7 +49,7 @@ We'll need enough information to verify the bug and make a patch. To speed thing
 
 Please DO NOT use containers, VMs, cloud instances or services, or any other complex infrastructure in your steps. Always prefer `curl -v` instead of web browsers.
 
-We consider publicly-registered domain names to be public information. This necessary in order to maintain the integrity of certificate transparency, public DNS, and other public trust systems. Do not redact domain names from your reports. The actual content of your domain name affects Caddy's behavior, so we need the exact domain name(s) to reproduce with, or your report will be ignored.
+We consider publicly-registered domain names to be public information. This is necessary in order to maintain the integrity of certificate transparency, public DNS, and other public trust systems. Do not redact domain names from your reports. The actual content of your domain name affects Caddy's behavior, so we need the exact domain name(s) to reproduce with, or your report will be ignored.
 
 It will speed things up if you suggest a working patch, such as a code diff, and explain why and how it works. Reports that are not actionable, do not contain enough information, are too pushy/demanding, or are not able to convince us that it is a viable and practical attack on the web server itself may be deferred to a later time or possibly ignored, depending on available resources. Priority will be given to credible, responsible reports that are constructive, specific, and actionable. (We get a lot of invalid reports.) Thank you for understanding.
 

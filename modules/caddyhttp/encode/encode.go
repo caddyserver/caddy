@@ -20,12 +20,12 @@
 package encode
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"math"
 	"net/http"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -33,6 +33,8 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
+
+const sseMediaType = "text/event-stream"
 
 func init() {
 	caddy.RegisterModule(Encode{})
@@ -127,6 +129,14 @@ func (enc *Encode) Provision(ctx caddy.Context) error {
 		}
 	}
 
+	if len(enc.Prefer) == 0 {
+		for _, encName := range []string{"zstd", "br", "gzip"} {
+			if _, ok := enc.writerPools[encName]; ok {
+				enc.Prefer = append(enc.Prefer, encName)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -162,7 +172,7 @@ func (enc *Encode) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 
 			// to comply with RFC 9110 section 8.8.3(.3), we modify the Etag when encoding
 			// by appending a hyphen and the encoder name; the problem is, the client will
-			// send back that Etag in a If-None-Match header, but upstream handlers that set
+			// send back that Etag in an If-None-Match header, but upstream handlers that set
 			// the Etag in the first place don't know that we appended to their Etag! so here
 			// we have to strip our addition so the upstream handlers can still honor client
 			// caches without knowing about our changes...
@@ -243,20 +253,25 @@ type responseWriter struct {
 	statusCode   int
 	wroteHeader  bool
 	isConnect    bool
-	disabled     bool // disable encoding (for error responses)
+	disabled     bool // disable encoding for this response
 }
 
 // WriteHeader stores the status to write when the time comes
 // to actually write the header.
 func (rw *responseWriter) WriteHeader(status int) {
 	rw.statusCode = status
+	if status == http.StatusPartialContent {
+		rw.disabled = true // partial representations must not be dynamically re-encoded
+	}
+
+	h := rw.Header()
 
 	// See #5849 and RFC 9110 section 15.4.5 (https://www.rfc-editor.org/rfc/rfc9110.html#section-15.4.5) - 304
 	// Not Modified must have certain headers set as if it was a 200 response, and according to the issue
 	// we would miss the Vary header in this case when compression was also enabled; note that we set this
 	// header in the responseWriter.init() method but that is only called if we are writing a response body
-	if status == http.StatusNotModified && !hasVaryValue(rw.Header(), "Accept-Encoding") {
-		rw.Header().Add("Vary", "Accept-Encoding")
+	if status == http.StatusNotModified && !hasVaryValue(h, "Accept-Encoding") {
+		h.Add("Vary", "Accept-Encoding")
 	}
 
 	// write status immediately if status is 2xx and the request is CONNECT
@@ -272,6 +287,29 @@ func (rw *responseWriter) WriteHeader(status int) {
 	if 100 <= status && status <= 199 {
 		rw.ResponseWriter.WriteHeader(status)
 	}
+
+	// write header immediately for server-sent events responses, since the
+	// body may not be written for a while and the client needs the headers
+	// to establish the event stream; see #6293
+	if !rw.wroteHeader && (status < 100 || status > 199) && isSSE(h.Get("Content-Type")) {
+		rw.init()
+		rw.ResponseWriter.WriteHeader(status)
+		rw.wroteHeader = true
+	}
+}
+
+func isSSE(contentType string) bool {
+	if len(contentType) < len(sseMediaType) || !strings.EqualFold(contentType[:len(sseMediaType)], sseMediaType) {
+		return false
+	}
+
+	// After the media type, allow only optional whitespace followed by the
+	// end of the value or a parameter separator, so a longer type such as
+	// "text/event-streamfoo" or garbage like "text/event-stream nonsense"
+	// does not match. TrimLeft on the tail does not allocate.
+	rest := strings.TrimLeft(contentType[len(sseMediaType):], " \t")
+
+	return rest == "" || rest[0] == ';'
 }
 
 // Match determines, if encoding should be done based on the ResponseMatcher.
@@ -369,7 +407,7 @@ const sniffLen = 512
 
 // ReadFrom will try to use sendfile to copy from the reader to the response writer.
 // It's only used if the response writer implements io.ReaderFrom and the data can't be compressed.
-// It's based on stdlin http1.1 response writer implementation.
+// It's based on the standard library HTTP/1.1 response writer implementation.
 // https://github.com/golang/go/blob/f4e3ec3dbe3b8e04a058d266adf8e048bab563f2/src/net/http/server.go#L586
 func (rw *responseWriter) ReadFrom(r io.Reader) (int64, error) {
 	rf, ok := rw.ResponseWriter.(io.ReaderFrom)
@@ -436,8 +474,7 @@ func (rw *responseWriter) Unwrap() http.ResponseWriter {
 
 // init should be called before we write a response, if rw.buf has contents.
 func (rw *responseWriter) init() {
-	// Don't initialize encoder for error responses
-	// This prevents response corruption when handle_errors is used
+	// Don't initialize encoder for responses that must not be encoded.
 	if rw.disabled {
 		return
 	}
@@ -489,22 +526,23 @@ func hasVaryValue(hdr http.Header, target string) bool {
 // http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html.
 func AcceptedEncodings(r *http.Request, preferredOrder []string) []string {
 	acceptEncHeader := r.Header.Get("Accept-Encoding")
-	websocketKey := r.Header.Get("Sec-WebSocket-Key")
 	if acceptEncHeader == "" {
 		return []string{}
 	}
+	websocketKey := r.Header.Get("Sec-Websocket-Key")
 
-	prefs := []encodingPreference{}
+	prefs := make([]encodingPreference, 0, strings.Count(acceptEncHeader, ",")+1)
 
 	for accepted := range strings.SplitSeq(acceptEncHeader, ",") {
-		parts := strings.Split(accepted, ";")
-		encName := strings.ToLower(strings.TrimSpace(parts[0]))
+		encName, params, found := strings.Cut(accepted, ";")
+		encName = strings.ToLower(strings.TrimSpace(encName))
 
 		// determine q-factor
 		qFactor := 1.0
-		if len(parts) > 1 {
-			qFactorStr := strings.ToLower(strings.TrimSpace(parts[1]))
-			if strings.HasPrefix(qFactorStr, "q=") {
+		if found {
+			qFactorStr, _, _ := strings.Cut(params, ";")
+			qFactorStr = strings.TrimSpace(qFactorStr)
+			if len(qFactorStr) >= 2 && strings.EqualFold(qFactorStr[:2], "q=") {
 				if qFactorFloat, err := strconv.ParseFloat(qFactorStr[2:], 32); err == nil {
 					if qFactorFloat >= 0 && qFactorFloat <= 1 {
 						qFactor = qFactorFloat
@@ -538,11 +576,11 @@ func AcceptedEncodings(r *http.Request, preferredOrder []string) []string {
 	}
 
 	// sort preferences by descending q-factor first, then by preferOrder
-	sort.Slice(prefs, func(i, j int) bool {
-		if math.Abs(prefs[i].q-prefs[j].q) < 0.00001 {
-			return prefs[i].preferOrder > prefs[j].preferOrder
+	slices.SortStableFunc(prefs, func(a, b encodingPreference) int {
+		if math.Abs(a.q-b.q) < 0.00001 {
+			return cmp.Compare(b.preferOrder, a.preferOrder)
 		}
-		return prefs[i].q > prefs[j].q
+		return cmp.Compare(b.q, a.q)
 	})
 
 	prefEncNames := make([]string, len(prefs))

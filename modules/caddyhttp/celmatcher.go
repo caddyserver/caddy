@@ -108,7 +108,7 @@ func (m *MatchExpression) UnmarshalJSON(data []byte) error {
 		return json.Unmarshal(data, &m.Expr)
 	}
 	// otherwise, it's a full object, so unmarshal it,
-	// using an temp map to avoid infinite recursion
+	// using a temp map to avoid infinite recursion
 	var tmpJson map[string]any
 	err := json.Unmarshal(data, &tmpJson)
 	*m = MatchExpression{
@@ -118,7 +118,7 @@ func (m *MatchExpression) UnmarshalJSON(data []byte) error {
 	return err
 }
 
-// Provision sets ups m.
+// Provision sets up m.
 func (m *MatchExpression) Provision(ctx caddy.Context) error {
 	m.log = ctx.Logger()
 
@@ -319,7 +319,7 @@ func (cr celHTTPRequest) Value() any  { return cr }
 
 var pkixNameCELType = cel.ObjectType("pkix.Name", traits.ReceiverType)
 
-// celPkixName wraps an pkix.Name with
+// celPkixName wraps a pkix.Name with
 // methods to satisfy the ref.Val interface.
 type celPkixName struct{ *pkix.Name }
 
@@ -503,7 +503,7 @@ func CELMatcherDecorator(funcName string, fac any) interpreter.InterpretableDeco
 			}
 			return interpreter.NewCall(
 				i.ID(), funcName, funcName+"_opt",
-				[]interpreter.Interpretable{reqAttr},
+				[]interpreter.InterpretableV2{reqAttr},
 				func(args ...ref.Val) ref.Val {
 					// The request value, guaranteed to be of type celHTTPRequest
 					celReq := args[0]
@@ -526,7 +526,7 @@ func CELMatcherDecorator(funcName string, fac any) interpreter.InterpretableDeco
 			}
 			return interpreter.NewCall(
 				i.ID(), funcName, funcName+"_opt",
-				[]interpreter.Interpretable{reqAttr},
+				[]interpreter.InterpretableV2{reqAttr},
 				func(args ...ref.Val) ref.Val {
 					// The request value, guaranteed to be of type celHTTPRequest
 					celReq := args[0]

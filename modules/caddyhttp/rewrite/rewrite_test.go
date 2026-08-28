@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"reflect"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
@@ -267,6 +268,12 @@ func TestRewrite(t *testing.T) {
 			expect: newRequest(t, "GET", "/foo/prefix/bar"),
 		},
 		{
+			// shorter (percent-encoded) path that is not the prefix must be left alone
+			rule:   Rewrite{StripPathPrefix: "/aaaaaa"},
+			input:  newRequest(t, "GET", "/%61%61"),
+			expect: newRequest(t, "GET", "/%61%61"),
+		},
+		{
 			rule: Rewrite{StripPathPrefix: "//prefix"},
 			// scheme and host needed for URL parser to succeed in setting up test
 			input:  newRequest(t, "GET", "http://host//prefix/foo/bar"),
@@ -328,6 +335,27 @@ func TestRewrite(t *testing.T) {
 			input:  newRequest(t, "GET", "/foo/suffix/bar"),
 			expect: newRequest(t, "GET", "/foo/suffix/bar"),
 		},
+		{
+			// a decoded suffix pattern must match a percent-encoded path in
+			// normalized space, mirroring StripPathPrefix (see the "/a/b/c"
+			// vs "/a%2Fb/c/d" case above)
+			rule:   Rewrite{StripPathSuffix: "/b/c"},
+			input:  newRequest(t, "GET", "/a/b%2Fc"),
+			expect: newRequest(t, "GET", "/a"),
+		},
+		{
+			// decoded suffix char matches its percent-encoded form in the path
+			rule:   Rewrite{StripPathSuffix: "bc"},
+			input:  newRequest(t, "GET", "/a%62c"), // %62 == 'b'
+			expect: newRequest(t, "GET", "/a"),
+		},
+		{
+			// an escaped suffix pattern requires the path to use the same
+			// escape at that position, so a decoded path must NOT be stripped
+			rule:   Rewrite{StripPathSuffix: "%2fsuffix"},
+			input:  newRequest(t, "GET", "/foo/bar/suffix"),
+			expect: newRequest(t, "GET", "/foo/bar/suffix"),
+		},
 
 		{
 			rule:   Rewrite{URISubstring: []substrReplacer{{Find: "findme", Replace: "replaced"}}},
@@ -344,11 +372,146 @@ func TestRewrite(t *testing.T) {
 			input:  newRequest(t, "GET", "/foo/findme%2Fbar"),
 			expect: newRequest(t, "GET", "/foo/replaced%2Fbar"),
 		},
+		{
+			rule:   Rewrite{URISubstring: []substrReplacer{{Find: "%28", Replace: "("}}},
+			input:  newRequest(t, "GET", "/hello/%28%29"),
+			expect: newRequest(t, "GET", "/hello/(%29"),
+		},
+		{
+			rule: Rewrite{URISubstring: []substrReplacer{
+				{Find: "%28", Replace: "("},
+				{Find: "%29", Replace: ")"},
+			}},
+			input:  newRequest(t, "GET", "/hello/%28%29"),
+			expect: newRequest(t, "GET", "/hello/()"),
+		},
 
 		{
 			rule:   Rewrite{PathRegexp: []*regexReplacer{{Find: "/{2,}", Replace: "/"}}},
 			input:  newRequest(t, "GET", "/foo//bar///baz?a=b//c"),
 			expect: newRequest(t, "GET", "/foo/bar/baz?a=b//c"),
+		},
+
+		// regression tests for GHSA-j8px-rmrx-76h9: when the rewrite URI
+		// ends with a literal '?', the first-pass placeholder expansion
+		// may produce a path containing attacker-controlled bytes that
+		// then get split at '?' and fed into buildQueryString, which runs
+		// a SECOND placeholder pass. Bytes injected via a header value (or
+		// any other client-controlled placeholder) must not be treated as
+		// placeholder syntax during this second pass.
+		{
+			// literal header value containing placeholder syntax is not re-expanded into query
+			rule:   Rewrite{URI: "/serve/{http.request.header.X-Fwd}?"},
+			input:  newRequestWithHeader(t, "GET", "/anything", "X-Fwd", "foo?{env.CADDY_REWRITE_TEST_SECRET}=leak"),
+			expect: newRequest(t, "GET", "/serve/foo?%7Benv.CADDY_REWRITE_TEST_SECRET%7D=leak"),
+		},
+		{
+			// literal header value with placeholder syntax in query position is not re-expanded
+			rule:   Rewrite{URI: "/serve/{http.request.header.X-Fwd}?"},
+			input:  newRequestWithHeader(t, "GET", "/anything", "X-Fwd", "ok?key={env.CADDY_REWRITE_TEST_SECRET}"),
+			expect: newRequest(t, "GET", "/serve/ok?key=%7Benv.CADDY_REWRITE_TEST_SECRET%7D"),
+		},
+		{
+			// literal header value with embedded file placeholder is not re-expanded
+			rule:   Rewrite{URI: "/serve/{http.request.header.X-Fwd}?"},
+			input:  newRequestWithHeader(t, "GET", "/anything", "X-Fwd", "ok?path={file./etc/passwd}"),
+			expect: newRequest(t, "GET", "/serve/ok?path=%7Bfile./etc/passwd%7D"),
+		},
+
+		// '=' delimits a key from its value only once; any further '=' bytes
+		// are literal data, such as base64 padding in a signature.
+		{
+			rule:   Rewrite{URI: "?sig=YWJjZA=="},
+			input:  newRequest(t, "GET", "/hello"),
+			expect: newRequest(t, "GET", "/hello?sig=YWJjZA=="),
+		},
+		{
+			rule:   Rewrite{URI: "?x=1&sig=YWJjZA=="},
+			input:  newRequest(t, "GET", "/hello"),
+			expect: newRequest(t, "GET", "/hello?x=1&sig=YWJjZA=="),
+		},
+
+		// a query string that arrives via a replacement value is honored even
+		// though the configured URI has no literal '?' (see issue #5208).
+		{
+			rule:   Rewrite{URI: "{http.request.header.X-Accel-Redirect}"},
+			input:  newRequestWithHeader(t, "GET", "/orig", "X-Accel-Redirect", "/hello?some=param&some_other=param"),
+			expect: newRequest(t, "GET", "/hello?some=param&some_other=param"),
+		},
+		{
+			// an injected query replaces the original one, as a configured query would
+			rule:   Rewrite{URI: "{http.request.header.X-Accel-Redirect}"},
+			input:  newRequestWithHeader(t, "GET", "/orig?keep=me", "X-Accel-Redirect", "/hello?some=param"),
+			expect: newRequest(t, "GET", "/hello?some=param"),
+		},
+		{
+			// a value ending in '?' clears the query, same as configuring a bare '?'
+			rule:   Rewrite{URI: "{http.request.header.X-Accel-Redirect}"},
+			input:  newRequestWithHeader(t, "GET", "/orig?keep=me", "X-Accel-Redirect", "/hello?"),
+			expect: newRequest(t, "GET", "/hello"),
+		},
+		{
+			// no '?' in the value means the query is not touched
+			rule:   Rewrite{URI: "{http.request.header.X-Accel-Redirect}"},
+			input:  newRequestWithHeader(t, "GET", "/orig?keep=me", "X-Accel-Redirect", "/hello"),
+			expect: newRequest(t, "GET", "/hello?keep=me"),
+		},
+		{
+			// an explicitly configured query still wins over an injected one
+			rule:   Rewrite{URI: "{http.request.header.X-Accel-Redirect}?a=b"},
+			input:  newRequestWithHeader(t, "GET", "/orig", "X-Accel-Redirect", "/hello?some=param"),
+			expect: newRequest(t, "GET", "/hello?a=b"),
+		},
+		{
+			// an escaped '?' in the request path does not split the URI, so the
+			// implicit rewrites of try_files and php_fastcgi stay safe
+			rule:   Rewrite{URI: "{http.request.uri.path}"},
+			input:  newRequest(t, "GET", "/bar%3Fbaz?keep=me"),
+			expect: newRequest(t, "GET", "/bar%3Fbaz?keep=me"),
+		},
+		{
+			// an S3 presigned URL arriving via a replacement value survives intact
+			rule:   Rewrite{URI: "{http.request.header.X-Ph}"},
+			input:  newRequestWithHeader(t, "GET", "/orig", "X-Ph", "/f.jpg?X-Amz-Credential=AK%2Ffr-par%2Fs3&X-Amz-Signature=YWJjZA=="),
+			expect: newRequest(t, "GET", "/f.jpg?X-Amz-Credential=AK%2Ffr-par%2Fs3&X-Amz-Signature=YWJjZA=="),
+		},
+
+		// a fragment that arrives via a replacement value is dropped: everything
+		// after '#' is fragment (RFC 3986 section 4.2) and is never sent to the
+		// server, so it must not leak into the path or query.
+		{
+			rule:   Rewrite{URI: "{http.request.header.X-Ph}"},
+			input:  newRequestWithHeader(t, "GET", "/orig", "X-Ph", "/hello#frag"),
+			expect: newRequest(t, "GET", "/hello"),
+		},
+		{
+			rule:   Rewrite{URI: "{http.request.header.X-Ph}"},
+			input:  newRequestWithHeader(t, "GET", "/orig", "X-Ph", "/hello?a=b#frag"),
+			expect: newRequest(t, "GET", "/hello?a=b"),
+		},
+		{
+			// a '?' after the injected '#' is fragment, not a query delimiter
+			rule:   Rewrite{URI: "{http.request.header.X-Ph}"},
+			input:  newRequestWithHeader(t, "GET", "/orig", "X-Ph", "/hello#frag?notquery"),
+			expect: newRequest(t, "GET", "/hello"),
+		},
+		{
+			// a configured fragment still wins over an injected one
+			rule:   Rewrite{URI: "{http.request.header.X-Ph}#cfgfrag"},
+			input:  newRequestWithHeader(t, "GET", "/orig", "X-Ph", "/hello?a=b#frag"),
+			expect: newRequest(t, "GET", "/hello?a=b#cfgfrag"),
+		},
+		{
+			// an escaped '#' is not a fragment delimiter and is preserved
+			rule:   Rewrite{URI: "{http.request.header.X-Ph}"},
+			input:  newRequestWithHeader(t, "GET", "/orig", "X-Ph", "/hello%23frag"),
+			expect: newRequest(t, "GET", "/hello%23frag"),
+		},
+		{
+			// a fragment-only value leaves the original query alone
+			rule:   Rewrite{URI: "{http.request.header.X-Ph}"},
+			input:  newRequestWithHeader(t, "GET", "/orig?keep=me", "X-Ph", "/hello#frag"),
+			expect: newRequest(t, "GET", "/hello?keep=me"),
 		},
 	} {
 		// copy the original input just enough so that we can
@@ -364,6 +527,9 @@ func TestRewrite(t *testing.T) {
 		repl.Set("http.request.uri", tc.input.RequestURI)
 		repl.Set("http.request.uri.path", tc.input.URL.Path)
 		repl.Set("http.request.uri.query", tc.input.URL.RawQuery)
+		for field, vals := range tc.input.Header {
+			repl.Set("http.request.header."+field, strings.Join(vals, ","))
+		}
 
 		// we can't directly call Provision() without a valid caddy.Context
 		// (TODO: fix that) so here we ad-hoc compile the regex
@@ -447,12 +613,78 @@ func TestQueryOpsRenameNoOpCases(t *testing.T) {
 	}
 }
 
+func TestQueryOpsReplaceScopedToKey(t *testing.T) {
+	repl := caddy.NewReplacer()
+
+	for i, tc := range []struct {
+		input  *http.Request
+		expect map[string][]string
+		ops    *queryOps
+	}{
+		{
+			// a keyed replace must only touch the named key, even when
+			// other keys hold the same value
+			ops: &queryOps{
+				Replace: []*queryOpsReplacement{{Key: "a", Search: "foo", Replace: "bar"}},
+			},
+			input:  newRequest(t, "GET", "/?a=foo&b=foo"),
+			expect: map[string][]string{"a": {"bar"}, "b": {"foo"}},
+		},
+		{
+			// "*" still replaces across every key
+			ops: &queryOps{
+				Replace: []*queryOpsReplacement{{Key: "*", Search: "foo", Replace: "bar"}},
+			},
+			input:  newRequest(t, "GET", "/?a=foo&b=foo"),
+			expect: map[string][]string{"a": {"bar"}, "b": {"bar"}},
+		},
+		{
+			// a keyed replace against a missing key is a no-op
+			ops: &queryOps{
+				Replace: []*queryOpsReplacement{{Key: "missing", Search: "foo", Replace: "bar"}},
+			},
+			input:  newRequest(t, "GET", "/?a=foo&b=foo"),
+			expect: map[string][]string{"a": {"foo"}, "b": {"foo"}},
+		},
+		{
+			// the regexp branch must also stay scoped to the named key
+			ops: &queryOps{
+				Replace: []*queryOpsReplacement{{Key: "a", SearchRegexp: "f.o", Replace: "bar"}},
+			},
+			input:  newRequest(t, "GET", "/?a=foo&b=foo"),
+			expect: map[string][]string{"a": {"bar"}, "b": {"foo"}},
+		},
+	} {
+		repl.Set("http.request.uri", tc.input.RequestURI)
+		repl.Set("http.request.uri.path", tc.input.URL.Path)
+		repl.Set("http.request.uri.query", tc.input.URL.RawQuery)
+
+		for _, rep := range tc.ops.Replace {
+			if err := rep.Provision(caddy.Context{}); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		tc.ops.do(tc.input, repl)
+
+		if actual := tc.input.URL.Query(); !reflect.DeepEqual(tc.expect, map[string][]string(actual)) {
+			t.Errorf("Test %d: Expected query=%v but got %v", i, tc.expect, actual)
+		}
+	}
+}
+
 func newRequest(t *testing.T, method, uri string) *http.Request {
 	req, err := http.NewRequest(method, uri, nil)
 	if err != nil {
 		t.Fatalf("error creating request: %v", err)
 	}
 	req.RequestURI = req.URL.RequestURI() // simulate incoming request
+	return req
+}
+
+func newRequestWithHeader(t *testing.T, method, uri, headerKey, headerVal string) *http.Request {
+	req := newRequest(t, method, uri)
+	req.Header.Set(headerKey, headerVal)
 	return req
 }
 

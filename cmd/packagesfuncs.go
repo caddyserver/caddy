@@ -234,7 +234,7 @@ func getModules() (standard, nonstandard, unknown []moduleInfo, err error) {
 		// not sure why), and since New() should return a pointer
 		// value, we need to dereference it first
 		iface := any(modInfo.New())
-		if rv := reflect.ValueOf(iface); rv.Kind() == reflect.Ptr {
+		if rv := reflect.ValueOf(iface); rv.Kind() == reflect.Pointer {
 			iface = reflect.New(reflect.TypeOf(iface).Elem()).Elem().Interface()
 		}
 		modPkgPath := reflect.TypeOf(iface).PkgPath()
@@ -288,6 +288,7 @@ func downloadBuild(qs url.Values) (*http.Response, error) {
 		return nil, fmt.Errorf("secure request failed: %v", err)
 	}
 	if resp.StatusCode >= 400 {
+		defer resp.Body.Close()
 		var details struct {
 			StatusCode int `json:"status_code"`
 			Error      struct {
