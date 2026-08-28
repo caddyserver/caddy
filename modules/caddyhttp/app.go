@@ -407,6 +407,15 @@ func (app *App) Provision(ctx caddy.Context) error {
 		if srv.ReadHeaderTimeout == 0 {
 			srv.ReadHeaderTimeout = defaultReadHeaderTimeout // see #6663
 		}
+		if srv.ReadIdleTimeout == 0 {
+			srv.ReadIdleTimeout = defaultReadIdleTimeout
+		}
+		if srv.WriteIdleTimeout == 0 {
+			srv.WriteIdleTimeout = defaultWriteIdleTimeout
+		}
+		if srv.MaxWriteChunk == 0 {
+			srv.MaxWriteChunk = DefaultMaxWriteChunk
+		}
 	}
 	ctx.Context = oldContext
 	return nil
@@ -891,6 +900,14 @@ const (
 	// long time even on legitimately slow connections or
 	// busy servers to read it.
 	defaultReadHeaderTimeout = caddy.Duration(time.Minute)
+
+	// defaultReadIdleTimeout and defaultWriteIdleTimeout mitigate
+	// slowloris-style attacks on the request body and response write.
+	// Unlike a hard deadline, these are safe defaults even for large
+	// payloads because the deadline is reset on every successful
+	// read/write; only a stalled connection is affected.
+	defaultReadIdleTimeout  = caddy.Duration(time.Minute)
+	defaultWriteIdleTimeout = caddy.Duration(time.Minute)
 )
 
 // Interface guards

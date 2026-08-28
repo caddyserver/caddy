@@ -554,6 +554,18 @@ func replaceRemoteAdminServer(ctx Context, cfg *Config) error {
 			accessControl.publicKeys = append(accessControl.publicKeys, cert.PublicKey)
 			clientCertPool.AddCert(cert)
 		}
+		for j, perm := range accessControl.Permissions {
+			for _, permPath := range perm.Paths {
+				if permPath == "" || permPath == "/" {
+					continue
+				}
+				cleanPath := path.Clean(permPath)
+				hasCanonicalTrailingSlash := cleanPath != "/" && strings.TrimSuffix(permPath, "/") == cleanPath
+				if cleanPath != permPath && !hasCanonicalTrailingSlash {
+					return fmt.Errorf("access control %d permission %d: path %q is not canonical (did you mean %q?)", i, j, permPath, cleanPath)
+				}
+			}
+		}
 	}
 
 	// create TLS config that will enforce mutual authentication
@@ -723,14 +735,18 @@ func (remote RemoteAdmin) enforceAccessControls(r *http.Request) error {
 }
 
 func adminPathAllowed(reqPath, allowedPath string) bool {
-	if allowedPath == "" || allowedPath == "/" {
-		return strings.HasPrefix(reqPath, allowedPath)
-	}
-	if reqPath == allowedPath {
+	reqPathHadTrailingSlash := strings.HasSuffix(reqPath, "/")
+	reqPath = path.Clean(reqPath)
+	if allowedPath == "" {
 		return true
 	}
-	if strings.HasSuffix(allowedPath, "/") {
-		return strings.HasPrefix(reqPath, allowedPath)
+	allowedPathHadTrailingSlash := allowedPath != "/" && strings.HasSuffix(allowedPath, "/")
+	allowedPath = path.Clean(allowedPath)
+	if allowedPath == "/" {
+		return true
+	}
+	if reqPath == allowedPath {
+		return !allowedPathHadTrailingSlash || reqPathHadTrailingSlash
 	}
 	return strings.HasPrefix(reqPath, allowedPath+"/")
 }
