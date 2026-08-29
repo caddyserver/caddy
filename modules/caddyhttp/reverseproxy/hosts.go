@@ -17,6 +17,7 @@ package reverseproxy
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/netip"
 	"strconv"
 	"sync"
@@ -182,9 +183,18 @@ func (u *Upstream) fillDynamicHost() {
 // Host is the basic, in-memory representation of the state of a remote host.
 // Its fields are accessed atomically and Host values must not be copied.
 type Host struct {
-	numRequests atomic.Int64
-	fails       atomic.Int64
+	numRequests    atomic.Int64
+	fails          atomic.Int64
+	latency        atomic.Int64 // peak-EWMA of roundtrip latency, in nanoseconds
+	latencyUpdated atomic.Int64 // time of the last latency sample, in Unix nanoseconds
 }
+
+// latencyDecayTau is the time constant of the exponential decay applied
+// to a host's peak-EWMA latency: roughly, how long a latency spike keeps
+// dominating the estimate after conditions improve. After one tau with
+// only faster samples (or no samples at all), about 63% of the spike has
+// decayed away.
+const latencyDecayTau = 10 * time.Second
 
 // NumRequests returns the number of active requests to the upstream.
 func (h *Host) NumRequests() int {
@@ -194,6 +204,55 @@ func (h *Host) NumRequests() int {
 // Fails returns the number of recent failures with the upstream.
 func (h *Host) Fails() int {
 	return int(h.fails.Load())
+}
+
+// Latency returns a peak-sensitive exponentially weighted moving average
+// of the host's roundtrip latency, decayed by the time elapsed since the
+// last sample so that a host which stops receiving requests does not
+// keep a stale peak forever. It returns 0 if no latency sample has been
+// recorded yet.
+func (h *Host) Latency() time.Duration {
+	value := h.latency.Load()
+	if value == 0 {
+		return 0
+	}
+	elapsed := time.Now().UnixNano() - h.latencyUpdated.Load()
+	return time.Duration(decayLatency(value, elapsed))
+}
+
+// recordLatency folds a roundtrip latency sample into the host's
+// peak-sensitive EWMA (as in Finagle's PeakEwma load balancer): a sample
+// above the current estimate replaces it immediately, while lower samples
+// only pull the estimate down gradually, weighted by the time elapsed
+// since the previous sample relative to latencyDecayTau. This makes the
+// estimate react instantly to slowdowns but forgive them over time.
+func (h *Host) recordLatency(sample time.Duration) {
+	if sample < 0 {
+		sample = 0
+	}
+	now := time.Now().UnixNano()
+	last := h.latencyUpdated.Swap(now)
+	for {
+		current := h.latency.Load()
+		next := int64(sample)
+		if current > next {
+			weight := math.Exp(-float64(now-last) / float64(latencyDecayTau))
+			next += int64(float64(current-next) * weight)
+		}
+		if h.latency.CompareAndSwap(current, next) {
+			return
+		}
+	}
+}
+
+// decayLatency exponentially decays a latency value (in nanoseconds)
+// toward zero according to how much time has elapsed since it was
+// recorded, with time constant latencyDecayTau.
+func decayLatency(value, elapsed int64) float64 {
+	if elapsed <= 0 {
+		return float64(value)
+	}
+	return float64(value) * math.Exp(-float64(elapsed)/float64(latencyDecayTau))
 }
 
 // countRequest mutates the active request count by

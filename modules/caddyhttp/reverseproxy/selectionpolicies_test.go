@@ -19,9 +19,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
@@ -240,6 +242,137 @@ func TestLeastConnPolicy(t *testing.T) {
 	h = lcPolicy.Select(pool, req, nil)
 	if h != pool[0] && h != pool[1] {
 		t.Error("Expected least connection host to be first or second host.")
+	}
+}
+
+func TestLeastLatencyPolicy(t *testing.T) {
+	pool := testPool()
+	llPolicy := LeastLatencySelection{}
+	req, _ := http.NewRequest("GET", "/", nil)
+
+	// with only two available hosts, both are always the two candidates,
+	// so the lower-latency host must always be selected
+	pool[0].setHealthy(false)
+	pool[1].recordLatency(50 * time.Millisecond)
+	pool[2].recordLatency(10 * time.Millisecond)
+	for i := 0; i < 100; i++ {
+		if h := llPolicy.Select(pool, req, nil); h != pool[2] {
+			t.Fatalf("Expected the lower-latency host (pool[2]) to always be selected; got %v on iteration %d", h, i)
+		}
+	}
+
+	// enough active requests must outweigh a latency advantage
+	pool[2].countRequest(9) // score ~10ms*10 vs ~50ms*1
+	for i := 0; i < 100; i++ {
+		if h := llPolicy.Select(pool, req, nil); h != pool[1] {
+			t.Fatalf("Expected the less-loaded host (pool[1]) to always be selected; got %v on iteration %d", h, i)
+		}
+	}
+	pool[2].countRequest(-9)
+
+	// only one available host: return it; none: return nil
+	pool[1].setHealthy(false)
+	if h := llPolicy.Select(pool, req, nil); h != pool[2] {
+		t.Error("Expected the only available host (pool[2]) to be selected.")
+	}
+	pool[2].setHealthy(false)
+	if h := llPolicy.Select(pool, req, nil); h != nil {
+		t.Error("Expected nil when no host is available.")
+	}
+}
+
+func TestLeastLatencyPolicyDistribution(t *testing.T) {
+	pool := testPool()
+	llPolicy := LeastLatencySelection{}
+	req, _ := http.NewRequest("GET", "/", nil)
+
+	// a host with high latency must lose against either of the others
+	// whenever it is one of the two candidates, so it is never selected;
+	// the two remaining hosts must share the traffic
+	pool[0].recordLatency(10 * time.Millisecond)
+	pool[1].recordLatency(20 * time.Millisecond)
+	pool[2].recordLatency(500 * time.Millisecond)
+	selected := make(map[*Upstream]int)
+	for i := 0; i < 300; i++ {
+		selected[llPolicy.Select(pool, req, nil)]++
+	}
+	if selected[pool[2]] != 0 {
+		t.Errorf("Expected the high-latency host to never be selected; got %d selections", selected[pool[2]])
+	}
+	if selected[pool[0]] == 0 || selected[pool[1]] == 0 {
+		t.Errorf("Expected both low-latency hosts to be selected; got %d and %d selections", selected[pool[0]], selected[pool[1]])
+	}
+}
+
+func TestLeastLatencyPolicyColdStart(t *testing.T) {
+	pool := testPool()
+	llPolicy := LeastLatencySelection{}
+	req, _ := http.NewRequest("GET", "/", nil)
+
+	// with no latency recorded anywhere, ties must be broken randomly
+	// so that traffic spreads over the pool
+	selected := make(map[*Upstream]int)
+	for i := 0; i < 300; i++ {
+		selected[llPolicy.Select(pool, req, nil)]++
+	}
+	for i, upstream := range pool {
+		if selected[upstream] == 0 {
+			t.Errorf("Expected every cold host to receive traffic, but pool[%d] got none", i)
+		}
+	}
+
+	// a host with no recorded latency must win against a host with
+	// observed latency, even a fast one, so it gets warmed up
+	pool[0].setHealthy(false)
+	pool[1].recordLatency(time.Millisecond)
+	for i := 0; i < 100; i++ {
+		if h := llPolicy.Select(pool, req, nil); h != pool[2] {
+			t.Fatalf("Expected the cold host (pool[2]) to always be selected; got %v on iteration %d", h, i)
+		}
+	}
+}
+
+func TestHostLatencyPeakEwma(t *testing.T) {
+	host := new(Host)
+	if host.Latency() != 0 {
+		t.Error("Expected zero latency before any sample is recorded.")
+	}
+
+	// the first sample is taken as-is
+	host.recordLatency(10 * time.Millisecond)
+	if got := host.Latency(); got < 9*time.Millisecond || got > 10*time.Millisecond {
+		t.Errorf("Expected latency near 10ms after first sample, got %v", got)
+	}
+
+	// a higher sample takes effect immediately (peak sensitivity)
+	host.recordLatency(50 * time.Millisecond)
+	if got := host.Latency(); got < 45*time.Millisecond {
+		t.Errorf("Expected latency to jump to ~50ms after a slow sample, got %v", got)
+	}
+
+	// an immediately following lower sample barely moves the estimate
+	host.recordLatency(10 * time.Millisecond)
+	if got := host.Latency(); got < 40*time.Millisecond || got > 50*time.Millisecond {
+		t.Errorf("Expected latency to stay near the 50ms peak, got %v", got)
+	}
+
+	// after a long idle period the estimate decays toward zero
+	host.latencyUpdated.Store(time.Now().Add(-5 * latencyDecayTau).UnixNano())
+	if got := host.Latency(); got > time.Millisecond {
+		t.Errorf("Expected latency to decay to under 1ms after idling, got %v", got)
+	}
+}
+
+func TestLeastLatencyUnmarshalCaddyfile(t *testing.T) {
+	d := caddyfile.NewTestDispenser("least_latency")
+	llPolicy := new(LeastLatencySelection)
+	if err := llPolicy.UnmarshalCaddyfile(d); err != nil {
+		t.Errorf("Expected no error for bare policy name, got: %v", err)
+	}
+
+	d = caddyfile.NewTestDispenser("least_latency 2")
+	if err := llPolicy.UnmarshalCaddyfile(d); err == nil {
+		t.Error("Expected an error when an argument is given.")
 	}
 }
 

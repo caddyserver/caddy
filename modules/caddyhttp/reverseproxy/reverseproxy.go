@@ -1046,6 +1046,11 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	res, err := h.Transport.RoundTrip(req)
 	duration := time.Since(start)
 
+	// record the roundtrip latency for latency-aware selection policies;
+	// errored roundtrips count too, with the time elapsed until the error
+	// (which includes any timeout), so that failing upstreams score as slow
+	di.Upstream.Host.recordLatency(duration)
+
 	// record that the round trip is done for the 1xx response handler
 	roundTripMutex.Lock()
 	roundTripDone = true
