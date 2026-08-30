@@ -1372,13 +1372,13 @@ func TestServer_DetermineTrustedProxy_MatchRightMostUntrustedFirst(t *testing.T)
 }
 
 // TestServer_BuildHTTP3ServerEnablesWebTransport asserts that with
-// EnableWebTransport=true the http3.Server advertises WebTransport in
+// WebTransport set the http3.Server advertises WebTransport in
 // its SETTINGS and wires the prerequisites webtransport.Server.Upgrade
 // relies on: DATAGRAM support, a non-nil ConnContext hook (used to stash
 // the underlying *quic.Conn for Upgrade to retrieve), and QUIC
 // stream-reset partial delivery.
 func TestServer_BuildHTTP3ServerEnablesWebTransport(t *testing.T) {
-	s := &Server{EnableWebTransport: true}
+	s := &Server{WebTransport: new(WebTransportConfig)}
 	h3 := s.buildHTTP3Server(&tls.Config{})
 
 	assert.NotNil(t, h3, "expected non-nil http3.Server")
@@ -1390,7 +1390,7 @@ func TestServer_BuildHTTP3ServerEnablesWebTransport(t *testing.T) {
 }
 
 // TestServer_BuildHTTP3ServerWithoutWebTransport asserts that with
-// EnableWebTransport=false (the default) the http3.Server does NOT
+// WebTransport unset (the default) the http3.Server does NOT
 // advertise WebTransport and does not enable the related QUIC/HTTP/3
 // features. This is the load-bearing regression guard: non-WT HTTP/3
 // deployments must pay zero cost for the WebTransport feature.
@@ -1419,17 +1419,6 @@ func TestServer_BuildHTTP3ServerAppliesHandlerAndTLS(t *testing.T) {
 	assert.Equal(t, 4096, h3.MaxHeaderBytes)
 }
 
-// TestServer_BuildWebTransportServerWrapsHTTP3Server asserts that the
-// webtransport.Server wraps the correct http3.Server.
-func TestServer_BuildWebTransportServerWrapsHTTP3Server(t *testing.T) {
-	s := &Server{EnableWebTransport: true}
-	s.h3server = s.buildHTTP3Server(&tls.Config{})
-	wt := s.buildWebTransportServer()
-
-	assert.NotNil(t, wt, "expected non-nil webtransport.Server")
-	assert.Same(t, s.h3server, wt.H3, "webtransport.Server should wrap this server's http3.Server")
-}
-
 // TestServer_WebTransportServerNilUntilH3 asserts the accessor returns nil
 // when HTTP/3 has not been configured.
 func TestServer_WebTransportServerNilUntilH3(t *testing.T) {
@@ -1455,7 +1444,7 @@ func (stubQUICListenerWithoutWT) Close() error { return nil }
 func (stubQUICListenerWithoutWT) SupportsWebTransport() bool { return false }
 
 // TestServeH3AcceptLoopFallsBackWhenListenerLacksWebTransport verifies that
-// when EnableWebTransport is true but the QUIC listener was created without
+// when WebTransport is enabled but the QUIC listener was created without
 // DATAGRAM support, serveH3AcceptLoop falls back to plain HTTP/3 with a
 // warning instead of calling webtransport.Server.ServeQUICConn. wtServer is
 // intentionally nil so the WebTransport branch cannot be silently taken; the
@@ -1463,8 +1452,8 @@ func (stubQUICListenerWithoutWT) SupportsWebTransport() bool { return false }
 func TestServeH3AcceptLoopFallsBackWhenListenerLacksWebTransport(t *testing.T) {
 	core, logs := observer.New(zapcore.WarnLevel)
 	s := &Server{
-		EnableWebTransport: true,
-		logger:             zap.New(core),
+		WebTransport: new(WebTransportConfig),
+		logger:       zap.New(core),
 		h3server:           &http3.Server{},
 		// wtServer left nil: WebTransport path would nil-panic
 	}
