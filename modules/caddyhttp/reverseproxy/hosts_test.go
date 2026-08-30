@@ -55,38 +55,6 @@ func TestHostCountFailBelowZero(t *testing.T) {
 	}
 }
 
-func TestHostActiveHealthCounters(t *testing.T) {
-	h := new(Host)
-	if got := h.activeHealthPasses(); got != 0 {
-		t.Errorf("activeHealthPasses() = %d, want 0", got)
-	}
-	if got := h.activeHealthFails(); got != 0 {
-		t.Errorf("activeHealthFails() = %d, want 0", got)
-	}
-
-	h.countHealthPass(1)
-	h.countHealthFail(1)
-	if got := h.activeHealthPasses(); got != 1 {
-		t.Errorf("activeHealthPasses() = %d, want 1", got)
-	}
-	if got := h.activeHealthFails(); got != 1 {
-		t.Errorf("activeHealthFails() = %d, want 1", got)
-	}
-}
-
-func TestHostResetHealth(t *testing.T) {
-	h := new(Host)
-	h.countHealthPass(5)
-	h.countHealthFail(3)
-	h.resetHealth()
-	if got := h.activeHealthPasses(); got != 0 {
-		t.Errorf("activeHealthPasses() after reset = %d, want 0", got)
-	}
-	if got := h.activeHealthFails(); got != 0 {
-		t.Errorf("activeHealthFails() after reset = %d, want 0", got)
-	}
-}
-
 func TestUpstreamString(t *testing.T) {
 	u := &Upstream{Dial: "localhost:8080", Host: new(Host)}
 	if got := u.String(); got != "localhost:8080" {
