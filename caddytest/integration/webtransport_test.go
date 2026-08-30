@@ -63,7 +63,7 @@ func TestWebTransport_EchoHandlerBidi(t *testing.T) {
         "srv0": {
           "listen": [":9443"],
           "protocols": ["h3"],
-          "enable_webtransport": true,
+          "webtransport": {},
           "routes": [
             {
               "handle": [{"handler": "webtransport"}]
@@ -182,7 +182,7 @@ func TestWebTransport_ReverseProxyEndToEnd(t *testing.T) {
         "proxy": {
           "listen": [":9443"],
           "protocols": ["h3"],
-          "enable_webtransport": true,
+          "webtransport": {},
           "routes": [
             {
               "handle": [
@@ -208,7 +208,7 @@ func TestWebTransport_ReverseProxyEndToEnd(t *testing.T) {
         "upstream": {
           "listen": [":9444"],
           "protocols": ["h3"],
-          "enable_webtransport": true,
+          "webtransport": {},
           "routes": [
             {"handle": [{"handler": "webtransport"}]}
           ],
@@ -331,7 +331,7 @@ func TestWebTransport_ReverseProxyForwardsHeaders(t *testing.T) {
         "proxy": {
           "listen": [":9443"],
           "protocols": ["h3"],
-          "enable_webtransport": true,
+          "webtransport": {},
           "routes": [
             {
               "handle": [
@@ -463,7 +463,7 @@ func TestWebTransport_ReverseProxyExpandsSNIPlaceholder(t *testing.T) {
         "proxy": {
           "listen": [":9443"],
           "protocols": ["h3"],
-          "enable_webtransport": true,
+          "webtransport": {},
           "routes": [
             {
               "handle": [
@@ -582,7 +582,7 @@ func TestWebTransport_UpstreamDialFailureSurfaces5xx(t *testing.T) {
         "proxy": {
           "listen": [":9443"],
           "protocols": ["h3"],
-          "enable_webtransport": true,
+          "webtransport": {},
           "routes": [
             {
               "handle": [
@@ -711,7 +711,7 @@ func TestWebTransport_InFlightRequestsTracked(t *testing.T) {
         "proxy": {
           "listen": [":9443"],
           "protocols": ["h3"],
-          "enable_webtransport": true,
+          "webtransport": {},
           "routes": [
             {
               "handle": [
