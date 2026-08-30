@@ -177,16 +177,8 @@ func TestImportGraphSelfLoop(t *testing.T) {
 	g := &importGraph{}
 	g.addNode("a")
 
-	// BUG: Self-loops are not detected by willCycle(). The function checks if
-	// adding edge from→to would create a cycle by traversing edges from "to"
-	// to see if "from" is reachable. But for a self-loop (from==to), the edge
-	// doesn't exist yet, so the DFS finds nothing and returns false.
-	// A self-importing file would NOT be caught by this cycle detection.
-	err := g.addEdge("a", "a")
-	if err != nil {
-		t.Log("Self-loop was correctly detected (bug may have been fixed)")
-	} else {
-		t.Log("BUG CONFIRMED: addEdge('a', 'a') did not detect self-loop cycle")
+	if err := g.addEdge("a", "a"); err == nil {
+		t.Error("expected error for self-loop cycle a -> a")
 	}
 }
 
@@ -232,9 +224,7 @@ func TestImportGraphAddEdgesWithCycle(t *testing.T) {
 	}
 }
 
-func TestImportGraphRemoveNodeEdgeLeakBug(t *testing.T) {
-	// This test documents a known bug: removeNode doesn't clean up edges.
-	// Edges FROM the removed node remain in the adjacency list.
+func TestImportGraphRemoveNodeCleansEdges(t *testing.T) {
 	g := &importGraph{}
 	g.addNodes([]string{"a", "b", "c"})
 	_ = g.addEdge("a", "b")
@@ -242,20 +232,14 @@ func TestImportGraphRemoveNodeEdgeLeakBug(t *testing.T) {
 
 	g.removeNode("b")
 
-	// Bug: "b" is removed from nodes, but edges from "b" are still in the adjacency list.
-	// This means the graph is now inconsistent.
-	// The node doesn't exist...
 	if g.exists("b") {
 		t.Error("node 'b' should not exist after removeNode")
 	}
-
-	// ...but edges from "b" may still be present in the edges map (this is a bug).
-	// We test this to document the behavior.
-	if g.edges != nil {
-		if targets, ok := g.edges["b"]; ok && len(targets) > 0 {
-			t.Log("BUG CONFIRMED: removeNode does not clean up outgoing edges. " +
-				"Edges from removed node 'b' still exist in adjacency list.")
-		}
+	if targets, ok := g.edges["b"]; ok && len(targets) > 0 {
+		t.Errorf("outgoing edges from removed node 'b' should be cleared, got %v", targets)
+	}
+	if g.areConnected("a", "b") {
+		t.Error("incoming edge 'a' -> 'b' should be removed when 'b' is removed")
 	}
 }
 
