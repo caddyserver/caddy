@@ -425,6 +425,126 @@ func TestWebTransport_ReverseProxyForwardsHeaders(t *testing.T) {
 	}
 }
 
+// TestWebTransport_ReverseProxyUpgradeUsesDownstreamRequest proves that
+// the client-facing Upgrade uses origReq, not the upstream-directed clone.
+// header_up rewrites Host to the upstream address while the client sends
+// Origin matching the downstream Host; CheckOrigin would fail if Upgrade
+// saw the rewritten Host.
+func TestWebTransport_ReverseProxyUpgradeUsesDownstreamRequest(t *testing.T) {
+	if testing.Short() {
+		t.Skip()
+	}
+
+	upgraded := make(chan struct{}, 1)
+	upstreamAddr, stopUpstream := startStandaloneWebTransport(t, func(sess *webtransport.Session, _ *http.Request) {
+		select {
+		case upgraded <- struct{}{}:
+		default:
+		}
+		_ = sess.CloseWithError(0, "")
+	})
+	t.Cleanup(stopUpstream)
+
+	config := fmt.Sprintf(`{
+  "admin": {"listen": "localhost:2999"},
+  "apps": {
+    "http": {
+      "http_port": 9080,
+      "https_port": 9443,
+      "grace_period": 1,
+      "servers": {
+        "proxy": {
+          "listen": [":9443"],
+          "protocols": ["h3"],
+          "webtransport": {},
+          "routes": [
+            {
+              "handle": [
+                {
+                  "handler": "reverse_proxy",
+                  "transport": {
+                    "protocol": "http",
+                    "versions": ["3"],
+                    "tls": {"insecure_skip_verify": true}
+                  },
+                  "headers": {
+                    "request": {
+                      "set": {"Host": ["127.0.0.1:%d"]}
+                    }
+                  },
+                  "upstreams": [{"dial": "127.0.0.1:%d"}]
+                }
+              ]
+            }
+          ],
+          "tls_connection_policies": [
+            {
+              "certificate_selection": {"any_tag": ["cert0"]},
+              "default_sni": "a.caddy.localhost"
+            }
+          ]
+        }
+      }
+    },
+    "tls": {
+      "certificates": {
+        "load_files": [
+          {
+            "certificate": "/a.caddy.localhost.crt",
+            "key": "/a.caddy.localhost.key",
+            "tags": ["cert0"]
+          }
+        ]
+      }
+    },
+    "pki": {"certificate_authorities": {"local": {"install_trust": false}}}
+  }
+}`, upstreamAddr.Port, upstreamAddr.Port)
+
+	tester := caddytest.NewTester(t)
+	tester.InitServer(config, "json")
+
+	dialer := &webtransport.Dialer{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true, //nolint:gosec // local CA
+			ServerName:         "a.caddy.localhost",
+			NextProtos:         []string{http3.NextProtoH3},
+		},
+		QUICConfig: &quic.Config{
+			EnableDatagrams:                  true,
+			EnableStreamResetPartialDelivery: true,
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	hdr := http.Header{"Origin": []string{"https://127.0.0.1:9443"}}
+	var sess *webtransport.Session
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		rsp, s, err := dialer.Dial(ctx, "https://127.0.0.1:9443/", hdr)
+		if rsp != nil {
+			_ = rsp.Body.Close()
+		}
+		if err == nil {
+			sess = s
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("webtransport dial through proxy failed: %v", err)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	defer sess.CloseWithError(0, "")
+
+	select {
+	case <-upgraded:
+	case <-time.After(3 * time.Second):
+		t.Fatal("upstream did not observe a WebTransport session in time")
+	}
+}
+
 // TestWebTransport_ReverseProxyExpandsSNIPlaceholder proves that a
 // placeholder in the transport's tls_server_name (here driven off a request
 // header) is expanded per session before the WebTransport upstream dial, so

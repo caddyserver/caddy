@@ -1017,7 +1017,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	// terminalError because the response is already committed to the
 	// client or no upstream can fix the condition.
 	if isWebTransportExtendedConnect(origReq) {
-		return h.webTransportHijack(rw, req, repl, di, server)
+		return h.webTransportHijack(rw, req, origReq, repl, di, server)
 	}
 
 	// Forward 1xx status codes, backported from https://github.com/golang/go/pull/53164
