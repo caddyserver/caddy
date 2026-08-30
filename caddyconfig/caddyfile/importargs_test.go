@@ -252,21 +252,17 @@ func TestMakeArgsReplacer(t *testing.T) {
 func TestMakeArgsReplacerEmpty(t *testing.T) {
 	repl := makeArgsReplacer([]string{})
 
-	// With no args, any index should be out of bounds
 	got := repl.ReplaceAll("{args[0]}", "")
-	if got == "something" {
-		t.Errorf("repl.ReplaceAll with empty args should not produce a value, got %q", got)
+	if got != "" {
+		t.Errorf("repl.ReplaceAll({args[0]}, \"\") with empty args = %q, want \"\"", got)
 	}
 }
 
 func TestMakeArgsReplacerNil(t *testing.T) {
 	repl := makeArgsReplacer(nil)
 
-	// Should not panic with nil args
 	got := repl.ReplaceAll("{args[0]}", "DEFAULT")
-	if got == "" {
-		// The replacer returns the default when unmatched
-		t.Log("nil args: correctly returned empty/default for {args[0]}")
+	if got != "DEFAULT" {
+		t.Errorf("repl.ReplaceAll({args[0]}, \"DEFAULT\") with nil args = %q, want \"DEFAULT\"", got)
 	}
-	_ = got
 }
