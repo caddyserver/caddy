@@ -164,7 +164,7 @@ func TestRandString_NoConfusingChars(t *testing.T) {
 		{
 			name:     "same case excludes l,0",
 			sameCase: true,
-			excluded: []rune{'l', 'o'},
+			excluded: []rune{'l', '0'},
 		},
 	}
 
