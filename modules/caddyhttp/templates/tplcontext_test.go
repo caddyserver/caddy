@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -29,6 +30,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
@@ -707,4 +709,53 @@ func initTestContext() (TemplateContext, error) {
 		Req:        request,
 		RespHeader: WrappedHeader{make(http.Header)},
 	}, nil
+}
+// TestFuncPlaceholderPropagatesOnlyBodyLimitMarker verifies that the template
+// placeholder function aborts only on the request-body limit marker and keeps
+// rendering unrelated errors as text, exactly like before.
+func TestFuncPlaceholderPropagatesOnlyBodyLimitMarker(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		value     any
+		wantAbort bool
+	}{
+		{name: "body limit marker aborts the template", value: caddyhttp.RequestBodyLimitError{Err: &http.MaxBytesError{Limit: 10}}, wantAbort: true},
+		{name: "unrelated handler error renders as text like before", value: caddyhttp.HandlerError{Err: errors.New("boom"), StatusCode: http.StatusInternalServerError}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repl := caddy.NewReplacer()
+			repl.Map(func(name string) (any, bool) {
+				if name == "http.request.body" {
+					return tc.value, true
+				}
+				return nil, false
+			})
+			req := httptest.NewRequest(http.MethodPost, "/", nil)
+			req = req.WithContext(context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl))
+			c := TemplateContext{Req: req}
+
+			out, err := c.funcPlaceholder("http.request.body")
+
+			if tc.wantAbort {
+				var marker caddyhttp.RequestBodyLimitError
+				if err == nil || !errors.As(err, &marker) {
+					t.Fatalf("expected the body limit marker but got %q, %v", out, err)
+				}
+				handlerErr, ok := err.(caddyhttp.HandlerError)
+				if !ok || handlerErr.StatusCode != http.StatusRequestEntityTooLarge {
+					t.Errorf("expected a 413 handler error carrying the marker but got %v", err)
+				}
+				if out != "" {
+					t.Errorf("expected an empty string on abort but got %q", out)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unrelated handler errors must render as text like before but got %v", err)
+			}
+			if !strings.Contains(out, "boom") {
+				t.Errorf("expected the error text in the output but got %q", out)
+			}
+		})
+	}
 }
