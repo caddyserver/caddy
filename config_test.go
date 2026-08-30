@@ -344,7 +344,7 @@ func TestProvisionContext_NilConfig(t *testing.T) {
 	}
 
 	// Clean up
-	ctx.cfg.cancelFunc()
+	ctx.cfg.cancelFunc(nil)
 }
 
 func TestDuration_UnmarshalJSON_EdgeCases(t *testing.T) {
