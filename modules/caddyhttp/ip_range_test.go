@@ -3,6 +3,8 @@ package caddyhttp
 import (
 	"net/netip"
 	"testing"
+
+	"github.com/caddyserver/caddy/v2"
 )
 
 func TestCIDRExpressionToPrefix(t *testing.T) {
@@ -135,25 +137,13 @@ func TestStaticIPRangeProvision(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &StaticIPRange{Ranges: tt.ranges}
-			// We can't easily create a caddy.Context here without full module setup,
-			// but Provision only uses the ranges field, so we test the logic directly.
-			// The Provision method calls CIDRExpressionToPrefix which we test separately.
-			var parsedCount int
-			var gotErr bool
-			for _, r := range s.Ranges {
-				_, err := CIDRExpressionToPrefix(r)
-				if err != nil {
-					gotErr = true
-					break
-				}
-				parsedCount++
-			}
+			err := s.Provision(caddy.Context{})
 
-			if gotErr != tt.wantErr {
-				t.Errorf("provision error = %v, wantErr %v", gotErr, tt.wantErr)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Provision() error = %v, wantErr %v", err, tt.wantErr)
 			}
-			if !tt.wantErr && parsedCount != tt.wantLen {
-				t.Errorf("parsed %d ranges, want %d", parsedCount, tt.wantLen)
+			if !tt.wantErr && len(s.ranges) != tt.wantLen {
+				t.Errorf("parsed %d ranges, want %d", len(s.ranges), tt.wantLen)
 			}
 		})
 	}
