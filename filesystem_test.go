@@ -16,6 +16,7 @@ package caddy
 
 import (
 	"fmt"
+	"io"
 	"io/fs"
 	"sync"
 	"testing"
@@ -47,7 +48,7 @@ func (m *mockFile) Stat() (fs.FileInfo, error) {
 
 func (m *mockFile) Read(b []byte) (int, error) {
 	if m.pos >= len(m.content) {
-		return 0, fs.ErrClosed
+		return 0, io.EOF
 	}
 	n := copy(b, m.content[m.pos:])
 	m.pos += n
