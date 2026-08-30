@@ -77,8 +77,10 @@ func isWebTransportExtendedConnect(r *http.Request) bool {
 //     has been flushed and the stream is hijacked.
 //
 // Requests that reach this function are already known to be WebTransport;
-// callers should gate with isWebTransportExtendedConnect.
-func (h *Handler) webTransportHijack(rw http.ResponseWriter, req *http.Request, repl *caddy.Replacer, di DialInfo, server *caddyhttp.Server) error {
+// callers should gate with isWebTransportExtendedConnect. origReq is the
+// downstream request (Upgrade / CheckOrigin); req is the upstream-directed
+// clone (URL, header_up, SNI expansion).
+func (h *Handler) webTransportHijack(rw http.ResponseWriter, req *http.Request, origReq *http.Request, repl *caddy.Replacer, di DialInfo, server *caddyhttp.Server) error {
 	wtServer, ok := server.WebTransportServer().(*webtransport.Server)
 	if !ok || wtServer == nil {
 		return terminalError{caddyhttp.Error(http.StatusInternalServerError,
@@ -145,7 +147,7 @@ func (h *Handler) webTransportHijack(rw http.ResponseWriter, req *http.Request, 
 		}
 	}
 
-	clientSess, err := wtServer.Upgrade(naked, req)
+	clientSess, err := wtServer.Upgrade(naked, origReq)
 	if err != nil {
 		_ = upstreamSess.CloseWithError(0, "client upgrade failed")
 		return terminalError{caddyhttp.Error(http.StatusBadRequest,
