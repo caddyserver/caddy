@@ -24,7 +24,7 @@ import (
 // to WebTransport. This is the primary cost comparison steadytao asked
 // about: any non-zero delta vs. pre-WebTransport Caddy would need to be
 // justified, and the implementation is structured so the delta is
-// exactly the branch check on EnableWebTransport.
+// exactly the branch check on webTransportEnabled.
 //
 // This benchmark does not exercise the per-stream dispatch cost
 // (which is inside webtransport-go / quic-go and would require a full
@@ -46,7 +46,7 @@ func BenchmarkBuildHTTP3Server_WebTransportOff(b *testing.B) {
 // performs (AdditionalSettings, ConnContext, EnableDatagrams, etc.)
 // plus setting EnableStreamResetPartialDelivery on the QUIC config.
 func BenchmarkBuildHTTP3Server_WebTransportOn(b *testing.B) {
-	s := &Server{EnableWebTransport: true}
+	s := &Server{WebTransport: new(WebTransportConfig)}
 	tlsCfg := &tls.Config{}
 	b.ResetTimer()
 	for b.Loop() {
