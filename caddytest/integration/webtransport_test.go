@@ -39,6 +39,8 @@ import (
 	"github.com/caddyserver/caddy/v2/caddytest"
 )
 
+const wtProxyListen = "https://127.0.0.1:9443/"
+
 // TestWebTransport_EchoHandlerBidi spins up Caddy with an HTTP/3 listener
 // that terminates a WebTransport session via the http.handlers.webtransport
 // echo handler, then dials it with a real webtransport.Dialer and asserts
@@ -49,114 +51,16 @@ func TestWebTransport_EchoHandlerBidi(t *testing.T) {
 	if testing.Short() {
 		t.Skip()
 	}
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`{
-  "admin": {
-    "listen": "localhost:2999"
-  },
-  "apps": {
-    "http": {
-      "http_port": 9080,
-      "https_port": 9443,
-      "grace_period": 1,
-      "servers": {
-        "srv0": {
-          "listen": [":9443"],
-          "protocols": ["h3"],
-          "webtransport": {},
-          "routes": [
-            {
-              "handle": [{"handler": "webtransport"}]
-            }
-          ],
-          "tls_connection_policies": [
-            {
-              "certificate_selection": {"any_tag": ["cert0"]},
-              "default_sni": "a.caddy.localhost"
-            }
-          ]
-        }
-      }
-    },
-    "tls": {
-      "certificates": {
-        "load_files": [
-          {
-            "certificate": "/a.caddy.localhost.crt",
-            "key": "/a.caddy.localhost.key",
-            "tags": ["cert0"]
-          }
-        ]
-      }
-    },
-    "pki": {
-      "certificate_authorities": {
-        "local": {"install_trust": false}
-      }
-    }
-  }
-}`, "json")
+	caddytest.NewTester(t).InitServer(wtJSON(`"srv0": `+wtH3Server(":9443", `{"handler": "webtransport"}`)), "json")
 
-	dialer := &webtransport.Dialer{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true, //nolint:gosec // test uses a local CA
-			ServerName:         "a.caddy.localhost",
-			NextProtos:         []string{http3.NextProtoH3},
-		},
-		QUICConfig: &quic.Config{
-			EnableDatagrams:                  true,
-			EnableStreamResetPartialDelivery: true,
-		},
-	}
-
-	// Connect. Give the freshly-reconfigured server a brief window to be
-	// ready on the UDP port; retry a handful of times instead of racing.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-
-	var (
-		rsp  *http.Response
-		sess *webtransport.Session
-		err  error
-	)
-	deadline := time.Now().Add(3 * time.Second)
-	for {
-		rsp, sess, err = dialer.Dial(ctx, "https://127.0.0.1:9443/", nil)
-		if err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("webtransport dial failed after retries: %v", err)
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+	rsp, sess := dialWT(t, ctx, nil, nil)
 	defer sess.CloseWithError(0, "")
-
 	if rsp.StatusCode != http.StatusOK {
 		t.Fatalf("unexpected status: %d", rsp.StatusCode)
 	}
-
-	// Open a bidirectional stream and send payload; expect it echoed back.
-	str, err := sess.OpenStreamSync(ctx)
-	if err != nil {
-		t.Fatalf("open stream: %v", err)
-	}
-
-	const payload = "hello webtransport"
-	if _, err := io.WriteString(str, payload); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	if err := str.Close(); err != nil {
-		t.Fatalf("close send: %v", err)
-	}
-
-	got, err := io.ReadAll(str)
-	if err != nil {
-		t.Fatalf("read: %v", err)
-	}
-	if string(got) != payload {
-		t.Fatalf("echo mismatch:\n  got:  %q\n  want: %q", strings.TrimSpace(string(got)), payload)
-	}
+	echoBidi(t, ctx, sess, "hello webtransport")
 }
 
 // TestWebTransport_ReverseProxyEndToEnd spins up a single Caddy instance
@@ -168,134 +72,19 @@ func TestWebTransport_ReverseProxyEndToEnd(t *testing.T) {
 	if testing.Short() {
 		t.Skip()
 	}
-	tester := caddytest.NewTester(t)
-	tester.InitServer(`{
-  "admin": {
-    "listen": "localhost:2999"
-  },
-  "apps": {
-    "http": {
-      "http_port": 9080,
-      "https_port": 9443,
-      "grace_period": 1,
-      "servers": {
-        "proxy": {
-          "listen": [":9443"],
-          "protocols": ["h3"],
-          "webtransport": {},
-          "routes": [
-            {
-              "handle": [
-                {
-                  "handler": "reverse_proxy",
-                  "transport": {
-                    "protocol": "http",
-                    "versions": ["3"],
-                    "tls": {"insecure_skip_verify": true}
-                  },
-                  "upstreams": [{"dial": "127.0.0.1:9444"}]
-                }
-              ]
-            }
-          ],
-          "tls_connection_policies": [
-            {
-              "certificate_selection": {"any_tag": ["cert0"]},
-              "default_sni": "a.caddy.localhost"
-            }
-          ]
-        },
-        "upstream": {
-          "listen": [":9444"],
-          "protocols": ["h3"],
-          "webtransport": {},
-          "routes": [
-            {"handle": [{"handler": "webtransport"}]}
-          ],
-          "tls_connection_policies": [
-            {
-              "certificate_selection": {"any_tag": ["cert0"]},
-              "default_sni": "a.caddy.localhost"
-            }
-          ]
-        }
-      }
-    },
-    "tls": {
-      "certificates": {
-        "load_files": [
-          {
-            "certificate": "/a.caddy.localhost.crt",
-            "key": "/a.caddy.localhost.key",
-            "tags": ["cert0"]
-          }
-        ]
-      }
-    },
-    "pki": {
-      "certificate_authorities": {
-        "local": {"install_trust": false}
-      }
-    }
-  }
-}`, "json")
-
-	dialer := &webtransport.Dialer{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true, //nolint:gosec // local CA
-			ServerName:         "a.caddy.localhost",
-			NextProtos:         []string{http3.NextProtoH3},
-		},
-		QUICConfig: &quic.Config{
-			EnableDatagrams:                  true,
-			EnableStreamResetPartialDelivery: true,
-		},
-	}
+	caddytest.NewTester(t).InitServer(wtJSON(
+		`"proxy": `+wtH3Server(":9443", wtReverseProxyHandler(`"upstreams": [{"dial": "127.0.0.1:9444"}]`))+
+			`, "upstream": `+wtH3Server(":9444", `{"handler": "webtransport"}`),
+	), "json")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-
-	// Retry briefly while both listeners finish binding.
-	var (
-		sess *webtransport.Session
-		rsp  *http.Response
-		err  error
-	)
-	deadline := time.Now().Add(3 * time.Second)
-	for {
-		rsp, sess, err = dialer.Dial(ctx, "https://127.0.0.1:9443/", nil)
-		if err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("webtransport dial through proxy failed after retries: %v", err)
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+	rsp, sess := dialWT(t, ctx, nil, nil)
 	defer sess.CloseWithError(0, "")
-
 	if rsp.StatusCode != http.StatusOK {
 		t.Fatalf("unexpected status: %d", rsp.StatusCode)
 	}
-
-	str, err := sess.OpenStreamSync(ctx)
-	if err != nil {
-		t.Fatalf("open stream through proxy: %v", err)
-	}
-	const payload = "reverse-proxied via the pump"
-	if _, err := io.WriteString(str, payload); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	if err := str.Close(); err != nil {
-		t.Fatalf("close write: %v", err)
-	}
-	got, err := io.ReadAll(str)
-	if err != nil {
-		t.Fatalf("read: %v", err)
-	}
-	if string(got) != payload {
-		t.Fatalf("echo mismatch:\n  got:  %q\n  want: %q", strings.TrimSpace(string(got)), payload)
-	}
+	echoBidi(t, ctx, sess, "reverse-proxied via the pump")
 }
 
 // TestWebTransport_ReverseProxyForwardsHeaders proves that the WebTransport
@@ -309,7 +98,6 @@ func TestWebTransport_ReverseProxyForwardsHeaders(t *testing.T) {
 		t.Skip()
 	}
 
-	// Capture the first Extended CONNECT's headers.
 	gotHeaders := make(chan http.Header, 1)
 	upstreamAddr, stopUpstream := startStandaloneWebTransport(t, func(sess *webtransport.Session, r *http.Request) {
 		select {
@@ -320,93 +108,13 @@ func TestWebTransport_ReverseProxyForwardsHeaders(t *testing.T) {
 	})
 	t.Cleanup(stopUpstream)
 
-	config := fmt.Sprintf(`{
-  "admin": {"listen": "localhost:2999"},
-  "apps": {
-    "http": {
-      "http_port": 9080,
-      "https_port": 9443,
-      "grace_period": 1,
-      "servers": {
-        "proxy": {
-          "listen": [":9443"],
-          "protocols": ["h3"],
-          "webtransport": {},
-          "routes": [
-            {
-              "handle": [
-                {
-                  "handler": "reverse_proxy",
-                  "transport": {
-                    "protocol": "http",
-                    "versions": ["3"],
-                    "tls": {"insecure_skip_verify": true}
-                  },
-                  "headers": {
-                    "request": {
-                      "set": {"X-Caddy-Test": ["caddy-wt-hdr"]}
-                    }
-                  },
-                  "upstreams": [{"dial": "127.0.0.1:%d"}]
-                }
-              ]
-            }
-          ],
-          "tls_connection_policies": [
-            {
-              "certificate_selection": {"any_tag": ["cert0"]},
-              "default_sni": "a.caddy.localhost"
-            }
-          ]
-        }
-      }
-    },
-    "tls": {
-      "certificates": {
-        "load_files": [
-          {
-            "certificate": "/a.caddy.localhost.crt",
-            "key": "/a.caddy.localhost.key",
-            "tags": ["cert0"]
-          }
-        ]
-      }
-    },
-    "pki": {"certificate_authorities": {"local": {"install_trust": false}}}
-  }
-}`, upstreamAddr.Port)
-
-	tester := caddytest.NewTester(t)
-	tester.InitServer(config, "json")
-
-	dialer := &webtransport.Dialer{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true, //nolint:gosec // local CA
-			ServerName:         "a.caddy.localhost",
-			NextProtos:         []string{http3.NextProtoH3},
-		},
-		QUICConfig: &quic.Config{
-			EnableDatagrams:                  true,
-			EnableStreamResetPartialDelivery: true,
-		},
-	}
+	startWTProxy(t, wtReverseProxyHandler(fmt.Sprintf(`
+		"headers": {"request": {"set": {"X-Caddy-Test": ["caddy-wt-hdr"]}}},
+		"upstreams": [{"dial": "127.0.0.1:%d"}]`, upstreamAddr.Port)))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-
-	var sess *webtransport.Session
-	deadline := time.Now().Add(3 * time.Second)
-	for {
-		_, s, err := dialer.Dial(ctx, "https://127.0.0.1:9443/", nil)
-		if err == nil {
-			sess = s
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("webtransport dial through proxy failed: %v", err)
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+	_, sess := dialWT(t, ctx, nil, nil)
 	defer sess.CloseWithError(0, "")
 
 	select {
@@ -445,97 +153,13 @@ func TestWebTransport_ReverseProxyUpgradeUsesDownstreamRequest(t *testing.T) {
 	})
 	t.Cleanup(stopUpstream)
 
-	config := fmt.Sprintf(`{
-  "admin": {"listen": "localhost:2999"},
-  "apps": {
-    "http": {
-      "http_port": 9080,
-      "https_port": 9443,
-      "grace_period": 1,
-      "servers": {
-        "proxy": {
-          "listen": [":9443"],
-          "protocols": ["h3"],
-          "webtransport": {},
-          "routes": [
-            {
-              "handle": [
-                {
-                  "handler": "reverse_proxy",
-                  "transport": {
-                    "protocol": "http",
-                    "versions": ["3"],
-                    "tls": {"insecure_skip_verify": true}
-                  },
-                  "headers": {
-                    "request": {
-                      "set": {"Host": ["127.0.0.1:%d"]}
-                    }
-                  },
-                  "upstreams": [{"dial": "127.0.0.1:%d"}]
-                }
-              ]
-            }
-          ],
-          "tls_connection_policies": [
-            {
-              "certificate_selection": {"any_tag": ["cert0"]},
-              "default_sni": "a.caddy.localhost"
-            }
-          ]
-        }
-      }
-    },
-    "tls": {
-      "certificates": {
-        "load_files": [
-          {
-            "certificate": "/a.caddy.localhost.crt",
-            "key": "/a.caddy.localhost.key",
-            "tags": ["cert0"]
-          }
-        ]
-      }
-    },
-    "pki": {"certificate_authorities": {"local": {"install_trust": false}}}
-  }
-}`, upstreamAddr.Port, upstreamAddr.Port)
-
-	tester := caddytest.NewTester(t)
-	tester.InitServer(config, "json")
-
-	dialer := &webtransport.Dialer{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true, //nolint:gosec // local CA
-			ServerName:         "a.caddy.localhost",
-			NextProtos:         []string{http3.NextProtoH3},
-		},
-		QUICConfig: &quic.Config{
-			EnableDatagrams:                  true,
-			EnableStreamResetPartialDelivery: true,
-		},
-	}
+	startWTProxy(t, wtReverseProxyHandler(fmt.Sprintf(`
+		"headers": {"request": {"set": {"Host": ["127.0.0.1:%d"]}}},
+		"upstreams": [{"dial": "127.0.0.1:%d"}]`, upstreamAddr.Port, upstreamAddr.Port)))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-
-	hdr := http.Header{"Origin": []string{"https://127.0.0.1:9443"}}
-	var sess *webtransport.Session
-	deadline := time.Now().Add(3 * time.Second)
-	for {
-		rsp, s, err := dialer.Dial(ctx, "https://127.0.0.1:9443/", hdr)
-		if rsp != nil {
-			_ = rsp.Body.Close()
-		}
-		if err == nil {
-			sess = s
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("webtransport dial through proxy failed: %v", err)
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+	_, sess := dialWT(t, ctx, http.Header{"Origin": []string{"https://127.0.0.1:9443"}}, nil)
 	defer sess.CloseWithError(0, "")
 
 	select {
@@ -564,93 +188,11 @@ func TestWebTransport_ReverseProxyNegotiatesApplicationProtocol(t *testing.T) {
 	}, "moqt-19")
 	t.Cleanup(stopUpstream)
 
-	config := fmt.Sprintf(`{
-  "admin": {"listen": "localhost:2999"},
-  "apps": {
-    "http": {
-      "http_port": 9080,
-      "https_port": 9443,
-      "grace_period": 1,
-      "servers": {
-        "proxy": {
-          "listen": [":9443"],
-          "protocols": ["h3"],
-          "webtransport": {},
-          "routes": [
-            {
-              "handle": [
-                {
-                  "handler": "reverse_proxy",
-                  "transport": {
-                    "protocol": "http",
-                    "versions": ["3"],
-                    "tls": {"insecure_skip_verify": true}
-                  },
-                  "upstreams": [{"dial": "127.0.0.1:%d"}]
-                }
-              ]
-            }
-          ],
-          "tls_connection_policies": [
-            {
-              "certificate_selection": {"any_tag": ["cert0"]},
-              "default_sni": "a.caddy.localhost"
-            }
-          ]
-        }
-      }
-    },
-    "tls": {
-      "certificates": {
-        "load_files": [
-          {
-            "certificate": "/a.caddy.localhost.crt",
-            "key": "/a.caddy.localhost.key",
-            "tags": ["cert0"]
-          }
-        ]
-      }
-    },
-    "pki": {"certificate_authorities": {"local": {"install_trust": false}}}
-  }
-}`, upstreamAddr.Port)
-
-	tester := caddytest.NewTester(t)
-	tester.InitServer(config, "json")
-
-	dialer := &webtransport.Dialer{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true, //nolint:gosec // local CA
-			ServerName:         "a.caddy.localhost",
-			NextProtos:         []string{http3.NextProtoH3},
-		},
-		QUICConfig: &quic.Config{
-			EnableDatagrams:                  true,
-			EnableStreamResetPartialDelivery: true,
-		},
-		ApplicationProtocols: []string{"moqt-19"},
-	}
+	startWTProxy(t, wtReverseProxyHandler(fmt.Sprintf(`"upstreams": [{"dial": "127.0.0.1:%d"}]`, upstreamAddr.Port)))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-
-	var sess *webtransport.Session
-	var rsp *http.Response
-	deadline := time.Now().Add(3 * time.Second)
-	for {
-		r, s, err := dialer.Dial(ctx, "https://127.0.0.1:9443/", nil)
-		if r != nil {
-			rsp = r
-		}
-		if err == nil {
-			sess = s
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("webtransport dial through proxy failed: %v", err)
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+	rsp, sess := dialWT(t, ctx, nil, []string{"moqt-19"})
 	defer sess.CloseWithError(0, "")
 	if rsp != nil {
 		defer rsp.Body.Close()
@@ -685,7 +227,6 @@ func TestWebTransport_ReverseProxyExpandsSNIPlaceholder(t *testing.T) {
 		t.Skip()
 	}
 
-	// Capture the SNI the upstream observed on its TLS handshake.
 	gotSNI := make(chan string, 1)
 	upstreamAddr, stopUpstream := startStandaloneWebTransport(t, func(sess *webtransport.Session, r *http.Request) {
 		sni := ""
@@ -700,96 +241,14 @@ func TestWebTransport_ReverseProxyExpandsSNIPlaceholder(t *testing.T) {
 	})
 	t.Cleanup(stopUpstream)
 
-	config := fmt.Sprintf(`{
-  "admin": {"listen": "localhost:2999"},
-  "apps": {
-    "http": {
-      "http_port": 9080,
-      "https_port": 9443,
-      "grace_period": 1,
-      "servers": {
-        "proxy": {
-          "listen": [":9443"],
-          "protocols": ["h3"],
-          "webtransport": {},
-          "routes": [
-            {
-              "handle": [
-                {
-                  "handler": "reverse_proxy",
-                  "transport": {
-                    "protocol": "http",
-                    "versions": ["3"],
-                    "tls": {
-                      "insecure_skip_verify": true,
-                      "server_name": "{http.request.header.X-SNI}"
-                    }
-                  },
-                  "upstreams": [{"dial": "127.0.0.1:%d"}]
-                }
-              ]
-            }
-          ],
-          "tls_connection_policies": [
-            {
-              "certificate_selection": {"any_tag": ["cert0"]},
-              "default_sni": "a.caddy.localhost"
-            }
-          ]
-        }
-      }
-    },
-    "tls": {
-      "certificates": {
-        "load_files": [
-          {
-            "certificate": "/a.caddy.localhost.crt",
-            "key": "/a.caddy.localhost.key",
-            "tags": ["cert0"]
-          }
-        ]
-      }
-    },
-    "pki": {"certificate_authorities": {"local": {"install_trust": false}}}
-  }
-}`, upstreamAddr.Port)
-
-	tester := caddytest.NewTester(t)
-	tester.InitServer(config, "json")
-
-	dialer := &webtransport.Dialer{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true, //nolint:gosec // local CA
-			ServerName:         "a.caddy.localhost",
-			NextProtos:         []string{http3.NextProtoH3},
-		},
-		QUICConfig: &quic.Config{
-			EnableDatagrams:                  true,
-			EnableStreamResetPartialDelivery: true,
-		},
-	}
+	startWTProxy(t, wtReverseProxyHandler(
+		fmt.Sprintf(`"upstreams": [{"dial": "127.0.0.1:%d"}]`, upstreamAddr.Port),
+		`"insecure_skip_verify": true, "server_name": "{http.request.header.X-SNI}"`,
+	))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-
-	// The client sends X-SNI on the Extended CONNECT; the proxy's
-	// {http.request.header.X-SNI} placeholder resolves to this value and
-	// becomes the SNI on the upstream dial.
-	reqHdr := http.Header{"X-Sni": []string{"sni.example.com"}}
-
-	var sess *webtransport.Session
-	deadline := time.Now().Add(3 * time.Second)
-	for {
-		_, s, err := dialer.Dial(ctx, "https://127.0.0.1:9443/", reqHdr)
-		if err == nil {
-			sess = s
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("webtransport dial through proxy failed: %v", err)
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+	_, sess := dialWT(t, ctx, http.Header{"X-Sni": []string{"sni.example.com"}}, nil)
 	defer sess.CloseWithError(0, "")
 
 	select {
@@ -811,7 +270,6 @@ func TestWebTransport_UpstreamDialFailureSurfaces5xx(t *testing.T) {
 	if testing.Short() {
 		t.Skip()
 	}
-	// Bind a UDP port then release it so we know nothing is listening.
 	l, err := net.ListenPacket("udp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -819,74 +277,8 @@ func TestWebTransport_UpstreamDialFailureSurfaces5xx(t *testing.T) {
 	deadPort := l.LocalAddr().(*net.UDPAddr).Port
 	_ = l.Close()
 
-	config := fmt.Sprintf(`{
-  "admin": {"listen": "localhost:2999"},
-  "apps": {
-    "http": {
-      "http_port": 9080,
-      "https_port": 9443,
-      "grace_period": 1,
-      "servers": {
-        "proxy": {
-          "listen": [":9443"],
-          "protocols": ["h3"],
-          "webtransport": {},
-          "routes": [
-            {
-              "handle": [
-                {
-                  "handler": "reverse_proxy",
-                  "transport": {
-                    "protocol": "http",
-                    "versions": ["3"],
-                    "tls": {"insecure_skip_verify": true}
-                  },
-                  "upstreams": [{"dial": "127.0.0.1:%d"}]
-                }
-              ]
-            }
-          ],
-          "tls_connection_policies": [
-            {
-              "certificate_selection": {"any_tag": ["cert0"]},
-              "default_sni": "a.caddy.localhost"
-            }
-          ]
-        }
-      }
-    },
-    "tls": {
-      "certificates": {
-        "load_files": [
-          {
-            "certificate": "/a.caddy.localhost.crt",
-            "key": "/a.caddy.localhost.key",
-            "tags": ["cert0"]
-          }
-        ]
-      }
-    },
-    "pki": {"certificate_authorities": {"local": {"install_trust": false}}}
-  }
-}`, deadPort)
+	startWTProxy(t, wtReverseProxyHandler(fmt.Sprintf(`"upstreams": [{"dial": "127.0.0.1:%d"}]`, deadPort)))
 
-	tester := caddytest.NewTester(t)
-	tester.InitServer(config, "json")
-
-	dialer := &webtransport.Dialer{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true, //nolint:gosec // local CA
-			ServerName:         "a.caddy.localhost",
-			NextProtos:         []string{http3.NextProtoH3},
-		},
-		QUICConfig: &quic.Config{
-			EnableDatagrams:                  true,
-			EnableStreamResetPartialDelivery: true,
-		},
-	}
-
-	// Give the proxy a short window to bind; the upstream dial will then
-	// fail quickly against the unbound port.
 	outer, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 	defer cancel()
 
@@ -898,7 +290,7 @@ func TestWebTransport_UpstreamDialFailureSurfaces5xx(t *testing.T) {
 	deadline := time.Now().Add(3 * time.Second)
 	for {
 		ctx, c := context.WithTimeout(outer, 2*time.Second)
-		rsp, sess, dialErr = dialer.Dial(ctx, "https://127.0.0.1:9443/", nil)
+		rsp, sess, dialErr = newWTDialer(nil).Dial(ctx, wtProxyListen, nil)
 		c()
 		if dialErr != nil {
 			break
@@ -933,7 +325,6 @@ func TestWebTransport_InFlightRequestsTracked(t *testing.T) {
 	// the admin API; this keeps the session alive long enough to observe
 	// num_requests > 0.
 	release := make(chan struct{})
-	// t.Cleanup drains release in case the test bails early.
 	t.Cleanup(func() {
 		select {
 		case <-release:
@@ -948,41 +339,38 @@ func TestWebTransport_InFlightRequestsTracked(t *testing.T) {
 	t.Cleanup(stopUpstream)
 
 	upstreamDial := fmt.Sprintf("127.0.0.1:%d", upstreamAddr.Port)
-	config := fmt.Sprintf(`{
+	startWTProxy(t, wtReverseProxyHandler(fmt.Sprintf(`"upstreams": [{"dial": "%s"}]`, upstreamDial)))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	_, sess := dialWT(t, ctx, nil, nil)
+
+	if !waitForUpstreamRequests(t, upstreamDial, 1, 2*time.Second) {
+		t.Fatal("upstream num_requests never reached >= 1 while session was active")
+	}
+
+	_ = sess.CloseWithError(0, "")
+	close(release)
+
+	if !waitForUpstreamRequests(t, upstreamDial, 0, 2*time.Second) {
+		t.Fatal("upstream num_requests did not drop to 0 after session closed")
+	}
+}
+
+func startWTProxy(t *testing.T, handlerJSON string) {
+	t.Helper()
+	caddytest.NewTester(t).InitServer(wtJSON(`"proxy": `+wtH3Server(":9443", handlerJSON)), "json")
+}
+
+func wtJSON(serversJSON string) string {
+	return fmt.Sprintf(`{
   "admin": {"listen": "localhost:2999"},
   "apps": {
     "http": {
       "http_port": 9080,
       "https_port": 9443,
       "grace_period": 1,
-      "servers": {
-        "proxy": {
-          "listen": [":9443"],
-          "protocols": ["h3"],
-          "webtransport": {},
-          "routes": [
-            {
-              "handle": [
-                {
-                  "handler": "reverse_proxy",
-                  "transport": {
-                    "protocol": "http",
-                    "versions": ["3"],
-                    "tls": {"insecure_skip_verify": true}
-                  },
-                  "upstreams": [{"dial": "%s"}]
-                }
-              ]
-            }
-          ],
-          "tls_connection_policies": [
-            {
-              "certificate_selection": {"any_tag": ["cert0"]},
-              "default_sni": "a.caddy.localhost"
-            }
-          ]
-        }
-      }
+      "servers": { %s }
     },
     "tls": {
       "certificates": {
@@ -997,12 +385,43 @@ func TestWebTransport_InFlightRequestsTracked(t *testing.T) {
     },
     "pki": {"certificate_authorities": {"local": {"install_trust": false}}}
   }
-}`, upstreamDial)
+}`, serversJSON)
+}
 
-	tester := caddytest.NewTester(t)
-	tester.InitServer(config, "json")
+func wtH3Server(listen, handlerJSON string) string {
+	return fmt.Sprintf(`{
+  "listen": [%q],
+  "protocols": ["h3"],
+  "webtransport": {},
+  "routes": [{"handle": [%s]}],
+  "tls_connection_policies": [
+    {
+      "certificate_selection": {"any_tag": ["cert0"]},
+      "default_sni": "a.caddy.localhost"
+    }
+  ]
+}`, listen, handlerJSON)
+}
 
-	dialer := &webtransport.Dialer{
+func wtReverseProxyHandler(extraJSON string, tlsExtra ...string) string {
+	tls := `"insecure_skip_verify": true`
+	if len(tlsExtra) > 0 && tlsExtra[0] != "" {
+		tls = tlsExtra[0]
+	}
+	body := fmt.Sprintf(`"handler": "reverse_proxy",
+  "transport": {
+    "protocol": "http",
+    "versions": ["3"],
+    "tls": {%s}
+  }`, tls)
+	if extraJSON != "" {
+		body += ",\n  " + extraJSON
+	}
+	return "{" + body + "}"
+}
+
+func newWTDialer(protocols []string) *webtransport.Dialer {
+	return &webtransport.Dialer{
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: true, //nolint:gosec // local CA
 			ServerName:         "a.caddy.localhost",
@@ -1012,29 +431,44 @@ func TestWebTransport_InFlightRequestsTracked(t *testing.T) {
 			EnableDatagrams:                  true,
 			EnableStreamResetPartialDelivery: true,
 		},
+		ApplicationProtocols: protocols,
 	}
+}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-	defer cancel()
+func dialWT(t *testing.T, ctx context.Context, hdr http.Header, protocols []string) (*http.Response, *webtransport.Session) {
+	t.Helper()
+	dialer := newWTDialer(protocols)
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		rsp, sess, err := dialer.Dial(ctx, wtProxyListen, hdr)
+		if err == nil {
+			return rsp, sess
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("webtransport dial failed after retries: %v", err)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
 
-	_, sess, err := dialer.Dial(ctx, "https://127.0.0.1:9443/", nil)
+func echoBidi(t *testing.T, ctx context.Context, sess *webtransport.Session, payload string) {
+	t.Helper()
+	str, err := sess.OpenStreamSync(ctx)
 	if err != nil {
-		t.Fatalf("proxy Dial failed: %v", err)
+		t.Fatalf("open stream: %v", err)
 	}
-
-	// Poll the admin API until we see num_requests >= 1 for our upstream.
-	if !waitForUpstreamRequests(t, upstreamDial, 1, 2*time.Second) {
-		t.Fatal("upstream num_requests never reached >= 1 while session was active")
+	if _, err := io.WriteString(str, payload); err != nil {
+		t.Fatalf("write: %v", err)
 	}
-
-	// Close the client session and release the upstream so the server-side
-	// handler returns; the deferred decrement in serveWebTransport should
-	// drop num_requests back to 0 once both sides close.
-	_ = sess.CloseWithError(0, "")
-	close(release)
-
-	if !waitForUpstreamRequests(t, upstreamDial, 0, 2*time.Second) {
-		t.Fatal("upstream num_requests did not drop to 0 after session closed")
+	if err := str.Close(); err != nil {
+		t.Fatalf("close send: %v", err)
+	}
+	got, err := io.ReadAll(str)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(got) != payload {
+		t.Fatalf("echo mismatch:\n  got:  %q\n  want: %q", strings.TrimSpace(string(got)), payload)
 	}
 }
 
@@ -1087,7 +521,14 @@ func startStandaloneWebTransport(t *testing.T, handler func(s *webtransport.Sess
 		},
 	}
 	webtransport.ConfigureHTTP3Server(h3)
-	wtServer := &webtransport.Server{H3: h3, ApplicationProtocols: protocols}
+	wtServer := &webtransport.Server{
+		H3:                   h3,
+		ApplicationProtocols: protocols,
+		// Test backends are not browsers; skip same-origin checks so
+		// header_up Host rewrites used by proxy tests do not 400 the
+		// upstream Upgrade.
+		CheckOrigin: func(*http.Request) bool { return true },
+	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		sess, err := wtServer.Upgrade(w, r)
 		if err != nil {
