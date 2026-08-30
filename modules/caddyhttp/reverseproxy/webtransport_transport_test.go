@@ -40,7 +40,7 @@ import (
 //
 // Returns the UDP addr and a shutdown func. Tests should call the shutdown
 // func via t.Cleanup (or explicitly with defer).
-func startTestWebTransportServer(t *testing.T, handler func(s *webtransport.Session, r *http.Request)) (addr *net.UDPAddr, trustRoot *x509.Certificate, shutdown func()) {
+func startTestWebTransportServer(t *testing.T, handler func(s *webtransport.Session, r *http.Request), protocols ...string) (addr *net.UDPAddr, trustRoot *x509.Certificate, shutdown func()) {
 	t.Helper()
 
 	trustRoot, tlsCfg := generateSelfSignedTLS(t, "localhost")
@@ -59,7 +59,7 @@ func startTestWebTransportServer(t *testing.T, handler func(s *webtransport.Sess
 	// internally for the real server.)
 	webtransport.ConfigureHTTP3Server(h3)
 
-	wtServer := &webtransport.Server{H3: h3}
+	wtServer := &webtransport.Server{H3: h3, ApplicationProtocols: protocols}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		sess, err := wtServer.Upgrade(w, r)
 		if err != nil {
@@ -140,11 +140,14 @@ func TestDialUpstreamWebTransport_Succeeds(t *testing.T) {
 	defer cancel()
 
 	url := fmt.Sprintf("https://localhost:%d/", addr.Port)
-	rsp, sess, err := dialUpstreamWebTransport(ctx, clientTLSFor(root), url, nil)
+	rsp, sess, err := dialUpstreamWebTransport(ctx, clientTLSFor(root), url, nil, nil)
 	if err != nil {
 		t.Fatalf("dial failed: %v", err)
 	}
 	defer sess.CloseWithError(0, "")
+	if rsp != nil {
+		defer rsp.Body.Close()
+	}
 	if rsp.StatusCode != http.StatusOK {
 		t.Fatalf("unexpected status %d", rsp.StatusCode)
 	}
@@ -166,11 +169,14 @@ func TestDialUpstreamWebTransport_ForwardsHeaders(t *testing.T) {
 	hdr := http.Header{"User-Agent": []string{"caddy-wt-test"}}
 
 	url := fmt.Sprintf("https://localhost:%d/", addr.Port)
-	_, sess, err := dialUpstreamWebTransport(ctx, clientTLSFor(root), url, hdr)
+	rsp, sess, err := dialUpstreamWebTransport(ctx, clientTLSFor(root), url, hdr, nil)
 	if err != nil {
 		t.Fatalf("dial failed: %v", err)
 	}
 	defer sess.CloseWithError(0, "")
+	if rsp != nil {
+		defer rsp.Body.Close()
+	}
 
 	select {
 	case got := <-gotUA:
@@ -192,9 +198,81 @@ func TestDialUpstreamWebTransport_BadAddress(t *testing.T) {
 	// Use a loopback port we picked at random and left unbound.
 	freePort := pickFreeUDPPort(t)
 	url := fmt.Sprintf("https://127.0.0.1:%d/", freePort)
-	_, _, err := dialUpstreamWebTransport(ctx, &tls.Config{InsecureSkipVerify: true}, url, nil) //nolint:gosec // test only
+	_, _, err := dialUpstreamWebTransport(ctx, &tls.Config{InsecureSkipVerify: true}, url, nil, nil) //nolint:gosec // test only
 	if err == nil {
 		t.Fatal("expected error dialing unbound port, got nil")
+	}
+}
+
+func TestParseWTAvailableProtocols(t *testing.T) {
+	header := func(v string) http.Header {
+		h := make(http.Header)
+		if v != "" {
+			h.Set(wtAvailableProtocolsHeader, v)
+		}
+		return h
+	}
+	for i, tc := range []struct {
+		name string
+		hdr  http.Header
+		want []string
+	}{
+		{name: "missing", hdr: http.Header{}},
+		{
+			name: "single",
+			hdr:  header(`"moqt-19"`),
+			want: []string{"moqt-19"},
+		},
+		{
+			name: "preference order",
+			hdr:  header(`"moqt-19", "moqt-18"`),
+			want: []string{"moqt-19", "moqt-18"},
+		},
+		{
+			name: "malformed",
+			hdr:  header("not a structured field"),
+		},
+	} {
+		got := parseWTAvailableProtocols(tc.hdr)
+		if len(got) != len(tc.want) {
+			t.Errorf("test %d (%s): got %v, want %v", i, tc.name, got, tc.want)
+			continue
+		}
+		for j := range got {
+			if got[j] != tc.want[j] {
+				t.Errorf("test %d (%s): got %v, want %v", i, tc.name, got, tc.want)
+				break
+			}
+		}
+	}
+}
+
+func TestDialUpstreamWebTransport_NegotiatesProtocol(t *testing.T) {
+	if testing.Short() {
+		t.Skip()
+	}
+	addr, root, shutdown := startTestWebTransportServer(t, func(sess *webtransport.Session, _ *http.Request) {
+		_ = sess.CloseWithError(0, "")
+	}, "moqt-19")
+	t.Cleanup(shutdown)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	url := fmt.Sprintf("https://localhost:%d/", addr.Port)
+	rsp, sess, err := dialUpstreamWebTransport(ctx, clientTLSFor(root), url, nil, []string{"moqt-19"})
+	if err != nil {
+		t.Fatalf("dial failed: %v", err)
+	}
+	defer sess.CloseWithError(0, "")
+	if rsp != nil {
+		defer rsp.Body.Close()
+	}
+	if got := sess.SessionState().ApplicationProtocol; got != "moqt-19" {
+		t.Errorf("ApplicationProtocol = %q, want moqt-19", got)
+	}
+	if got := rsp.Header.Get(wtProtocolHeader); got == "" {
+		t.Error("expected WT-Protocol on the response")
 	}
 }
 

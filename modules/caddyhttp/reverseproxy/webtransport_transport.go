@@ -22,12 +22,20 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/dunglas/httpsfv"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 	"github.com/quic-go/webtransport-go"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+)
+
+// Go canonical MIME keys (http.CanonicalHeaderKey). Spec names are
+// WT-Available-Protocols / WT-Protocol; HTTP/3 on the wire is lowercase.
+const (
+	wtAvailableProtocolsHeader = "Wt-Available-Protocols"
+	wtProtocolHeader           = "Wt-Protocol"
 )
 
 // webtransportProtocol values are the :protocol pseudo-header tokens sent
@@ -97,16 +105,16 @@ func (h *Handler) webTransportHijack(rw http.ResponseWriter, req *http.Request, 
 	}
 
 	// A WT CONNECT reached this handler because the parent server has
-	// webtransport enabled. But the handler's transport still has to
-	// speak HTTP/3 to dial the WT upstream.
+	// webtransport enabled. The upstream dial still needs the HTTP/3
+	// transport's TLS config (versions must include "3").
 	ht, ok := h.Transport.(*HTTPTransport)
-	if !ok {
+	if !ok || ht.h3Transport == nil {
 		return terminalError{caddyhttp.Error(http.StatusBadGateway,
-			errors.New("webtransport: requires the 'http' transport with versions [\"3\"]"))}
+			errors.New("webtransport: requires the http transport with versions [\"3\"]"))}
 	}
-	if ht.h3Transport == nil {
-		return terminalError{caddyhttp.Error(http.StatusBadGateway,
-			errors.New("webtransport: transport does not include HTTP/3; set versions to [\"3\"]"))}
+	tlsCfg := ht.h3Transport.TLSClientConfig
+	if tlsCfg == nil {
+		tlsCfg = new(tls.Config)
 	}
 
 	// Expand SNI placeholders (e.g. tls_server_name {http.request.host}) per
@@ -125,11 +133,21 @@ func (h *Handler) webTransportHijack(rw http.ResponseWriter, req *http.Request, 
 	// an already-upgraded session closing immediately. DialError so the
 	// outer proxy loop can fail over to another upstream, same as any
 	// other dial failure.
-		//
-		// WebTransport over HTTP/3 always uses https; RequestURI preserves
-		// the request's encoded path and query.
-		upstreamURL := "https://" + di.Address + req.URL.RequestURI()
-		upstreamResp, upstreamSess, err := dialUpstreamWebTransport(req.Context(), ht.h3Transport.TLSClientConfig, upstreamURL, req.Header)
+	//
+	// WebTransport over HTTP/3 always uses https; RequestURI preserves
+	// the request's encoded path and query.
+	//
+	// Application protocol negotiation (draft-ietf-webtrans-http3 §3.3)
+	// is relayed, not chosen here: parse the client's offer from origReq,
+	// put it on the upstream Dialer, and copy the upstream's WT-Protocol
+	// onto the client 200. Strip the offer from the forwarded headers so
+	// the Dialer remashals a spec-correct list. The shared
+	// webtransport.Server keeps ApplicationProtocols empty so Caddy does
+	// not independently select a protocol.
+	offered := parseWTAvailableProtocols(origReq.Header)
+	req.Header.Del(wtAvailableProtocolsHeader)
+	upstreamURL := "https://" + di.Address + req.URL.RequestURI()
+	upstreamResp, upstreamSess, err := dialUpstreamWebTransport(req.Context(), tlsCfg, upstreamURL, req.Header, offered)
 	if err != nil {
 		return DialError{fmt.Errorf("webtransport upstream dial: %w", err)}
 	}
@@ -145,6 +163,9 @@ func (h *Handler) webTransportHijack(rw http.ResponseWriter, req *http.Request, 
 			h.Headers.Response.Require.Match(upstreamResp.StatusCode, upstreamResp.Header) {
 			h.Headers.Response.ApplyTo(rw.Header(), repl)
 		}
+	}
+	if proto := upstreamResp.Header.Get(wtProtocolHeader); proto != "" {
+		rw.Header().Set(wtProtocolHeader, proto)
 	}
 
 	clientSess, err := wtServer.Upgrade(naked, origReq)
@@ -163,16 +184,47 @@ func (h *Handler) webTransportHijack(rw http.ResponseWriter, req *http.Request, 
 // CONNECT request. The returned session is owned by the caller and must be
 // closed when no longer in use. Return-value order matches
 // webtransport.Dialer.Dial: (response, session, error).
+// applicationProtocols is the client's WT-Available-Protocols offer,
+// forwarded so the Dialer will accept the upstream's WT-Protocol choice.
 //
 // EXPERIMENTAL: this helper is an internal building block for the upcoming
 // WebTransport reverse-proxy transport. Shape and behavior may change.
-func dialUpstreamWebTransport(ctx context.Context, tlsCfg *tls.Config, urlStr string, reqHdr http.Header) (*http.Response, *webtransport.Session, error) {
+func dialUpstreamWebTransport(ctx context.Context, tlsCfg *tls.Config, urlStr string, reqHdr http.Header, applicationProtocols []string) (*http.Response, *webtransport.Session, error) {
 	d := &webtransport.Dialer{
-		TLSClientConfig: tlsCfg,
+		TLSClientConfig:      tlsCfg,
+		ApplicationProtocols: applicationProtocols,
 		QUICConfig: &quic.Config{
 			EnableDatagrams:                  true,
 			EnableStreamResetPartialDelivery: true,
 		},
 	}
 	return d.Dial(ctx, urlStr, reqHdr)
+}
+
+// parseWTAvailableProtocols extracts application-protocol tokens from a
+// WT-Available-Protocols structured-field list. Missing or malformed
+// values are ignored, matching draft-ietf-webtrans-http3 (treat the
+// field as absent).
+func parseWTAvailableProtocols(h http.Header) []string {
+	vals := h.Values(wtAvailableProtocolsHeader)
+	if len(vals) == 0 {
+		return nil
+	}
+	list, err := httpsfv.UnmarshalList(vals)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, item := range list {
+		i, ok := item.(httpsfv.Item)
+		if !ok {
+			return nil
+		}
+		p, ok := i.Value.(string)
+		if !ok {
+			return nil
+		}
+		out = append(out, p)
+	}
+	return out
 }
