@@ -96,7 +96,7 @@ func randString(n int, sameCase bool) string {
 	}
 	dict := []byte("abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRTUVWXY23456789")
 	if sameCase {
-		dict = []byte("abcdefghijkmnpqrstuvwxyz0123456789")
+		dict = []byte("abcdefghijkmnpqrstuvwxyz123456789")
 	}
 	b := make([]byte, n)
 	for i := range b {
