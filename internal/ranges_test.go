@@ -90,12 +90,8 @@ func TestMaxSizeSubjectsListForLog(t *testing.T) {
 				"b.com": {},
 			},
 			maxToDisplay: 0,
-			// BUG: When maxToDisplay is 0, code still appends one domain
-			// because append happens before the break check in the loop.
-			// Expected behavior: 1 item (just suffix). Actual: 2 items
-			// (1 leaked domain + suffix).
-			wantLen:    2,
-			wantSuffix: true,
+			wantLen:      1,
+			wantSuffix:   true,
 		},
 		{
 			name: "single subject with max 1",
