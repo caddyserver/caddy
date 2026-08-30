@@ -55,7 +55,7 @@ func newPumpTestTopology(t *testing.T, upstreamHandler func(*webtransport.Sessio
 		dialCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		url := fmt.Sprintf("https://localhost:%d/", uAddr.Port)
-		_, upstreamSess, err := dialUpstreamWebTransport(dialCtx, clientTLSFor(uRoot), url, nil)
+		_, upstreamSess, err := dialUpstreamWebTransport(dialCtx, clientTLSFor(uRoot), url, nil, nil)
 		if err != nil {
 			t.Errorf("frontend: dial upstream: %v", err)
 			_ = clientSess.CloseWithError(0, "upstream dial failed")
@@ -80,7 +80,7 @@ func (tt *pumpTestTopology) dialFrontend(t *testing.T) *webtransport.Session {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	url := fmt.Sprintf("https://localhost:%d/", tt.frontendAddr.Port)
-	_, sess, err := dialUpstreamWebTransport(ctx, tt.clientTLS, url, nil)
+	_, sess, err := dialUpstreamWebTransport(ctx, tt.clientTLS, url, nil, nil)
 	if err != nil {
 		t.Fatalf("client dial frontend: %v", err)
 	}

@@ -545,6 +545,134 @@ func TestWebTransport_ReverseProxyUpgradeUsesDownstreamRequest(t *testing.T) {
 	}
 }
 
+// TestWebTransport_ReverseProxyNegotiatesApplicationProtocol proves the
+// proxy relays WT-Available-Protocols to the upstream and copies the
+// upstream's WT-Protocol choice back to the client (draft-ietf-webtrans-http3
+// §3.3). Without this, a MOQ client such as MediaMTX closes with WT_ALPN_ERROR.
+func TestWebTransport_ReverseProxyNegotiatesApplicationProtocol(t *testing.T) {
+	if testing.Short() {
+		t.Skip()
+	}
+
+	gotHeaders := make(chan http.Header, 1)
+	upstreamAddr, stopUpstream := startStandaloneWebTransport(t, func(sess *webtransport.Session, r *http.Request) {
+		select {
+		case gotHeaders <- r.Header.Clone():
+		default:
+		}
+		_ = sess.CloseWithError(0, "")
+	}, "moqt-19")
+	t.Cleanup(stopUpstream)
+
+	config := fmt.Sprintf(`{
+  "admin": {"listen": "localhost:2999"},
+  "apps": {
+    "http": {
+      "http_port": 9080,
+      "https_port": 9443,
+      "grace_period": 1,
+      "servers": {
+        "proxy": {
+          "listen": [":9443"],
+          "protocols": ["h3"],
+          "webtransport": {},
+          "routes": [
+            {
+              "handle": [
+                {
+                  "handler": "reverse_proxy",
+                  "transport": {
+                    "protocol": "http",
+                    "versions": ["3"],
+                    "tls": {"insecure_skip_verify": true}
+                  },
+                  "upstreams": [{"dial": "127.0.0.1:%d"}]
+                }
+              ]
+            }
+          ],
+          "tls_connection_policies": [
+            {
+              "certificate_selection": {"any_tag": ["cert0"]},
+              "default_sni": "a.caddy.localhost"
+            }
+          ]
+        }
+      }
+    },
+    "tls": {
+      "certificates": {
+        "load_files": [
+          {
+            "certificate": "/a.caddy.localhost.crt",
+            "key": "/a.caddy.localhost.key",
+            "tags": ["cert0"]
+          }
+        ]
+      }
+    },
+    "pki": {"certificate_authorities": {"local": {"install_trust": false}}}
+  }
+}`, upstreamAddr.Port)
+
+	tester := caddytest.NewTester(t)
+	tester.InitServer(config, "json")
+
+	dialer := &webtransport.Dialer{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true, //nolint:gosec // local CA
+			ServerName:         "a.caddy.localhost",
+			NextProtos:         []string{http3.NextProtoH3},
+		},
+		QUICConfig: &quic.Config{
+			EnableDatagrams:                  true,
+			EnableStreamResetPartialDelivery: true,
+		},
+		ApplicationProtocols: []string{"moqt-19"},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var sess *webtransport.Session
+	var rsp *http.Response
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		r, s, err := dialer.Dial(ctx, "https://127.0.0.1:9443/", nil)
+		if r != nil {
+			rsp = r
+		}
+		if err == nil {
+			sess = s
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("webtransport dial through proxy failed: %v", err)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	defer sess.CloseWithError(0, "")
+	if rsp != nil {
+		defer rsp.Body.Close()
+	}
+
+	if got := sess.SessionState().ApplicationProtocol; got != "moqt-19" {
+		t.Errorf("client ApplicationProtocol = %q, want moqt-19", got)
+	}
+	if got := rsp.Header.Get("WT-Protocol"); got == "" {
+		t.Error("client response missing WT-Protocol")
+	}
+
+	select {
+	case hdr := <-gotHeaders:
+		if got := hdr.Get("WT-Available-Protocols"); !strings.Contains(got, "moqt-19") {
+			t.Errorf("upstream WT-Available-Protocols = %q, want to contain moqt-19", got)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("upstream did not observe a WebTransport session in time")
+	}
+}
+
 // TestWebTransport_ReverseProxyExpandsSNIPlaceholder proves that a
 // placeholder in the transport's tls_server_name (here driven off a request
 // header) is expanded per session before the WebTransport upstream dial, so
@@ -945,7 +1073,7 @@ func waitForUpstreamRequests(t *testing.T, dial string, wantRequests int, timeou
 // startStandaloneWebTransport starts a webtransport.Server on a random UDP
 // port with a self-signed cert. handler runs after a successful Upgrade.
 // Returns the listener addr and a shutdown func.
-func startStandaloneWebTransport(t *testing.T, handler func(s *webtransport.Session, r *http.Request)) (*net.UDPAddr, func()) {
+func startStandaloneWebTransport(t *testing.T, handler func(s *webtransport.Session, r *http.Request), protocols ...string) (*net.UDPAddr, func()) {
 	t.Helper()
 	tlsCfg := newSelfSignedTLSConfig(t, "localhost")
 
@@ -959,7 +1087,7 @@ func startStandaloneWebTransport(t *testing.T, handler func(s *webtransport.Sess
 		},
 	}
 	webtransport.ConfigureHTTP3Server(h3)
-	wtServer := &webtransport.Server{H3: h3}
+	wtServer := &webtransport.Server{H3: h3, ApplicationProtocols: protocols}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		sess, err := wtServer.Upgrade(w, r)
 		if err != nil {

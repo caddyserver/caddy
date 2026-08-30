@@ -13,6 +13,7 @@ require (
 	github.com/caddyserver/zerossl v0.1.5
 	github.com/cloudflare/circl v1.6.4
 	github.com/dunglas/go-urlpattern v1.0.0
+	github.com/dunglas/httpsfv v1.1.0
 	github.com/dustin/go-humanize v1.0.1
 	github.com/go-chi/chi/v5 v5.3.1
 	github.com/google/cel-go v0.29.2
@@ -66,7 +67,6 @@ require (
 	github.com/coreos/go-oidc/v3 v3.17.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dlclark/regexp2/v2 v2.2.1 // indirect
-	github.com/dunglas/httpsfv v1.1.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
 	github.com/go-jose/go-jose/v3 v3.0.5 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
