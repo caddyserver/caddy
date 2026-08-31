@@ -215,6 +215,58 @@ func TestWebTransport_ReverseProxyNegotiatesApplicationProtocol(t *testing.T) {
 	}
 }
 
+// TestWebTransport_ReverseProxyMOQLike is the MediaMTX scenario from #7669:
+// the client offers moqt-19 AND header_up rewrites Host. Both of elee's
+// bugs fire together — Upgrade must use origReq (CheckOrigin against the
+// rewritten Host would 400) and WT-Available-Protocols must be relayed so
+// the upstream selects moqt-19 instead of closing with WT_ALPN_ERROR.
+func TestWebTransport_ReverseProxyMOQLike(t *testing.T) {
+	if testing.Short() {
+		t.Skip()
+	}
+
+	gotHeaders := make(chan http.Header, 1)
+	upstreamAddr, stopUpstream := startStandaloneWebTransport(t, func(sess *webtransport.Session, r *http.Request) {
+		select {
+		case gotHeaders <- r.Header.Clone():
+		default:
+		}
+		str, err := sess.AcceptStream(sess.Context())
+		if err != nil {
+			return
+		}
+		_, _ = io.Copy(str, str)
+		_ = str.Close()
+	}, "moqt-19")
+	t.Cleanup(stopUpstream)
+
+	startWTProxy(t, wtReverseProxyHandler(fmt.Sprintf(`
+		"headers": {"request": {"set": {"Host": ["127.0.0.1:%d"]}}},
+		"upstreams": [{"dial": "127.0.0.1:%d"}]`, upstreamAddr.Port, upstreamAddr.Port)))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	rsp, sess := dialWT(t, ctx, http.Header{"Origin": []string{"https://127.0.0.1:9443"}}, []string{"moqt-19"})
+	defer sess.CloseWithError(0, "")
+	if rsp != nil {
+		defer rsp.Body.Close()
+	}
+
+	if got := sess.SessionState().ApplicationProtocol; got != "moqt-19" {
+		t.Errorf("client ApplicationProtocol = %q, want moqt-19", got)
+	}
+	echoBidi(t, ctx, sess, "moq-like through the proxy")
+
+	select {
+	case hdr := <-gotHeaders:
+		if got := hdr.Get("WT-Available-Protocols"); !strings.Contains(got, "moqt-19") {
+			t.Errorf("upstream WT-Available-Protocols = %q, want to contain moqt-19", got)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("upstream did not observe a WebTransport session in time")
+	}
+}
+
 // TestWebTransport_ReverseProxyExpandsSNIPlaceholder proves that a
 // placeholder in the transport's tls_server_name (here driven off a request
 // header) is expanded per session before the WebTransport upstream dial, so
