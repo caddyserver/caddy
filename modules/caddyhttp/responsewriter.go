@@ -78,7 +78,11 @@ func UnwrapResponseWriterAs[T any](w http.ResponseWriter) (T, bool) {
 		if !ok {
 			return zero, false
 		}
-		w = u.Unwrap()
+		next := u.Unwrap()
+		if next == w {
+			return zero, false
+		}
+		w = next
 	}
 }
 
