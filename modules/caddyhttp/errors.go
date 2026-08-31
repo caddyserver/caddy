@@ -85,15 +85,18 @@ func (e HandlerError) Unwrap() error { return e.Err }
 // randString returns a string of n random characters.
 // It is not even remotely secure OR a proper distribution.
 // But it's good enough for some things. It excludes certain
-// confusing characters like I, l, 1, 0, O, etc. If sameCase
-// is true, then uppercase letters are excluded.
+// confusing characters like I, l, 1, 0, O. If sameCase
+// is true, then uppercase letters are excluded as well as
+// the characters l and o. If sameCase is false, both uppercase
+// and lowercase letters are used, and the characters I, l, 1, 0, O
+// are excluded.
 func randString(n int, sameCase bool) string {
 	if n <= 0 {
 		return ""
 	}
 	dict := []byte("abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRTUVWXY23456789")
 	if sameCase {
-		dict = []byte("abcdefghijkmnpqrstuvwxyz0123456789")
+		dict = []byte("abcdefghijkmnpqrstuvwxyz123456789")
 	}
 	b := make([]byte, n)
 	for i := range b {

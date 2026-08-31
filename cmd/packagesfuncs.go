@@ -49,20 +49,28 @@ func cmdUpgrade(fl Flags) (int, error) {
 func splitModule(arg string) (module, version string, err error) {
 	const versionSplit = "@"
 
-	// accommodate module paths that have @ in them, but we can only tolerate that if there's also
-	// a version, otherwise we don't know if it's a version separator or part of the file path
-	lastVersionSplit := strings.LastIndex(arg, versionSplit)
-	if lastVersionSplit < 0 {
+	// Per https://go.dev/ref/mod#go-mod-file-ident, module paths consist of
+	// ASCII letters, digits, and `-`, `.`, `_`, `~` only, so `@` is never a
+	// valid path character. That makes the split unambiguous: at most one
+	// `@` may appear, and it separates the module path from the version.
+	switch strings.Count(arg, versionSplit) {
+	case 0:
 		module = arg
-	} else {
-		module, version = arg[:lastVersionSplit], arg[lastVersionSplit+1:]
+	case 1:
+		idx := strings.Index(arg, versionSplit)
+		module, version = arg[:idx], arg[idx+1:]
+		if version == "" {
+			return "", "", fmt.Errorf("version is required after '@'")
+		}
+	default:
+		return "", "", fmt.Errorf("module path must not contain '@'")
 	}
 
 	if module == "" {
-		err = fmt.Errorf("module name is required")
+		return "", "", fmt.Errorf("module name is required")
 	}
 
-	return module, version, err
+	return module, version, nil
 }
 
 func cmdAddPackage(fl Flags) (int, error) {

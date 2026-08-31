@@ -10,10 +10,10 @@ func MaxSizeSubjectsListForLog(subjects map[string]struct{}, maxToDisplay int) [
 	numberOfNamesToDisplay := min(len(subjects), maxToDisplay)
 	domainsToDisplay := make([]string, 0, numberOfNamesToDisplay)
 	for domain := range subjects {
-		domainsToDisplay = append(domainsToDisplay, domain)
 		if len(domainsToDisplay) >= numberOfNamesToDisplay {
 			break
 		}
+		domainsToDisplay = append(domainsToDisplay, domain)
 	}
 	if len(subjects) > maxToDisplay {
 		domainsToDisplay = append(domainsToDisplay, fmt.Sprintf("(and %d more...)", len(subjects)-maxToDisplay))
