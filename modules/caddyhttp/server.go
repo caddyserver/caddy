@@ -620,7 +620,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// advertise HTTP/3, if enabled
 	if s.h3server != nil && r.ProtoMajor < 3 {
 		if err := s.h3server.SetQUICHeaders(h); err != nil {
-			if c := s.logger.Check(zapcore.ErrorLevel, "setting HTTP/3 Alt-Svc header"); c != nil {
+			if c := s.logger.Check(zapcore.DebugLevel, "setting HTTP/3 Alt-Svc header"); c != nil {
 				c.Write(zap.Error(err))
 			}
 		}
@@ -1033,6 +1033,7 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 		s.h3server = &http3.Server{
 			Handler:        s,
 			TLSConfig:      tlsCfg,
+			Port:           int(addr.StartPort),
 			MaxHeaderBytes: s.MaxHeaderBytes,
 			// QUICConfig is deliberately unset: http3.Server only reads it when it
 			// creates its own listener (ListenAndServe/Serve). We bring our own
@@ -1040,6 +1041,8 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 			// The QUIC settings that actually apply are in NetworkAddress.ListenQUIC.
 			IdleTimeout: time.Duration(s.IdleTimeout),
 		}
+	} else if s.h3server.Port == 0 && addr.StartPort != 0 {
+		s.h3server.Port = int(addr.StartPort)
 	}
 
 	s.quicListeners = append(s.quicListeners, h3ln)
