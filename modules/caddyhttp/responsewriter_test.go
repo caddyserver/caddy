@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 type responseWriterSpy interface {
@@ -169,3 +170,70 @@ func TestResponseRecorderReadFrom(t *testing.T) {
 		})
 	}
 }
+
+// targetIface is an interface that only the innermost writer in the tests
+// below implements; it's used to assert UnwrapResponseWriterAs walks past
+// outer wrappers to find it.
+type targetIface interface {
+	http.ResponseWriter
+	magic() string
+}
+
+type targetWriter struct {
+	baseRespWriter
+}
+
+func (*targetWriter) magic() string { return "ok" }
+
+// plainWrapper wraps an http.ResponseWriter and forwards only the mandatory
+// methods. It implements Unwrap() so the helper can traverse it.
+type plainWrapper struct{ inner http.ResponseWriter }
+
+func (p *plainWrapper) Header() http.Header         { return p.inner.Header() }
+func (p *plainWrapper) Write(b []byte) (int, error) { return p.inner.Write(b) }
+func (p *plainWrapper) WriteHeader(statusCode int)  { p.inner.WriteHeader(statusCode) }
+func (p *plainWrapper) Unwrap() http.ResponseWriter { return p.inner }
+
+func TestUnwrapResponseWriterAs(t *testing.T) {
+	inner := &targetWriter{}
+	for _, tc := range []struct {
+		name string
+		w    http.ResponseWriter
+		ok   bool
+	}{
+		{"direct", inner, true},
+		{"single wrapper", &ResponseWriterWrapper{ResponseWriter: inner}, true},
+		{"multiple wrappers", &plainWrapper{inner: &ResponseWriterWrapper{ResponseWriter: &plainWrapper{inner: inner}}}, true},
+		{"not found", &ResponseWriterWrapper{ResponseWriter: &baseRespWriter{}}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := UnwrapResponseWriterAs[targetIface](tc.w)
+			if ok != tc.ok {
+				t.Fatalf("ok = %v, want %v", ok, tc.ok)
+			}
+			if ok && got.magic() != "ok" {
+				t.Errorf("unexpected writer returned: %v", got)
+			}
+		})
+	}
+}
+
+type selfUnwrapWriter struct{ baseRespWriter }
+
+func (s *selfUnwrapWriter) Unwrap() http.ResponseWriter { return s }
+
+func TestUnwrapResponseWriterAs_StopsOnSelfReference(t *testing.T) {
+	// A wrapper whose Unwrap returns itself must not loop forever.
+	loop := &selfUnwrapWriter{}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = UnwrapResponseWriterAs[targetIface](loop)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("UnwrapResponseWriterAs hung on self-referential Unwrap")
+	}
+}
+

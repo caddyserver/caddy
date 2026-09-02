@@ -423,15 +423,34 @@ func JoinNetworkAddress(network, host, port string) string {
 	return a
 }
 
+// ListenQUICOptions holds optional parameters for ListenQUIC.
+// A zero value matches historical defaults: 0-RTT is allowed,
+// WebTransport QUIC capabilities are off, and no packet-conn
+// wrappers are applied.
+//
+// NOTE: This API is EXPERIMENTAL and may be changed or removed.
+type ListenQUICOptions struct {
+	TLSConfig          *tls.Config
+	PacketConnWrappers []PacketConnWrapper
+	Allow0RTT          *bool
+	EnableWebTransport bool
+}
+
 // ListenQUIC returns a http3.QUICEarlyListener suitable for use in a Caddy module.
 //
 // The network will be transformed into a QUIC-compatible type if the same address can be used with
 // different networks. Currently this just means that for tcp, udp will be used with the same
 // address instead.
 //
+// ctx, portOffset, and config match Listen. Additional QUIC-specific
+// parameters are passed in opts.
+//
+// The underlying listener is pooled per address: the first creator's configuration
+// (Allow0RTT, WebTransport capabilities) wins; subsequent callers reuse that listener.
+//
 // NOTE: This API is EXPERIMENTAL and may be changed or removed.
 // NOTE: user should close the returned listener twice, once to stop accepting new connections, the second time to free up the packet conn.
-func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config net.ListenConfig, tlsConf *tls.Config, pcWrappers []PacketConnWrapper, allow0rttconf *bool) (http3.QUICListener, error) {
+func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config net.ListenConfig, opts ListenQUICOptions) (http3.QUICListener, error) {
 	lnKey := listenerKey("quic"+na.Network, na.JoinHostPort(portOffset))
 
 	sharedEarlyListener, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
@@ -443,7 +462,7 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 		ln := lnAny.(net.PacketConn)
 
 		h3ln := ln
-		if len(pcWrappers) == 0 {
+		if len(opts.PacketConnWrappers) == 0 {
 			for {
 				// retrieve the underlying socket, so quic-go can optimize.
 				if unwrapper, ok := h3ln.(interface{ Unwrap() net.PacketConn }); ok {
@@ -454,12 +473,12 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 			}
 		} else {
 			// wrap packet conn before QUIC
-			for _, pcWrapper := range pcWrappers {
+			for _, pcWrapper := range opts.PacketConnWrappers {
 				h3ln = pcWrapper.WrapPacketConn(h3ln)
 			}
 		}
 
-		sqs := newSharedQUICState(tlsConf)
+		sqs := newSharedQUICState(opts.TLSConfig)
 		// http3.ConfigureTLSConfig only uses this field and tls App sets this field as well
 		//nolint:gosec
 		quicTlsConfig := &tls.Config{
@@ -474,15 +493,19 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 			VerifySourceAddress: func(addr net.Addr) bool { return !limiter.Allow() },
 		}
 		allow0rtt := true
-		if allow0rttconf != nil {
-			allow0rtt = *allow0rttconf
+		if opts.Allow0RTT != nil {
+			allow0rtt = *opts.Allow0RTT
 		}
+		// EnableDatagrams and EnableStreamResetPartialDelivery are required by
+		// WebTransport; only enable them when WebTransport support is requested.
 		earlyLn, err := tr.ListenEarly(
 			http3.ConfigureTLSConfig(quicTlsConfig),
 			&quic.Config{
-				InitialPacketSize: 1200,
-				Allow0RTT:         allow0rtt,
-				Tracer:            h3qlog.DefaultConnectionTracer,
+				InitialPacketSize:                1200,
+				Allow0RTT:                        allow0rtt,
+				Tracer:                           h3qlog.DefaultConnectionTracer,
+				EnableDatagrams:                  opts.EnableWebTransport,
+				EnableStreamResetPartialDelivery: opts.EnableWebTransport,
 			},
 		)
 		if err != nil {
@@ -490,7 +513,13 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 		}
 		// TODO: figure out when to close the listener and the transport
 		// using the original net.PacketConn to close them properly
-		return &sharedQuicListener{EarlyListener: earlyLn, packetConn: ln, sqs: sqs, key: lnKey}, nil
+		return &sharedQuicListener{
+			EarlyListener:        earlyLn,
+			packetConn:           ln,
+			sqs:                  sqs,
+			key:                  lnKey,
+			supportsWebTransport: opts.EnableWebTransport,
+		}, nil
 	})
 	if err != nil {
 		return nil, err
@@ -498,7 +527,7 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 
 	sql := sharedEarlyListener.(*sharedQuicListener)
 	// add current tls.Config to sqs, so GetConfigForClient will always return the latest tls.Config in case of context cancellation
-	ctx, cancel := sql.sqs.addState(tlsConf)
+	ctx, cancel := sql.sqs.addState(opts.TLSConfig)
 
 	return &fakeCloseQuicListener{
 		sharedQuicListener: sql,
@@ -592,9 +621,17 @@ func (sqs *sharedQUICState) addState(tlsConfig *tls.Config) (context.Context, co
 // sharedQuicListener is like sharedListener, but for quic.EarlyListeners.
 type sharedQuicListener struct {
 	*quic.EarlyListener
-	packetConn net.PacketConn // we have to hold these because quic-go won't close listeners it didn't create
-	sqs        *sharedQUICState
-	key        string
+	packetConn           net.PacketConn // we have to hold these because quic-go won't close listeners it didn't create
+	sqs                  *sharedQUICState
+	key                  string
+	supportsWebTransport bool // set by the first creator; subsequent pool reuses keep this value
+}
+
+// SupportsWebTransport reports whether the shared QUIC listener was created
+// with WebTransport capabilities (DATAGRAM support and stream-reset partial
+// delivery). The value is fixed by the first creator of a pooled listener.
+func (sql *sharedQuicListener) SupportsWebTransport() bool {
+	return sql.supportsWebTransport
 }
 
 // Destruct closes the underlying QUIC listener and its associated net.PacketConn.
