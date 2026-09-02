@@ -32,9 +32,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/certmagic"
-	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
-	h3qlog "github.com/quic-go/quic-go/http3/qlog"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
@@ -1036,11 +1034,10 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 			Handler:        s,
 			TLSConfig:      tlsCfg,
 			MaxHeaderBytes: s.MaxHeaderBytes,
-			QUICConfig: &quic.Config{
-				Versions:          []quic.Version{quic.Version1, quic.Version2},
-				InitialPacketSize: 1200,
-				Tracer:            h3qlog.DefaultConnectionTracer,
-			},
+			// QUICConfig is deliberately unset: http3.Server only reads it when it
+			// creates its own listener (ListenAndServe/Serve). We bring our own
+			// listener and call ServeListener, so anything set here is ignored.
+			// The QUIC settings that actually apply are in NetworkAddress.ListenQUIC.
 			IdleTimeout: time.Duration(s.IdleTimeout),
 		}
 	}
