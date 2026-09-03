@@ -357,7 +357,11 @@ func TestHostLatencyPeakEwma(t *testing.T) {
 	}
 
 	// after a long idle period the estimate decays toward zero
-	host.latencyUpdated.Store(time.Now().Add(-5 * latencyDecayTau).UnixNano())
+	est := host.latency.Load()
+	host.latency.Store(&latencyEstimate{
+		value:   est.value,
+		updated: time.Now().Add(-5 * latencyDecayTau).UnixNano(),
+	})
 	if got := host.Latency(); got > time.Millisecond {
 		t.Errorf("Expected latency to decay to under 1ms after idling, got %v", got)
 	}

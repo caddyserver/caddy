@@ -183,10 +183,18 @@ func (u *Upstream) fillDynamicHost() {
 // Host is the basic, in-memory representation of the state of a remote host.
 // Its fields are accessed atomically and Host values must not be copied.
 type Host struct {
-	numRequests    atomic.Int64
-	fails          atomic.Int64
-	latency        atomic.Int64 // peak-EWMA of roundtrip latency, in nanoseconds
-	latencyUpdated atomic.Int64 // time of the last latency sample, in Unix nanoseconds
+	numRequests atomic.Int64
+	fails       atomic.Int64
+	latency     atomic.Pointer[latencyEstimate] // peak-EWMA of roundtrip latency; nil until first sample
+}
+
+// latencyEstimate is an immutable (value, timestamp) pair: the peak-EWMA
+// latency estimate and the time it was computed. Host.latency swaps whole
+// pairs atomically so readers never observe an estimate with a timestamp
+// from a different update.
+type latencyEstimate struct {
+	value   int64 // nanoseconds
+	updated int64 // Unix nanoseconds
 }
 
 // latencyDecayTau is the time constant of the exponential decay applied
@@ -212,12 +220,12 @@ func (h *Host) Fails() int {
 // keep a stale peak forever. It returns 0 if no latency sample has been
 // recorded yet.
 func (h *Host) Latency() time.Duration {
-	value := h.latency.Load()
-	if value == 0 {
+	est := h.latency.Load()
+	if est == nil {
 		return 0
 	}
-	elapsed := time.Now().UnixNano() - h.latencyUpdated.Load()
-	return time.Duration(decayLatency(value, elapsed))
+	elapsed := time.Now().UnixNano() - est.updated
+	return time.Duration(decayLatency(est.value, elapsed))
 }
 
 // recordLatency folds a roundtrip latency sample into the host's
@@ -231,13 +239,12 @@ func (h *Host) recordLatency(sample time.Duration) {
 		sample = 0
 	}
 	now := time.Now().UnixNano()
-	last := h.latencyUpdated.Swap(now)
 	for {
 		current := h.latency.Load()
-		next := int64(sample)
-		if current > next {
-			weight := math.Exp(-float64(now-last) / float64(latencyDecayTau))
-			next += int64(float64(current-next) * weight)
+		next := &latencyEstimate{value: int64(sample), updated: now}
+		if current != nil && current.value > next.value {
+			weight := math.Exp(-float64(now-current.updated) / float64(latencyDecayTau))
+			next.value += int64(float64(current.value-next.value) * weight)
 		}
 		if h.latency.CompareAndSwap(current, next) {
 			return
