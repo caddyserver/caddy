@@ -1,0 +1,9 @@
+:80
+
+file_server {
+	browse {
+		file_limit notanint
+	}
+}
+----------
+file_limit must be an integer

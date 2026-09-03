@@ -1,0 +1,10 @@
+:80
+
+file_server {
+	browse {
+		file_limit 10
+		file_limit 20
+	}
+}
+----------
+file_limit is already configured

@@ -1,0 +1,9 @@
+:80
+
+file_server {
+	browse {
+		file_limit -1
+	}
+}
+----------
+file_limit must be a positive integer

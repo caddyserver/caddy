@@ -67,7 +67,9 @@ type Browse struct {
 	// The first option must be `sort_by` and the second option must be `order` (if exists).
 	SortOptions []string `json:"sort,omitempty"`
 
-	// FileLimit limits the number of up to n DirEntry values in directory order.
+	// FileLimit limits the number of DirEntry values returned when
+	// browsing a directory. Must be a positive integer when set via
+	// the Caddyfile. When unset (0), defaultDirEntryLimit is used.
 	FileLimit int `json:"file_limit,omitempty"`
 }
 

@@ -56,11 +56,19 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //	    root          <path>
 //	    hide          <files...>
 //	    index         <files...>
-//	    browse        [<template_file>]
+//	    browse        [<template_file>] {
+//	        reveal_symlinks
+//	        sort <sort_by> [<order>]
+//	        file_limit <positive_integer>
+//	    }
 //	    precompressed <formats...>
 //	    status        <status>
 //	    disable_canonical_uris
 //	}
+//
+// file_limit must be a positive integer. Non-integer or non-positive
+// values are rejected at parse time (rather than silently falling back
+// to the default directory entry limit).
 //
 // The FinalizeUnmarshalCaddyfile method should be called after this
 // to finalize setup of hidden Caddyfiles.
@@ -135,13 +143,19 @@ func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 						}
 					}
 				case "file_limit":
+					if fsrv.Browse.FileLimit != 0 {
+						return d.Err("file_limit is already configured")
+					}
 					fileLimit := d.RemainingArgs()
 					if len(fileLimit) != 1 {
-						return d.Err("file_limit should have an integer value")
+						return d.Err("file_limit requires exactly one positive integer argument")
 					}
-					val, _ := strconv.Atoi(fileLimit[0])
-					if fsrv.Browse.FileLimit != 0 {
-						return d.Err("file_limit is already enabled")
+					val, err := strconv.Atoi(fileLimit[0])
+					if err != nil {
+						return d.Errf("file_limit must be an integer: %v", err)
+					}
+					if val <= 0 {
+						return d.Errf("file_limit must be a positive integer, got %d", val)
 					}
 					fsrv.Browse.FileLimit = val
 				default:
