@@ -117,6 +117,11 @@ type parser struct {
 	definedSnippets map[string][]Token
 	nesting         int
 	importGraph     importGraph
+	// importObserver, when set, runs after an imported file is opened and read but
+	// before its tokens are inserted. Returning true skips token insertion. This
+	// internal hook lets FormatImports observe the parser's actual import execution
+	// and suppress repeated physical files without duplicating parser semantics.
+	importObserver func(string, os.FileInfo, []byte) (bool, error)
 }
 
 func (p *parser) parseAll() ([]ServerBlock, error) {
@@ -418,46 +423,15 @@ func (p *parser) doImport(nesting int) error {
 		// make path relative to the file of the _token_ being processed rather
 		// than current working directory (issue #867) and then use glob to get
 		// list of matching filenames
-		absFile, err := caddy.FastAbs(p.Dispenser.File())
+		matches, globPattern, err := resolveImportGlob(p.Dispenser.File(), importPattern)
 		if err != nil {
-			return p.Errf("Failed to get absolute path of file: %s: %v", p.Dispenser.File(), err)
-		}
-
-		var matches []string
-		var globPattern string
-		if !filepath.IsAbs(importPattern) {
-			globPattern = filepath.Join(filepath.Dir(absFile), importPattern)
-		} else {
-			globPattern = importPattern
-		}
-		if strings.Count(globPattern, "*") > 1 || strings.Count(globPattern, "?") > 1 ||
-			(strings.Contains(globPattern, "[") && strings.Contains(globPattern, "]")) {
-			// See issue #2096 - a pattern with many glob expansions can hang for too long
-			return p.Errf("Glob pattern may only contain one wildcard (*), but has others: %s", globPattern)
-		}
-		matches, err = filepath.Glob(globPattern)
-		if err != nil {
-			return p.Errf("Failed to use import pattern %s: %v", importPattern, err)
+			return p.WrapErr(err)
 		}
 		if len(matches) == 0 {
 			if strings.ContainsAny(globPattern, "*?[]") {
 				caddy.Log().Warn("No files matching import glob pattern", zap.String("pattern", importPattern))
 			} else {
 				return p.Errf("File to import not found: %s", importPattern)
-			}
-		} else {
-			// See issue #5295 - should skip any files that start with a . when iterating over them.
-			sep := string(filepath.Separator)
-			segGlobPattern := strings.Split(globPattern, sep)
-			if strings.HasPrefix(segGlobPattern[len(segGlobPattern)-1], "*") {
-				var tmpMatches []string
-				for _, m := range matches {
-					seg := strings.Split(m, sep)
-					if !strings.HasPrefix(seg[len(seg)-1], ".") {
-						tmpMatches = append(tmpMatches, m)
-					}
-				}
-				matches = tmpMatches
 			}
 		}
 
@@ -592,15 +566,29 @@ func (p *parser) doSingleImport(importFile string) ([]Token, error) {
 	}
 	defer file.Close()
 
-	if info, err := file.Stat(); err != nil {
+	info, err := file.Stat()
+	if err != nil {
 		return nil, p.Errf("Could not import %s: %v", importFile, err)
-	} else if info.IsDir() {
+	}
+	if info.IsDir() {
 		return nil, p.Errf("Could not import %s: is a directory", importFile)
 	}
 
 	input, err := io.ReadAll(file)
 	if err != nil {
 		return nil, p.Errf("Could not read imported file %s: %v", importFile, err)
+	}
+	// Notify only after a successful read so observers receive bytes and metadata
+	// from the same open descriptor. A skipped import is treated as already
+	// processed and contributes no tokens at this occurrence.
+	if p.importObserver != nil {
+		skip, err := p.importObserver(importFile, info, input)
+		if err != nil {
+			return nil, p.Errf("Could not import %s: %v", importFile, err)
+		}
+		if skip {
+			return nil, nil
+		}
 	}
 
 	// only warning in case of empty files
@@ -813,6 +801,54 @@ func (s Segment) Directive() string {
 		return s[0].Text
 	}
 	return ""
+}
+
+// resolveImportGlob resolves importPattern relative to importerFile into a
+// list of matching file paths. It handles making the pattern absolute (issue
+// #867), enforces the single-wildcard limit (issue #2096), runs filepath.Glob,
+// and skips dot-files for glob matches (issue #5295). It returns the matched
+// paths, the resolved glob pattern (so callers can distinguish glob vs literal
+// for warning/error purposes), and any hard error. Empty-match handling (the
+// Warn vs "not found" decision) is left to the caller.
+func resolveImportGlob(importerFile, importPattern string) (matches []string, globPattern string, err error) {
+	absFile, err := caddy.FastAbs(importerFile)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get absolute path of file: %s: %v", importerFile, err)
+	}
+
+	if !filepath.IsAbs(importPattern) {
+		globPattern = filepath.Join(filepath.Dir(absFile), importPattern)
+	} else {
+		globPattern = importPattern
+	}
+
+	if strings.Count(globPattern, "*") > 1 || strings.Count(globPattern, "?") > 1 ||
+		(strings.Contains(globPattern, "[") && strings.Contains(globPattern, "]")) {
+		// See issue #2096 - a pattern with many glob expansions can hang for too long
+		return nil, globPattern, fmt.Errorf("glob pattern may only contain one wildcard (*), but has others: %s", globPattern)
+	}
+
+	matches, err = filepath.Glob(globPattern)
+	if err != nil {
+		return nil, globPattern, fmt.Errorf("failed to use import pattern %s: %v", importPattern, err)
+	}
+
+	// See issue #5295 - skip files that start with a . when the last path
+	// segment of the glob pattern starts with *.
+	sep := string(filepath.Separator)
+	segGlobPattern := strings.Split(globPattern, sep)
+	if strings.HasPrefix(segGlobPattern[len(segGlobPattern)-1], "*") {
+		var filtered []string
+		for _, m := range matches {
+			seg := strings.Split(m, sep)
+			if !strings.HasPrefix(seg[len(seg)-1], ".") {
+				filtered = append(filtered, m)
+			}
+		}
+		matches = filtered
+	}
+
+	return matches, globPattern, nil
 }
 
 // spanOpen and spanClose are used to bound spans that
