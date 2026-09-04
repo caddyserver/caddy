@@ -101,8 +101,10 @@ func (ech *ECH) Provision(ctx caddy.Context) ([]string, error) {
 		return nil, err
 	}
 	defer func() {
-		if err := storage.Unlock(ctx, echStorageLockName); err != nil {
-			logger.Error("unable to unlock ECH provisioning in storage", zap.Error(err))
+		if err := storage.Unlock(context.WithoutCancel(ctx), echStorageLockName); err != nil {
+			if !errors.Is(err, context.Canceled) && ctx.Err() == nil {
+				logger.Error("unable to unlock ECH provisioning in storage", zap.Error(err))
+			}
 		}
 	}()
 
@@ -188,7 +190,16 @@ func (ech *ECH) setConfigsFromStorage(ctx caddy.Context, logger *zap.Logger) ([]
 //
 // This function sets/updates the stdlib-ready key list only if a rotation occurs.
 func (ech *ECH) rotateECHKeys(ctx caddy.Context, logger *zap.Logger, storageSynced bool) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if ctx.Context == nil {
+		return nil
+	}
 	storage := ctx.Storage()
+	if storage == nil {
+		return nil
+	}
 
 	// all existing configs are now loaded; rotate keys "regularly" as recommended by the spec
 	// (also: "Rotating too frequently limits the client anonymity set." - but the more server
@@ -208,8 +219,10 @@ func (ech *ECH) rotateECHKeys(ctx caddy.Context, logger *zap.Logger, storageSync
 			return err
 		}
 		defer func() {
-			if err := storage.Unlock(ctx, echStorageLockName); err != nil {
-				logger.Error("unable to unlock ECH rotation in storage", zap.Error(err))
+			if err := storage.Unlock(context.WithoutCancel(ctx), echStorageLockName); err != nil {
+				if !errors.Is(err, context.Canceled) && ctx.Err() == nil {
+					logger.Error("unable to unlock ECH rotation in storage", zap.Error(err))
+				}
 			}
 		}()
 	}
@@ -221,7 +234,13 @@ func (ech *ECH) rotateECHKeys(ctx caddy.Context, logger *zap.Logger, storageSync
 
 	// iterate the updated list and do any updates as needed
 	for publicName := range ech.configs {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		for i := 0; i < len(ech.configs[publicName]); i++ {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			cfg := ech.configs[publicName][i]
 			if time.Since(cfg.meta.Created) >= rotationInterval && cfg.meta.Replaced.IsZero() {
 				// key is due for rotation and it hasn't been replaced yet; do that now

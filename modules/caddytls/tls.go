@@ -141,6 +141,7 @@ type TLS struct {
 	bgCancel           context.CancelFunc
 	bgWg               *sync.WaitGroup
 	storageCleanTicker *time.Ticker
+	echRotateInterval  time.Duration
 	logger             *zap.Logger
 	events             *caddyevents.App
 
@@ -415,7 +416,11 @@ func (t *TLS) Start() error {
 	}
 
 	if t.bgCtx == nil {
-		t.bgCtx, t.bgCancel = context.WithCancel(t.ctx.Context)
+		parentCtx := t.ctx.Context
+		if parentCtx == nil {
+			parentCtx = context.Background()
+		}
+		t.bgCtx, t.bgCancel = context.WithCancel(parentCtx)
 	}
 	if t.bgWg == nil {
 		t.bgWg = new(sync.WaitGroup)
@@ -449,7 +454,7 @@ func (t *TLS) Start() error {
 				}
 			}
 
-			ticker := time.NewTicker(1 * time.Hour)
+			ticker := time.NewTicker(t.echRotationInterval())
 			defer ticker.Stop()
 
 			// then every so often, rotate and publish if needed
@@ -459,13 +464,19 @@ func (t *TLS) Start() error {
 				case <-ticker.C:
 					// ensure old keys are rotated out
 					t.EncryptedClientHello.configsMu.Lock()
-					err := t.EncryptedClientHello.rotateECHKeys(t.ctx, echLogger, false)
+					err := t.EncryptedClientHello.rotateECHKeys(t.caddyContext(ctx), echLogger, false)
 					t.EncryptedClientHello.configsMu.Unlock()
 					if err != nil {
 						if !errors.Is(err, context.Canceled) && ctx.Err() == nil {
 							echLogger.Error("rotating ECH configs failed", zap.Error(err))
 						}
+						if ctx.Err() != nil {
+							return
+						}
 						continue
+					}
+					if ctx.Err() != nil {
+						return
 					}
 					err = t.publishECHConfigs(ctx, echLogger)
 					if err != nil {
@@ -940,7 +951,11 @@ func (t *TLS) HasCertificateForSubject(subject string) bool {
 // operation at every tick from t.storageCleanTicker.
 func (t *TLS) keepStorageClean() {
 	if t.bgCtx == nil {
-		t.bgCtx, t.bgCancel = context.WithCancel(t.ctx.Context)
+		parentCtx := t.ctx.Context
+		if parentCtx == nil {
+			parentCtx = context.Background()
+		}
+		t.bgCtx, t.bgCancel = context.WithCancel(parentCtx)
 	}
 	if t.bgWg == nil {
 		t.bgWg = new(sync.WaitGroup)
@@ -1006,15 +1021,17 @@ func (t *TLS) cleanStorageUnits(ctx context.Context) {
 	}
 
 	// start with the default/global storage
-	err = certmagic.CleanStorage(ctx, t.ctx.Storage(), options)
-	if err != nil {
-		if errors.Is(err, context.Canceled) || ctx.Err() != nil {
-			return
-		}
-		// probably don't want to return early, since we should still
-		// see if any other storages can get cleaned up
-		if c := t.logger.Check(zapcore.ErrorLevel, "could not clean default/global storage"); c != nil {
-			c.Write(zap.Error(err))
+	if storage := t.ctx.Storage(); storage != nil {
+		err = certmagic.CleanStorage(ctx, storage, options)
+		if err != nil {
+			if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+				return
+			}
+			// probably don't want to return early, since we should still
+			// see if any other storages can get cleaned up
+			if c := t.logger.Check(zapcore.ErrorLevel, "could not clean default/global storage"); c != nil {
+				c.Write(zap.Error(err))
+			}
 		}
 	}
 
@@ -1050,6 +1067,19 @@ func (t *TLS) storageCleanInterval() time.Duration {
 		return time.Duration(t.Automation.StorageCleanInterval)
 	}
 	return defaultStorageCleanInterval
+}
+
+func (t *TLS) echRotationInterval() time.Duration {
+	if t.echRotateInterval > 0 {
+		return t.echRotateInterval
+	}
+	return 1 * time.Hour
+}
+
+func (t *TLS) caddyContext(ctx context.Context) caddy.Context {
+	caddyCtx := t.ctx
+	caddyCtx.Context = ctx
+	return caddyCtx
 }
 
 // onEvent translates CertMagic events into Caddy events then dispatches them.
