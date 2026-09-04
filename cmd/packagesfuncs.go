@@ -253,7 +253,7 @@ func getModules() (standard, nonstandard, unknown []moduleInfo, err error) {
 		// longest matching prefix in case there are nested modules
 		var matched *debug.Module
 		for _, dep := range bi.Deps {
-			if strings.HasPrefix(modPkgPath, dep.Path) {
+			if moduleContainsPackage(dep.Path, modPkgPath) {
 				if matched == nil || len(dep.Path) > len(matched.Path) {
 					matched = dep
 				}
@@ -269,6 +269,10 @@ func getModules() (standard, nonstandard, unknown []moduleInfo, err error) {
 		}
 	}
 	return standard, nonstandard, unknown, err
+}
+
+func moduleContainsPackage(modulePath, packagePath string) bool {
+	return packagePath == modulePath || strings.HasPrefix(packagePath, modulePath+"/")
 }
 
 func listModules(path string) error {
