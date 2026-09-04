@@ -243,11 +243,11 @@ func (ops *HeaderOps) ApplyTo(hdr http.Header, repl *caddy.Replacer) {
 	// set
 	for fieldName, vals := range ops.Set {
 		fieldName = repl.ReplaceKnown(fieldName, "")
-		var newVals []string
+		// use a new slice so we don't overwrite
+		// the original values in ops.Set
+		newVals := make([]string, len(vals))
 		for i := range vals {
-			// append to new slice so we don't overwrite
-			// the original values in ops.Set
-			newVals = append(newVals, repl.ReplaceKnown(vals[i], ""))
+			newVals[i] = repl.ReplaceKnown(vals[i], "")
 		}
 		hdr.Set(fieldName, strings.Join(newVals, ","))
 	}
