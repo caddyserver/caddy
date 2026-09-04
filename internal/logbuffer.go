@@ -27,6 +27,7 @@ type LogBufferCore struct {
 	entries []zapcore.Entry
 	fields  [][]zapcore.Field
 	level   zapcore.LevelEnabler
+	logger  *zap.Logger
 }
 
 type LogBufferCoreInterface interface {
@@ -63,7 +64,16 @@ func (c *LogBufferCore) Write(entry zapcore.Entry, fields []zapcore.Field) error
 	return nil
 }
 
-func (c *LogBufferCore) Sync() error { return nil }
+func (c *LogBufferCore) Sync() error {
+	if c.logger != nil {
+		c.FlushTo(c.logger)
+	}
+	return nil
+}
+
+func (c *LogBufferCore) SetFlushLogger(logger *zap.Logger) {
+	c.logger = logger
+}
 
 // FlushTo flushes buffered logs to the given zap.Logger.
 func (c *LogBufferCore) FlushTo(logger *zap.Logger) {

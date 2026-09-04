@@ -793,6 +793,7 @@ func BufferedLog() (*zap.Logger, *zap.Logger, *internal.LogBufferCore) {
 	defer defaultLoggerMu.Unlock()
 	origLogger := defaultLogger.logger
 	bufferCore := internal.NewLogBufferCore(zap.InfoLevel)
+	bufferCore.SetFlushLogger(origLogger)
 	defaultLogger.logger = zap.New(bufferCore)
 	return defaultLogger.logger, origLogger, bufferCore
 }
