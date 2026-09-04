@@ -940,7 +940,9 @@ func (h adminHandler) handleError(w http.ResponseWriter, r *http.Request, err er
 // rebinding attacks.
 func (h adminHandler) checkHost(r *http.Request) error {
 	allowed := slices.ContainsFunc(h.allowedOrigins, func(u *url.URL) bool {
-		return r.Host == u.Host
+		// Host comparison is case-insensitive per RFC 3986 §3.2.2, same as
+		// the Origin check below; url.Parse does not normalize host case.
+		return strings.EqualFold(r.Host, u.Host)
 	})
 	if !allowed {
 		return APIError{
