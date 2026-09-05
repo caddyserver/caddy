@@ -26,6 +26,8 @@ package fastcgi
 import (
 	"bufio"
 	"bytes"
+	"errors"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net"
@@ -125,6 +127,15 @@ const (
 // not synchronized because we don't care what the contents are
 var pad [maxPad]byte
 
+// FastCGI has no way to express a body of unknown length: CONTENT_LENGTH is
+// required by CGI/1.1, and php-fpm hangs when it is absent or wrong and the
+// body is not empty. A request that arrives without a length therefore has to
+// be buffered in full before it can be forwarded.
+var (
+	errNoContentLength  = errors.New("request body has no known length; increase request_buffers so the body can be buffered in full to determine it")
+	errBadContentLength = errors.New("request body length is not a valid CONTENT_LENGTH")
+)
+
 // client implements a FastCGI client, which is a standard for
 // interfacing external applications with Web servers.
 type client struct {
@@ -138,13 +149,19 @@ type client struct {
 // Do makes the request and returns an io.Reader that translates the data read
 // from the FastCGI responder out of FastCGI packets before returning it.
 func (c *client) Do(p map[string]string, req io.Reader) (r io.Reader, err error) {
-	// check for CONTENT_LENGTH, since the lack of it or wrong value will cause the backend to hang
-	if clStr, ok := p["CONTENT_LENGTH"]; !ok {
-		return nil, caddyhttp.Error(http.StatusLengthRequired, nil)
-	} else if _, err := strconv.ParseUint(clStr, 10, 64); err != nil {
-		// stdlib won't return a negative Content-Length, but we check just in case,
-		// the most likely cause is from a missing content length, which is -1
-		return nil, caddyhttp.Error(http.StatusLengthRequired, err)
+	// check for CONTENT_LENGTH, since the lack of it or wrong value will cause the backend to hang.
+	// A request with no length of its own (Transfer-Encoding: chunked, or an HTTP/2 or HTTP/3
+	// request sent without the header) only acquires one by being buffered in full, so say so:
+	// the bare status alone has sent people looking for the fault in their backend.
+	if clStr, ok := p["CONTENT_LENGTH"]; !ok || clStr == "" {
+		return nil, caddyhttp.Error(http.StatusLengthRequired, errNoContentLength)
+	} else if l, err := strconv.ParseInt(clStr, 10, 64); err != nil {
+		return nil, caddyhttp.Error(http.StatusLengthRequired, fmt.Errorf("%w: %w", errBadContentLength, err))
+	} else if l < 0 {
+		// net/http reports -1 for a body whose length it does not know, which is
+		// what a chunked request looks like by the time it reaches here. This is
+		// the case operators actually hit, so it gets the actionable message.
+		return nil, caddyhttp.Error(http.StatusLengthRequired, errNoContentLength)
 	}
 
 	writer := &streamWriter{c: c}
