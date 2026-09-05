@@ -17,6 +17,7 @@ package httpcaddyfile
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"slices"
@@ -31,6 +32,12 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
+)
+
+const (
+	echAssignmentNotFound              = -1
+	echAssignmentConflictFormat        = "hostname %s has conflicting ECH assignments"
+	echCatchAllAssignmentConflictError = "catch-all ECH publication has conflicting assignments"
 )
 
 func (st ServerType) buildTLSApp(
@@ -93,6 +100,19 @@ func (st ServerType) buildTLSApp(
 	}
 
 	forcedAutomatedNames := make(map[string]struct{}) // explicitly configured to be automated, even if covered by a wildcard
+	globalECHConfigured := false
+	var globalECHConfigs []string
+	if ech, ok := options["ech"].(*caddytls.ECH); ok {
+		tlsApp.EncryptedClientHello = ech
+		globalECHConfigured = true
+		globalECHConfigs = echPublicNames(ech.Configs)
+	}
+	globalECHPublicationCount := 0
+	globalECHDomains := make(map[string]struct{})
+	siteECHConfigured := false
+	if globalECHConfigured {
+		globalECHPublicationCount = len(tlsApp.EncryptedClientHello.Publication)
+	}
 
 	for _, p := range pairings {
 		// avoid setting up TLS automation policies for a server that is HTTP-only
@@ -120,6 +140,48 @@ func (st ServerType) buildTLSApp(
 			sblockHosts := sblock.hostsFromKeys(false)
 			if len(sblockHosts) == 0 && catchAllAP != nil {
 				ap = catchAllAP
+			}
+			if globalECHConfigured {
+				if _, ok := sblock.pile[tlsECHClass]; !ok {
+					for _, host := range sblockHosts {
+						globalECHDomains[host] = struct{}{}
+					}
+				}
+			}
+
+			if echVals, ok := sblock.pile[tlsECHClass]; ok {
+				siteECHConfigured = true
+				if tlsApp.EncryptedClientHello == nil {
+					tlsApp.EncryptedClientHello = new(caddytls.ECH)
+				}
+				for _, echVal := range echVals {
+					siteECH := echVal.Value.(*caddytls.ECH)
+					for _, config := range siteECH.Configs {
+						if !slices.Contains(tlsApp.EncryptedClientHello.Configs, config) {
+							tlsApp.EncryptedClientHello.Configs = append(tlsApp.EncryptedClientHello.Configs, config)
+						}
+					}
+					if len(siteECH.Publication) == 0 {
+						tlsApp.EncryptedClientHello.Publication = append(
+							tlsApp.EncryptedClientHello.Publication,
+							newECHPublication(
+								echPublicNames(siteECH.Configs),
+								slices.Clone(sblockHosts),
+								options["dns"],
+								&warnings,
+							),
+						)
+						continue
+					}
+					for _, publication := range siteECH.Publication {
+						publicationCopy := *publication
+						publicationCopy.Domains = slices.Clone(sblockHosts)
+						tlsApp.EncryptedClientHello.Publication = append(
+							tlsApp.EncryptedClientHello.Publication,
+							&publicationCopy,
+						)
+					}
+				}
 			}
 
 			// on-demand tls
@@ -292,6 +354,47 @@ func (st ServerType) buildTLSApp(
 			}
 		}
 	}
+	if globalECHConfigured && siteECHConfigured {
+		domains := make([]string, 0, len(globalECHDomains))
+		for domain := range globalECHDomains {
+			domains = append(domains, domain)
+		}
+		if globalECHPublicationCount == 0 {
+			if len(domains) > 0 {
+				tlsApp.EncryptedClientHello.Publication = append(
+					tlsApp.EncryptedClientHello.Publication,
+					newECHPublication(
+						globalECHConfigs,
+						domains,
+						options["dns"],
+						&warnings,
+					),
+				)
+			}
+		} else {
+			publications := make([]*caddytls.ECHPublication, 0, len(tlsApp.EncryptedClientHello.Publication))
+			for _, publication := range tlsApp.EncryptedClientHello.Publication[:globalECHPublicationCount] {
+				if publication.Domains == nil {
+					if len(domains) == 0 {
+						continue
+					}
+					publication.Domains = slices.Clone(domains)
+				}
+				publications = append(publications, publication)
+			}
+			publications = append(publications, tlsApp.EncryptedClientHello.Publication[globalECHPublicationCount:]...)
+			tlsApp.EncryptedClientHello.Publication = publications
+		}
+	}
+	if siteECHConfigured {
+		var err error
+		tlsApp.EncryptedClientHello.Publication, err = consolidateECHPublications(
+			tlsApp.EncryptedClientHello.Publication,
+		)
+		if err != nil {
+			return nil, warnings, err
+		}
+	}
 
 	// group certificate loaders by module name, then add to config
 	if len(certLoaders) > 0 {
@@ -339,9 +442,28 @@ func (st ServerType) buildTLSApp(
 		tlsApp.Resolvers = globalResolvers.([]string)
 	}
 
-	// set up ECH from Caddyfile options
-	if ech, ok := options["ech"].(*caddytls.ECH); ok {
-		tlsApp.EncryptedClientHello = ech
+	// ECH outer server names need certificates, so include them in an
+	// automation policy that applies any global options.
+	if ech := tlsApp.EncryptedClientHello; ech != nil {
+		sort.Slice(ech.Configs, func(i, j int) bool {
+			return ech.Configs[i].PublicName < ech.Configs[j].PublicName
+		})
+		for _, publication := range ech.Publication {
+			slices.Sort(publication.Configs)
+			slices.Sort(publication.Domains)
+		}
+		sort.Slice(ech.Publication, func(i, j int) bool {
+			if configsComparison := slices.Compare(
+				ech.Publication[i].Configs,
+				ech.Publication[j].Configs,
+			); configsComparison != 0 {
+				return configsComparison < 0
+			}
+			return slices.Compare(
+				ech.Publication[i].Domains,
+				ech.Publication[j].Domains,
+			) < 0
+		})
 
 		// outer server names will need certificates, so make sure they're included
 		// in an automation policy for them that applies any global options
@@ -509,6 +631,94 @@ func (st ServerType) buildTLSApp(
 	}
 
 	return tlsApp, warnings, nil
+}
+
+func echPublicNames(configs []caddytls.ECHConfiguration) []string {
+	publicNames := make([]string, 0, len(configs))
+	for _, config := range configs {
+		publicNames = append(publicNames, config.PublicName)
+	}
+	return publicNames
+}
+
+func consolidateECHPublications(
+	publications []*caddytls.ECHPublication,
+) ([]*caddytls.ECHPublication, error) {
+	var consolidated []*caddytls.ECHPublication
+	domainAssignments := make(map[string]int)
+	catchAllAssignment := echAssignmentNotFound
+	for _, publication := range publications {
+		slices.Sort(publication.Configs)
+		assignment := echAssignmentNotFound
+		for i, existing := range consolidated {
+			if slices.Equal(existing.Configs, publication.Configs) &&
+				reflect.DeepEqual(existing.PublishersRaw, publication.PublishersRaw) {
+				assignment = i
+				break
+			}
+		}
+		if assignment == echAssignmentNotFound {
+			publicationCopy := *publication
+			publicationCopy.Configs = slices.Clone(publication.Configs)
+			publicationCopy.Domains = nil
+			consolidated = append(consolidated, &publicationCopy)
+			assignment = len(consolidated) - 1
+		}
+		if len(publication.Domains) == 0 {
+			if catchAllAssignment != echAssignmentNotFound && catchAllAssignment != assignment {
+				return nil, errors.New(echCatchAllAssignmentConflictError)
+			}
+			for domain, previousAssignment := range domainAssignments {
+				if previousAssignment != assignment {
+					return nil, fmt.Errorf(echAssignmentConflictFormat, domain)
+				}
+			}
+			catchAllAssignment = assignment
+			consolidated[assignment].Domains = nil
+			continue
+		}
+		for _, domain := range publication.Domains {
+			if catchAllAssignment != echAssignmentNotFound && catchAllAssignment != assignment {
+				return nil, fmt.Errorf(echAssignmentConflictFormat, domain)
+			}
+			if previousAssignment, ok := domainAssignments[domain]; ok {
+				if previousAssignment != assignment {
+					return nil, fmt.Errorf(echAssignmentConflictFormat, domain)
+				}
+				continue
+			}
+			domainAssignments[domain] = assignment
+			if catchAllAssignment != assignment {
+				consolidated[assignment].Domains = append(consolidated[assignment].Domains, domain)
+			}
+		}
+	}
+	return consolidated, nil
+}
+
+func newECHPublication(
+	configs, domains []string,
+	globalDNS any,
+	warnings *[]caddyconfig.Warning,
+) *caddytls.ECHPublication {
+	publication := &caddytls.ECHPublication{
+		Configs: configs,
+		Domains: domains,
+	}
+	if globalDNS != nil {
+		publication.PublishersRaw = echDNSPublisher(globalDNS, warnings)
+	}
+	return publication
+}
+
+func echDNSPublisher(globalDNS any, warnings *[]caddyconfig.Warning) caddy.ModuleMap {
+	dnsModule := globalDNS.(caddy.Module)
+	providerName := dnsModule.CaddyModule().ID.Name()
+	return caddy.ModuleMap{
+		"dns": caddyconfig.JSON(caddytls.ECHDNSPublisher{
+			ProviderRaw: caddyconfig.JSONModuleObject(dnsModule, "name", providerName, warnings),
+		}, warnings),
+	}
 }
 
 type acmeCapable interface{ GetACMEIssuer() *caddytls.ACMEIssuer }
