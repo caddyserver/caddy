@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -183,6 +184,11 @@ func TestTracing_ServeHTTP_Propagation_Without_Initial_Headers(t *testing.T) {
 	if err := ot.ServeHTTP(w, req, handler); err != nil {
 		t.Errorf("ServeHTTP error: %v", err)
 	}
+
+	responseTraceParent := w.Header().Get("Traceparent")
+	if responseTraceParent == "" {
+		t.Errorf("Missing traceparent in response headers")
+	}
 }
 
 func TestTracing_ServeHTTP_Propagation_With_Initial_Headers(t *testing.T) {
@@ -190,13 +196,14 @@ func TestTracing_ServeHTTP_Propagation_With_Initial_Headers(t *testing.T) {
 		SpanName: "mySpan",
 	}
 
+	dummyTraceParentPrefix := "00-11111111111111111111111111111111"
 	req := createRequestWithContext("GET", "https://example.com/foo")
-	req.Header.Set("traceparent", "00-11111111111111111111111111111111-1111111111111111-01")
+	req.Header.Set("traceparent", fmt.Sprintf("%s-1111111111111111-01", dummyTraceParentPrefix))
 	w := httptest.NewRecorder()
 
 	var handler caddyhttp.HandlerFunc = func(writer http.ResponseWriter, request *http.Request) error {
 		traceparent := request.Header.Get("Traceparent")
-		if !strings.HasPrefix(traceparent, "00-11111111111111111111111111111111") {
+		if !strings.HasPrefix(traceparent, dummyTraceParentPrefix) {
 			t.Errorf("Invalid traceparent: %v", traceparent)
 		}
 
@@ -213,6 +220,17 @@ func TestTracing_ServeHTTP_Propagation_With_Initial_Headers(t *testing.T) {
 
 	if err := ot.ServeHTTP(w, req, handler); err != nil {
 		t.Errorf("ServeHTTP error: %v", err)
+	}
+
+	responseTraceParent := w.Header().Get("Traceparent")
+	if responseTraceParent == "" {
+		t.Error("Missing traceparent in response headers")
+	} else if !strings.HasPrefix(responseTraceParent, dummyTraceParentPrefix) {
+		t.Errorf(
+			"Traceparent prefix in response headers (%s) not same as initial (%s)",
+			responseTraceParent,
+			dummyTraceParentPrefix,
+		)
 	}
 }
 
