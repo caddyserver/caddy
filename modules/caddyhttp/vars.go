@@ -16,6 +16,7 @@ package caddyhttp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -198,6 +199,16 @@ func (m VarsMatcher) MatchWithError(r *http.Request) (bool, error) {
 		case fmt.Stringer:
 			varStr = vv.String()
 		case error:
+			// propagate the request-body limit marker (a 413 from the
+			// request_body max_size limit when {http.request.body} is
+			// truncated) instead of matching on its error text; unrelated
+			// errors are matched on their text as before
+			var bodyLimit RequestBodyLimitError
+			if errors.As(vv, &bodyLimit) {
+				// wrap in a status-carrying handler error so the server
+				// renders the 413
+				return false, HandlerError{Err: bodyLimit, StatusCode: bodyLimit.StatusCode()}
+			}
 			varStr = vv.Error()
 		case nil:
 			varStr = ""
@@ -335,6 +346,16 @@ func (m MatchVarsRE) MatchWithError(r *http.Request) (bool, error) {
 		case fmt.Stringer:
 			varStr = vv.String()
 		case error:
+			// propagate the request-body limit marker (a 413 from the
+			// request_body max_size limit when {http.request.body} is
+			// truncated) instead of matching on its error text; unrelated
+			// errors are matched on their text as before
+			var bodyLimit RequestBodyLimitError
+			if errors.As(vv, &bodyLimit) {
+				// wrap in a status-carrying handler error so the server
+				// renders the 413
+				return false, HandlerError{Err: bodyLimit, StatusCode: bodyLimit.StatusCode()}
+			}
 			varStr = vv.Error()
 		case nil:
 			varStr = ""
