@@ -17,6 +17,7 @@ package reverseproxy
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/netip"
 	"strconv"
 	"sync"
@@ -184,7 +185,24 @@ func (u *Upstream) fillDynamicHost() {
 type Host struct {
 	numRequests atomic.Int64
 	fails       atomic.Int64
+
+	// latencyMu guards the peak-EWMA latency estimate and its sample
+	// timestamp so they always change as one coherent pair. A mutex
+	// (rather than a CAS loop over an allocated pair) keeps updates
+	// allocation-free and makes the value/timestamp coherence trivial.
+	// The handler only records samples when the configured selection
+	// policy implements LatencyConsumer, so other policies never touch it.
+	latencyMu      sync.Mutex
+	latencyValue   int64 // peak-EWMA of roundtrip latency, in nanoseconds
+	latencyUpdated int64 // time of the last sample, in Unix nanoseconds
 }
+
+// latencyDecayTau is the time constant of the exponential decay applied
+// to a host's peak-EWMA latency: roughly, how long a latency spike keeps
+// dominating the estimate after conditions improve. After one tau with
+// only faster samples (or no samples at all), about 63% of the spike has
+// decayed away.
+const latencyDecayTau = 10 * time.Second
 
 // NumRequests returns the number of active requests to the upstream.
 func (h *Host) NumRequests() int {
@@ -194,6 +212,72 @@ func (h *Host) NumRequests() int {
 // Fails returns the number of recent failures with the upstream.
 func (h *Host) Fails() int {
 	return int(h.fails.Load())
+}
+
+// Latency returns a peak-sensitive exponentially weighted moving average
+// of the host's roundtrip latency, decayed by the time elapsed since the
+// last sample so that a host which stops receiving requests does not
+// keep a stale peak forever. It returns 0 if no latency sample has been
+// recorded yet.
+func (h *Host) Latency() time.Duration {
+	return h.latencyAt(time.Now().UnixNano())
+}
+
+// latencyAt is Latency evaluated at the given Unix-nanosecond time.
+func (h *Host) latencyAt(now int64) time.Duration {
+	h.latencyMu.Lock()
+	value, updated := h.latencyValue, h.latencyUpdated
+	h.latencyMu.Unlock()
+	if value == 0 {
+		return 0
+	}
+	return time.Duration(decayLatency(value, now-updated))
+}
+
+// recordLatency folds a roundtrip latency sample into the host's
+// peak-sensitive EWMA (as in Finagle's PeakEwma load balancer): a sample
+// above the current estimate replaces it immediately, while lower samples
+// only pull the estimate down gradually, weighted by the time elapsed
+// since the previous sample relative to latencyDecayTau. This makes the
+// estimate react instantly to slowdowns but forgive them over time.
+func (h *Host) recordLatency(sample time.Duration) {
+	h.recordLatencyAt(sample, time.Now().UnixNano())
+}
+
+// recordLatencyAt is recordLatency for a sample observed at the given
+// Unix-nanosecond time. The estimate and its timestamp are updated under
+// one critical section, so a reader can never pair an estimate with a
+// timestamp from a different update. A sample that is older than the
+// currently published one (a delayed writer, or a clock stepping back)
+// is folded in as if it were current: the elapsed time is clamped to
+// zero so the decay weight never exceeds 1, and a stale sample can only
+// raise the estimate if it is a genuine new peak, never by inflating it
+// through a negative elapsed time.
+func (h *Host) recordLatencyAt(sample time.Duration, now int64) {
+	if sample < 0 {
+		sample = 0
+	}
+	h.latencyMu.Lock()
+	if now < h.latencyUpdated {
+		now = h.latencyUpdated
+	}
+	next := int64(sample)
+	if h.latencyValue > next {
+		weight := math.Exp(-float64(now-h.latencyUpdated) / float64(latencyDecayTau))
+		next += int64(float64(h.latencyValue-next) * weight)
+	}
+	h.latencyValue, h.latencyUpdated = next, now
+	h.latencyMu.Unlock()
+}
+
+// decayLatency exponentially decays a latency value (in nanoseconds)
+// toward zero according to how much time has elapsed since it was
+// recorded, with time constant latencyDecayTau.
+func decayLatency(value, elapsed int64) float64 {
+	if elapsed <= 0 {
+		return float64(value)
+	}
+	return float64(value) * math.Exp(-float64(elapsed)/float64(latencyDecayTau))
 }
 
 // countRequest mutates the active request count by

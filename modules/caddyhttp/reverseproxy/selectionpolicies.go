@@ -40,6 +40,7 @@ func init() {
 	caddy.RegisterModule(RandomSelection{})
 	caddy.RegisterModule(RandomChoiceSelection{})
 	caddy.RegisterModule(LeastConnSelection{})
+	caddy.RegisterModule(LeastLatencySelection{})
 	caddy.RegisterModule(new(RoundRobinSelection))
 	caddy.RegisterModule(new(WeightedRoundRobinSelection))
 	caddy.RegisterModule(FirstSelection{})
@@ -314,6 +315,102 @@ func (r *LeastConnSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		return d.ArgErr()
 	}
 	return nil
+}
+
+// LatencyConsumer is implemented by selection policies that consume the
+// roundtrip latency tracked on each Host. The proxy handler records a
+// latency sample after every roundtrip only when the configured selection
+// policy implements this interface, so that policies which never read
+// Host.Latency do not pay for maintaining it on the request path.
+type LatencyConsumer interface {
+	// ConsumesLatency is a marker method with no behavior.
+	ConsumesLatency()
+}
+
+// LeastLatencySelection is a policy that samples two available hosts
+// at random ("power of two choices") and selects the one with the
+// lower latency score, which is the host's peak-sensitive EWMA of
+// roundtrip latency scaled by its number of active requests. Compared
+// to policies that balance on request counts alone, this steers
+// traffic away from upstreams that have become slow (garbage
+// collection pauses, cold caches, resource contention) before
+// requests pile up on them.
+type LeastLatencySelection struct{}
+
+// CaddyModule returns the Caddy module information.
+func (LeastLatencySelection) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "http.reverse_proxy.selection_policies.least_latency",
+		New: func() caddy.Module { return new(LeastLatencySelection) },
+	}
+}
+
+// Select samples two distinct available hosts uniformly at random
+// and returns the one with the lower latency score, breaking exact
+// ties (such as between hosts with no latency recorded yet) randomly.
+func (LeastLatencySelection) Select(pool UpstreamPool, _ *http.Request, _ http.ResponseWriter) *Upstream {
+	// reservoir sampling (Algorithm R) with a reservoir of 2 over the
+	// available upstreams, so both candidates are sampled uniformly
+	// no matter how many upstreams are unavailable (see the analogous
+	// loop in RandomChoiceSelection.Select)
+	var first, second *Upstream
+	var available int
+	for _, upstream := range pool {
+		if !upstream.Available() {
+			continue
+		}
+		available++
+		switch {
+		case first == nil:
+			first = upstream
+		case second == nil:
+			second = upstream
+		default:
+			switch j := weakrand.IntN(available); j { //nolint:gosec
+			case 0:
+				first = upstream
+			case 1:
+				second = upstream
+			}
+		}
+	}
+	if second == nil {
+		return first // 0 or 1 available upstreams
+	}
+	firstScore, secondScore := latencyScore(first), latencyScore(second)
+	if firstScore < secondScore {
+		return first
+	}
+	if secondScore < firstScore {
+		return second
+	}
+	if weakrand.IntN(2) == 0 { //nolint:gosec
+		return first
+	}
+	return second
+}
+
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+func (r *LeastLatencySelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	d.Next() // consume policy name
+	if d.NextArg() {
+		return d.ArgErr()
+	}
+	return nil
+}
+
+// ConsumesLatency marks this policy as a consumer of roundtrip latency
+// samples, so the proxy handler records them; see LatencyConsumer.
+func (LeastLatencySelection) ConsumesLatency() {}
+
+// latencyScore scores an upstream for least_latency selection: its
+// peak-EWMA latency scaled by its active request count. Adding 1 to
+// each factor keeps the active request count meaningful for upstreams
+// with no latency recorded yet: their scores stay near zero, so new or
+// long-idle upstreams win against any upstream with observed latency
+// and get warmed up (and measured) rather than starved.
+func latencyScore(u *Upstream) float64 {
+	return (float64(u.Latency()) + 1) * float64(u.NumRequests()+1)
 }
 
 // RoundRobinSelection is a policy that selects
@@ -904,6 +1001,7 @@ var (
 	_ Selector = (*RandomSelection)(nil)
 	_ Selector = (*RandomChoiceSelection)(nil)
 	_ Selector = (*LeastConnSelection)(nil)
+	_ Selector = (*LeastLatencySelection)(nil)
 	_ Selector = (*RoundRobinSelection)(nil)
 	_ Selector = (*WeightedRoundRobinSelection)(nil)
 	_ Selector = (*FirstSelection)(nil)
