@@ -173,8 +173,15 @@ func (p *parser) begin() error {
 		if err != nil {
 			return err
 		}
-		tokens = append([]Token{nameToken}, tokens...)
-		p.block.Segments = []Segment{tokens}
+
+		// expand any import directives inside the named route block
+		expandedTokens, err := p.expandImportsInBlock(tokens)
+		if err != nil {
+			return err
+		}
+
+		expandedTokens = append([]Token{nameToken}, expandedTokens...)
+		p.block.Segments = []Segment{expandedTokens}
 		return nil
 	}
 
@@ -581,6 +588,41 @@ func (p *parser) doImport(nesting int) error {
 	p.cursor -= len(args) + len(blockTokens) + 1
 
 	return nil
+}
+
+// expandImportsInBlock takes a slice of tokens (typically the contents of a
+// named route block including its outer curly braces) and expands any import
+// directives found at the beginning of a line. The expansion is done by
+// creating a temporary parser that shares the same snippets and import graph,
+// then looping through the tokens and calling doImport whenever an import
+// directive is encountered. All other tokens are left untouched.
+func (p *parser) expandImportsInBlock(tokens []Token) ([]Token, error) {
+	// Create a temporary parser that operates on the provided tokens.
+	// The Dispenser is initialized with the token slice; snippets and the
+	// import graph are shared so that imports and cycle detection work
+	// consistently across the whole Caddyfile.
+	tempParser := &parser{
+		Dispenser:       NewDispenser(tokens),
+		definedSnippets: p.definedSnippets,
+		importGraph:     p.importGraph,
+	}
+
+	// Loop through the tokens. We only care about import directives that
+	// appear at the start of a line (same logic as directives()).
+	for tempParser.Next() {
+		if tempParser.Val() == "import" && tempParser.isNewLine() {
+			if err := tempParser.doImport(1); err != nil {
+				return nil, err
+			}
+			// Roll back the cursor so the next iteration sees the first
+			// token of the imported content (or the next token after it).
+			tempParser.cursor--
+		}
+	}
+
+	// The temporary parser's token slice has been modified in place by
+	// doImport, so we return it directly.
+	return tempParser.tokens, nil
 }
 
 // doSingleImport lexes the individual file at importFile and returns

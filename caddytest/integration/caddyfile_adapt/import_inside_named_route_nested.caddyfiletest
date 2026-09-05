@@ -1,0 +1,66 @@
+(inner) {
+	respond "inner"
+}
+
+(outer) {
+	import inner
+}
+
+&(foo) {
+	import outer
+}
+
+localhost:9080 {
+	invoke foo
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":9080"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"localhost"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"handler": "invoke",
+													"name": "foo"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"named_routes": {
+						"foo": {
+							"handle": [
+								{
+									"body": "inner",
+									"handler": "static_response"
+								}
+							]
+						}
+					}
+				}
+			}
+		}
+	}
+}
