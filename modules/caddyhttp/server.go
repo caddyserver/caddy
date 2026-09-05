@@ -1045,7 +1045,11 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
 	}
 	addr.Network = h3net
-	h3ln, err := addr.ListenQUIC(s.ctx, 0, net.ListenConfig{}, tlsCfg, s.packetConnWrappers, s.Allow0RTT)
+	h3ln, err := addr.ListenQUIC(s.ctx, 0, net.ListenConfig{}, caddy.ListenQUICOptions{
+		TLSConfig:          tlsCfg,
+		PacketConnWrappers: s.packetConnWrappers,
+		Allow0RTT:          s.Allow0RTT,
+	})
 	if err != nil {
 		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
 	}
