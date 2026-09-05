@@ -185,16 +185,16 @@ func (u *Upstream) fillDynamicHost() {
 type Host struct {
 	numRequests atomic.Int64
 	fails       atomic.Int64
-	latency     atomic.Pointer[latencyEstimate] // peak-EWMA of roundtrip latency; nil until first sample
-}
 
-// latencyEstimate is an immutable (value, timestamp) pair: the peak-EWMA
-// latency estimate and the time it was computed. Host.latency swaps whole
-// pairs atomically so readers never observe an estimate with a timestamp
-// from a different update.
-type latencyEstimate struct {
-	value   int64 // nanoseconds
-	updated int64 // Unix nanoseconds
+	// latencyMu guards the peak-EWMA latency estimate and its sample
+	// timestamp so they always change as one coherent pair. A mutex
+	// (rather than a CAS loop over an allocated pair) keeps updates
+	// allocation-free and makes the value/timestamp coherence trivial.
+	// The handler only records samples when the configured selection
+	// policy implements LatencyConsumer, so other policies never touch it.
+	latencyMu      sync.Mutex
+	latencyValue   int64 // peak-EWMA of roundtrip latency, in nanoseconds
+	latencyUpdated int64 // time of the last sample, in Unix nanoseconds
 }
 
 // latencyDecayTau is the time constant of the exponential decay applied
@@ -220,12 +220,18 @@ func (h *Host) Fails() int {
 // keep a stale peak forever. It returns 0 if no latency sample has been
 // recorded yet.
 func (h *Host) Latency() time.Duration {
-	est := h.latency.Load()
-	if est == nil {
+	return h.latencyAt(time.Now().UnixNano())
+}
+
+// latencyAt is Latency evaluated at the given Unix-nanosecond time.
+func (h *Host) latencyAt(now int64) time.Duration {
+	h.latencyMu.Lock()
+	value, updated := h.latencyValue, h.latencyUpdated
+	h.latencyMu.Unlock()
+	if value == 0 {
 		return 0
 	}
-	elapsed := time.Now().UnixNano() - est.updated
-	return time.Duration(decayLatency(est.value, elapsed))
+	return time.Duration(decayLatency(value, now-updated))
 }
 
 // recordLatency folds a roundtrip latency sample into the host's
@@ -235,21 +241,33 @@ func (h *Host) Latency() time.Duration {
 // since the previous sample relative to latencyDecayTau. This makes the
 // estimate react instantly to slowdowns but forgive them over time.
 func (h *Host) recordLatency(sample time.Duration) {
+	h.recordLatencyAt(sample, time.Now().UnixNano())
+}
+
+// recordLatencyAt is recordLatency for a sample observed at the given
+// Unix-nanosecond time. The estimate and its timestamp are updated under
+// one critical section, so a reader can never pair an estimate with a
+// timestamp from a different update. A sample that is older than the
+// currently published one (a delayed writer, or a clock stepping back)
+// is folded in as if it were current: the elapsed time is clamped to
+// zero so the decay weight never exceeds 1, and a stale sample can only
+// raise the estimate if it is a genuine new peak, never by inflating it
+// through a negative elapsed time.
+func (h *Host) recordLatencyAt(sample time.Duration, now int64) {
 	if sample < 0 {
 		sample = 0
 	}
-	now := time.Now().UnixNano()
-	for {
-		current := h.latency.Load()
-		next := &latencyEstimate{value: int64(sample), updated: now}
-		if current != nil && current.value > next.value {
-			weight := math.Exp(-float64(now-current.updated) / float64(latencyDecayTau))
-			next.value += int64(float64(current.value-next.value) * weight)
-		}
-		if h.latency.CompareAndSwap(current, next) {
-			return
-		}
+	h.latencyMu.Lock()
+	if now < h.latencyUpdated {
+		now = h.latencyUpdated
 	}
+	next := int64(sample)
+	if h.latencyValue > next {
+		weight := math.Exp(-float64(now-h.latencyUpdated) / float64(latencyDecayTau))
+		next += int64(float64(h.latencyValue-next) * weight)
+	}
+	h.latencyValue, h.latencyUpdated = next, now
+	h.latencyMu.Unlock()
 }
 
 // decayLatency exponentially decays a latency value (in nanoseconds)

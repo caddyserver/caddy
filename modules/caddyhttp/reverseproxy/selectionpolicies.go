@@ -317,6 +317,16 @@ func (r *LeastConnSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
+// LatencyConsumer is implemented by selection policies that consume the
+// roundtrip latency tracked on each Host. The proxy handler records a
+// latency sample after every roundtrip only when the configured selection
+// policy implements this interface, so that policies which never read
+// Host.Latency do not pay for maintaining it on the request path.
+type LatencyConsumer interface {
+	// ConsumesLatency is a marker method with no behavior.
+	ConsumesLatency()
+}
+
 // LeastLatencySelection is a policy that samples two available hosts
 // at random ("power of two choices") and selects the one with the
 // lower latency score, which is the host's peak-sensitive EWMA of
@@ -388,6 +398,10 @@ func (r *LeastLatencySelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error
 	}
 	return nil
 }
+
+// ConsumesLatency marks this policy as a consumer of roundtrip latency
+// samples, so the proxy handler records them; see LatencyConsumer.
+func (LeastLatencySelection) ConsumesLatency() {}
 
 // latencyScore scores an upstream for least_latency selection: its
 // peak-EWMA latency scaled by its active request count. Adding 1 to

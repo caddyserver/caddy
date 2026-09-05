@@ -224,6 +224,11 @@ type Handler struct {
 	CB               CircuitBreaker    `json:"-"`
 	DynamicUpstreams UpstreamSource    `json:"-"`
 
+	// recordLatency is true when the selection policy implements
+	// LatencyConsumer; only then does the handler record a roundtrip
+	// latency sample on the upstream's Host after each roundtrip.
+	recordLatency bool
+
 	// transportHeaderOps is a set of header operations provided
 	// by the transport at provision time, if the transport
 	// implements TransportHeaderOpsProvider. These ops are
@@ -380,6 +385,7 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	if h.LoadBalancing.SelectionPolicy == nil {
 		h.LoadBalancing.SelectionPolicy = RandomSelection{}
 	}
+	_, h.recordLatency = h.LoadBalancing.SelectionPolicy.(LatencyConsumer)
 	if h.LoadBalancing.TryDuration > 0 && h.LoadBalancing.TryInterval == 0 {
 		// a non-zero try_duration with a zero try_interval
 		// will always spin the CPU for try_duration if the
@@ -1046,10 +1052,12 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	res, err := h.Transport.RoundTrip(req)
 	duration := time.Since(start)
 
-	// record the roundtrip latency for latency-aware selection policies;
+	// record the roundtrip latency if the selection policy consumes it;
 	// errored roundtrips count too, with the time elapsed until the error
 	// (which includes any timeout), so that failing upstreams score as slow
-	di.Upstream.Host.recordLatency(duration)
+	if h.recordLatency {
+		di.Upstream.Host.recordLatency(duration)
+	}
 
 	// record that the round trip is done for the 1xx response handler
 	roundTripMutex.Lock()
