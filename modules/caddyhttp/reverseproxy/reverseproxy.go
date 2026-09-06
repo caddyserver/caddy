@@ -1289,16 +1289,21 @@ func (h *Handler) finalizeResponse(
 		}
 	}
 	if err != nil {
-		// we're streaming the response and we've already written headers, so
-		// there's nothing an error handler can do to recover at this point;
-		// we'll just log the error and abort the stream here and panic just as
-		// the standard lib's proxy to propagate the stream error.
-		// see issue https://github.com/caddyserver/caddy/issues/5951
+		// ensure any buffered data (headers + partial body) is flushed to the
+		// client before we finish, so the client gets at least the response
+		// headers and whatever body data was received before the upstream
+		// disconnected, instead of an empty/aborted connection.
+		// see issue https://github.com/caddyserver/caddy/issues/7845
+		if f, ok := rw.(http.Flusher); ok {
+			f.Flush()
+		}
 		if c := logger.Check(zapcore.WarnLevel, "aborting with incomplete response"); c != nil {
 			c.Write(zap.Error(err))
 		}
-		// no extra logging from stdlib
-		panic(http.ErrAbortHandler)
+		// the roundtrip succeeded (we received response headers), but the
+		// body copy failed. wrap in roundtripSucceededError so callers know
+		// not to retry — we've already started writing the response.
+		return roundtripSucceededError{fmt.Errorf("incomplete response: %w", err)}
 	}
 
 	if len(res.Trailer) > 0 {
