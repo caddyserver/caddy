@@ -101,7 +101,7 @@ func parseOptHTTPSPort(d *caddyfile.Dispenser, _ any) (any, error) {
 	return httpsPort, nil
 }
 
-func parseOptOrder(d *caddyfile.Dispenser, _ any) (any, error) {
+func parseOptOrder(d *caddyfile.Dispenser, existing any) (any, error) {
 	d.Next() // consume option name
 
 	// get directive name
@@ -119,8 +119,16 @@ func parseOptOrder(d *caddyfile.Dispenser, _ any) (any, error) {
 	}
 	pos := Positional(d.Val())
 
+	// build on what an earlier order option in this same Caddyfile produced;
+	// the first one starts from a clone of the order the plugins registered,
+	// so from here on we're only ever editing a slice this adaptation owns
+	order, ok := existing.([]string)
+	if !ok {
+		order = slices.Clone(directiveOrder)
+	}
+
 	// if directive already had an order, drop it
-	newOrder := slices.DeleteFunc(directiveOrder, func(d string) bool {
+	newOrder := slices.DeleteFunc(order, func(d string) bool {
 		return d == dirName
 	})
 
@@ -131,7 +139,6 @@ func parseOptOrder(d *caddyfile.Dispenser, _ any) (any, error) {
 		if d.NextArg() {
 			return nil, d.ArgErr()
 		}
-		directiveOrder = newOrder
 		return newOrder, nil
 
 	case Last:
@@ -139,7 +146,6 @@ func parseOptOrder(d *caddyfile.Dispenser, _ any) (any, error) {
 		if d.NextArg() {
 			return nil, d.ArgErr()
 		}
-		directiveOrder = newOrder
 		return newOrder, nil
 
 	// if it's Before or After, continue
@@ -170,8 +176,6 @@ func parseOptOrder(d *caddyfile.Dispenser, _ any) (any, error) {
 	}
 	// insert the directive into the new order
 	newOrder = slices.Insert(newOrder, targetIndex, dirName)
-
-	directiveOrder = newOrder
 
 	return newOrder, nil
 }
