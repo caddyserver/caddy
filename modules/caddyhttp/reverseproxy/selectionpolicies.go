@@ -317,13 +317,10 @@ func (r *LeastConnSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
-// LatencyConsumer is implemented by selection policies that consume the
-// roundtrip latency tracked on each Host. The proxy handler records a
-// latency sample after every roundtrip only when the configured selection
-// policy implements this interface, so that policies which never read
-// Host.Latency do not pay for maintaining it on the request path.
+// LatencyConsumer is implemented by selection policies that read
+// Host.Latency. The handler records roundtrip latency only when the
+// configured policy implements it.
 type LatencyConsumer interface {
-	// ConsumesLatency is a marker method with no behavior.
 	ConsumesLatency()
 }
 
@@ -399,8 +396,7 @@ func (r *LeastLatencySelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error
 	return nil
 }
 
-// ConsumesLatency marks this policy as a consumer of roundtrip latency
-// samples, so the proxy handler records them; see LatencyConsumer.
+// ConsumesLatency implements LatencyConsumer.
 func (LeastLatencySelection) ConsumesLatency() {}
 
 // latencyScore scores an upstream for least_latency selection: its

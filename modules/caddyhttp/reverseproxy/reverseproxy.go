@@ -224,9 +224,7 @@ type Handler struct {
 	CB               CircuitBreaker    `json:"-"`
 	DynamicUpstreams UpstreamSource    `json:"-"`
 
-	// recordLatency is true when the selection policy implements
-	// LatencyConsumer; only then does the handler record a roundtrip
-	// latency sample on the upstream's Host after each roundtrip.
+	// recordLatency is set when SelectionPolicy implements LatencyConsumer.
 	recordLatency bool
 
 	// transportHeaderOps is a set of header operations provided
@@ -1052,11 +1050,8 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	res, err := h.Transport.RoundTrip(req)
 	duration := time.Since(start)
 
-	// record the roundtrip latency if the selection policy consumes it;
-	// errored roundtrips count too, with the time elapsed until the error
-	// (which includes any timeout), so that failing upstreams score as slow
 	if h.recordLatency {
-		di.Upstream.Host.recordLatency(duration)
+		di.Upstream.Host.recordLatency(duration, err != nil)
 	}
 
 	// record that the round trip is done for the 1xx response handler

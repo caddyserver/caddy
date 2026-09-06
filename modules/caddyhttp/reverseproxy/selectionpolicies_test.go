@@ -254,8 +254,8 @@ func TestLeastLatencyPolicy(t *testing.T) {
 	// with only two available hosts, both are always the two candidates,
 	// so the lower-latency host must always be selected
 	pool[0].setHealthy(false)
-	pool[1].recordLatency(50 * time.Millisecond)
-	pool[2].recordLatency(10 * time.Millisecond)
+	pool[1].recordLatency(50*time.Millisecond, false)
+	pool[2].recordLatency(10*time.Millisecond, false)
 	for i := 0; i < 100; i++ {
 		if h := llPolicy.Select(pool, req, nil); h != pool[2] {
 			t.Fatalf("Expected the lower-latency host (pool[2]) to always be selected; got %v on iteration %d", h, i)
@@ -290,9 +290,9 @@ func TestLeastLatencyPolicyDistribution(t *testing.T) {
 	// a host with high latency must lose against either of the others
 	// whenever it is one of the two candidates, so it is never selected;
 	// the two remaining hosts must share the traffic
-	pool[0].recordLatency(10 * time.Millisecond)
-	pool[1].recordLatency(20 * time.Millisecond)
-	pool[2].recordLatency(500 * time.Millisecond)
+	pool[0].recordLatency(10*time.Millisecond, false)
+	pool[1].recordLatency(20*time.Millisecond, false)
+	pool[2].recordLatency(500*time.Millisecond, false)
 	selected := make(map[*Upstream]int)
 	for i := 0; i < 300; i++ {
 		selected[llPolicy.Select(pool, req, nil)]++
@@ -325,7 +325,7 @@ func TestLeastLatencyPolicyColdStart(t *testing.T) {
 	// a host with no recorded latency must win against a host with
 	// observed latency, even a fast one, so it gets warmed up
 	pool[0].setHealthy(false)
-	pool[1].recordLatency(time.Millisecond)
+	pool[1].recordLatency(time.Millisecond, false)
 	for i := 0; i < 100; i++ {
 		if h := llPolicy.Select(pool, req, nil); h != pool[2] {
 			t.Fatalf("Expected the cold host (pool[2]) to always be selected; got %v on iteration %d", h, i)
@@ -340,77 +340,81 @@ func TestHostLatencyPeakEwma(t *testing.T) {
 	}
 
 	// the first sample is taken as-is
-	host.recordLatency(10 * time.Millisecond)
+	host.recordLatency(10*time.Millisecond, false)
 	if got := host.Latency(); got < 9*time.Millisecond || got > 10*time.Millisecond {
 		t.Errorf("Expected latency near 10ms after first sample, got %v", got)
 	}
 
 	// a higher sample takes effect immediately (peak sensitivity)
-	host.recordLatency(50 * time.Millisecond)
+	host.recordLatency(50*time.Millisecond, false)
 	if got := host.Latency(); got < 45*time.Millisecond {
 		t.Errorf("Expected latency to jump to ~50ms after a slow sample, got %v", got)
 	}
 
 	// an immediately following lower sample barely moves the estimate
-	host.recordLatency(10 * time.Millisecond)
+	host.recordLatency(10*time.Millisecond, false)
 	if got := host.Latency(); got < 40*time.Millisecond || got > 50*time.Millisecond {
 		t.Errorf("Expected latency to stay near the 50ms peak, got %v", got)
 	}
 
 	// after a long idle period the estimate decays toward zero
-	idle := time.Now().Add(5 * latencyDecayTau).UnixNano()
+	idle := time.Now().Add(5 * latencyDecayTau)
 	if got := host.latencyAt(idle); got > time.Millisecond {
 		t.Errorf("Expected latency to decay to under 1ms after idling, got %v", got)
 	}
 }
 
-// TestHostLatencyStaleSample is a regression test for a delayed writer
-// publishing a sample with a timestamp older than the currently published
-// one. Such a sample must never inflate the estimate: with a negative
-// elapsed time the decay weight would exceed 1 and the old, lower sample
-// would push the estimate above the newer, higher one.
+// TestHostLatencyStaleSample: a sample published with a timestamp older
+// than the current one must not inflate the estimate (negative elapsed
+// time would give a decay weight above 1) nor move the timestamp back.
 func TestHostLatencyStaleSample(t *testing.T) {
 	host := new(Host)
-	base := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC).UnixNano()
+	t0 := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	t1 := t0.Add(latencyDecayTau)
 
-	// an old sample, then a newer, higher peak
-	host.recordLatencyAt(10*time.Millisecond, base)
-	host.recordLatencyAt(100*time.Millisecond, base+int64(latencyDecayTau))
-	before := host.latencyAt(base + int64(latencyDecayTau))
+	host.recordLatencyAt(10*time.Millisecond, t0)
+	host.recordLatencyAt(100*time.Millisecond, t1)
+	before := host.latencyAt(t1)
 	if before != 100*time.Millisecond {
 		t.Fatalf("Expected the newer 100ms peak to be published, got %v", before)
 	}
 
-	// a delayed writer now lands with a timestamp from *before* the peak
-	// and a lower sample: the estimate must not move up, and the
-	// published timestamp must not move backwards
-	host.recordLatencyAt(10*time.Millisecond, base+int64(latencyDecayTau)/2)
-	after := host.latencyAt(base + int64(latencyDecayTau))
-	if after > before {
-		t.Errorf("Expected a stale lower sample not to inflate the estimate; went from %v to %v", before, after)
-	}
-	if after < before {
-		t.Errorf("Expected a stale lower sample not to decay the estimate ahead of time; went from %v to %v", before, after)
+	// delayed writer: lower sample, timestamp between t0 and t1
+	host.recordLatencyAt(10*time.Millisecond, t0.Add(latencyDecayTau/2))
+	if after := host.latencyAt(t1); after != before {
+		t.Errorf("Expected a stale lower sample to leave the estimate at %v, got %v", before, after)
 	}
 	host.latencyMu.Lock()
 	updated := host.latencyUpdated
 	host.latencyMu.Unlock()
-	if updated != base+int64(latencyDecayTau) {
-		t.Errorf("Expected the published timestamp to stay at the newest sample, got %d (want %d)", updated, base+int64(latencyDecayTau))
+	if !updated.Equal(t1) {
+		t.Errorf("Expected the published timestamp to stay at %v, got %v", t1, updated)
 	}
 
 	// a stale sample that is a genuine new peak still takes effect
-	host.recordLatencyAt(200*time.Millisecond, base)
-	if got := host.latencyAt(base + int64(latencyDecayTau)); got != 200*time.Millisecond {
+	host.recordLatencyAt(200*time.Millisecond, t0)
+	if got := host.latencyAt(t1); got != 200*time.Millisecond {
 		t.Errorf("Expected a stale higher sample to raise the estimate to 200ms, got %v", got)
 	}
 }
 
-// TestHostLatencyConcurrentRecord hammers one host from many goroutines
-// with samples that are all at or below a known maximum, interleaved with
-// readers, and checks that the published estimate never exceeds that
-// maximum and that the published timestamp never moves backwards. Run
-// with -race to also verify the value/timestamp pair is updated coherently.
+// TestHostLatencyFailurePenalty: a fast failure must not score as fast.
+func TestHostLatencyFailurePenalty(t *testing.T) {
+	host := new(Host)
+	host.recordLatency(time.Millisecond, true)
+	if got := host.Latency(); got < latencyFailurePenalty-10*time.Millisecond {
+		t.Errorf("Expected a failed 1ms roundtrip to record at least %v, got %v", latencyFailurePenalty, got)
+	}
+
+	host = new(Host)
+	host.recordLatency(3*latencyFailurePenalty, true)
+	if got := host.Latency(); got < 3*latencyFailurePenalty-10*time.Millisecond {
+		t.Errorf("Expected a slow failure to keep its elapsed time, got %v", got)
+	}
+}
+
+// TestHostLatencyConcurrentRecord: concurrent writers and readers; the
+// estimate must never exceed the maximum sample. Run with -race.
 func TestHostLatencyConcurrentRecord(t *testing.T) {
 	const (
 		writers   = 16
@@ -430,7 +434,7 @@ func TestHostLatencyConcurrentRecord(t *testing.T) {
 				if (i+w)%2 == 0 {
 					sample = time.Duration(i%10) * time.Millisecond
 				}
-				host.recordLatency(sample)
+				host.recordLatency(sample, false)
 				if got := host.Latency(); got > maxSample {
 					t.Errorf("latency estimate %v exceeds the maximum recorded sample %v", got, maxSample)
 					return
@@ -444,38 +448,33 @@ func TestHostLatencyConcurrentRecord(t *testing.T) {
 	}
 }
 
-// BenchmarkHostRecordLatency measures the cost of recording a sample on
-// one host from many goroutines at once, i.e. many concurrent requests to
-// a single upstream: the worst case for the handler's per-roundtrip cost
-// when a LatencyConsumer policy is configured.
+// BenchmarkHostRecordLatency: one host, all goroutines recording.
 func BenchmarkHostRecordLatency(b *testing.B) {
 	host := new(Host)
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			host.recordLatency(5 * time.Millisecond)
+			host.recordLatency(5*time.Millisecond, false)
 		}
 	})
 }
 
-// BenchmarkHostLatency measures the cost of reading the decayed estimate
-// under concurrent writers, as a selection policy would on every Select.
+// BenchmarkHostLatency: reads under concurrent writers (7:1).
 func BenchmarkHostLatency(b *testing.B) {
 	host := new(Host)
-	host.recordLatency(5 * time.Millisecond)
+	host.recordLatency(5*time.Millisecond, false)
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
 		for i := 0; pb.Next(); i++ {
 			if i%8 == 0 {
-				host.recordLatency(5 * time.Millisecond)
+				host.recordLatency(5*time.Millisecond, false)
 			}
 			_ = host.Latency()
 		}
 	})
 }
 
-// TestLatencyConsumer checks which policies opt in to latency recording,
-// through the same assertion the handler makes at provision time.
+// TestLatencyConsumer checks which policies opt in to latency recording.
 func TestLatencyConsumer(t *testing.T) {
 	if _, ok := Selector(new(LeastLatencySelection)).(LatencyConsumer); !ok {
 		t.Error("Expected least_latency to implement LatencyConsumer.")
