@@ -620,7 +620,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// advertise HTTP/3, if enabled
 	if s.h3server != nil && r.ProtoMajor < 3 {
 		if err := s.h3server.SetQUICHeaders(h); err != nil {
-			if c := s.logger.Check(zapcore.ErrorLevel, "setting HTTP/3 Alt-Svc header"); c != nil {
+			lvl := zapcore.ErrorLevel
+			if errors.Is(err, http3.ErrNoAltSvcPort) {
+				lvl = zapcore.DebugLevel
+			}
+			if c := s.logger.Check(lvl, "setting HTTP/3 Alt-Svc header"); c != nil {
 				c.Write(zap.Error(err))
 			}
 		}
