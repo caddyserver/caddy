@@ -15,12 +15,15 @@
 package rewrite
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"go.uber.org/zap"
 
@@ -419,18 +422,28 @@ func buildQueryString(qs string, repl *caddy.Replacer) string {
 	return sb.String()
 }
 
-// equalFoldByte compares two path bytes, folding case for ASCII letters only.
-// A byte above 0x7F is one fragment of a multi-byte character and has no case;
-// strings.EqualFold would report any two such bytes as equal, since each decodes
-// to utf8.RuneError on its own.
-func equalFoldByte(a, b byte) bool {
-	if 'A' <= a && a <= 'Z' {
-		a += 'a' - 'A'
+// runeBuffered reports whether buf holds a whole character, or as much of one
+// as can still be decoded. trimPathSuffix walks backwards, so a continuation
+// byte can arrive before its leading byte; utf8.FullRune alone would call that
+// complete and compare two fragments.
+func runeBuffered(buf []byte) bool {
+	if len(buf) >= utf8.UTFMax {
+		return true
 	}
-	if 'A' <= b && b <= 'Z' {
-		b += 'a' - 'A'
+	return utf8.RuneStart(buf[0]) && utf8.FullRune(buf)
+}
+
+// equalFoldRunes reports whether a and b hold the same character, ignoring case,
+// which is the folding the path matcher gets from strings.ToLower. Invalid UTF-8
+// is compared byte for byte, since every such fragment decodes to utf8.RuneError
+// and folding would report any two of them as equal.
+func equalFoldRunes(a, b []byte) bool {
+	ar, aSize := utf8.DecodeRune(a)
+	br, bSize := utf8.DecodeRune(b)
+	if (ar == utf8.RuneError && aSize <= 1) || (br == utf8.RuneError && bSize <= 1) {
+		return bytes.Equal(a, b)
 	}
-	return a == b
+	return unicode.ToLower(ar) == unicode.ToLower(br)
 }
 
 // trimPathPrefix is like strings.TrimPrefix, but customized for advanced URI
@@ -445,6 +458,7 @@ func equalFoldByte(a, b byte) bool {
 // performed in normalized/unescaped space.
 func trimPathPrefix(escapedPath, prefix string) string {
 	var iPath, iPrefix int
+	var pathBuf, prefixBuf []byte
 	for iPath < len(escapedPath) && iPrefix < len(prefix) {
 		prefixCh := prefix[iPrefix]
 		ch := escapedPath[iPath]
@@ -460,9 +474,16 @@ func trimPathPrefix(escapedPath, prefix string) string {
 		}
 
 		// prefix comparisons are case-insensitive to consistency with
-		// path matcher, which is case-insensitive for good reasons
-		if !equalFoldByte(ch, prefixCh) {
-			return escapedPath
+		// path matcher, which is case-insensitive for good reasons.
+		// A multi-byte character is buffered until both sides hold a
+		// complete rune, so the fold is done per character, not per byte.
+		pathBuf = append(pathBuf, ch)
+		prefixBuf = append(prefixBuf, prefixCh)
+		if runeBuffered(pathBuf) && runeBuffered(prefixBuf) {
+			if !equalFoldRunes(pathBuf, prefixBuf) {
+				return escapedPath
+			}
+			pathBuf, prefixBuf = pathBuf[:0], prefixBuf[:0]
 		}
 
 		iPath++
@@ -470,7 +491,7 @@ func trimPathPrefix(escapedPath, prefix string) string {
 	}
 
 	// if we iterated through the entire prefix, we found it, so trim it
-	if iPrefix >= len(prefix) {
+	if iPrefix >= len(prefix) && len(prefixBuf) == 0 {
 		return escapedPath[iPath:]
 	}
 
@@ -493,6 +514,7 @@ func trimPathPrefix(escapedPath, prefix string) string {
 // digits) and makes escaped path bytes compare unequal to their decoded form.
 func trimPathSuffix(escapedPath, suffix string) string {
 	iPath, iSuffix := len(escapedPath), len(suffix)
+	var pathBuf, suffixBuf []byte
 	for iPath > 0 && iSuffix > 0 {
 		suffixCh := suffix[iSuffix-1]
 		ch := escapedPath[iPath-1]
@@ -514,9 +536,16 @@ func trimPathSuffix(escapedPath, suffix string) string {
 		}
 
 		// suffix comparisons are case-insensitive for consistency with
-		// trimPathPrefix, which is case-insensitive for good reasons
-		if !equalFoldByte(ch, suffixCh) {
-			return escapedPath
+		// trimPathPrefix, which is case-insensitive for good reasons.
+		// The walk is backwards, so bytes are prepended until both sides
+		// hold a complete rune.
+		pathBuf = append([]byte{ch}, pathBuf...)
+		suffixBuf = append([]byte{suffixCh}, suffixBuf...)
+		if runeBuffered(pathBuf) && runeBuffered(suffixBuf) {
+			if !equalFoldRunes(pathBuf, suffixBuf) {
+				return escapedPath
+			}
+			pathBuf, suffixBuf = nil, nil
 		}
 
 		iPath -= step
@@ -524,7 +553,7 @@ func trimPathSuffix(escapedPath, suffix string) string {
 	}
 
 	// if we iterated through the entire suffix, we found it, so trim it
-	if iSuffix <= 0 {
+	if iSuffix <= 0 && len(suffixBuf) == 0 {
 		return escapedPath[:iPath]
 	}
 

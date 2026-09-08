@@ -316,6 +316,18 @@ func TestRewrite(t *testing.T) {
 			expect: newRequest(t, "GET", "/\u6f22/d"),
 		},
 		{
+			// the path matcher lowercases the request path, so the trim folds
+			// case for multi-byte characters too
+			rule:   Rewrite{StripPathPrefix: "/caf\u00e9"},
+			input:  newRequest(t, "GET", "/CAF\u00c9/d"),
+			expect: newRequest(t, "GET", "/d"),
+		},
+		{
+			rule:   Rewrite{StripPathSuffix: "/caf\u00e9"},
+			input:  newRequest(t, "GET", "/d/CAF\u00c9"),
+			expect: newRequest(t, "GET", "/d"),
+		},
+		{
 			rule:   Rewrite{StripPathSuffix: "/caf\u00e9"},
 			input:  newRequest(t, "GET", "/d/caf%C3%A9"),
 			expect: newRequest(t, "GET", "/d"),
