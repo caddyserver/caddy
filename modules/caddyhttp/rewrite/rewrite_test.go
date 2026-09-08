@@ -295,6 +295,37 @@ func TestRewrite(t *testing.T) {
 			expect: newRequest(t, "GET", "/d"),
 		},
 		{
+			rule:   Rewrite{StripPathPrefix: "/caf\u00e9"},
+			input:  newRequest(t, "GET", "/caf%C3%A9/d"),
+			expect: newRequest(t, "GET", "/d"),
+		},
+		{
+			rule:   Rewrite{StripPathPrefix: "/caf\u00e9"},
+			input:  newRequest(t, "GET", "/caf\u00e9/d"),
+			expect: newRequest(t, "GET", "/d"),
+		},
+		{
+			rule:   Rewrite{StripPathPrefix: "/\ud55c"},
+			input:  newRequest(t, "GET", "/%ED%95%9C/d"),
+			expect: newRequest(t, "GET", "/d"),
+		},
+		{
+			// a different multi-byte character of the same length must not match
+			rule:   Rewrite{StripPathPrefix: "/\ud55c"},
+			input:  newRequest(t, "GET", "/%E6%BC%A2/d"),
+			expect: newRequest(t, "GET", "/\u6f22/d"),
+		},
+		{
+			rule:   Rewrite{StripPathSuffix: "/caf\u00e9"},
+			input:  newRequest(t, "GET", "/d/caf%C3%A9"),
+			expect: newRequest(t, "GET", "/d"),
+		},
+		{
+			rule:   Rewrite{StripPathSuffix: "/\ud55c"},
+			input:  newRequest(t, "GET", "/d/%E6%BC%A2"),
+			expect: newRequest(t, "GET", "/d/\u6f22"),
+		},
+		{
 			rule:   Rewrite{StripPathPrefix: "/a/b/c"},
 			input:  newRequest(t, "GET", "/a%2Fb/c/d"),
 			expect: newRequest(t, "GET", "/d"),
