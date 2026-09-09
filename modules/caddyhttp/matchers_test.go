@@ -398,6 +398,23 @@ func TestPathMatcher(t *testing.T) {
 			expect: true,
 		},
 		{
+			// a lone trailing wildcard is a fast prefix match in normalized
+			// space, so it does match an encoded separator
+			match:  MatchPath{"/bands/*"},
+			input:  "/bands/AC%2FDC",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/bands/%*/"},
+			input:  "/bands/AC%2FDC/",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/bands/*/"},
+			input:  "/bands/AC%2FDC/",
+			expect: false, // because * operates in normalized space
+		},
+		{
 			match:  MatchPath{"/foo%2fbar/baz"},
 			input:  "/foo%2Fbar/baz",
 			expect: true,
