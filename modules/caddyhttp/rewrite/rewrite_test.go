@@ -356,6 +356,52 @@ func TestRewrite(t *testing.T) {
 			input:  newRequest(t, "GET", "/foo/bar/suffix"),
 			expect: newRequest(t, "GET", "/foo/bar/suffix"),
 		},
+		{
+			// the suffix pattern's own '%' must be compared literally: here the
+			// path's "%25" decodes to a literal '%', which is not the escape
+			// introducer the pattern asks for, so nothing may be stripped
+			rule:   Rewrite{StripPathSuffix: "%41"},
+			input:  newRequest(t, "GET", "/file%2541"), // decodes to "/file%41"
+			expect: newRequest(t, "GET", "/file%2541"),
+		},
+		{
+			rule:   Rewrite{StripPathSuffix: "%2f"},
+			input:  newRequest(t, "GET", "/file%252f"), // decodes to "/file%2f"
+			expect: newRequest(t, "GET", "/file%252f"),
+		},
+		{
+			rule:   Rewrite{StripPathSuffix: "%25"},
+			input:  newRequest(t, "GET", "/file%2525"), // decodes to "/file%25"
+			expect: newRequest(t, "GET", "/file%2525"),
+		},
+		{
+			// ...but a path that really does use the pattern's escape is stripped
+			rule:   Rewrite{StripPathSuffix: "%41"},
+			input:  newRequest(t, "GET", "/file%41"),
+			expect: newRequest(t, "GET", "/file"),
+		},
+		{
+			rule:   Rewrite{StripPathSuffix: "%2f"},
+			input:  newRequest(t, "GET", "/file%2f"),
+			expect: newRequest(t, "GET", "/file"),
+		},
+		{
+			rule:   Rewrite{StripPathSuffix: "%25"},
+			input:  newRequest(t, "GET", "/file%25"),
+			expect: newRequest(t, "GET", "/file"),
+		},
+		{
+			// an escaped suffix pattern must not match the decoded character
+			rule:   Rewrite{StripPathSuffix: "%2f"},
+			input:  newRequest(t, "GET", "/file/"),
+			expect: newRequest(t, "GET", "/file/"),
+		},
+		{
+			// a decoded suffix pattern still matches the path's escaped form
+			rule:   Rewrite{StripPathSuffix: ".html"},
+			input:  newRequest(t, "GET", "/a%2ehtml"), // %2e == '.'
+			expect: newRequest(t, "GET", "/a"),
+		},
 
 		{
 			rule:   Rewrite{URISubstring: []substrReplacer{{Find: "findme", Replace: "replaced"}}},
