@@ -22,6 +22,7 @@ import (
 	"crypto/sha512"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -782,6 +783,98 @@ func TestContentDigestResponseWriterFinalize(t *testing.T) {
 			t.Fatalf("Content-Digest = %q, want %q", got, wantEmpty)
 		}
 	})
+
+	t.Run("truncated 200 body returns error without committing", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		cd := &contentDigestResponseWriter{
+			ResponseWriter: rec,
+			algos:          []string{"sha-256"},
+			maxBuffer:      maxBuf,
+		}
+		cd.Header().Set("Content-Length", "100")
+		cd.WriteHeader(http.StatusOK)
+		if _, err := cd.Write([]byte("short")); err != nil {
+			t.Fatal(err)
+		}
+		if err := cd.finalize(); err == nil {
+			t.Fatal("expected error on truncated body, got nil")
+		}
+		if rec.Flushed || len(rec.Body.Bytes()) != 0 {
+			t.Fatalf("ResponseWriter was committed: body = %q", rec.Body.Bytes())
+		}
+	})
+
+	t.Run("truncated 206 body returns error without committing", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		cd := &contentDigestResponseWriter{
+			ResponseWriter: rec,
+			algos:          []string{"sha-256"},
+			maxBuffer:      maxBuf,
+		}
+		cd.Header().Set("Content-Length", "50")
+		cd.WriteHeader(http.StatusPartialContent)
+		if _, err := cd.Write([]byte("short")); err != nil {
+			t.Fatal(err)
+		}
+		if err := cd.finalize(); err == nil {
+			t.Fatal("expected error on truncated 206 body, got nil")
+		}
+		if rec.Flushed || len(rec.Body.Bytes()) != 0 {
+			t.Fatalf("ResponseWriter was committed: body = %q", rec.Body.Bytes())
+		}
+	})
+
+	t.Run("ServeContent with failing ReadSeeker returns error and does not commit", func(t *testing.T) {
+		fullContent := []byte("0123456789abcdef0123456789abcdef") // 32 bytes
+		rs := &failingReadSeeker{
+			content: fullContent,
+			failAt:  10, // fails partway after 10 bytes
+		}
+		rec := httptest.NewRecorder()
+		cd := &contentDigestResponseWriter{
+			ResponseWriter: rec,
+			algos:          []string{"sha-256"},
+			maxBuffer:      maxBuf,
+		}
+		r := httptest.NewRequest(http.MethodGet, "/test.txt", nil)
+		http.ServeContent(cd, r, "test.txt", time.Unix(1000, 0), rs)
+
+		err := cd.finalize()
+		if err == nil {
+			t.Fatal("expected error on truncated ReadSeeker from ServeContent, got nil")
+		}
+		if rec.Flushed || len(rec.Body.Bytes()) != 0 {
+			t.Fatalf("ResponseWriter was committed despite read failure: body = %q", rec.Body.Bytes())
+		}
+		if got := rec.Header().Get("Content-Digest"); got != "" {
+			t.Fatalf("Content-Digest = %q, want empty on read failure", got)
+		}
+	})
+
+	t.Run("ServeContent with failing ReadSeeker on 206 range returns error", func(t *testing.T) {
+		fullContent := []byte("0123456789abcdef0123456789abcdef") // 32 bytes
+		rs := &failingReadSeeker{
+			content: fullContent,
+			failAt:  10, // range is 0-15 (16 bytes), but fails at byte 10
+		}
+		rec := httptest.NewRecorder()
+		cd := &contentDigestResponseWriter{
+			ResponseWriter: rec,
+			algos:          []string{"sha-256"},
+			maxBuffer:      maxBuf,
+		}
+		r := httptest.NewRequest(http.MethodGet, "/test.txt", nil)
+		r.Header.Set("Range", "bytes=0-15")
+		http.ServeContent(cd, r, "test.txt", time.Unix(1000, 0), rs)
+
+		err := cd.finalize()
+		if err == nil {
+			t.Fatal("expected error on truncated range ReadSeeker from ServeContent, got nil")
+		}
+		if rec.Flushed || len(rec.Body.Bytes()) != 0 {
+			t.Fatalf("ResponseWriter was committed despite read failure: body = %q", rec.Body.Bytes())
+		}
+	})
 }
 
 func TestContentDigestIntegration(t *testing.T) {
@@ -1269,4 +1362,46 @@ func (d *dynamicCompressResponseWriter) WriteHeader(status int) {
 func (d *dynamicCompressResponseWriter) Write(b []byte) (int, error) {
 	d.ResponseWriter.Header().Set("Content-Encoding", "gzip")
 	return d.ResponseWriter.Write(b)
+}
+
+type failingReadSeeker struct {
+	content []byte
+	failAt  int
+	offset  int64
+}
+
+func (f *failingReadSeeker) Read(p []byte) (int, error) {
+	if f.offset >= int64(f.failAt) {
+		return 0, io.ErrUnexpectedEOF
+	}
+	avail := int64(f.failAt) - f.offset
+	toRead := int64(len(p))
+	if toRead > avail {
+		toRead = avail
+	}
+	n := copy(p, f.content[f.offset:f.offset+toRead])
+	f.offset += int64(n)
+	if f.offset >= int64(f.failAt) {
+		return n, io.ErrUnexpectedEOF
+	}
+	return n, nil
+}
+
+func (f *failingReadSeeker) Seek(offset int64, whence int) (int64, error) {
+	var next int64
+	switch whence {
+	case io.SeekStart:
+		next = offset
+	case io.SeekCurrent:
+		next = f.offset + offset
+	case io.SeekEnd:
+		next = int64(len(f.content)) + offset
+	default:
+		return 0, fmt.Errorf("invalid whence: %d", whence)
+	}
+	if next < 0 {
+		return 0, fmt.Errorf("negative position")
+	}
+	f.offset = next
+	return next, nil
 }

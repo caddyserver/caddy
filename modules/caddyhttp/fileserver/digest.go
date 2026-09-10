@@ -227,6 +227,20 @@ func (cd *contentDigestResponseWriter) finalize() error {
 		status = http.StatusOK
 	}
 
+	// Validate buffered byte count against response Content-Length for non-HEAD 200/206 responses.
+	// http.ServeContent intentionally ignores the error from its final io.CopyN; if the source
+	// read fails prematurely, we must fail safely rather than committing a truncated body or
+	// publishing a digest over an incomplete response.
+	if !cd.isHead && (status == http.StatusOK || status == http.StatusPartialContent) {
+		if cl := cd.Header().Get("Content-Length"); cl != "" {
+			if expectedLen, err := strconv.ParseInt(cl, 10, 64); err == nil && expectedLen >= 0 {
+				if int64(cd.buf.Len()) != expectedLen {
+					return fmt.Errorf("response body truncated: expected %d bytes (Content-Length), got %d buffered bytes", expectedLen, cd.buf.Len())
+				}
+			}
+		}
+	}
+
 	enc := cd.Header().Get("Content-Encoding")
 	allowDigest := !cd.omitDigest &&
 		(status == http.StatusOK || status == http.StatusPartialContent) &&
