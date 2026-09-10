@@ -165,7 +165,7 @@ require (
 	github.com/slackhq/nebula v1.10.3 // indirect
 	github.com/spf13/cast v1.7.0 // indirect
 	github.com/urfave/cli v1.22.17 // indirect
-	go.etcd.io/bbolt v1.4.3 // indirect
+	go.etcd.io/bbolt v1.4.3
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.44.0 // indirect
 	go.opentelemetry.io/otel/metric v1.44.0 // indirect
 	go.opentelemetry.io/otel/trace v1.44.0
