@@ -792,15 +792,33 @@ func BufferedLog() (*zap.Logger, *zap.Logger, *internal.LogBufferCore) {
 	defaultLoggerMu.Lock()
 	defer defaultLoggerMu.Unlock()
 	origLogger := defaultLogger.logger
+	bufferedLogOrig = origLogger
 	bufferCore := internal.NewLogBufferCore(zap.InfoLevel)
 	defaultLogger.logger = zap.New(bufferCore)
 	return defaultLogger.logger, origLogger, bufferCore
+}
+
+// FlushLogs flushes any buffered log entries to the original default
+// logger's output. It is a no-op if the default logger is not currently
+// buffered. This ensures that log entries buffered before a config was
+// loaded (or while loading failed) are not silently lost when the
+// process exits before a config replaces the default logger.
+func FlushLogs() {
+	defaultLoggerMu.Lock()
+	defer defaultLoggerMu.Unlock()
+	if bufferCore, ok := defaultLogger.logger.Core().(*internal.LogBufferCore); ok && bufferedLogOrig != nil {
+		bufferCore.FlushTo(bufferedLogOrig)
+	}
 }
 
 var (
 	coloringEnabled  = os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != "xterm-mono"
 	defaultLogger, _ = newDefaultProductionLog()
 	defaultLoggerMu  sync.RWMutex
+	// bufferedLogOrig holds the original default logger that was
+	// temporarily replaced by BufferedLog, so FlushLogs can write any
+	// buffered entries back to the intended output before process exit.
+	bufferedLogOrig *zap.Logger
 )
 
 var writers = NewUsagePool()

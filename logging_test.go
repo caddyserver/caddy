@@ -14,7 +14,14 @@
 
 package caddy
 
-import "testing"
+import (
+	"bytes"
+	"strings"
+	"testing"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+)
 
 func TestCustomLog_loggerAllowed(t *testing.T) {
 	type fields struct {
@@ -103,4 +110,52 @@ func TestCustomLog_loggerAllowed(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestFlushLogs verifies that FlushLogs writes buffered entries to the
+// original default logger, so startup errors logged through a buffered
+// default logger are not silently lost when the process exits.
+func TestFlushLogs(t *testing.T) {
+	// set up a buffer that acts as the "original" default logger target
+	var buf bytes.Buffer
+	encoder := zapcore.NewConsoleEncoder(zap.NewProductionEncoderConfig())
+	core := zapcore.NewCore(encoder, zapcore.AddSync(&buf), zapcore.InfoLevel)
+	origLogger := zap.New(core)
+
+	// swap the default logger to a buffered one, remembering the original
+	defaultLoggerMu.Lock()
+	savedLogger := defaultLogger
+	savedOrig := bufferedLogOrig
+	defaultLogger = &defaultCustomLog{logger: origLogger}
+	bufferedLogOrig = origLogger
+	defaultLoggerMu.Unlock()
+
+	buffered, _, _ := BufferedLog()
+
+	// log through the buffered logger; nothing should be written yet
+	buffered.Error("startup failed: config is invalid")
+	if buf.Len() != 0 {
+		t.Fatalf("expected buffered log to not be written yet, got %q", buf.String())
+	}
+
+	// flush should write the buffered entry to the original logger target
+	FlushLogs()
+
+	// and the entry should have been written to the original output
+	if !strings.Contains(buf.String(), "startup failed: config is invalid") {
+		t.Fatalf("expected flushed log to contain error message, got %q", buf.String())
+	}
+
+	// flushing again must be a no-op (the buffer was drained), so the
+	// entry is not duplicated
+	FlushLogs()
+	if got := strings.Count(buf.String(), "startup failed: config is invalid"); got != 1 {
+		t.Fatalf("expected error message exactly once after second flush, got %d occurrences in %q", got, buf.String())
+	}
+
+	// restore global state
+	defaultLoggerMu.Lock()
+	defaultLogger = savedLogger
+	bufferedLogOrig = savedOrig
+	defaultLoggerMu.Unlock()
 }
