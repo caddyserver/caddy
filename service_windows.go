@@ -44,8 +44,11 @@ func init() {
 type runner struct{}
 
 func (runner) Execute(args []string, request <-chan svc.ChangeRequest, status chan<- svc.Status) (bool, uint32) {
-	notify.SetGlobalStatus(status)
+	// Report StartPending before registering the channel: SetGlobalStatus
+	// delivers a status that was requested earlier (Ready, if the config
+	// loaded before the SCM called Execute), and that one must come last.
 	status <- svc.Status{State: svc.StartPending}
+	notify.SetGlobalStatus(status)
 
 	for {
 		req := <-request
