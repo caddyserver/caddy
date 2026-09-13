@@ -424,6 +424,49 @@ func (st ServerType) buildTLSApp(
 		}
 		al = append(al, name)
 	}
+	// names from the tls_automate_names global option are managed without a
+	// site block of their own, so that asking for a certificate does not also
+	// mean serving the name; like force_automate, an explicitly listed name is
+	// managed even where auto-HTTPS would not have chosen it. Names that cannot
+	// get a public certificate are given the internal issuer, the same
+	// treatment they would get from a site block.
+	if automateNames, ok := options["tls_automate_names"].([]string); ok {
+		var publicNames []string
+		for _, name := range automateNames {
+			if slices.Contains(al, name) {
+				continue
+			}
+			al = append(al, name)
+			if certmagic.SubjectQualifiesForPublicCert(name) {
+				publicNames = append(publicNames, name)
+			} else {
+				internalAP.SubjectsRaw = append(internalAP.SubjectsRaw, name)
+			}
+		}
+		// the names still need an automation policy of their own, or they would
+		// miss the issuer configured by global options -- the catch-all policy
+		// that would otherwise carry it is dropped once every other policy
+		// names its subjects. Consolidation folds this back into an identical
+		// policy, so a name listed here ends up in the same place it would have
+		// had it been given a site block.
+		if len(publicNames) > 0 {
+			// only worth a policy if it would carry something: either global
+			// automation options, or ACME defaults filled in further below.
+			// Without either, the names are managed with the defaults anyway,
+			// and an empty policy would just be noise in the output.
+			ap, err := newBaseAutomationPolicy(options, warnings, hasGlobalACMEDefaults(options))
+			if err != nil {
+				return nil, warnings, err
+			}
+			if ap != nil {
+				ap.SubjectsRaw = publicNames
+				if tlsApp.Automation == nil {
+					tlsApp.Automation = new(caddytls.AutomationConfig)
+				}
+				tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, ap)
+			}
+		}
+	}
 	slices.Sort(al) // to stabilize the adapt output
 	if len(al) > 0 {
 		tlsApp.CertificatesRaw["automate"] = caddyconfig.JSON(al, &warnings)
@@ -440,12 +483,7 @@ func (st ServerType) buildTLSApp(
 	if tlsApp.Automation != nil {
 		globalEmail := options["email"]
 		globalACMECA := options["acme_ca"]
-		globalACMECARoot := options["acme_ca_root"]
-		_, globalACMEDNS := options["acme_dns"] // can be set to nil (to use globally-defined "dns" value instead), but it is still set
-		globalACMEEAB := options["acme_eab"]
-		globalPreferredChains := options["preferred_chains"]
-		hasGlobalACMEDefaults := globalEmail != nil || globalACMECA != nil || globalACMECARoot != nil || globalACMEDNS || globalACMEEAB != nil || globalPreferredChains != nil
-		if hasGlobalACMEDefaults {
+		if hasGlobalACMEDefaults(options) {
 			for i := range tlsApp.Automation.Policies {
 				ap := tlsApp.Automation.Policies[i]
 				if len(ap.Issuers) == 0 && automationPolicyHasAllPublicNames(ap) {
@@ -893,6 +931,20 @@ func appendUniqueStrings(existing []string, additions ...string) []string {
 		}
 	}
 	return existing
+}
+
+// hasGlobalACMEDefaults reports whether any global option is set that an
+// automation policy without issuers of its own would later be filled in with.
+// A policy is worth creating for a subject when this is true, even if the
+// policy is otherwise empty at the time it is made.
+func hasGlobalACMEDefaults(options map[string]any) bool {
+	_, hasACMEDNS := options["acme_dns"] // can be set to nil (to use globally-defined "dns" value instead), but it is still set
+	return options["email"] != nil ||
+		options["acme_ca"] != nil ||
+		options["acme_ca_root"] != nil ||
+		hasACMEDNS ||
+		options["acme_eab"] != nil ||
+		options["preferred_chains"] != nil
 }
 
 // newBaseAutomationPolicy returns a new TLS automation policy that gets
