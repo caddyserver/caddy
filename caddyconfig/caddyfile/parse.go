@@ -117,6 +117,7 @@ type parser struct {
 	definedSnippets map[string][]Token
 	nesting         int
 	importGraph     importGraph
+	importCount     int // incremented for each doImport call to uniquely identify each import invocation
 }
 
 func (p *parser) parseAll() ([]ServerBlock, error) {
@@ -486,6 +487,15 @@ func (p *parser) doImport(nesting int) error {
 	// copy the tokens so we don't overwrite p.definedSnippets
 	tokensCopy := make([]Token, 0, len(importedTokens))
 
+	// increment the import counter so each invocation of doImport gets a unique
+	// ID. This is appended to the token import-chain string, which ensures that
+	// isNextOnNewLine correctly identifies the boundary between two consecutive
+	// imports of the same snippet (otherwise their chain strings are identical
+	// and the fallback line-number comparison fails because snippet line numbers
+	// always start at 1, causing a false "same-line" result).
+	p.importCount++
+	importID := p.importCount
+
 	var (
 		maybeSnippet   bool
 		maybeSnippetId bool
@@ -496,11 +506,14 @@ func (p *parser) doImport(nesting int) error {
 	// golang for range slice return a copy of value
 	// similarly, append also copy value
 	for i, token := range importedTokens {
-		// update the token's imports to refer to import directive filename, line number and snippet name if there is one
+		// update the token's imports to refer to import directive filename, line
+		// number, a unique per-invocation ID, and snippet name if there is one.
+		// The importID makes each import call produce a distinct chain entry so
+		// that isNextOnNewLine never conflates tokens from different imports.
 		if token.snippetName != "" {
-			token.imports = append(token.imports, fmt.Sprintf("%s:%d (import %s)", p.File(), p.Line(), token.snippetName))
+			token.imports = append(token.imports, fmt.Sprintf("%s:%d#%d (import %s)", p.File(), p.Line(), importID, token.snippetName))
 		} else {
-			token.imports = append(token.imports, fmt.Sprintf("%s:%d (import)", p.File(), p.Line()))
+			token.imports = append(token.imports, fmt.Sprintf("%s:%d#%d (import)", p.File(), p.Line(), importID))
 		}
 
 		// naive way of determine snippets, as snippets definition can only follow name + block
