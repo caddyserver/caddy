@@ -136,3 +136,68 @@ func TestStatusByNameBeforeSetGlobalStatus(t *testing.T) {
 	}
 	expectNothing(t, ch)
 }
+
+// A status requested before the channel was registered must not be delivered
+// after a status requested later: the SCM would then be left believing the
+// service is Running while it is already stopping. That requires registration
+// and replay to be atomic with respect to other senders - if the channel
+// became reachable before the remembered status was in it, a concurrent
+// Stopping() could slip StopPending in first.
+//
+// The inversion itself is a window of a few hundred nanoseconds and does not
+// reproduce reliably, so what is pinned here is the property that rules it
+// out: while the replayed status is in flight, no other sender can reach the
+// channel.
+func TestRegistrationAndReplayDoNotInterleaveWithOtherSenders(t *testing.T) {
+	resetStatus()
+	if err := Ready(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Unbuffered and not received from yet, so the replayed status stays in
+	// flight for as long as this test wants it to.
+	ch := make(chan svc.Status)
+	registered := make(chan struct{})
+	go func() {
+		defer close(registered)
+		SetGlobalStatus(ch)
+	}()
+
+	// Wait for the replay to be under way, and check throughout that the
+	// channel has not become reachable to anyone else in the meantime.
+	var interleaved bool
+	for range 200 {
+		if statusMu.TryLock() {
+			reachable := globalStatus != nil
+			statusMu.Unlock()
+			if reachable {
+				interleaved = true
+				break
+			}
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if interleaved {
+		// Release the sender before failing, so that the rest of the
+		// package does not block on the status lock it may be holding.
+		receive(t, ch)
+		<-registered
+		t.Fatal("channel is reachable to other senders while the replayed status is still in flight")
+	}
+
+	// A status requested now cannot overtake the replayed one.
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		_ = Stopping()
+	}()
+
+	if got := receive(t, ch); got.State != svc.Running {
+		t.Fatalf("first status = %v, want Running", got.State)
+	}
+	if got := receive(t, ch); got.State != svc.StopPending {
+		t.Fatalf("second status = %v, want StopPending", got.State)
+	}
+	<-registered
+	<-stopped
+}

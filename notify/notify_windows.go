@@ -40,12 +40,19 @@ var (
 // channel was set (for example Ready, when the config finished
 // loading before the SCM invoked the service handler) is sent now,
 // so that the service does not remain in START_PENDING.
+//
+// The lock is held across that send: it makes registration and replay
+// atomic with respect to send, so a status requested concurrently
+// cannot reach the SCM ahead of the replayed one. Blocking on the send
+// while holding the lock is safe because the channel is drained by the
+// service handler, which never calls back into this package.
 func SetGlobalStatus(status chan<- svc.Status) {
 	statusMu.Lock()
+	defer statusMu.Unlock()
+
 	globalStatus = status
 	pending := pendingStatus
 	pendingStatus = nil
-	statusMu.Unlock()
 
 	if status != nil && pending != nil {
 		status <- *pending
@@ -53,18 +60,18 @@ func SetGlobalStatus(status chan<- svc.Status) {
 }
 
 // send delivers status to the SCM, or remembers it until
-// SetGlobalStatus provides the channel.
+// SetGlobalStatus provides the channel. Statuses are delivered in the
+// order they were requested; see SetGlobalStatus for why the lock is
+// held across the send.
 func send(status svc.Status) {
 	statusMu.Lock()
-	ch := globalStatus
-	if ch == nil {
-		pendingStatus = &status
-	}
-	statusMu.Unlock()
+	defer statusMu.Unlock()
 
-	if ch != nil {
-		ch <- status
+	if globalStatus == nil {
+		pendingStatus = &status
+		return
 	}
+	globalStatus <- status
 }
 
 // Ready notifies the SCM that the service is fully running and ready
