@@ -27,6 +27,62 @@ import (
 	"github.com/caddyserver/caddy/v2"
 )
 
+func TestMissingCookiePlaceholder(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req = req.WithContext(context.WithValue(req.Context(), VarsCtxKey, map[string]any{}))
+	repl := NewTestReplacer(req)
+	const input = "before-{http.request.cookie.session}-after"
+	if got := repl.ReplaceKnown(input, ""); got != "before--after" {
+		t.Fatalf("missing cookie = %q, want %q", got, "before--after")
+	}
+	req.AddCookie(&http.Cookie{Name: "session", Value: "present"})
+	if got := repl.ReplaceKnown(input, ""); got != "before-present-after" {
+		t.Fatalf("present cookie = %q, want %q", got, "before-present-after")
+	}
+}
+
+func TestTLSPlaceholdersWithoutTLS(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req = req.WithContext(context.WithValue(req.Context(), VarsCtxKey, map[string]any{}))
+	repl := NewTestReplacer(req)
+	for _, field := range []string{
+		"version", "cipher_suite", "resumed", "proto", "proto_mutual", "server_name", "ech",
+		"client.fingerprint", "client.public_key", "client.public_key_sha256",
+		"client.issuer", "client.serial", "client.subject", "client.certificate_pem", "client.certificate_der_base64",
+		"client.san.dns_names", "client.san.emails", "client.san.ips", "client.san.uris",
+		"client.san.dns_names.0", "client.san.emails.0", "client.san.ips.0", "client.san.uris.0",
+	} {
+		t.Run(field, func(t *testing.T) {
+			key := "http.request.tls." + field
+			value, known := repl.Get(key)
+			if !known || caddy.ToString(value) != "" {
+				t.Fatalf("Get(%q) = %v, %v; want empty, known", key, value, known)
+			}
+			if got := repl.ReplaceKnown("before-{"+key+"}-after", ""); got != "before--after" {
+				t.Fatalf("replacement = %q, want %q", got, "before--after")
+			}
+		})
+	}
+}
+
+func TestUnknownTLSPlaceholdersRemainLiteral(t *testing.T) {
+	for _, state := range []*tls.ConnectionState{nil, {ServerName: "example.com"}} {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.TLS = state
+		req = req.WithContext(context.WithValue(req.Context(), VarsCtxKey, map[string]any{}))
+		repl := NewTestReplacer(req)
+		for _, field := range []string{
+			"unknown", "client.unknown", "client.san.unknown",
+			"client.san.dns_names_extra", "client.san.dns_names.-1", "client.san.dns_names.nope",
+		} {
+			input := "{http.request.tls." + field + "}"
+			if got := repl.ReplaceKnown(input, ""); got != input {
+				t.Errorf("replacement = %q, want literal %q", got, input)
+			}
+		}
+	}
+}
+
 func TestHTTPVarReplacement(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodGet, "/foo/bar.tar.gz?a=1&b=2", nil)
 	repl := caddy.NewReplacer()
@@ -334,4 +390,3 @@ func TestHTTPVarReplacementUUID(t *testing.T) {
 		t.Errorf("expected stable uuid across references: %q != %q", first, second)
 	}
 }
-
