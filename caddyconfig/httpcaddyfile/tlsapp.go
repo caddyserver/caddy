@@ -437,6 +437,15 @@ func (st ServerType) buildTLSApp(
 				continue
 			}
 			al = append(al, name)
+			// a name that a site block already wrote a policy for keeps that
+			// policy: it is more specific than anything the global options can
+			// say, and a second policy naming the same subject is ambiguous --
+			// adapting would fail outright. The name still belongs in the
+			// automate loader, since a site block served only over HTTP does
+			// not get its certificate managed by auto-HTTPS.
+			if automationPolicyExistsForSubject(tlsApp.Automation, name) {
+				continue
+			}
 			if certmagic.SubjectQualifiesForPublicCert(name) {
 				publicNames = append(publicNames, name)
 			} else {
@@ -931,6 +940,19 @@ func appendUniqueStrings(existing []string, additions ...string) []string {
 		}
 	}
 	return existing
+}
+
+// automationPolicyExistsForSubject reports whether some automation policy
+// already names subject. Subjects are compared exactly, which is the same
+// comparison the adapter uses to reject overlapping policies; a catch-all
+// policy names no subjects and so never matches.
+func automationPolicyExistsForSubject(automation *caddytls.AutomationConfig, subject string) bool {
+	if automation == nil {
+		return false
+	}
+	return slices.ContainsFunc(automation.Policies, func(ap *caddytls.AutomationPolicy) bool {
+		return slices.Contains(ap.SubjectsRaw, subject)
+	})
 }
 
 // hasGlobalACMEDefaults reports whether any global option is set that an
