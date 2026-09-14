@@ -782,7 +782,8 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	// attacks, so it is strongly recommended to only use this
 	// feature if absolutely required, if read timeouts are
 	// set, and if body size is limited
-	if h.RequestBuffers != 0 && req.Body != nil {
+	// a client asking for incremental forwarding (RFC 10036) opts out of buffering
+	if h.RequestBuffers != 0 && req.Body != nil && !caddyhttp.IsIncremental(req.Header) {
 		var readBytes int64
 		req.Body, readBytes = h.bufferedBody(req.Body, h.RequestBuffers)
 		// set Content-Length when body is fully buffered
@@ -1105,8 +1106,9 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 		}
 	}
 
-	// if enabled, buffer the response body
-	if h.ResponseBuffers != 0 {
+	// if enabled, buffer the response body, unless the upstream
+	// asked for incremental forwarding (RFC 10036)
+	if h.ResponseBuffers != 0 && !caddyhttp.IsIncremental(res.Header) {
 		res.Body, _ = h.bufferedBody(res.Body, h.ResponseBuffers)
 	}
 

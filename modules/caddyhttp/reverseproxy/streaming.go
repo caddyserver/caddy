@@ -241,13 +241,19 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 // flushInterval returns the p.FlushInterval value, conditionally
 // overriding its value for a specific request/response.
 func (h Handler) flushInterval(req *http.Request, res *http.Response) time.Duration {
+	// The upstream asked for the response to be forwarded incrementally.
+	// See RFC 10036: https://www.rfc-editor.org/rfc/rfc10036.html
+	if caddyhttp.IsIncremental(res.Header) {
+		return -1 // negative means immediately
+	}
+
 	resCTHeader := res.Header.Get("Content-Type")
 	resCT, _, err := mime.ParseMediaType(resCTHeader)
 
 	// For Server-Sent Events responses, flush immediately.
 	// The MIME type is defined in https://www.w3.org/TR/eventsource/#text-event-stream
 	if err == nil && resCT == "text/event-stream" {
-		return -1 // negative means immediately
+		return -1
 	}
 
 	// We might have the case of streaming for which Content-Length might be unset.

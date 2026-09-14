@@ -13,6 +13,7 @@ require (
 	github.com/caddyserver/zerossl v0.1.5
 	github.com/cloudflare/circl v1.6.4
 	github.com/dunglas/go-urlpattern v1.0.0
+	github.com/dunglas/httpsfv v1.1.1
 	github.com/dustin/go-humanize v1.0.1
 	github.com/go-chi/chi/v5 v5.3.1
 	github.com/google/cel-go v0.29.2
