@@ -41,6 +41,11 @@ func init() {
 	}()
 }
 
+// exitOnServiceStop ends the process when the SCM asks the service to
+// stop. It is a variable so that the handler can be driven through a stop
+// in tests, which cannot afford to exit the test binary.
+var exitOnServiceStop = func() { exitProcessFromSignal("SIGINT") }
+
 type runner struct{}
 
 func (runner) Execute(args []string, request <-chan svc.ChangeRequest, status chan<- svc.Status) (bool, uint32) {
@@ -57,7 +62,7 @@ func (runner) Execute(args []string, request <-chan svc.ChangeRequest, status ch
 			status <- req.CurrentStatus
 		case svc.Stop, svc.Shutdown:
 			status <- svc.Status{State: svc.StopPending}
-			exitProcessFromSignal("SIGINT")
+			exitOnServiceStop()
 			return false, 0
 		}
 	}

@@ -36,9 +36,7 @@ func TestServiceHandlerReportsRunningWhenReadyCameFirst(t *testing.T) {
 
 	requests := make(chan svc.ChangeRequest)
 	status := make(chan svc.Status, 4)
-	// Execute blocks on requests until the SCM asks it to stop; a stop
-	// would exit the test process, so the goroutine is left waiting.
-	go runner{}.Execute(nil, requests, status)
+	startHandler(t, requests, status)
 
 	want := []svc.State{svc.StartPending, svc.Running}
 	for _, state := range want {
@@ -63,4 +61,43 @@ func TestServiceHandlerReportsRunningWhenReadyCameFirst(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("interrogate was not answered")
 	}
+}
+
+// startHandler runs the service handler, and stops and joins it when the
+// test ends, however it ends. Execute only leaves its loop on a stop
+// request, and a real stop would exit the test binary, so the exit is
+// stubbed out for as long as the handler runs.
+func startHandler(t *testing.T, requests chan svc.ChangeRequest, status chan svc.Status) {
+	t.Helper()
+
+	previousExit := exitOnServiceStop
+	exitOnServiceStop = func() {}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		runner{}.Execute(nil, requests, status)
+	}()
+
+	t.Cleanup(func() {
+		// The handler may be blocked reporting a status rather than
+		// waiting on a request, so keep draining while offering the stop.
+		stop := requests
+		deadline := time.After(5 * time.Second)
+		for {
+			select {
+			case stop <- svc.ChangeRequest{Cmd: svc.Stop}:
+				stop = nil
+			case <-status:
+			case <-done:
+				exitOnServiceStop = previousExit
+				return
+			case <-deadline:
+				// the handler is still running and would exit the
+				// test binary, so leave the stub in place
+				t.Error("the service handler did not stop")
+				return
+			}
+		}
+	})
 }
