@@ -433,7 +433,7 @@ func trimPathPrefix(escapedPath, prefix string) string {
 	var iPath, iPrefix int
 	for iPath < len(escapedPath) && iPrefix < len(prefix) {
 		prefixCh := prefix[iPrefix]
-		ch := string(escapedPath[iPath])
+		
 
 		if ch == "%" && prefixCh != '%' && len(escapedPath) >= iPath+3 {
 			var err error
@@ -481,7 +481,7 @@ func trimPathSuffix(escapedPath, suffix string) string {
 	iPath, iSuffix := len(escapedPath), len(suffix)
 	for iPath > 0 && iSuffix > 0 {
 		suffixCh := suffix[iSuffix-1]
-		ch := string(escapedPath[iPath-1])
+		ch := escapedPath[iPath : iPath+1]
 		step := 1
 
 		// if escapedPath uses a percent-encoding that ends at this position but
