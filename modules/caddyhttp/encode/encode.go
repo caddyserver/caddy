@@ -288,10 +288,12 @@ func (rw *responseWriter) WriteHeader(status int) {
 		rw.ResponseWriter.WriteHeader(status)
 	}
 
-	// write header immediately for server-sent events responses, since the
+	// write header immediately for server-sent events responses and for
+	// responses that ask for incremental forwarding (RFC 10036), since the
 	// body may not be written for a while and the client needs the headers
-	// to establish the event stream; see #6293
-	if !rw.wroteHeader && (status < 100 || status > 199) && isSSE(h.Get("Content-Type")) {
+	// to establish the stream; see #6293
+	if !rw.wroteHeader && (status < 100 || status > 199) &&
+		(caddyhttp.IsIncremental(h) || isSSE(h.Get("Content-Type"))) {
 		rw.init()
 		rw.ResponseWriter.WriteHeader(status)
 		rw.wroteHeader = true
