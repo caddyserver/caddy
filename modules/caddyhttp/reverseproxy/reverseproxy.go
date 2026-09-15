@@ -1116,7 +1116,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	// it to be forwarded incrementally, so refuse rather than stall the client
 	if h.ResponseBuffers != 0 && caddyhttp.IsIncremental(res.Header) {
 		res.Body.Close()
-		return roundtripSucceededError{incrementalRefusedError{refuseIncremental(rw)}}
+		return roundtripSucceededError{refuseIncremental(rw)}
 	}
 
 	// if enabled, buffer the response body
@@ -1634,11 +1634,6 @@ func statusError(err error) error {
 		return caddyhttp.Error(rre.statusCode, err)
 	}
 
-	// a refusal to forward incrementally already carries the status to report
-	if ire, ok := err.(incrementalRefusedError); ok {
-		return ire.error
-	}
-
 	// errors proxying usually mean there is a problem with the upstream(s)
 	statusCode := http.StatusBadGateway
 
@@ -1800,20 +1795,18 @@ type HealthCheckSchemeOverriderTransport interface {
 // RFC 10036 section 5.
 const proxyStatusIncrementalRefused = "caddy; error=incremental_refused"
 
+// errIncrementalRefused is the cause reported when a message asking for
+// incremental forwarding cannot be forwarded that way.
+var errIncrementalRefused = errors.New("refusing to forward the message incrementally: buffering is enabled")
+
 // refuseIncremental reports that a message asking for incremental forwarding
 // cannot be forwarded that way because buffering is enabled. RFC 10036
 // section 3 requires refusing outright rather than buffering the message
 // anyway, and section 4.1 recommends this status and Proxy-Status value.
 func refuseIncremental(rw http.ResponseWriter) error {
 	rw.Header().Set("Proxy-Status", proxyStatusIncrementalRefused)
-	return caddyhttp.Error(http.StatusNotImplemented,
-		fmt.Errorf("refusing to forward the message incrementally: buffering is enabled"))
+	return caddyhttp.Error(http.StatusNotImplemented, errIncrementalRefused)
 }
-
-// incrementalRefusedError wraps the error from refuseIncremental on the
-// response side, where it has to travel back through the proxy error
-// handling; it marks an error that already carries the status to report.
-type incrementalRefusedError struct{ error }
 
 // BufferedTransport is implemented by transports
 // that needs to buffer requests and/or responses.
