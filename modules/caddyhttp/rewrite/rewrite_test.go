@@ -363,6 +363,31 @@ func TestRewrite(t *testing.T) {
 		},
 
 		{
+			// a non-ASCII prefix written literally must strip a path that
+			// percent-encodes those same bytes
+			rule:   Rewrite{StripPathPrefix: "/café"},
+			input:  newRequest(t, "GET", "/caf%C3%A9/foo"),
+			expect: newRequest(t, "GET", "/foo"),
+		},
+		{
+			rule:   Rewrite{StripPathPrefix: "/한"},
+			input:  newRequest(t, "GET", "/%ED%95%9C/foo"),
+			expect: newRequest(t, "GET", "/foo"),
+		},
+		{
+			// only part of the encoded character matches, so nothing is stripped
+			rule:   Rewrite{StripPathPrefix: "/café"},
+			input:  newRequest(t, "GET", "/caf%C3%A8/foo"),
+			expect: newRequest(t, "GET", "/caf%C3%A8/foo"),
+		},
+		{
+			// the non-ASCII suffix counterpart
+			rule:   Rewrite{StripPathSuffix: "/café"},
+			input:  newRequest(t, "GET", "/foo/caf%C3%A9"),
+			expect: newRequest(t, "GET", "/foo"),
+		},
+
+		{
 			rule:   Rewrite{URISubstring: []substrReplacer{{Find: "findme", Replace: "replaced"}}},
 			input:  newRequest(t, "GET", "/foo/bar"),
 			expect: newRequest(t, "GET", "/foo/bar"),
