@@ -793,7 +793,7 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 		// set Content-Length when body is fully buffered
 		if b, ok := req.Body.(bodyReadCloser); ok && b.body == nil {
 			req.ContentLength = readBytes
-			req.Header.Set("Content-Length", strconv.FormatInt(req.ContentLength, 10))
+			req.Header["Content-Length"] = []string{strconv.FormatInt(req.ContentLength, 10)}
 		}
 	}
 
@@ -806,7 +806,7 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	// if User-Agent is not set by client, then explicitly
 	// disable it so it's not set to default value by std lib
 	if _, ok := req.Header["User-Agent"]; !ok {
-		req.Header.Set("User-Agent", "")
+		req.Header["User-Agent"] = []string{""}
 	}
 
 	// Indicate if request has been conveyed in early data.
@@ -818,7 +818,7 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	// might already have been forwarded by it or another instance
 	// (see Section 6.2)."
 	if req.TLS != nil && !req.TLS.HandshakeComplete {
-		req.Header.Set("Early-Data", "1")
+		req.Header["Early-Data"] = []string{"1"}
 	}
 
 	reqUpgradeType := upgradeType(req.Header)
@@ -834,17 +834,18 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 		// advertise that unless the incoming client request thought it was worth
 		// mentioning.)
 		if h == "Te" && httpguts.HeaderValuesContainsToken(req.Header["Te"], "trailers") {
-			req.Header.Set("Te", "trailers")
+			req.Header["Te"] = []string{"trailers"}
 			continue
 		}
-		req.Header.Del(h)
+		// hopHeaders are already canonical, so skip the normalization Del does
+		delete(req.Header, h)
 	}
 
 	// After stripping all the hop-by-hop connection headers above, add back any
 	// necessary for protocol upgrades, such as for websockets.
 	if reqUpgradeType != "" {
-		req.Header.Set("Connection", "Upgrade")
-		req.Header.Set("Upgrade", reqUpgradeType)
+		req.Header["Connection"] = []string{"Upgrade"}
+		req.Header["Upgrade"] = []string{reqUpgradeType}
 	}
 
 	// Set up the PROXY protocol info
@@ -876,7 +877,8 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	}
 
 	// Via header(s)
-	req.Header.Add("Via", strconv.Itoa(req.ProtoMajor)+"."+strconv.Itoa(req.ProtoMinor)+" Caddy")
+	req.Header["Via"] = append(req.Header["Via"],
+		strconv.Itoa(req.ProtoMajor)+"."+strconv.Itoa(req.ProtoMinor)+" Caddy")
 
 	return req, nil
 }
@@ -902,9 +904,9 @@ func (h Handler) addForwardedHeaders(req *http.Request) error {
 		// for security. If trusted, there is no peer IP to append to
 		// X-Forwarded-For, so clientIP stays empty.
 		if !trusted {
-			req.Header.Del("X-Forwarded-For")
-			req.Header.Del("X-Forwarded-Proto")
-			req.Header.Del("X-Forwarded-Host")
+			delete(req.Header, "X-Forwarded-For")
+			delete(req.Header, "X-Forwarded-Proto")
+			delete(req.Header, "X-Forwarded-Host")
 			return nil
 		}
 	} else {
@@ -918,9 +920,9 @@ func (h Handler) addForwardedHeaders(req *http.Request) error {
 		if err != nil {
 			// Remove the `X-Forwarded-*` headers to avoid upstreams
 			// potentially trusting a header that came from the client
-			req.Header.Del("X-Forwarded-For")
-			req.Header.Del("X-Forwarded-Proto")
-			req.Header.Del("X-Forwarded-Host")
+			delete(req.Header, "X-Forwarded-For")
+			delete(req.Header, "X-Forwarded-Proto")
+			delete(req.Header, "X-Forwarded-Host")
 			return nil
 		}
 
@@ -949,12 +951,12 @@ func (h Handler) addForwardedHeaders(req *http.Request) error {
 	if !omit {
 		if trusted && ok && prior != "" {
 			if clientIP != "" {
-				req.Header.Set("X-Forwarded-For", prior+", "+clientIP)
+				req.Header["X-Forwarded-For"] = []string{prior + ", " + clientIP}
 			} else {
-				req.Header.Set("X-Forwarded-For", prior)
+				req.Header["X-Forwarded-For"] = []string{prior}
 			}
 		} else if clientIP != "" {
-			req.Header.Set("X-Forwarded-For", clientIP)
+			req.Header["X-Forwarded-For"] = []string{clientIP}
 		}
 	}
 
@@ -970,7 +972,7 @@ func (h Handler) addForwardedHeaders(req *http.Request) error {
 		proto = prior
 	}
 	if !omit {
-		req.Header.Set("X-Forwarded-Proto", proto)
+		req.Header["X-Forwarded-Proto"] = []string{proto}
 	}
 
 	// Set X-Forwarded-Host; often this is redundant because
@@ -983,7 +985,7 @@ func (h Handler) addForwardedHeaders(req *http.Request) error {
 		host = prior
 	}
 	if !omit {
-		req.Header.Set("X-Forwarded-Host", host)
+		req.Header["X-Forwarded-Host"] = []string{host}
 	}
 
 	return nil
@@ -1572,8 +1574,9 @@ func copyHeader(dst, src http.Header) {
 // getting written at all. If the header is empty, then ok is
 // false. Callers should still check that the value is not empty
 // (the header field may be set but have an empty value).
-func allHeaderValues(h http.Header, field string) (value string, ok bool, omit bool) {
-	values, ok := h[http.CanonicalHeaderKey(field)]
+// The field must already be in canonical form.
+func allHeaderValues(h http.Header, canonicalField string) (value string, ok bool, omit bool) {
+	values, ok := h[canonicalField]
 	if ok && values == nil {
 		return "", true, true
 	}
@@ -1590,8 +1593,9 @@ func allHeaderValues(h http.Header, field string) (value string, ok bool, omit b
 // If the header is empty, then ok is false. Callers should
 // still check that the value is not empty (the header field
 // may be set but have an empty value).
-func lastHeaderValue(h http.Header, field string) (value string, ok bool, omit bool) {
-	values, ok := h[http.CanonicalHeaderKey(field)]
+// The field must already be in canonical form.
+func lastHeaderValue(h http.Header, canonicalField string) (value string, ok bool, omit bool) {
+	values, ok := h[canonicalField]
 	if ok && values == nil {
 		return "", true, true
 	}
@@ -1605,7 +1609,10 @@ func upgradeType(h http.Header) string {
 	if !httpguts.HeaderValuesContainsToken(h["Connection"], "Upgrade") {
 		return ""
 	}
-	return strings.ToLower(h.Get("Upgrade"))
+	if v := h["Upgrade"]; len(v) > 0 {
+		return strings.ToLower(v[0])
+	}
+	return ""
 }
 
 // removeConnectionHeaders removes hop-by-hop headers listed in the "Connection" header of h.
