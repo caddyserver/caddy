@@ -3,10 +3,12 @@ package reverseproxy
 import (
 	"bytes"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
 )
@@ -80,3 +82,33 @@ type nopReadWriteCloser struct {
 }
 
 func (nopReadWriteCloser) Close() error { return nil }
+
+// A response carrying the Incremental header field (RFC 10036) must be
+// forwarded without buffering, whatever its Content-Type and Content-Length.
+func TestFlushIntervalIncremental(t *testing.T) {
+	h := Handler{FlushInterval: caddy.Duration(time.Second)}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+
+	for _, tc := range []struct {
+		name        string
+		incremental string
+		want        time.Duration
+	}{
+		{name: "incremental", incremental: "?1", want: -1},
+		{name: "not incremental", incremental: "?0", want: time.Second},
+		{name: "absent", want: time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			res := &http.Response{
+				Header:        http.Header{"Content-Type": []string{"application/json"}},
+				ContentLength: 42,
+			}
+			if tc.incremental != "" {
+				res.Header.Set("Incremental", tc.incremental)
+			}
+			if got := h.flushInterval(req, res); got != tc.want {
+				t.Errorf("flushInterval() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

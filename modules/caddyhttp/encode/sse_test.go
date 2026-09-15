@@ -132,3 +132,32 @@ func TestNonSSESmallResponseStillBuffersHeader(t *testing.T) {
 		t.Fatalf("ServeHTTP() error = %v", err)
 	}
 }
+
+// A response marked with the Incremental header field (RFC 10036) needs the
+// same treatment as SSE: its headers must reach the client before the body,
+// since the sender may not produce content for a long time.
+func TestIncrementalHeadersFlushedBeforeBody(t *testing.T) {
+	enc := newSSEEncodeHandler(t)
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Accept-Encoding", "gzip")
+	baseRec := httptest.NewRecorder()
+	rec := &recordingWriter{ResponseWriter: baseRec}
+
+	next := caddyhttp.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) error {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Incremental", "?1")
+		w.WriteHeader(http.StatusOK)
+
+		if !rec.wroteHeader {
+			t.Error("incremental response headers were not written to the client before the body")
+		}
+		if rec.status != http.StatusOK {
+			t.Errorf("underlying status = %d, want 200", rec.status)
+		}
+		return nil
+	})
+
+	if err := enc.ServeHTTP(rec, r, next); err != nil {
+		t.Fatalf("ServeHTTP() error = %v", err)
+	}
+}

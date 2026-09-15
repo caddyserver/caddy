@@ -35,6 +35,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/dunglas/httpsfv"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/net/http/httpguts"
@@ -166,6 +167,13 @@ type Handler struct {
 	// should be avoided if at all possible for performance reasons, but
 	// could be useful if the backend has tighter memory constraints.
 	ResponseBuffers int64 `json:"response_buffers,omitempty"`
+
+	// The name identifying this proxy in the Proxy-Status response header
+	// field (RFC 9209). It has to identify the deployment rather than the
+	// software, so there is no sensible default: a service name
+	// ("ExampleCDN"), a hostname ("proxy-3.example.com") or an IP address
+	// are all appropriate. When empty, no Proxy-Status field is generated.
+	ProxyStatusName string `json:"proxy_status_name,omitempty"`
 
 	// If nonzero, streaming requests such as WebSockets will be
 	// forcibly closed at the end of the timeout. Default: no timeout.
@@ -484,6 +492,15 @@ func (b *bodyNopCloserIfNotRead) Close() error {
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+
+	// buffering the whole request is incompatible with the client asking for it
+	// to be forwarded incrementally (RFC 10036 section 3); a bounded buffer is
+	// allowed by section 4.3, unless the transport needs a length the body does
+	// not carry, which only buffering it in full can supply
+	if requestHasContent(r) && h.RequestBuffers != 0 && caddyhttp.IsIncremental(r.Header) &&
+		(h.RequestBuffers < 0 || (r.ContentLength < 0 && h.transportRequiresContentLength())) {
+		return h.refuseIncremental(w, nil)
+	}
 
 	// prepare the request for proxying; this is needed only once
 	clonedReq, err := h.prepareRequest(r, repl)
@@ -1103,6 +1120,15 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 			duration >= time.Duration(h.HealthChecks.Passive.UnhealthyLatency) {
 			h.countFailure(di.Upstream)
 		}
+	}
+
+	// same as the request above, minus the transport case: no transport needs
+	// the response buffered, so only an unlimited buffer, which holds the whole
+	// response back, is incompatible with forwarding it incrementally
+	if res.ContentLength != 0 && res.Body != http.NoBody && h.ResponseBuffers < 0 &&
+		caddyhttp.IsIncremental(res.Header) {
+		res.Body.Close()
+		return roundtripSucceededError{h.refuseIncremental(rw, res.Header)}
 	}
 
 	// if enabled, buffer the response body
@@ -1774,6 +1800,104 @@ type ProxyProtocolTransport interface {
 // that can override the scheme used for health checks.
 type HealthCheckSchemeOverriderTransport interface {
 	OverrideHealthCheckScheme(base *url.URL, port string)
+}
+
+// proxyErrorIncrementalRefused is the Proxy-Status error type (RFC 9209) for
+// a message we refuse to forward incrementally, as registered by RFC 10036
+// section 5.
+const proxyErrorIncrementalRefused = "incremental_refused"
+
+// errIncrementalRefused is the cause reported when a message asking for
+// incremental forwarding cannot be forwarded that way.
+var errIncrementalRefused = errors.New("refusing to forward the message incrementally: it would be buffered in full")
+
+// refuseIncremental reports that a message asking for incremental forwarding
+// cannot be forwarded that way because the configured buffering would hold it
+// back in full. RFC 10036 section 3 requires refusing outright rather than
+// buffering the message anyway, and section 4.1 recommends this status and
+// Proxy-Status error type. upstream carries the headers of the response being
+// refused, if any, so that the members it already holds are preserved.
+func (h *Handler) refuseIncremental(rw http.ResponseWriter, upstream http.Header) error {
+	if value, ok := h.proxyStatus(upstream, proxyErrorIncrementalRefused); ok {
+		rw.Header().Set("Proxy-Status", value)
+	}
+
+	return caddyhttp.Error(http.StatusNotImplemented, errIncrementalRefused)
+}
+
+// proxyStatus builds a Proxy-Status field value (RFC 9209) reporting proxyErr,
+// appending this proxy to the members upstream already reported so the whole
+// chain stays visible. It reports false if no name identifies this deployment,
+// since a software name identifies no intermediary and generating the field at
+// all is optional.
+func (h *Handler) proxyStatus(upstream http.Header, proxyErr string) (string, bool) {
+	if h.ProxyStatusName == "" {
+		return "", false
+	}
+
+	// a malformed field from upstream is dropped rather than propagated
+	list, err := httpsfv.UnmarshalList(upstream.Values("Proxy-Status"))
+	if err != nil {
+		list = httpsfv.List{}
+	}
+
+	// the name is a token where it can be, as the examples in RFC 9209 are,
+	// and a string where a token cannot hold it (a space, say)
+	item := httpsfv.NewItem(httpsfv.Token(h.ProxyStatusName))
+	item.Params.Add("error", httpsfv.Token(proxyErr))
+	if _, err := httpsfv.Marshal(item); err != nil {
+		item.Value = h.ProxyStatusName
+	}
+
+	value, err := httpsfv.Marshal(append(list, item))
+	if err != nil {
+		return "", false
+	}
+
+	return value, true
+}
+
+// requestHasContent reports whether r carries content to forward. A negative
+// length means unknown rather than absent, and HTTP/3 reports it for bodyless
+// GET and HEAD requests as well (see issue #6678), so for those the method is
+// what tells an empty body from a streaming one. Reading the body to find out
+// instead would defeat the point of forwarding it incrementally, since a
+// sender is free to send its header section long before any content.
+func requestHasContent(r *http.Request) bool {
+	if r.ContentLength > 0 {
+		return true
+	}
+	if r.ContentLength == 0 {
+		return false
+	}
+
+	// methods for which HTTP defines no content semantics; a sender may still
+	// attach content, but not one asking for the message to be forwarded
+	// incrementally, which is a request to start before the content arrives
+	switch r.Method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions,
+		http.MethodDelete, http.MethodTrace, http.MethodConnect:
+		return false
+	}
+
+	return true
+}
+
+// ContentLengthRequiredTransport is implemented by transports that cannot
+// forward a request body whose length they do not know, and so need it
+// buffered in full when the request does not carry a Content-Length.
+type ContentLengthRequiredTransport interface {
+	// RequiresContentLength returns true if the transport needs the length of
+	// a request body before it can forward it.
+	RequiresContentLength() bool
+}
+
+// transportRequiresContentLength reports whether the transport in use cannot
+// forward a request body of unknown length.
+func (h *Handler) transportRequiresContentLength() bool {
+	clt, ok := h.Transport.(ContentLengthRequiredTransport)
+
+	return ok && clt.RequiresContentLength()
 }
 
 // BufferedTransport is implemented by transports
