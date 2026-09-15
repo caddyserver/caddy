@@ -716,6 +716,10 @@ func (w stdlibLogRouter) Write(p []byte) (int, error) {
 
 // Stop gracefully shuts down the HTTP server.
 func (app *App) Stop() error {
+	return app.stop(caddy.Exiting())
+}
+
+func (app *App) stop(exiting bool) error {
 	ctx := context.Background()
 
 	// see if any listeners in our config will be closing or if they are continuing
@@ -747,11 +751,18 @@ func (app *App) Stop() error {
 	}
 
 	// enforce grace period if configured
+	var finishedShutdown sync.WaitGroup
 	if app.GracePeriod > 0 {
 		var cancel context.CancelFunc
 		timeout := time.Duration(app.GracePeriod)
 		ctx, cancel = context.WithTimeoutCause(ctx, timeout, fmt.Errorf("server graceful shutdown %ds timeout", int(timeout.Seconds())))
-		defer cancel()
+		defer func() {
+			// A reload must leave the grace period alive while its requests finish.
+			go func() {
+				finishedShutdown.Wait()
+				cancel()
+			}()
+		}()
 		app.logger.Info("servers shutting down; grace period initiated", zap.Duration("duration", timeout))
 	} else {
 		app.logger.Info("servers shutting down with eternal grace period")
@@ -765,7 +776,7 @@ func (app *App) Stop() error {
 	// old servers are no longer accepting new connections
 	// (* the scheduler might still pause them right before
 	// calling Shutdown(), but it's unlikely)
-	var startedShutdown, finishedShutdown sync.WaitGroup
+	var startedShutdown sync.WaitGroup
 
 	// these will run in goroutines
 	stopServer := func(server *Server) {
@@ -829,6 +840,14 @@ func (app *App) Stop() error {
 		go stopH3Server(server)
 	}
 
+	shutdownDone := make(chan struct{})
+	pendingServerShutdowns.Store(shutdownDone, struct{}{})
+	go func() {
+		finishedShutdown.Wait()
+		close(shutdownDone)
+		pendingServerShutdowns.Delete(shutdownDone)
+	}()
+
 	// block until all the goroutines have been run by the scheduler;
 	// this means that they have likely called Shutdown() by now
 	startedShutdown.Wait()
@@ -840,8 +859,19 @@ func (app *App) Stop() error {
 	// if the process isn't exiting (but note that frequent config
 	// reloads with long grace periods for a sustained length of time
 	// may deplete resources)
-	if caddy.Exiting() {
+	if exiting {
 		finishedShutdown.Wait()
+
+		// Responses from earlier configurations must finish before the process exits.
+		pendingServerShutdowns.Range(func(done, _ any) bool {
+			select {
+			case <-done.(chan struct{}):
+				return true
+			case <-ctx.Done():
+				app.logger.Error("waiting for previous server shutdowns", zap.Error(context.Cause(ctx)))
+				return false
+			}
+		})
 	}
 
 	// run stop callbacks now that the server shutdowns are complete
@@ -909,6 +939,9 @@ const (
 	defaultReadIdleTimeout  = caddy.Duration(time.Minute)
 	defaultWriteIdleTimeout = caddy.Duration(time.Minute)
 )
+
+// Reloads outlive their app, so termination must track shutdowns across configurations.
+var pendingServerShutdowns sync.Map
 
 // Interface guards
 var (
