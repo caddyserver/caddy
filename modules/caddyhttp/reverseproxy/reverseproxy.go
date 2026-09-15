@@ -497,7 +497,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	// to be forwarded incrementally (RFC 10036 section 3); a bounded buffer is
 	// allowed by section 4.3, unless the transport needs a length the body does
 	// not carry, which only buffering it in full can supply
-	if r.ContentLength != 0 && h.RequestBuffers != 0 && caddyhttp.IsIncremental(r.Header) &&
+	if requestHasContent(r) && h.RequestBuffers != 0 && caddyhttp.IsIncremental(r.Header) &&
 		(h.RequestBuffers < 0 || (r.ContentLength < 0 && h.transportRequiresContentLength())) {
 		return h.refuseIncremental(w, nil)
 	}
@@ -1125,7 +1125,8 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	// same as the request above, minus the transport case: no transport needs
 	// the response buffered, so only an unlimited buffer, which holds the whole
 	// response back, is incompatible with forwarding it incrementally
-	if res.ContentLength != 0 && h.ResponseBuffers < 0 && caddyhttp.IsIncremental(res.Header) {
+	if res.ContentLength != 0 && res.Body != http.NoBody && h.ResponseBuffers < 0 &&
+		caddyhttp.IsIncremental(res.Header) {
 		res.Body.Close()
 		return roundtripSucceededError{h.refuseIncremental(rw, res.Header)}
 	}
@@ -1854,6 +1855,32 @@ func (h *Handler) proxyStatus(upstream http.Header, proxyErr string) (string, bo
 	}
 
 	return value, true
+}
+
+// requestHasContent reports whether r carries content to forward. A negative
+// length means unknown rather than absent, and HTTP/3 reports it for bodyless
+// GET and HEAD requests as well (see issue #6678), so for those the method is
+// what tells an empty body from a streaming one. Reading the body to find out
+// instead would defeat the point of forwarding it incrementally, since a
+// sender is free to send its header section long before any content.
+func requestHasContent(r *http.Request) bool {
+	if r.ContentLength > 0 {
+		return true
+	}
+	if r.ContentLength == 0 {
+		return false
+	}
+
+	// methods for which HTTP defines no content semantics; a sender may still
+	// attach content, but not one asking for the message to be forwarded
+	// incrementally, which is a request to start before the content arrives
+	switch r.Method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions,
+		http.MethodDelete, http.MethodTrace, http.MethodConnect:
+		return false
+	}
+
+	return true
 }
 
 // ContentLengthRequiredTransport is implemented by transports that cannot
