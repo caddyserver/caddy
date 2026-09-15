@@ -112,9 +112,17 @@ func TestIncrementalUnbufferedRequestWithUnknownLength(t *testing.T) {
 	}
 }
 
+// Declaring that a length is required is what makes the reverse proxy refuse
+// to forward a body of unknown length incrementally rather than send it on to
+// the 411 above.
+func TestRequiresContentLength(t *testing.T) {
+	if !(Transport{}).RequiresContentLength() {
+		t.Error("RequiresContentLength() = false, want true")
+	}
+}
+
 // The request buffer fastcgi asks for by default is what supplies the
-// CONTENT_LENGTH above; the reverse proxy decides whether to refuse
-// incremental forwarding from it, so these values matter beyond this package.
+// CONTENT_LENGTH above, so these values matter beyond this package.
 func TestDefaultBufferSizes(t *testing.T) {
 	reqBuffers, respBuffers := Transport{}.DefaultBufferSizes()
 	if reqBuffers != 4096 {
