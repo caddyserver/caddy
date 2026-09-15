@@ -158,7 +158,7 @@ func (enc *Encode) Validate() error {
 }
 
 func isEncodeAllowed(h http.Header) bool {
-	return !strings.Contains(h.Get("Cache-Control"), "no-transform")
+	return !strings.Contains(firstValue(h["Cache-Control"]), "no-transform")
 }
 
 func (enc *Encode) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
@@ -176,11 +176,11 @@ func (enc *Encode) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 			// the Etag in the first place don't know that we appended to their Etag! so here
 			// we have to strip our addition so the upstream handlers can still honor client
 			// caches without knowing about our changes...
-			if etags := r.Header.Values("If-None-Match"); len(etags) > 0 {
+			if etags := r.Header["If-None-Match"]; len(etags) > 0 {
 				etag := strings.Join(etags, ", ")
 				stripped := strings.ReplaceAll(etag, "-"+encName+`"`, `"`)
 				if stripped != etag || len(etags) > 1 {
-					r.Header.Set("If-None-Match", stripped)
+					r.Header["If-None-Match"] = []string{stripped}
 				}
 			}
 
@@ -526,16 +526,16 @@ func (rw *responseWriter) init() {
 
 	hdr := rw.Header()
 
-	if hdr.Get("Content-Encoding") == "" && isEncodeAllowed(hdr) &&
+	if firstValue(hdr["Content-Encoding"]) == "" && isEncodeAllowed(hdr) &&
 		rw.config.Match(rw) {
 		rw.w = rw.config.writerPools[rw.encodingName].Get().(Encoder)
 		rw.w.Reset(rw.ResponseWriter)
-		hdr.Del("Content-Length") // https://github.com/golang/go/issues/14975
-		hdr.Set("Content-Encoding", rw.encodingName)
+		delete(hdr, "Content-Length") // https://github.com/golang/go/issues/14975
+		hdr["Content-Encoding"] = []string{rw.encodingName}
 		if !hasVaryValue(hdr, "Accept-Encoding") {
-			hdr.Add("Vary", "Accept-Encoding")
+			hdr["Vary"] = append(hdr["Vary"], "Accept-Encoding")
 		}
-		hdr.Del("Accept-Ranges") // we don't know ranges for dynamically-encoded content
+		delete(hdr, "Accept-Ranges") // we don't know ranges for dynamically-encoded content
 
 		// strong ETags need to be distinct depending on the encoding ("selected representation")
 		// see RFC 9110 section 8.8.3.3:
@@ -544,15 +544,24 @@ func (rw *responseWriter) init() {
 		// (We have to strip the value we append from If-None-Match headers before
 		// sending subsequent requests back upstream, however, since upstream handlers
 		// don't know about our appending to their Etag since they've already done their work)
-		if etag := hdr.Get("Etag"); etag != "" && !strings.HasPrefix(etag, "W/") {
+		if etag := firstValue(hdr["Etag"]); etag != "" && !strings.HasPrefix(etag, "W/") {
 			etag = fmt.Sprintf(`%s-%s"`, strings.TrimSuffix(etag, `"`), rw.encodingName)
-			hdr.Set("Etag", etag)
+			hdr["Etag"] = []string{etag}
 		}
 	}
 }
 
+// firstValue is http.Header.Get without key normalization, for callers that
+// index the header with a canonical key.
+func firstValue(values []string) string {
+	if len(values) > 0 {
+		return values[0]
+	}
+	return ""
+}
+
 func hasVaryValue(hdr http.Header, target string) bool {
-	for _, vary := range hdr.Values("Vary") {
+	for _, vary := range hdr["Vary"] {
 		for val := range strings.SplitSeq(vary, ",") {
 			if strings.EqualFold(strings.TrimSpace(val), target) {
 				return true
@@ -570,11 +579,11 @@ func hasVaryValue(hdr http.Header, target string) bool {
 // encodings are not considered. See
 // http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html.
 func AcceptedEncodings(r *http.Request, preferredOrder []string) []string {
-	acceptEncHeader := r.Header.Get("Accept-Encoding")
+	acceptEncHeader := firstValue(r.Header["Accept-Encoding"])
 	if acceptEncHeader == "" {
 		return []string{}
 	}
-	websocketKey := r.Header.Get("Sec-Websocket-Key")
+	websocketKey := firstValue(r.Header["Sec-Websocket-Key"])
 
 	prefs := make([]encodingPreference, 0, strings.Count(acceptEncHeader, ",")+1)
 
