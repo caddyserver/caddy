@@ -485,6 +485,13 @@ func (b *bodyNopCloserIfNotRead) Close() error {
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
+	// buffering the request is incompatible with the client asking for it to
+	// be forwarded incrementally; some transports (fastcgi) cannot stream a
+	// body of unknown length at all, so their buffering cannot be traded away
+	if h.RequestBuffers != 0 && r.ContentLength != 0 && caddyhttp.IsIncremental(r.Header) {
+		return refuseIncremental(w)
+	}
+
 	// prepare the request for proxying; this is needed only once
 	clonedReq, err := h.prepareRequest(r, repl)
 	if err != nil {
@@ -782,8 +789,7 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	// attacks, so it is strongly recommended to only use this
 	// feature if absolutely required, if read timeouts are
 	// set, and if body size is limited
-	// a client asking for incremental forwarding (RFC 10036) opts out of buffering
-	if h.RequestBuffers != 0 && req.Body != nil && !caddyhttp.IsIncremental(req.Header) {
+	if h.RequestBuffers != 0 && req.Body != nil {
 		var readBytes int64
 		req.Body, readBytes = h.bufferedBody(req.Body, h.RequestBuffers)
 		// set Content-Length when body is fully buffered
@@ -1106,9 +1112,15 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 		}
 	}
 
-	// if enabled, buffer the response body, unless the upstream
-	// asked for incremental forwarding (RFC 10036)
-	if h.ResponseBuffers != 0 && !caddyhttp.IsIncremental(res.Header) {
+	// buffering the response is incompatible with the upstream asking for
+	// it to be forwarded incrementally, so refuse rather than stall the client
+	if h.ResponseBuffers != 0 && caddyhttp.IsIncremental(res.Header) {
+		res.Body.Close()
+		return roundtripSucceededError{incrementalRefusedError{refuseIncremental(rw)}}
+	}
+
+	// if enabled, buffer the response body
+	if h.ResponseBuffers != 0 {
 		res.Body, _ = h.bufferedBody(res.Body, h.ResponseBuffers)
 	}
 
@@ -1622,6 +1634,11 @@ func statusError(err error) error {
 		return caddyhttp.Error(rre.statusCode, err)
 	}
 
+	// a refusal to forward incrementally already carries the status to report
+	if ire, ok := err.(incrementalRefusedError); ok {
+		return ire.error
+	}
+
 	// errors proxying usually mean there is a problem with the upstream(s)
 	statusCode := http.StatusBadGateway
 
@@ -1777,6 +1794,26 @@ type ProxyProtocolTransport interface {
 type HealthCheckSchemeOverriderTransport interface {
 	OverrideHealthCheckScheme(base *url.URL, port string)
 }
+
+// proxyStatusIncrementalRefused is the Proxy-Status field value (RFC 9209)
+// for a message we refuse to forward incrementally, as registered by
+// RFC 10036 section 5.
+const proxyStatusIncrementalRefused = "caddy; error=incremental_refused"
+
+// refuseIncremental reports that a message asking for incremental forwarding
+// cannot be forwarded that way because buffering is enabled. RFC 10036
+// section 3 requires refusing outright rather than buffering the message
+// anyway, and section 4.1 recommends this status and Proxy-Status value.
+func refuseIncremental(rw http.ResponseWriter) error {
+	rw.Header().Set("Proxy-Status", proxyStatusIncrementalRefused)
+	return caddyhttp.Error(http.StatusNotImplemented,
+		fmt.Errorf("refusing to forward the message incrementally: buffering is enabled"))
+}
+
+// incrementalRefusedError wraps the error from refuseIncremental on the
+// response side, where it has to travel back through the proxy error
+// handling; it marks an error that already carries the status to report.
+type incrementalRefusedError struct{ error }
 
 // BufferedTransport is implemented by transports
 // that needs to buffer requests and/or responses.
