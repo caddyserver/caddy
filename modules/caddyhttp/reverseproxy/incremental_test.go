@@ -11,6 +11,11 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
+// testProxyStatusName identifies the proxy in Proxy-Status assertions. RFC 9209
+// wants the deployment named rather than the software, so the tests configure
+// one the way a deployment would.
+const testProxyStatusName = "proxy-3.example.com"
+
 // assertRefused checks the response of a refused incremental forwarding
 // against what RFC 10036 section 4.1 recommends.
 func assertRefused(t *testing.T, err error, hdr http.Header) {
@@ -23,9 +28,23 @@ func assertRefused(t *testing.T, err error, hdr http.Header) {
 	if handlerErr.StatusCode != http.StatusNotImplemented {
 		t.Errorf("status = %d, want %d", handlerErr.StatusCode, http.StatusNotImplemented)
 	}
-	if got := hdr.Get("Proxy-Status"); got != proxyStatusIncrementalRefused {
-		t.Errorf("Proxy-Status = %q, want %q", got, proxyStatusIncrementalRefused)
+
+	want := testProxyStatusName + ";error=" + proxyErrorIncrementalRefused
+	if got := hdr.Get("Proxy-Status"); got != want {
+		t.Errorf("Proxy-Status = %q, want %q", got, want)
 	}
+}
+
+// incrementalHandler proxies to backendAddr under a name it can report in a
+// Proxy-Status field.
+func incrementalHandler(backendAddr string) *Handler {
+	h := minimalHandler(0, &Upstream{
+		Host: new(Host),
+		Dial: backendAddr,
+	})
+	h.ProxyStatusName = testProxyStatusName
+
+	return h
 }
 
 // incrementalRequest builds a request marked incremental; an unknown length is
@@ -56,10 +75,7 @@ func TestIncrementalProxiedWhenRequestLengthUnknown(t *testing.T) {
 	}))
 	defer backend.Close()
 
-	h := minimalHandler(0, &Upstream{
-		Host: new(Host),
-		Dial: backend.Listener.Addr().String(),
-	})
+	h := incrementalHandler(backend.Listener.Addr().String())
 	h.RequestBuffers = 4096
 
 	rec := httptest.NewRecorder()
@@ -83,10 +99,7 @@ func TestIncrementalRefusedWhenTransportRequiresContentLength(t *testing.T) {
 	}))
 	defer backend.Close()
 
-	h := minimalHandler(0, &Upstream{
-		Host: new(Host),
-		Dial: backend.Listener.Addr().String(),
-	})
+	h := incrementalHandler(backend.Listener.Addr().String())
 	h.RequestBuffers = 4096
 	h.Transport = lengthRequiringTransport{testTransport{&http.Transport{}}}
 
@@ -110,10 +123,7 @@ func TestIncrementalRefusedWhenRequestBufferUnlimited(t *testing.T) {
 	}))
 	defer backend.Close()
 
-	h := minimalHandler(0, &Upstream{
-		Host: new(Host),
-		Dial: backend.Listener.Addr().String(),
-	})
+	h := incrementalHandler(backend.Listener.Addr().String())
 	h.RequestBuffers = -1
 
 	rec := httptest.NewRecorder()
@@ -138,10 +148,7 @@ func TestIncrementalProxiedWhenRequestLengthKnown(t *testing.T) {
 	}))
 	defer backend.Close()
 
-	h := minimalHandler(0, &Upstream{
-		Host: new(Host),
-		Dial: backend.Listener.Addr().String(),
-	})
+	h := incrementalHandler(backend.Listener.Addr().String())
 	h.RequestBuffers = 4096
 
 	rec := httptest.NewRecorder()
@@ -166,10 +173,7 @@ func TestIncrementalProxiedWhenRequestNotBuffered(t *testing.T) {
 	}))
 	defer backend.Close()
 
-	h := minimalHandler(0, &Upstream{
-		Host: new(Host),
-		Dial: backend.Listener.Addr().String(),
-	})
+	h := incrementalHandler(backend.Listener.Addr().String())
 
 	rec := httptest.NewRecorder()
 	if err := h.ServeHTTP(rec, incrementalRequest("hello", false), caddyhttp.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
@@ -192,10 +196,7 @@ func TestIncrementalProxiedWhenRequestHasNoBody(t *testing.T) {
 	}))
 	defer backend.Close()
 
-	h := minimalHandler(0, &Upstream{
-		Host: new(Host),
-		Dial: backend.Listener.Addr().String(),
-	})
+	h := incrementalHandler(backend.Listener.Addr().String())
 	h.RequestBuffers = -1
 
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
@@ -225,10 +226,7 @@ func serveIncremental(t *testing.T, responseBuffers int64, backendFn http.Handle
 	}))
 	t.Cleanup(backend.Close)
 
-	h := minimalHandler(0, &Upstream{
-		Host: new(Host),
-		Dial: backend.Listener.Addr().String(),
-	})
+	h := incrementalHandler(backend.Listener.Addr().String())
 	h.ResponseBuffers = responseBuffers
 
 	req := prepareTestRequest(httptest.NewRequest(http.MethodGet, "http://example.com/", nil))
@@ -317,5 +315,70 @@ func TestIncrementalProxiedWhenResponseNotBuffered(t *testing.T) {
 	}
 	if got := rec.Body.String(); got != "data: hi\n\n" {
 		t.Errorf("body = %q, want %q", got, "data: hi\n\n")
+	}
+}
+
+// A software name identifies no deployment, so with nothing configured to
+// identify this proxy there is no Proxy-Status field to generate: RFC 9209
+// leaves generating it optional.
+func TestProxyStatusOmittedWhenUnnamed(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer backend.Close()
+
+	h := incrementalHandler(backend.Listener.Addr().String())
+	h.ProxyStatusName = ""
+	h.RequestBuffers = -1
+
+	rec := httptest.NewRecorder()
+	err := h.ServeHTTP(rec, incrementalRequest("hello", true), caddyhttp.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
+		return nil
+	}))
+
+	var handlerErr caddyhttp.HandlerError
+	if !errors.As(err, &handlerErr) || handlerErr.StatusCode != http.StatusNotImplemented {
+		t.Fatalf("expected a 501 HandlerError, got %v", err)
+	}
+	if got, ok := rec.Header()["Proxy-Status"]; ok {
+		t.Errorf("Proxy-Status = %q, want no field", got)
+	}
+}
+
+// RFC 9209 section 2 asks intermediaries to preserve the members already in
+// the field, so the whole chain that handled the response stays visible.
+func TestProxyStatusPreservesUpstreamMembers(t *testing.T) {
+	rec, err := serveIncremental(t, -1, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Proxy-Status", "ExampleCDN")
+		_, _ = w.Write([]byte("data: hi\n\n"))
+	})
+
+	var handlerErr caddyhttp.HandlerError
+	if !errors.As(err, &handlerErr) || handlerErr.StatusCode != http.StatusNotImplemented {
+		t.Fatalf("expected a 501 HandlerError, got %v", err)
+	}
+
+	want := "ExampleCDN, " + testProxyStatusName + ";error=" + proxyErrorIncrementalRefused
+	if got := rec.Header().Get("Proxy-Status"); got != want {
+		t.Errorf("Proxy-Status = %q, want %q", got, want)
+	}
+}
+
+// A name a token cannot hold is quoted as a string instead, which RFC 9209
+// allows just as well.
+func TestProxyStatusNameNeedingQuotes(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer backend.Close()
+
+	h := incrementalHandler(backend.Listener.Addr().String())
+	h.ProxyStatusName = "Example CDN"
+	h.RequestBuffers = -1
+
+	rec := httptest.NewRecorder()
+	_ = h.ServeHTTP(rec, incrementalRequest("hello", true), caddyhttp.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
+		return nil
+	}))
+
+	want := `"Example CDN";error=` + proxyErrorIncrementalRefused
+	if got := rec.Header().Get("Proxy-Status"); got != want {
+		t.Errorf("Proxy-Status = %q, want %q", got, want)
 	}
 }

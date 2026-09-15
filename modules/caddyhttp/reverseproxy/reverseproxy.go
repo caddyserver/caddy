@@ -35,6 +35,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/dunglas/httpsfv"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/net/http/httpguts"
@@ -166,6 +167,13 @@ type Handler struct {
 	// should be avoided if at all possible for performance reasons, but
 	// could be useful if the backend has tighter memory constraints.
 	ResponseBuffers int64 `json:"response_buffers,omitempty"`
+
+	// The name identifying this proxy in the Proxy-Status response header
+	// field (RFC 9209). It has to identify the deployment rather than the
+	// software, so there is no sensible default: a service name
+	// ("ExampleCDN"), a hostname ("proxy-3.example.com") or an IP address
+	// are all appropriate. When empty, no Proxy-Status field is generated.
+	ProxyStatusName string `json:"proxy_status_name,omitempty"`
 
 	// If nonzero, streaming requests such as WebSockets will be
 	// forcibly closed at the end of the timeout. Default: no timeout.
@@ -491,7 +499,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	// not carry, which only buffering it in full can supply
 	if r.ContentLength != 0 && h.RequestBuffers != 0 && caddyhttp.IsIncremental(r.Header) &&
 		(h.RequestBuffers < 0 || (r.ContentLength < 0 && h.transportRequiresContentLength())) {
-		return refuseIncremental(w)
+		return h.refuseIncremental(w, nil)
 	}
 
 	// prepare the request for proxying; this is needed only once
@@ -1119,7 +1127,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	// response back, is incompatible with forwarding it incrementally
 	if res.ContentLength != 0 && h.ResponseBuffers < 0 && caddyhttp.IsIncremental(res.Header) {
 		res.Body.Close()
-		return roundtripSucceededError{refuseIncremental(rw)}
+		return roundtripSucceededError{h.refuseIncremental(rw, res.Header)}
 	}
 
 	// if enabled, buffer the response body
@@ -1793,10 +1801,10 @@ type HealthCheckSchemeOverriderTransport interface {
 	OverrideHealthCheckScheme(base *url.URL, port string)
 }
 
-// proxyStatusIncrementalRefused is the Proxy-Status field value (RFC 9209)
-// for a message we refuse to forward incrementally, as registered by
-// RFC 10036 section 5.
-const proxyStatusIncrementalRefused = "caddy; error=incremental_refused"
+// proxyErrorIncrementalRefused is the Proxy-Status error type (RFC 9209) for
+// a message we refuse to forward incrementally, as registered by RFC 10036
+// section 5.
+const proxyErrorIncrementalRefused = "incremental_refused"
 
 // errIncrementalRefused is the cause reported when a message asking for
 // incremental forwarding cannot be forwarded that way.
@@ -1806,10 +1814,46 @@ var errIncrementalRefused = errors.New("refusing to forward the message incremen
 // cannot be forwarded that way because the configured buffering would hold it
 // back in full. RFC 10036 section 3 requires refusing outright rather than
 // buffering the message anyway, and section 4.1 recommends this status and
-// Proxy-Status value.
-func refuseIncremental(rw http.ResponseWriter) error {
-	rw.Header().Set("Proxy-Status", proxyStatusIncrementalRefused)
+// Proxy-Status error type. upstream carries the headers of the response being
+// refused, if any, so that the members it already holds are preserved.
+func (h *Handler) refuseIncremental(rw http.ResponseWriter, upstream http.Header) error {
+	if value, ok := h.proxyStatus(upstream, proxyErrorIncrementalRefused); ok {
+		rw.Header().Set("Proxy-Status", value)
+	}
+
 	return caddyhttp.Error(http.StatusNotImplemented, errIncrementalRefused)
+}
+
+// proxyStatus builds a Proxy-Status field value (RFC 9209) reporting proxyErr,
+// appending this proxy to the members upstream already reported so the whole
+// chain stays visible. It reports false if no name identifies this deployment,
+// since a software name identifies no intermediary and generating the field at
+// all is optional.
+func (h *Handler) proxyStatus(upstream http.Header, proxyErr string) (string, bool) {
+	if h.ProxyStatusName == "" {
+		return "", false
+	}
+
+	// a malformed field from upstream is dropped rather than propagated
+	list, err := httpsfv.UnmarshalList(upstream.Values("Proxy-Status"))
+	if err != nil {
+		list = httpsfv.List{}
+	}
+
+	// the name is a token where it can be, as the examples in RFC 9209 are,
+	// and a string where a token cannot hold it (a space, say)
+	item := httpsfv.NewItem(httpsfv.Token(h.ProxyStatusName))
+	item.Params.Add("error", httpsfv.Token(proxyErr))
+	if _, err := httpsfv.Marshal(item); err != nil {
+		item.Value = h.ProxyStatusName
+	}
+
+	value, err := httpsfv.Marshal(append(list, item))
+	if err != nil {
+		return "", false
+	}
+
+	return value, true
 }
 
 // ContentLengthRequiredTransport is implemented by transports that cannot
