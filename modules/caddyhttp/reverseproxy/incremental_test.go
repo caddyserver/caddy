@@ -382,3 +382,62 @@ func TestProxyStatusNameNeedingQuotes(t *testing.T) {
 		t.Errorf("Proxy-Status = %q, want %q", got, want)
 	}
 }
+
+// HTTP/3 reports a negative length for bodyless GET and HEAD requests (issue
+// #6678), which is exactly the case the fastcgi request buffer exists to fix,
+// so an unknown length must not be mistaken for content that is still coming.
+func TestIncrementalProxiedWhenBodylessRequestHasUnknownLength(t *testing.T) {
+	var reached bool
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+	}))
+	defer backend.Close()
+
+	h := incrementalHandler(backend.Listener.Addr().String())
+	h.RequestBuffers = 4096
+	h.Transport = lengthRequiringTransport{testTransport{&http.Transport{}}}
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", io.NopCloser(strings.NewReader("")))
+	req.Header.Set("Incremental", "?1")
+	req = prepareTestRequest(req)
+	if req.ContentLength != -1 {
+		t.Fatalf("ContentLength = %d, want -1", req.ContentLength)
+	}
+
+	rec := httptest.NewRecorder()
+	if err := h.ServeHTTP(rec, req, caddyhttp.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
+		return nil
+	})); err != nil {
+		t.Fatalf("ServeHTTP() error = %v", err)
+	}
+
+	if !reached {
+		t.Error("bodyless request was not forwarded upstream")
+	}
+}
+
+// A response to HEAD advertises the length the content would have had, while
+// carrying no content at all, so there is nothing for a buffer to hold back.
+func TestIncrementalProxiedWhenHeadResponseAdvertisesLength(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Incremental", "?1")
+		w.Header().Set("Content-Length", "10000")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer backend.Close()
+
+	h := incrementalHandler(backend.Listener.Addr().String())
+	h.ResponseBuffers = -1
+
+	req := prepareTestRequest(httptest.NewRequest(http.MethodHead, "http://example.com/", nil))
+	rec := httptest.NewRecorder()
+	if err := h.ServeHTTP(rec, req, caddyhttp.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
+		return nil
+	})); err != nil {
+		t.Fatalf("ServeHTTP() error = %v", err)
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", rec.Code)
+	}
+}
