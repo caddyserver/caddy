@@ -487,10 +487,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 
 	// buffering the whole request is incompatible with the client asking for it
 	// to be forwarded incrementally (RFC 10036 section 3); a bounded buffer is
-	// allowed by section 4.3, except for a body of unknown length, which only
-	// fills the buffer once the client is done sending
-	if caddyhttp.IsIncremental(r.Header) && r.ContentLength != 0 &&
-		(h.RequestBuffers < 0 || (h.RequestBuffers > 0 && r.ContentLength < 0)) {
+	// allowed by section 4.3, unless the transport needs a length the body does
+	// not carry, which only buffering it in full can supply
+	if r.ContentLength != 0 && h.RequestBuffers != 0 && caddyhttp.IsIncremental(r.Header) &&
+		(h.RequestBuffers < 0 || (r.ContentLength < 0 && h.transportRequiresContentLength())) {
 		return refuseIncremental(w)
 	}
 
@@ -1114,11 +1114,10 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 		}
 	}
 
-	// same as the request above: refuse rather than stall the client, but only
-	// when buffering would actually hold the response back, which a bounded
-	// buffer does only for a body of unknown length (a stream, typically)
-	if caddyhttp.IsIncremental(res.Header) && res.ContentLength != 0 &&
-		(h.ResponseBuffers < 0 || (h.ResponseBuffers > 0 && res.ContentLength < 0)) {
+	// same as the request above, minus the transport case: no transport needs
+	// the response buffered, so only an unlimited buffer, which holds the whole
+	// response back, is incompatible with forwarding it incrementally
+	if res.ContentLength != 0 && h.ResponseBuffers < 0 && caddyhttp.IsIncremental(res.Header) {
 		res.Body.Close()
 		return roundtripSucceededError{refuseIncremental(rw)}
 	}
@@ -1811,6 +1810,23 @@ var errIncrementalRefused = errors.New("refusing to forward the message incremen
 func refuseIncremental(rw http.ResponseWriter) error {
 	rw.Header().Set("Proxy-Status", proxyStatusIncrementalRefused)
 	return caddyhttp.Error(http.StatusNotImplemented, errIncrementalRefused)
+}
+
+// ContentLengthRequiredTransport is implemented by transports that cannot
+// forward a request body whose length they do not know, and so need it
+// buffered in full when the request does not carry a Content-Length.
+type ContentLengthRequiredTransport interface {
+	// RequiresContentLength returns true if the transport needs the length of
+	// a request body before it can forward it.
+	RequiresContentLength() bool
+}
+
+// transportRequiresContentLength reports whether the transport in use cannot
+// forward a request body of unknown length.
+func (h *Handler) transportRequiresContentLength() bool {
+	clt, ok := h.Transport.(ContentLengthRequiredTransport)
+
+	return ok && clt.RequiresContentLength()
 }
 
 // BufferedTransport is implemented by transports

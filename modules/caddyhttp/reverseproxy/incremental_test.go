@@ -40,10 +40,43 @@ func incrementalRequest(body string, knownLength bool) *http.Request {
 	return prepareTestRequest(req)
 }
 
-// A body of unknown length only fills a bounded buffer once the client is done
-// sending, which is the stall RFC 10036 exists to prevent; some transports
-// (fastcgi) also need the complete body to compute a CONTENT_LENGTH.
-func TestIncrementalRefusedWhenRequestLengthUnknown(t *testing.T) {
+// lengthRequiringTransport stands in for fastcgi, which cannot forward a body
+// whose length it does not know.
+type lengthRequiringTransport struct{ testTransport }
+
+func (lengthRequiringTransport) RequiresContentLength() bool { return true }
+
+// A bounded buffer forwards once its limit is reached, so it holds back a body
+// of unknown length no more than any other: RFC 10036 section 4.3 allows it.
+func TestIncrementalProxiedWhenRequestLengthUnknown(t *testing.T) {
+	var gotBody string
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+	}))
+	defer backend.Close()
+
+	h := minimalHandler(0, &Upstream{
+		Host: new(Host),
+		Dial: backend.Listener.Addr().String(),
+	})
+	h.RequestBuffers = 4096
+
+	rec := httptest.NewRecorder()
+	if err := h.ServeHTTP(rec, incrementalRequest("hello", false), caddyhttp.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
+		return nil
+	})); err != nil {
+		t.Fatalf("ServeHTTP() error = %v", err)
+	}
+
+	if gotBody != "hello" {
+		t.Errorf("upstream body = %q, want %q", gotBody, "hello")
+	}
+}
+
+// A transport that needs a CONTENT_LENGTH is the exception: only buffering the
+// body in full can supply one, which is what incremental forwarding rules out.
+func TestIncrementalRefusedWhenTransportRequiresContentLength(t *testing.T) {
 	var reached bool
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reached = true
@@ -55,6 +88,7 @@ func TestIncrementalRefusedWhenRequestLengthUnknown(t *testing.T) {
 		Dial: backend.Listener.Addr().String(),
 	})
 	h.RequestBuffers = 4096
+	h.Transport = lengthRequiringTransport{testTransport{&http.Transport{}}}
 
 	rec := httptest.NewRecorder()
 	err := h.ServeHTTP(rec, incrementalRequest("hello", false), caddyhttp.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
@@ -205,18 +239,22 @@ func serveIncremental(t *testing.T, responseBuffers int64, backendFn http.Handle
 	return rec, err
 }
 
-// A response of unknown length is a stream: a bounded buffer waits for bytes
-// that may never come, stalling the client for as long as the upstream keeps
-// the stream open. That is the failure RFC 10036 exists to prevent.
-func TestIncrementalRefusedWhenResponseLengthUnknown(t *testing.T) {
+// A bounded buffer forwards a response of unknown length the same way it
+// forwards any other, so there is nothing to refuse.
+func TestIncrementalProxiedWhenResponseLengthUnknown(t *testing.T) {
 	rec, err := serveIncremental(t, 4096, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
 		w.(http.Flusher).Flush() // forces chunked, so the length stays unknown
 		_, _ = w.Write([]byte("data: hi\n\n"))
 	})
+	if err != nil {
+		t.Fatalf("ServeHTTP() error = %v", err)
+	}
 
-	assertRefused(t, err, rec.Header())
+	if got := rec.Body.String(); got != "data: hi\n\n" {
+		t.Errorf("body = %q, want %q", got, "data: hi\n\n")
+	}
 }
 
 // An unlimited buffer holds the entire response, whatever its length.
