@@ -237,6 +237,24 @@ scan:
 
 		// try to get a value for this key, handle empty values accordingly
 		val, found := r.Get(key)
+
+		// A placeholder may carry a default value after a colon:
+		// {placeholder:default}, mirroring environment-variable defaults in
+		// the Caddyfile. When the name before the delimiter is a recognized
+		// placeholder, use it, applying the default if it evaluates to empty.
+		// This is checked even when the whole key resolves, because some
+		// providers (e.g. request headers) report every key under their
+		// prefix as recognized. Unrecognized names, including JSON such as
+		// {"a": "b"}, fall through unchanged.
+		var defaultValue string
+		var hasDefault bool
+		if name, dflt, ok := strings.Cut(key, phDefaultDelimiter); ok {
+			if v, f := r.Get(name); f {
+				key, val, found = name, v, true
+				defaultValue, hasDefault = dflt, true
+			}
+		}
+
 		if !found {
 			// placeholder is unknown (unrecognized); handle accordingly
 			if errOnUnknown {
@@ -262,10 +280,13 @@ scan:
 		// convert val to a string as efficiently as possible
 		valStr := ToString(val)
 
-		// write the value; if it's empty, either return
-		// an error or write a default value
+		// write the value; if it's empty, write the placeholder's default
+		// value if one was given, otherwise either return an error or write
+		// the caller's empty-value replacement
 		if valStr == "" {
-			if errOnEmpty {
+			if hasDefault {
+				sb.WriteString(defaultValue)
+			} else if errOnEmpty {
 				return "", fmt.Errorf("evaluated placeholder %s%s%s is empty",
 					string(phOpen), key, string(phClose))
 			} else if empty != "" {
@@ -449,5 +470,10 @@ var nowFunc = time.Now
 const ReplacerCtxKey CtxKey = "replacer"
 
 const phOpen, phClose, phEscape = '{', '}', '\\'
+
+// phDefaultDelimiter separates a placeholder from an optional default value,
+// as in {placeholder:default}, mirroring the syntax used for environment
+// variable defaults in the Caddyfile.
+const phDefaultDelimiter = ":"
 
 const filePrefix = "file."
