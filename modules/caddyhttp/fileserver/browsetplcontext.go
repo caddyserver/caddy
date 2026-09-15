@@ -188,6 +188,9 @@ type browseTemplateContext struct {
 	// Sorting order
 	Order string `json:"order,omitempty"`
 
+	// Sort method (lexicographic or natural)
+	SortMethod string `json:"method,omitempty"`
+
 	// Display format (list or grid)
 	Layout string `json:"layout,omitempty"`
 
@@ -225,9 +228,10 @@ func (l browseTemplateContext) Breadcrumbs() []crumb {
 	return result
 }
 
-func (l *browseTemplateContext) applySortAndLimit(sortParam, orderParam, limitParam string, offsetParam string) {
+func (l *browseTemplateContext) applySortAndLimit(sortParam, orderParam, methodParam, limitParam string, offsetParam string) {
 	l.Sort = sortParam
 	l.Order = orderParam
+	l.SortMethod = methodParam
 
 	// Only compute lowercase names when the selected sort comparator needs it;
 	// avoid O(n) work when sorting by time or when no sorting is requested.
@@ -240,9 +244,17 @@ func (l *browseTemplateContext) applySortAndLimit(sortParam, orderParam, limitPa
 	if l.Order == "desc" {
 		switch l.Sort {
 		case sortByName:
-			sort.Sort(sort.Reverse(byName(*l)))
+			if l.SortMethod == sortMethodNatural {
+				sort.Sort(sort.Reverse(byNameNatural(*l)))
+			} else {
+				sort.Sort(sort.Reverse(byName(*l)))
+			}
 		case sortByNameDirFirst:
-			sort.Sort(sort.Reverse(byNameDirFirst(*l)))
+			if l.SortMethod == sortMethodNatural {
+				sort.Sort(sort.Reverse(byNameDirFirstNatural(*l)))
+			} else {
+				sort.Sort(sort.Reverse(byNameDirFirst(*l)))
+			}
 		case sortBySize:
 			sort.Sort(sort.Reverse(bySize(*l)))
 		case sortByTime:
@@ -251,9 +263,17 @@ func (l *browseTemplateContext) applySortAndLimit(sortParam, orderParam, limitPa
 	} else {
 		switch l.Sort {
 		case sortByName:
-			sort.Sort(byName(*l))
+			if l.SortMethod == sortMethodNatural {
+				sort.Sort(byNameNatural(*l))
+			} else {
+				sort.Sort(byName(*l))
+			}
 		case sortByNameDirFirst:
-			sort.Sort(byNameDirFirst(*l))
+			if l.SortMethod == sortMethodNatural {
+				sort.Sort(byNameDirFirstNatural(*l))
+			} else {
+				sort.Sort(byNameDirFirst(*l))
+			}
 		case sortBySize:
 			sort.Sort(bySize(*l))
 		case sortByTime:
@@ -340,10 +360,12 @@ func (fi fileInfo) HumanModTime(format string) string {
 }
 
 type (
-	byName         browseTemplateContext
-	byNameDirFirst browseTemplateContext
-	bySize         browseTemplateContext
-	byTime         browseTemplateContext
+	byName                browseTemplateContext
+	byNameNatural         browseTemplateContext
+	byNameDirFirst        browseTemplateContext
+	byNameDirFirstNatural browseTemplateContext
+	bySize                browseTemplateContext
+	byTime                browseTemplateContext
 )
 
 func (l byName) Len() int      { return len(l.Items) }
@@ -353,6 +375,13 @@ func (l byName) Less(i, j int) bool {
 	return l.Items[i].nameLower < l.Items[j].nameLower
 }
 
+func (l byNameNatural) Len() int      { return len(l.Items) }
+func (l byNameNatural) Swap(i, j int) { l.Items[i], l.Items[j] = l.Items[j], l.Items[i] }
+
+func (l byNameNatural) Less(i, j int) bool {
+	return naturalLess(l.Items[i].nameLower, l.Items[j].nameLower)
+}
+
 func (l byNameDirFirst) Len() int      { return len(l.Items) }
 func (l byNameDirFirst) Swap(i, j int) { l.Items[i], l.Items[j] = l.Items[j], l.Items[i] }
 
@@ -360,6 +389,18 @@ func (l byNameDirFirst) Less(i, j int) bool {
 	// sort by name if both are dir or file
 	if l.Items[i].IsDir == l.Items[j].IsDir {
 		return l.Items[i].nameLower < l.Items[j].nameLower
+	}
+	// sort dir ahead of file
+	return l.Items[i].IsDir
+}
+
+func (l byNameDirFirstNatural) Len() int      { return len(l.Items) }
+func (l byNameDirFirstNatural) Swap(i, j int) { l.Items[i], l.Items[j] = l.Items[j], l.Items[i] }
+
+func (l byNameDirFirstNatural) Less(i, j int) bool {
+	// sort by name if both are dir or file
+	if l.Items[i].IsDir == l.Items[j].IsDir {
+		return naturalLess(l.Items[i].nameLower, l.Items[j].nameLower)
 	}
 	// sort dir ahead of file
 	return l.Items[i].IsDir
@@ -401,4 +442,7 @@ const (
 
 	sortOrderAsc  = "asc"
 	sortOrderDesc = "desc"
+
+	sortMethodLexicographic = "lex"
+	sortMethodNatural       = "natural"
 )
