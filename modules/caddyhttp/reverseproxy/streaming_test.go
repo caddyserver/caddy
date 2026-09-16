@@ -90,13 +90,15 @@ func TestFlushIntervalIncremental(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 
 	for _, tc := range []struct {
-		name        string
-		incremental string
-		want        time.Duration
+		name                string
+		incremental         string
+		receivedIncremental bool
+		want                time.Duration
 	}{
 		{name: "incremental", incremental: "?1", want: -1},
 		{name: "not incremental", incremental: "?0", want: time.Second},
 		{name: "absent", want: time.Second},
+		{name: "removed by header operations", receivedIncremental: true, want: -1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			res := &http.Response{
@@ -106,7 +108,7 @@ func TestFlushIntervalIncremental(t *testing.T) {
 			if tc.incremental != "" {
 				res.Header.Set("Incremental", tc.incremental)
 			}
-			if got := h.flushInterval(req, res); got != tc.want {
+			if got := h.flushInterval(req, res, tc.receivedIncremental); got != tc.want {
 				t.Errorf("flushInterval() = %v, want %v", got, tc.want)
 			}
 		})

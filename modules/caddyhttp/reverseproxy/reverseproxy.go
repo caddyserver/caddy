@@ -159,13 +159,17 @@ type Handler struct {
 	// and buffered in memory before being proxied to the backend. This
 	// should be avoided if at all possible for performance reasons, but
 	// could be useful if the backend is intolerant of read latency or
-	// chunked encodings.
+	// chunked encodings. An incremental request with an explicitly configured
+	// buffer receives a 501 response. A transport-supplied default is bypassed
+	// only when the request already meets the transport's framing requirements.
 	RequestBuffers int64 `json:"request_buffers,omitempty"`
 
 	// If nonzero, the entire response body up to this size will be read
 	// and buffered in memory before being proxied to the client. This
 	// should be avoided if at all possible for performance reasons, but
-	// could be useful if the backend has tighter memory constraints.
+	// could be useful if the backend has tighter memory constraints. Forwarding
+	// an incremental response with content produces a 501 response whenever
+	// buffering is configured.
 	ResponseBuffers int64 `json:"response_buffers,omitempty"`
 
 	// The name identifying this proxy in the Proxy-Status response header
@@ -239,6 +243,11 @@ type Handler struct {
 	// user can override transport defaults.
 	transportHeaderOps *headers.HeaderOps
 
+	// requestBuffersFromTransport distinguishes a transport default from an
+	// operator-configured buffer. Incremental forwarding may bypass the former
+	// only when the request already meets the transport's framing requirements.
+	requestBuffersFromTransport bool
+
 	// Holds the parsed CIDR ranges from TrustedProxies
 	trustedProxies []netip.Prefix
 
@@ -296,6 +305,7 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 			reqBuffers, respBuffers := bt.DefaultBufferSizes()
 			if h.RequestBuffers == 0 {
 				h.RequestBuffers = reqBuffers
+				h.requestBuffersFromTransport = reqBuffers != 0
 			}
 			if h.ResponseBuffers == 0 {
 				h.ResponseBuffers = respBuffers
@@ -493,18 +503,12 @@ func (b *bodyNopCloserIfNotRead) Close() error {
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
-	// buffering the whole request is incompatible with the client asking for it
-	// to be forwarded incrementally (RFC 10036 section 3); a bounded buffer is
-	// allowed by section 4.3, unless the transport needs a length the body does
-	// not carry, which only buffering it in full can supply
-	if requestHasContent(r) && h.RequestBuffers != 0 && caddyhttp.IsIncremental(r.Header) &&
-		(h.RequestBuffers < 0 || (r.ContentLength < 0 && h.transportRequiresContentLength())) {
-		return h.refuseIncremental(w, nil)
-	}
-
 	// prepare the request for proxying; this is needed only once
 	clonedReq, err := h.prepareRequest(r, repl)
 	if err != nil {
+		if errors.Is(err, errIncrementalRefused) {
+			return h.refuseIncremental(w, nil)
+		}
 		return caddyhttp.Error(http.StatusInternalServerError,
 			fmt.Errorf("preparing request for upstream round-trip: %v", err))
 	}
@@ -537,6 +541,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	// their values
 	reqHost := clonedReq.Host
 	reqHeader := clonedReq.Header
+	requestWasIncremental := caddyhttp.IsIncremental(reqHeader)
 
 	// If the request contained a body, wrap it in io.NopCloser
 	// to prevent Go's transport from closing it on dial errors.
@@ -587,7 +592,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		}
 
 		var done bool
-		done, proxyErr = h.proxyLoopIteration(clonedReq, r, w, proxyErr, start, retries, repl, reqHeader, reqHost, next)
+		done, proxyErr = h.proxyLoopIteration(clonedReq, r, w, proxyErr, start, retries, repl, reqHeader, reqHost, requestWasIncremental, next)
 		if done {
 			break
 		}
@@ -618,7 +623,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 // It returns true when the loop is done and should break; false otherwise. The error value returned should
 // be assigned to the proxyErr value for the next iteration of the loop (or the error handled after break).
 func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w http.ResponseWriter, proxyErr error, start time.Time, retries int,
-	repl *caddy.Replacer, reqHeader http.Header, reqHost string, next caddyhttp.Handler,
+	repl *caddy.Replacer, reqHeader http.Header, reqHost string, requestWasIncremental bool, next caddyhttp.Handler,
 ) (bool, error) {
 	// get the updated list of upstreams
 	upstreams := h.Upstreams
@@ -708,6 +713,10 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 			userOps.ApplyToRequest(r)
 		}
 	}
+	if !requestWasIncremental && r.ContentLength != 0 && caddyhttp.IsIncremental(r.Header) &&
+		(h.RequestBuffers != 0 || r.ContentLength < 0 && h.transportRequiresContentLength()) {
+		return true, h.refuseIncremental(w, nil)
+	}
 
 	// proxy the request to that upstream
 	proxyErr = h.reverseProxy(w, r, origReq, repl, dialInfo, next)
@@ -791,6 +800,13 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 		}
 	}
 
+	// Fully buffering the request is incompatible with incremental forwarding.
+	// A negative length is treated as potential content because determining
+	// whether it is empty would itself require waiting for the stream to end.
+	if h.incrementalRequestConflicts(req) {
+		return nil, errIncrementalRefused
+	}
+
 	// if enabled, buffer client request; this should only be
 	// enabled if the upstream requires it and does not work
 	// with "slow clients" (gunicorn, etc.) - this obviously
@@ -799,7 +815,7 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	// attacks, so it is strongly recommended to only use this
 	// feature if absolutely required, if read timeouts are
 	// set, and if body size is limited
-	if h.RequestBuffers != 0 && req.Body != nil {
+	if h.RequestBuffers != 0 && req.Body != nil && !caddyhttp.IsIncremental(req.Header) {
 		var readBytes int64
 		req.Body, readBytes = h.bufferedBody(req.Body, h.RequestBuffers)
 		// set Content-Length when body is fully buffered
@@ -1122,17 +1138,8 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 		}
 	}
 
-	// same as the request above, minus the transport case: no transport needs
-	// the response buffered, so only an unlimited buffer, which holds the whole
-	// response back, is incompatible with forwarding it incrementally
-	if res.ContentLength != 0 && res.Body != http.NoBody && h.ResponseBuffers < 0 &&
-		caddyhttp.IsIncremental(res.Header) {
-		res.Body.Close()
-		return roundtripSucceededError{h.refuseIncremental(rw, res.Header)}
-	}
-
 	// if enabled, buffer the response body
-	if h.ResponseBuffers != 0 {
+	if h.ResponseBuffers != 0 && !caddyhttp.IsIncremental(res.Header) {
 		res.Body, _ = h.bufferedBody(res.Body, h.ResponseBuffers)
 	}
 
@@ -1249,6 +1256,8 @@ func (h *Handler) finalizeResponse(
 	start time.Time,
 	logger *zap.Logger,
 ) error {
+	responseWasIncremental := caddyhttp.IsIncremental(res.Header)
+
 	// Strip hop-by-hop headers from the upstream response.
 	// For 101 Switching Protocols, save the Upgrade value
 	// first (handleUpgradeResponse needs it for validation)
@@ -1288,6 +1297,11 @@ func (h *Handler) finalizeResponse(
 			h.Headers.Response.ApplyTo(res.Header, repl)
 		}
 	}
+	if responseHasContent(req, res) && h.ResponseBuffers != 0 &&
+		(responseWasIncremental || caddyhttp.IsIncremental(res.Header)) {
+		res.Body.Close()
+		return roundtripSucceededError{h.refuseIncremental(rw, res.Header)}
+	}
 
 	copyHeader(rw.Header(), res.Header)
 
@@ -1307,7 +1321,7 @@ func (h *Handler) finalizeResponse(
 		logger.Debug("wrote header")
 	}
 
-	err := h.copyResponse(rw, res.Body, h.flushInterval(req, res), logger)
+	err := h.copyResponse(rw, res.Body, h.flushInterval(req, res, responseWasIncremental), logger)
 	errClose := res.Body.Close() // close now, instead of defer, to populate res.Trailer
 	if h.VerboseLogs || errClose != nil {
 		if c := logger.Check(zapcore.DebugLevel, "closed response body from upstream"); c != nil {
@@ -1809,14 +1823,15 @@ const proxyErrorIncrementalRefused = "incremental_refused"
 
 // errIncrementalRefused is the cause reported when a message asking for
 // incremental forwarding cannot be forwarded that way.
-var errIncrementalRefused = errors.New("refusing to forward the message incrementally: it would be buffered in full")
+var errIncrementalRefused = errors.New("refusing to forward the message incrementally")
 
 // refuseIncremental reports that a message asking for incremental forwarding
-// cannot be forwarded that way because the configured buffering would hold it
-// back in full. RFC 10036 section 3 requires refusing outright rather than
-// buffering the message anyway, and section 4.1 recommends this status and
-// Proxy-Status error type. upstream carries the headers of the response being
-// refused, if any, so that the members it already holds are preserved.
+// cannot be forwarded that way without overriding configured buffering or the
+// transport's framing requirements. RFC 10036 section 3 requires an error
+// response when incremental forwarding is refused. Section 4.1 recommends this
+// status and Proxy-Status error type. Upstream carries the headers of the
+// response being refused when present. This preserves its valid existing
+// members.
 func (h *Handler) refuseIncremental(rw http.ResponseWriter, upstream http.Header) error {
 	if value, ok := h.proxyStatus(upstream, proxyErrorIncrementalRefused); ok {
 		rw.Header().Set("Proxy-Status", value)
@@ -1840,6 +1855,22 @@ func (h *Handler) proxyStatus(upstream http.Header, proxyErr string) (string, bo
 	if err != nil {
 		list = httpsfv.List{}
 	}
+	for _, member := range list {
+		item, ok := member.(httpsfv.Item)
+		if !ok {
+			list = httpsfv.List{}
+			break
+		}
+		valid := false
+		switch item.Value.(type) {
+		case string, httpsfv.Token:
+			valid = true
+		}
+		if !valid {
+			list = httpsfv.List{}
+			break
+		}
+	}
 
 	// the name is a token where it can be, as the examples in RFC 9209 are,
 	// and a string where a token cannot hold it (a space, say)
@@ -1857,30 +1888,37 @@ func (h *Handler) proxyStatus(upstream http.Header, proxyErr string) (string, bo
 	return value, true
 }
 
-// requestHasContent reports whether r carries content to forward. A negative
-// length means unknown rather than absent, and HTTP/3 reports it for bodyless
-// GET and HEAD requests as well (see issue #6678), so for those the method is
-// what tells an empty body from a streaming one. Reading the body to find out
-// instead would defeat the point of forwarding it incrementally, since a
-// sender is free to send its header section long before any content.
-func requestHasContent(r *http.Request) bool {
-	if r.ContentLength > 0 {
-		return true
-	}
-	if r.ContentLength == 0 {
+// responseHasContent reports whether res can carry content for req. This uses
+// the response semantics as well as Body because custom transports are not
+// required to represent an empty body with http.NoBody.
+func responseHasContent(req *http.Request, res *http.Response) bool {
+	if req.Method == http.MethodHead || res.Body == nil || res.Body == http.NoBody || res.ContentLength == 0 {
 		return false
 	}
-
-	// methods for which HTTP defines no content semantics; a sender may still
-	// attach content, but not one asking for the message to be forwarded
-	// incrementally, which is a request to start before the content arrives
-	switch r.Method {
-	case http.MethodGet, http.MethodHead, http.MethodOptions,
-		http.MethodDelete, http.MethodTrace, http.MethodConnect:
+	if req.Method == http.MethodConnect && res.StatusCode >= 200 && res.StatusCode < 300 {
 		return false
 	}
-
+	if res.StatusCode >= 100 && res.StatusCode < 200 ||
+		res.StatusCode == http.StatusNoContent || res.StatusCode == http.StatusResetContent ||
+		res.StatusCode == http.StatusNotModified {
+		return false
+	}
 	return true
+}
+
+// incrementalRequestConflicts reports whether honouring an incremental request
+// would override an explicit buffer or violate the transport's framing needs.
+func (h *Handler) incrementalRequestConflicts(req *http.Request) bool {
+	if req.ContentLength == 0 || !caddyhttp.IsIncremental(req.Header) {
+		return false
+	}
+	needsLength := h.transportRequiresContentLength()
+	if h.RequestBuffers != 0 {
+		if !h.requestBuffersFromTransport || !needsLength {
+			return true
+		}
+	}
+	return req.ContentLength < 0 && needsLength
 }
 
 // ContentLengthRequiredTransport is implemented by transports that cannot

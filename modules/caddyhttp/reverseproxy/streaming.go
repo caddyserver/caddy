@@ -240,10 +240,10 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 
 // flushInterval returns the p.FlushInterval value, conditionally
 // overriding its value for a specific request/response.
-func (h Handler) flushInterval(req *http.Request, res *http.Response) time.Duration {
+func (h Handler) flushInterval(req *http.Request, res *http.Response, incremental bool) time.Duration {
 	// The upstream asked for the response to be forwarded incrementally.
 	// See RFC 10036: https://www.rfc-editor.org/rfc/rfc10036.html
-	if caddyhttp.IsIncremental(res.Header) {
+	if incremental || caddyhttp.IsIncremental(res.Header) {
 		return -1 // negative means immediately
 	}
 
