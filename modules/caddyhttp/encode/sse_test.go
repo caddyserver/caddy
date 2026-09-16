@@ -15,8 +15,10 @@
 package encode_test
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
@@ -47,6 +49,14 @@ func (rw *recordingWriter) Flush() {
 	if f, ok := rw.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+func (rw *recordingWriter) ReadFrom(r io.Reader) (int64, error) {
+	return io.Copy(rw.ResponseWriter, r)
+}
+
+type readerOnly struct {
+	io.Reader
 }
 
 func newSSEEncodeHandler(t *testing.T) *encode.Encode {
@@ -117,7 +127,8 @@ func TestNonSSESmallResponseStillBuffersHeader(t *testing.T) {
 	enc := newSSEEncodeHandler(t)
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Header.Set("Accept-Encoding", "gzip")
-	rec := &recordingWriter{ResponseWriter: httptest.NewRecorder()}
+	baseRec := httptest.NewRecorder()
+	rec := &recordingWriter{ResponseWriter: baseRec}
 
 	next := caddyhttp.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) error {
 		w.Header().Set("Content-Type", "text/plain")
@@ -153,6 +164,81 @@ func TestIncrementalHeadersFlushedBeforeBody(t *testing.T) {
 		}
 		if rec.status != http.StatusOK {
 			t.Errorf("underlying status = %d, want 200", rec.status)
+		}
+		if !baseRec.Flushed {
+			t.Error("incremental response headers were not flushed to the client")
+		}
+		return nil
+	})
+
+	if err := enc.ServeHTTP(rec, r, next); err != nil {
+		t.Fatalf("ServeHTTP() error = %v", err)
+	}
+}
+
+func TestIncrementalImplicitWriteFlushes(t *testing.T) {
+	enc := newSSEEncodeHandler(t)
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Accept-Encoding", "gzip")
+	baseRec := httptest.NewRecorder()
+	rec := &recordingWriter{ResponseWriter: baseRec}
+
+	next := caddyhttp.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) error {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Incremental", "?1")
+		if _, err := w.Write([]byte("x")); err != nil {
+			return err
+		}
+		if !baseRec.Flushed {
+			t.Error("incremental response write was not flushed to the client")
+		}
+		return nil
+	})
+
+	if err := enc.ServeHTTP(rec, r, next); err != nil {
+		t.Fatalf("ServeHTTP() error = %v", err)
+	}
+}
+
+func TestIncrementalReadFromFlushes(t *testing.T) {
+	enc := newSSEEncodeHandler(t)
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Accept-Encoding", "gzip")
+	baseRec := httptest.NewRecorder()
+	rec := &recordingWriter{ResponseWriter: baseRec}
+
+	next := caddyhttp.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) error {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Incremental", "?1")
+		if _, err := io.Copy(w, readerOnly{Reader: strings.NewReader("x")}); err != nil {
+			return err
+		}
+		if !baseRec.Flushed {
+			t.Error("incremental ReadFrom data was not flushed to the client")
+		}
+		return nil
+	})
+
+	if err := enc.ServeHTTP(rec, r, next); err != nil {
+		t.Fatalf("ServeHTTP() error = %v", err)
+	}
+}
+
+func TestIncrementalInformationalResponseDoesNotAffectFinalResponse(t *testing.T) {
+	enc := newSSEEncodeHandler(t)
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Accept-Encoding", "gzip")
+	baseRec := httptest.NewRecorder()
+	rec := &recordingWriter{ResponseWriter: baseRec}
+
+	next := caddyhttp.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) error {
+		w.Header().Set("Incremental", "?1")
+		w.WriteHeader(http.StatusEarlyHints)
+		w.Header().Del("Incremental")
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		if baseRec.Flushed {
+			t.Error("informational Incremental field forced the final response to flush")
 		}
 		return nil
 	})
