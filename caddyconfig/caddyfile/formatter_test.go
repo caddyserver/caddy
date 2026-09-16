@@ -804,7 +804,11 @@ func hasHeredocOpenerShapedToken(in []byte) bool {
 }
 
 func FuzzFormatIdempotent(f *testing.F) {
-	for _, s := range []string{"", "  ", "a{\nb\n}", "site {\n\tfoo # c\n}\n", "x <<E\nhi\nE\n"} {
+	for _, s := range []string{
+		"", "  ", "a{\nb\n}", "site {\n\tfoo # c\n}\n", "x <<E\nhi\nE\n",
+		// Tokens that swallow end-of-input, and a lone CR that does not.
+		"\"\"\"", "\"\"`", "``\\\"", "0  0\r",
+	} {
 		f.Add([]byte(s))
 	}
 	f.Fuzz(func(t *testing.T, in []byte) {
@@ -979,6 +983,36 @@ func TestFormatFuzzerAngles(t *testing.T) {
 			// Unterminated backtick string.
 			name:  "unterminated backtick",
 			input: "foo `unterminated",
+		},
+		{
+			// An empty quoted token followed by a lone opening quote. The first
+			// pass falls back and appends the mandatory newline; on the second
+			// pass that newline is swallowed by the still-unterminated quote, so
+			// the unterminated token must be detected from the token itself, not
+			// from whether appending a newline changes the stream.
+			name:  "empty quoted token followed by lone quote",
+			input: "\"\"\"",
+		},
+		{
+			// Same shape with a backtick opening the unterminated token.
+			name:  "empty quoted token followed by lone backtick",
+			input: "\"\"`",
+		},
+		{
+			// An escaped quote running to end-of-input after a closed backtick
+			// token. Like the cases above, the second pass must still recognize
+			// the swallowing token once the mandatory newline sits inside it.
+			name:  "empty backtick token followed by escaped quote",
+			input: "``\\\"",
+		},
+		{
+			// A lone CR does not terminate a token, so it stays in the token's
+			// verbatim source without meaning the token swallowed end-of-input.
+			// Treating it as swallowed would suppress normal rendering here and
+			// leave the double space uncollapsed on the first pass only.
+			name:        "double space with trailing lone CR",
+			input:       "0  0\r",
+			exactExpect: "0 0\n",
 		},
 		{
 			// Trailing backslash (dangling escape — not a line continuation).
