@@ -233,6 +233,19 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 	// other direction is left open and pending bytes can still drain. Anything
 	// else ends the tunnel: a copy error, a failed CloseWrite, or errCopyDone
 	// when the destination has no write half to close.
+	//
+	// net/http/httputil expresses the same wait as:
+	//
+	//	err := <-errc
+	//	if err == nil {
+	//		err = <-errc
+	//	}
+	//
+	// which cannot be used verbatim here because this handler also selects on the
+	// stream timeout, so the wait is repeated inside that select instead. Both
+	// accept the same sequences; the loop only additionally lets the timeout win
+	// at either wait.
+	//
 	// See https://github.com/caddyserver/caddy/issues/8026, and the same class
 	// fixed upstream in net/http/httputil (https://go.dev/issue/35892).
 	for range 2 {
