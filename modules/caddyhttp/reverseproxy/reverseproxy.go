@@ -176,7 +176,8 @@ type Handler struct {
 	// field (RFC 9209). It has to identify the deployment rather than the
 	// software, so there is no sensible default: a service name
 	// ("ExampleCDN"), a hostname ("proxy-3.example.com") or an IP address
-	// are all appropriate. When empty, no Proxy-Status field is generated.
+	// are all appropriate. This is used when Caddy refuses to forward a
+	// message marked Incremental. When empty, no Proxy-Status field is generated.
 	ProxyStatusName string `json:"proxy_status_name,omitempty"`
 
 	// If nonzero, streaming requests such as WebSockets will be
@@ -713,10 +714,11 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 			userOps.ApplyToRequest(r)
 		}
 	}
-	if !requestWasIncremental && r.ContentLength != 0 && caddyhttp.IsIncremental(r.Header) &&
+	if !requestWasIncremental && requestHasContent(r) && caddyhttp.IsIncremental(r.Header) &&
 		(h.RequestBuffers != 0 || r.ContentLength < 0 && h.transportRequiresContentLength()) {
 		return true, h.refuseIncremental(w, nil)
 	}
+	normalizeIncrementalRequest(r)
 
 	// proxy the request to that upstream
 	proxyErr = h.reverseProxy(w, r, origReq, repl, dialInfo, next)
@@ -806,6 +808,7 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	if h.incrementalRequestConflicts(req) {
 		return nil, errIncrementalRefused
 	}
+	normalizeIncrementalRequest(req)
 
 	// if enabled, buffer client request; this should only be
 	// enabled if the upstream requires it and does not work
@@ -1906,10 +1909,40 @@ func responseHasContent(req *http.Request, res *http.Response) bool {
 	return true
 }
 
+// requestHasContent reports whether r may carry content that matters for
+// incremental forwarding. HTTP/3 uses an unknown length for bodyless GET and
+// HEAD requests (see issue #6678), so their usual no-body semantics are used
+// rather than waiting for the request stream to end.
+func requestHasContent(r *http.Request) bool {
+	if r.ContentLength > 0 {
+		return true
+	}
+	if r.ContentLength == 0 {
+		return false
+	}
+
+	switch r.Method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions,
+		http.MethodDelete, http.MethodTrace, http.MethodConnect:
+		return false
+	}
+
+	return true
+}
+
+func normalizeIncrementalRequest(req *http.Request) {
+	if caddyhttp.IsIncremental(req.Header) && !requestHasContent(req) {
+		// HTTP/3 can represent a bodyless GET or HEAD with an unknown length.
+		// Do not pass that sentinel to transports that require framing.
+		req.ContentLength = 0
+		req.Body = nil
+	}
+}
+
 // incrementalRequestConflicts reports whether honouring an incremental request
 // would override an explicit buffer or violate the transport's framing needs.
 func (h *Handler) incrementalRequestConflicts(req *http.Request) bool {
-	if req.ContentLength == 0 || !caddyhttp.IsIncremental(req.Header) {
+	if !requestHasContent(req) || !caddyhttp.IsIncremental(req.Header) {
 		return false
 	}
 	needsLength := h.transportRequiresContentLength()
