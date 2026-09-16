@@ -219,33 +219,29 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 		timeoutc = timer.C
 	}
 
-	// when a stream timeout is encountered, no result will be read from resc
-	// a buffer size of 2 will allow both the read and write goroutines to send the result and exit
+	// when a stream timeout is encountered, no error will be read from errc
+	// a buffer size of 2 will allow both the read and write goroutines to send the error and exit
 	// see: https://github.com/caddyserver/caddy/issues/7418
-	resc := make(chan copyResult, 2)
+	errc := make(chan error, 2)
 	wg.Add(2)
-	go spc.copyToBackend(resc)
-	go spc.copyFromBackend(resc)
+	go spc.copyToBackend(errc)
+	go spc.copyFromBackend(errc)
 
 	// Wait for both directions to finish. A clean EOF in one direction is a
-	// half-close of that direction only, not the end of the tunnel: when it can
-	// be propagated to the destination with CloseWrite, the other direction is
-	// left open so pending bytes can still drain.
+	// half-close of that direction only, not the end of the tunnel: the copier
+	// propagates it to the destination with CloseWrite and reports nil, so the
+	// other direction is left open and pending bytes can still drain. Anything
+	// else ends the tunnel: a copy error, a failed CloseWrite, or errCopyDone
+	// when the destination has no write half to close.
 	// See https://github.com/caddyserver/caddy/issues/8026, and the same class
 	// fixed upstream in net/http/httputil (https://go.dev/issue/35892).
 	for range 2 {
 		select {
-		case res := <-resc:
-			if res.err != nil {
+		case err := <-errc:
+			if err != nil {
 				if c := logger.Check(zapcore.DebugLevel, "streaming error"); c != nil {
-					c.Write(zap.Error(res.err))
+					c.Write(zap.Error(err))
 				}
-				return
-			}
-			if !res.halfClosed {
-				// The destination does not support a write-half close, so the peer
-				// cannot be told that this direction ended; keep the previous
-				// behavior and tear the tunnel down rather than holding it open.
 				return
 			}
 		case time := <-timeoutc:
@@ -663,49 +659,41 @@ type switchProtocolCopier struct {
 	bufferSize    int
 }
 
-// copyResult is the outcome of one direction of an upgraded stream copy.
-// halfClosed reports that the copy ended at a clean EOF and that the end of
-// this direction was propagated to the destination with CloseWrite, so the
-// opposite direction may continue.
-type copyResult struct {
-	err        error
-	halfClosed bool
-}
+// errCopyDone is reported by a direction that ended at a clean EOF on a
+// connection whose write half cannot be closed, so the end of that direction
+// could not be propagated to the peer.
+var errCopyDone = errors.New("hijacked connection copy complete")
 
-// closeWriter is implemented by connections that can close only their write
-// half, such as *net.TCPConn and *tls.Conn.
-type closeWriter interface {
-	CloseWrite() error
-}
-
-// closeWrite closes the write half of dst if it supports it, and reports
-// whether the half-close was propagated.
-func closeWrite(dst io.ReadWriteCloser) bool {
-	cw, ok := dst.(closeWriter)
-	if !ok {
-		return false
+func (c switchProtocolCopier) copyFromBackend(errc chan<- error) {
+	defer c.wg.Done()
+	if _, err := io.CopyBuffer(c.user, c.backend, c.buffer()); err != nil {
+		errc <- err
+		return
 	}
-	return cw.CloseWrite() == nil
+
+	// backend conn has reached EOF so propagate close write to user conn
+	if wc, ok := c.user.(interface{ CloseWrite() error }); ok {
+		errc <- wc.CloseWrite()
+		return
+	}
+
+	errc <- errCopyDone
 }
 
-func (c switchProtocolCopier) copyFromBackend(resc chan<- copyResult) {
-	_, err := io.CopyBuffer(c.user, c.backend, c.buffer())
-	res := copyResult{err: err}
-	if err == nil {
-		res.halfClosed = closeWrite(c.user)
+func (c switchProtocolCopier) copyToBackend(errc chan<- error) {
+	defer c.wg.Done()
+	if _, err := io.CopyBuffer(c.backend, c.user, c.buffer()); err != nil {
+		errc <- err
+		return
 	}
-	resc <- res
-	c.wg.Done()
-}
 
-func (c switchProtocolCopier) copyToBackend(resc chan<- copyResult) {
-	_, err := io.CopyBuffer(c.backend, c.user, c.buffer())
-	res := copyResult{err: err}
-	if err == nil {
-		res.halfClosed = closeWrite(c.backend)
+	// user conn has reached EOF so propagate close write to backend conn
+	if wc, ok := c.backend.(interface{ CloseWrite() error }); ok {
+		errc <- wc.CloseWrite()
+		return
 	}
-	resc <- res
-	c.wg.Done()
+
+	errc <- errCopyDone
 }
 
 func (c switchProtocolCopier) buffer() []byte {
