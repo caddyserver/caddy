@@ -378,6 +378,21 @@ func hasUnformattableToken(tokens []Token) bool {
 		if tk.wasQuoted == 0 && endsInDanglingBackslash(raw) {
 			return true
 		}
+		// A non-quoted token whose verbatim source ends in a newline swallowed it:
+		// an unterminated quote/backtick, or an escaped quote ("\\"") that ran to
+		// end-of-input. A newline otherwise terminates a token, so no well-formed
+		// token ends in one. Format emits the source verbatim and then trims
+		// trailing whitespace, so such a token changes on re-lex and no rendering
+		// is a fixed point. This has to be decided from the token itself rather
+		// than from whether appending a newline changes the stream: once the
+		// mandatory trailing newline has been appended it sits inside the
+		// swallowing token, and appending another one no longer changes anything,
+		// so only the token shape still reveals the problem. A lone "\\r" is kept
+		// in raw but does not terminate a token, so it is deliberately not
+		// treated as swallowed; heredoc tokens carry wasQuoted == '<'.
+		if tk.wasQuoted == 0 && strings.HasSuffix(raw, "\n") {
+			return true
+		}
 		if tk.wasQuoted != 0 {
 			continue
 		}
