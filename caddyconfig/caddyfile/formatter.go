@@ -43,8 +43,7 @@ func FormatWithOptions(input []byte, opts FormatOptions) []byte {
 	if err != nil {
 		// On a lex error, fall back to the trimmed input with a trailing newline;
 		// Format never panics (Invariant 3).
-		trimmed := bytes.TrimSpace(input)
-		return append(trimmed, '\n')
+		return trimmedWithNewline(input)
 	}
 	// Some token shapes cannot be rendered without changing what they lex back
 	// to, which would break idempotency. When one is present, preserve the
@@ -57,8 +56,7 @@ func FormatWithOptions(input []byte, opts FormatOptions) []byte {
 	// fixed point. Detect that here so Format falls back to the trimmed input;
 	// trimming removes the trailing newline again, so the fallback is stable.
 	if hasUnformattableToken(tokens) || trailingNewlineChangesTokens(input) {
-		trimmed := bytes.TrimSpace(input)
-		return append(trimmed, '\n')
+		return trimmedWithNewline(input)
 	}
 	parseTokens, parseErr := Tokenize(input, "")
 	wrapped := false
@@ -102,8 +100,7 @@ func FormatWithOptions(input []byte, opts FormatOptions) []byte {
 	parseChanged := !wrapped && parseErr == nil && (outParseErr != nil || !sameTokenTexts(parseTokens, outParseTokens))
 	if rerr != nil || parseChanged || !sameTokenTexts(tokens, reToks) ||
 		!bytes.Equal(out, formatTokens(reToks)) {
-		trimmed := bytes.TrimSpace(input)
-		return append(trimmed, '\n')
+		return trimmedWithNewline(input)
 	}
 	return out
 }
@@ -288,6 +285,19 @@ func wrapUnbracedSite(tokens []Token) []Token {
 	wrapped = append(wrapped, tokens[addrLineEndIdx+1:]...)
 	wrapped = append(wrapped, closeBrace)
 	return wrapped
+}
+
+// trimmedWithNewline returns input trimmed of surrounding whitespace with a
+// single trailing newline, in a freshly allocated buffer. The copy matters:
+// bytes.TrimSpace returns a subslice that shares input's backing array, so
+// appending to it can write into the caller's buffer (os.ReadFile hands back a
+// slice with spare capacity), corrupting the input a caller still holds — for
+// example the "caddy fmt --diff" comparison of input against output.
+func trimmedWithNewline(input []byte) []byte {
+	trimmed := bytes.TrimSpace(input)
+	out := make([]byte, 0, len(trimmed)+1)
+	out = append(out, trimmed...)
+	return append(out, '\n')
 }
 
 // trailingNewlineChangesTokens reports whether appending a newline to input

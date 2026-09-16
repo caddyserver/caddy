@@ -803,6 +803,30 @@ func hasHeredocOpenerShapedToken(in []byte) bool {
 	return false
 }
 
+// TestFormatDoesNotMutateInput guards the fallback paths, which trim the input
+// and append the mandatory newline. bytes.TrimSpace returns a subslice sharing
+// the caller's backing array, so appending to it without copying writes into
+// the caller's buffer. os.ReadFile returns a slice with spare capacity, so this
+// corrupted the input that "caddy fmt --diff" compares its output against.
+func TestFormatDoesNotMutateInput(t *testing.T) {
+	cases := []string{
+		"foo \"unterminated  \n\n", // unterminated quote + trailing whitespace
+		"a b\\   \n\n",             // dangling escape + trailing whitespace
+		"  site {\n\tfoo\n}  \n\n", // ordinary input with surrounding whitespace
+	}
+	for _, in := range cases {
+		// Spare capacity, as os.ReadFile and pooled buffers provide.
+		buf := append(make([]byte, 0, len(in)+8), in...)
+		out := Format(buf)
+		if string(buf) != in {
+			t.Errorf("Format mutated its input:\n  in   %q\n  after %q", in, string(buf))
+		}
+		if len(out) > 0 && len(buf) > 0 && &out[0] == &buf[0] {
+			t.Errorf("Format output aliases its input for %q", in)
+		}
+	}
+}
+
 func FuzzFormatIdempotent(f *testing.F) {
 	for _, s := range []string{
 		"", "  ", "a{\nb\n}", "site {\n\tfoo # c\n}\n", "x <<E\nhi\nE\n",
