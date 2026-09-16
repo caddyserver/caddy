@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/rewrite"
@@ -540,25 +541,90 @@ func TestProxyStatusNameNeedingQuotes(t *testing.T) {
 	}
 }
 
-// A method does not prove that an unknown-length request has no content.
-// Assuming otherwise lets a body reach a transport that cannot forward it.
-func TestIncrementalRefusedWhenMethodHasUnknownLengthContent(t *testing.T) {
-	for _, method := range []string{http.MethodGet, http.MethodOptions, http.MethodDelete} {
-		t.Run(method, func(t *testing.T) {
-			h := incrementalHandler("unused.invalid")
-			h.RequestBuffers = 4096
-			h.Transport = lengthRequiringTransport{testTransport{&http.Transport{}}}
+// HTTP/3 reports an unknown length for bodyless GET and HEAD requests. The
+// transport still needs to receive these requests rather than a 501 refusal.
+func TestIncrementalProxiedWhenBodylessRequestHasUnknownLength(t *testing.T) {
+	var reached bool
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+	}))
+	defer backend.Close()
 
-			req := httptest.NewRequest(method, "http://example.com/", io.NopCloser(strings.NewReader(strings.Repeat("x", 8192))))
-			req.Header.Set("Incremental", "?1")
-			req = prepareTestRequest(req)
+	h := incrementalHandler(backend.Listener.Addr().String())
+	h.RequestBuffers = 4096
+	h.Transport = lengthRequiringTransport{testTransport{&http.Transport{}}}
 
-			rec := httptest.NewRecorder()
-			err := h.ServeHTTP(rec, req, caddyhttp.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
-				return nil
-			}))
-			assertRefused(t, err, rec.Header())
-		})
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", io.NopCloser(strings.NewReader("")))
+	req.Header.Set("Incremental", "?1")
+	req = prepareTestRequest(req)
+	if req.ContentLength != -1 {
+		t.Fatalf("ContentLength = %d, want -1", req.ContentLength)
+	}
+
+	rec := httptest.NewRecorder()
+	if err := h.ServeHTTP(rec, req, caddyhttp.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
+		return nil
+	})); err != nil {
+		t.Fatalf("ServeHTTP() error = %v", err)
+	}
+
+	if !reached {
+		t.Error("bodyless request was not forwarded upstream")
+	}
+}
+
+func TestIncrementalAddedByHeaderUpWhenBodylessRequestHasUnknownLength(t *testing.T) {
+	h := incrementalHandler("unused.invalid")
+	h.Headers = &headers.Handler{Request: &headers.HeaderOps{
+		Set: http.Header{"Incremental": []string{"?1"}},
+	}}
+	h.Transport = lengthRequiringRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.ContentLength != 0 {
+			t.Errorf("ContentLength = %d, want 0", req.ContentLength)
+		}
+		if req.Body != nil {
+			t.Errorf("Body = %T, want nil", req.Body)
+		}
+		return &http.Response{
+			StatusCode:    http.StatusOK,
+			Status:        "200 OK",
+			Header:        make(http.Header),
+			Body:          http.NoBody,
+			ContentLength: 0,
+			Request:       req,
+		}, nil
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", io.NopCloser(strings.NewReader("")))
+	req = prepareTestRequest(req)
+	if req.ContentLength != -1 {
+		t.Fatalf("ContentLength = %d, want -1", req.ContentLength)
+	}
+
+	rec := httptest.NewRecorder()
+	if err := h.ServeHTTP(rec, req, caddyhttp.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
+		return nil
+	})); err != nil {
+		t.Fatalf("ServeHTTP() error = %v", err)
+	}
+}
+
+func TestIncrementalBodylessUnknownLengthIsNormalised(t *testing.T) {
+	h := Handler{Transport: lengthRequiringTransport{testTransport{&http.Transport{}}}}
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", io.NopCloser(strings.NewReader("")))
+	req.Header.Set("Incremental", "?1")
+	repl := caddy.NewReplacer()
+	req = caddyhttp.PrepareRequest(req, repl, nil, &caddyhttp.Server{})
+
+	got, err := h.prepareRequest(req, repl)
+	if err != nil {
+		t.Fatalf("prepareRequest() error = %v", err)
+	}
+	if got.ContentLength != 0 {
+		t.Errorf("ContentLength = %d, want 0", got.ContentLength)
+	}
+	if got.Body != nil {
+		t.Errorf("Body = %T, want nil", got.Body)
 	}
 }
 
