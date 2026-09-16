@@ -207,8 +207,15 @@ func TestHandlerUpgradedStreamHalfClose(t *testing.T) {
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 
+	// Reads carry a deadline so a regression fails the test promptly instead of
+	// blocking until the whole package times out.
+	const readTimeout = 10 * time.Second
+
 	mustRead := func(t *testing.T, conn *net.TCPConn, msg string) {
 		t.Helper()
+		if err := conn.SetReadDeadline(time.Now().Add(readTimeout)); err != nil {
+			t.Fatalf("failed to set read deadline: %v", err)
+		}
 		b := make([]byte, len(msg))
 		if _, err := io.ReadFull(conn, b); err != nil {
 			t.Fatalf("failed to read: %v", err)
@@ -220,6 +227,9 @@ func TestHandlerUpgradedStreamHalfClose(t *testing.T) {
 
 	mustReadEOF := func(t *testing.T, conn *net.TCPConn) {
 		t.Helper()
+		if err := conn.SetReadDeadline(time.Now().Add(readTimeout)); err != nil {
+			t.Fatalf("failed to set read deadline: %v", err)
+		}
 		b := make([]byte, 1)
 		if _, err := conn.Read(b); !errors.Is(err, io.EOF) {
 			t.Fatalf("read after peer half-close: got %v, want EOF", err)
