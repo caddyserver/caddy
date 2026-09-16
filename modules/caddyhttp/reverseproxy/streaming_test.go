@@ -287,7 +287,7 @@ func TestHandlerUpgradedStreamHalfClose(t *testing.T) {
 			srvc := make(chan *net.TCPConn, 1)
 
 			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				conn, _, err := w.(http.Hijacker).Hijack()
+				conn, _, err := http.NewResponseController(w).Hijack()
 				if err != nil {
 					t.Errorf("backend hijack failed: %v", err)
 					return
