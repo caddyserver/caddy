@@ -579,6 +579,9 @@ func (p *parser) expandImportsInBlock(tokens []Token) ([]Token, error) {
 		Dispenser:       NewDispenser(tokens),
 		definedSnippets: p.definedSnippets,
 		importGraph:     p.importGraph,
+		// Carry the observer so callers watching import execution (such as
+		// FormatImports) also see files imported from inside a named route.
+		importObserver: p.importObserver,
 	}
 
 	// Loop through the tokens. We only care about import directives that

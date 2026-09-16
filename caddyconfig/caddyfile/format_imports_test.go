@@ -134,6 +134,27 @@ func TestDiscoverImportBeforeSnippetDeclarationIsFile(t *testing.T) {
 	}
 }
 
+func TestDiscoverImportInsideNamedRoute(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, "Caddyfile")
+	writeFile(t, root, "&(foo) {\n\timport handler\n}\n\nlocalhost {\n\tinvoke foo\n}\n")
+	writeFile(t, filepath.Join(dir, "handler"), "respond   \"hi\"\n")
+
+	rootInput, err := os.ReadFile(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := discoverImportedFiles(root, rootInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Named route blocks expand their imports through a separate parser; it must
+	// still report to the observer or --imports silently skips the file.
+	if len(files) != 1 || files[0] != mustCanonicalPath(t, filepath.Join(dir, "handler")) {
+		t.Fatalf("got %v, want handler file", files)
+	}
+}
+
 func TestDiscoverRecursiveImportArgs(t *testing.T) {
 	dir := t.TempDir()
 	root := filepath.Join(dir, "Caddyfile")
