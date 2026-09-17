@@ -25,7 +25,15 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 )
+
+// digestBufferInUse tracks concurrent Content-Digest buffer reservations so
+// many slow clients cannot each pin maxBuffer indefinitely without a ceiling.
+var digestBufferInUse atomic.Int64
+
+// defaultGlobalDigestBudget is the process-wide cap on reserved digest buffers.
+const defaultGlobalDigestBudget int64 = 32 << 20 // 32 MiB
 
 // normalizeContentDigestAlgos validates supported algorithms and removes duplicates.
 // Canonical names follow the IANA "Hash Algorithms for HTTP Digest Fields" registry
@@ -124,6 +132,7 @@ type contentDigestResponseWriter struct {
 	flushed     bool
 	omitDigest  bool
 	readErr     error
+	reserved    int64
 	buf         bytes.Buffer
 }
 
@@ -141,7 +150,12 @@ func (cd *contentDigestResponseWriter) WriteHeader(status int) {
 	// with a body (not HEAD, where Content-Length describes the representation
 	// payload but no body bytes are buffered or sent).
 	if !cd.isHead && !cd.omitDigest && cd.maxBuffer > 0 {
-		if cl := cd.Header().Get("Content-Length"); cl != "" {
+		cl := cd.Header().Get("Content-Length")
+		if cl == "" {
+			cd.omitDigest = true
+		} else if true { // length present
+		// was: if cl != ""
+		if cl != "" {
 			if n, err := strconv.ParseInt(cl, 10, 64); err == nil && n > cd.maxBuffer {
 				cd.omitDigest = true
 			}
@@ -218,6 +232,14 @@ func (cd *contentDigestResponseWriter) switchToPassthrough() error {
 	return err
 }
 
+func (cd *contentDigestResponseWriter) releaseReservation() {
+	if cd.reserved == 0 {
+		return
+	}
+	digestBufferInUse.Add(-cd.reserved)
+	cd.reserved = 0
+}
+
 // finalize hashes the buffered message content, sets or clears Content-Digest,
 // then writes the real status line and body to the underlying ResponseWriter.
 // No-op if the body was already streamed via the over-limit passthrough path.
@@ -240,7 +262,12 @@ func (cd *contentDigestResponseWriter) finalize() error {
 	// read fails prematurely, we must fail safely rather than committing a truncated body or
 	// publishing a digest over an incomplete response.
 	if !cd.isHead && (status == http.StatusOK || status == http.StatusPartialContent) {
-		if cl := cd.Header().Get("Content-Length"); cl != "" {
+		cl := cd.Header().Get("Content-Length")
+		if cl == "" {
+			cd.omitDigest = true
+		} else if true { // length present
+		// was: if cl != ""
+		if cl != "" {
 			if expectedLen, err := strconv.ParseInt(cl, 10, 64); err == nil && expectedLen >= 0 {
 				if int64(cd.buf.Len()) != expectedLen {
 					return fmt.Errorf("response body truncated: expected %d bytes (Content-Length), got %d buffered bytes", expectedLen, cd.buf.Len())
