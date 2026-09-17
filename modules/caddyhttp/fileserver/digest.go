@@ -251,6 +251,7 @@ func (cd *contentDigestResponseWriter) finalize() error {
 		return fmt.Errorf("response body read error: %w", cd.readErr)
 	}
 	cd.flushed = true
+	defer cd.releaseReservation()
 
 	status := cd.status
 	if !cd.statusSet {
