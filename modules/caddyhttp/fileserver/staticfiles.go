@@ -699,7 +699,13 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			maxBuffer:      maxBuf,
 			isHead:         r.Method == http.MethodHead,
 		}
-		w = digestWriter
+		if v := digestBufferInUse.Add(maxBuf); v > defaultGlobalDigestBudget {
+			digestBufferInUse.Add(-maxBuf)
+			// Over process-wide budget: serve without digest buffering.
+		} else {
+			digestWriter.reserved = maxBuf
+			w = digestWriter
+		}
 	}
 
 	// let the standard library do what it does best; note, however,

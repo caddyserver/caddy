@@ -265,14 +265,11 @@ func (cd *contentDigestResponseWriter) finalize() error {
 	if !cd.isHead && (status == http.StatusOK || status == http.StatusPartialContent) {
 		cl := cd.Header().Get("Content-Length")
 		if cl == "" {
+			// Cannot verify completeness (e.g. some range/precompressed responses).
 			cd.omitDigest = true
-		} else if true { // length present
-		// was: if cl != ""
-		if cl != "" {
-			if expectedLen, err := strconv.ParseInt(cl, 10, 64); err == nil && expectedLen >= 0 {
-				if int64(cd.buf.Len()) != expectedLen {
-					return fmt.Errorf("response body truncated: expected %d bytes (Content-Length), got %d buffered bytes", expectedLen, cd.buf.Len())
-				}
+		} else if expectedLen, err := strconv.ParseInt(cl, 10, 64); err == nil && expectedLen >= 0 {
+			if int64(cd.buf.Len()) != expectedLen {
+				return fmt.Errorf("response body truncated: expected %d bytes (Content-Length), got %d buffered bytes", expectedLen, cd.buf.Len())
 			}
 		}
 	}
