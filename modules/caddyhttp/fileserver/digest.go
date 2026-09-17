@@ -123,6 +123,7 @@ type contentDigestResponseWriter struct {
 	statusSet   bool
 	flushed     bool
 	omitDigest  bool
+	readErr     error
 	buf         bytes.Buffer
 }
 
@@ -187,7 +188,11 @@ func (cd *contentDigestResponseWriter) ReadFrom(r io.Reader) (int64, error) {
 		}
 		return io.Copy(cd.ResponseWriter, r)
 	}
-	return io.Copy(struct{ io.Writer }{cd}, r)
+	n, err := io.Copy(struct{ io.Writer }{cd}, r)
+	if err != nil && cd.readErr == nil {
+		cd.readErr = err
+	}
+	return n, err
 }
 
 // switchToPassthrough flushes any buffered bytes without a Content-Digest and
@@ -219,6 +224,9 @@ func (cd *contentDigestResponseWriter) switchToPassthrough() error {
 func (cd *contentDigestResponseWriter) finalize() error {
 	if cd.flushed {
 		return nil
+	}
+	if cd.readErr != nil {
+		return fmt.Errorf("response body read error: %w", cd.readErr)
 	}
 	cd.flushed = true
 
