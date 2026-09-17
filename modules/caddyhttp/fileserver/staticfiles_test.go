@@ -875,6 +875,41 @@ func TestContentDigestResponseWriterFinalize(t *testing.T) {
 			t.Fatalf("ResponseWriter was committed despite read failure: body = %q", rec.Body.Bytes())
 		}
 	})
+
+	t.Run("ServeContent with failing ReadSeeker on precompressed 206 range returns error", func(t *testing.T) {
+		fullContent := []byte("0123456789abcdef0123456789abcdef") // 32 bytes
+		rs := &failingReadSeeker{
+			content: fullContent,
+			failAt:  10, // range is 0-15 (16 bytes), but fails at byte 10
+		}
+		rec := httptest.NewRecorder()
+		cd := &contentDigestResponseWriter{
+			ResponseWriter: rec,
+			algos:          []string{"sha-256"},
+			precompress:    "gzip",
+			maxBuffer:      maxBuf,
+		}
+		cd.Header().Set("Content-Encoding", "gzip")
+		r := httptest.NewRequest(http.MethodGet, "/test.txt", nil)
+		r.Header.Set("Range", "bytes=0-15")
+		http.ServeContent(cd, r, "test.txt", time.Unix(1000, 0), rs)
+
+		// When Content-Length is omitted (e.g., precompressed range responses where
+		// downstream or transport omits Content-Length), finalize must still detect
+		// the read failure via cd.readErr.
+		cd.Header().Del("Content-Length")
+
+		err := cd.finalize()
+		if err == nil {
+			t.Fatal("expected error on truncated precompressed range ReadSeeker from ServeContent, got nil")
+		}
+		if rec.Flushed || len(rec.Body.Bytes()) != 0 {
+			t.Fatalf("ResponseWriter was committed despite read failure: body = %q", rec.Body.Bytes())
+		}
+		if got := rec.Header().Get("Content-Digest"); got != "" {
+			t.Fatalf("Content-Digest = %q, want empty on read failure", got)
+		}
+	})
 }
 
 func TestContentDigestIntegration(t *testing.T) {
