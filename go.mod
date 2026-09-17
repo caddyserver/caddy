@@ -3,6 +3,7 @@ module github.com/caddyserver/caddy/v2
 go 1.25.1
 
 require (
+	cel.dev/cel-go v0.32.0
 	github.com/BurntSushi/toml v1.6.0
 	github.com/DeRuina/timberjack v1.4.5
 	github.com/KimMachineGun/automemlimit v1.0.0
@@ -15,7 +16,6 @@ require (
 	github.com/dunglas/go-urlpattern v1.0.0
 	github.com/dustin/go-humanize v1.0.1
 	github.com/go-chi/chi/v5 v5.3.1
-	github.com/google/cel-go v0.29.2
 	github.com/google/uuid v1.6.0
 	github.com/klauspost/compress v1.19.0
 	github.com/klauspost/cpuid/v2 v2.4.0
