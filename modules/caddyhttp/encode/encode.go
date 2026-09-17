@@ -487,6 +487,10 @@ func (rw *responseWriter) init() {
 		rw.w.Reset(rw.ResponseWriter)
 		hdr.Del("Content-Length") // https://github.com/golang/go/issues/14975
 		hdr.Set("Content-Encoding", rw.encodingName)
+		// Content-Digest (RFC 9530) covers message content. After dynamic
+		// re-encoding the client bytes differ from any digest computed on the
+		// unencoded representation (e.g. by file_server), so strip it.
+		hdr.Del("Content-Digest")
 		if !hasVaryValue(hdr, "Accept-Encoding") {
 			hdr.Add("Vary", "Accept-Encoding")
 		}

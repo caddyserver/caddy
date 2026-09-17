@@ -1,0 +1,10 @@
+{
+  "repo": "caddyserver/caddy",
+  "number": 7937,
+  "base": "master",
+  "head": "feat-fileserver-content-digest",
+  "fork": "VedantMadane/caddy",
+  "title": "feat(fileserver): add Content-Digest header support (RFC 9530)",
+  "url": "https://github.com/caddyserver/caddy/pull/7937",
+  "rebased": true
+}
