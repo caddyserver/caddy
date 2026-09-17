@@ -445,21 +445,21 @@ func trimPathPrefix(escapedPath, prefix string) string {
 	var iPath, iPrefix int
 	for iPath < len(escapedPath) && iPrefix < len(prefix) {
 		prefixCh := prefix[iPrefix]
-		ch := string(escapedPath[iPath])
+		ch := escapedPath[iPath]
 
-		if ch == "%" && prefixCh != '%' && len(escapedPath) >= iPath+3 {
-			var err error
-			ch, err = url.PathUnescape(escapedPath[iPath : iPath+3])
-			if err != nil {
+		if ch == '%' && prefixCh != '%' && len(escapedPath) >= iPath+3 {
+			decoded, err := url.PathUnescape(escapedPath[iPath : iPath+3])
+			if err != nil || len(decoded) != 1 {
 				// should be impossible unless EscapedPath() is returning invalid values!
 				return escapedPath
 			}
+			ch = decoded[0]
 			iPath += 2
 		}
 
 		// prefix comparisons are case-insensitive to consistency with
 		// path matcher, which is case-insensitive for good reasons
-		if !strings.EqualFold(ch, string(prefixCh)) {
+		if !asciiEqualFold(ch, prefixCh) {
 			return escapedPath
 		}
 
@@ -493,7 +493,7 @@ func trimPathSuffix(escapedPath, suffix string) string {
 	iPath, iSuffix := len(escapedPath), len(suffix)
 	for iPath > 0 && iSuffix > 0 {
 		suffixCh := suffix[iSuffix-1]
-		ch := string(escapedPath[iPath-1])
+		ch := escapedPath[iPath-1]
 		step := 1
 
 		// if escapedPath uses a percent-encoding that ends at this position but
@@ -503,17 +503,17 @@ func trimPathSuffix(escapedPath, suffix string) string {
 		suffixHasEscape := iSuffix >= 3 && suffix[iSuffix-3] == '%'
 		if pathHasEscape && !suffixHasEscape {
 			decoded, err := url.PathUnescape(escapedPath[iPath-3 : iPath])
-			if err != nil {
+			if err != nil || len(decoded) != 1 {
 				// should be impossible unless EscapedPath() is returning invalid values!
 				return escapedPath
 			}
-			ch = decoded
+			ch = decoded[0]
 			step = 3
 		}
 
 		// suffix comparisons are case-insensitive for consistency with
 		// trimPathPrefix, which is case-insensitive for good reasons
-		if !strings.EqualFold(ch, string(suffixCh)) {
+		if !asciiEqualFold(ch, suffixCh) {
 			return escapedPath
 		}
 
@@ -528,6 +528,22 @@ func trimPathSuffix(escapedPath, suffix string) string {
 
 	// otherwise we did not find the suffix
 	return escapedPath
+}
+
+// asciiEqualFold compares a and b case-insensitively for ASCII letters,
+// leaving every other byte to compare exactly. Path comparisons work on
+// single bytes so that a percent-encoding decoded from the path compares
+// equal to the corresponding byte of a multi-byte character written
+// literally in the pattern; folding non-ASCII bytes has no defined meaning
+// at that level and would fold parts of unrelated characters together.
+func asciiEqualFold(a, b byte) bool {
+	if 'A' <= a && a <= 'Z' {
+		a += 'a' - 'A'
+	}
+	if 'A' <= b && b <= 'Z' {
+		b += 'a' - 'A'
+	}
+	return a == b
 }
 
 // substrReplacer describes either a simple and fast substring replacement.
