@@ -912,7 +912,6 @@ func calculateEtag(d os.FileInfo) string {
 	return sb.String()
 }
 
-
 // Finds the first corresponding etag file for a given file in the file system and return its content
 func (fsrv *FileServer) getEtagFromFile(fileSystem fs.FS, filename string) (string, error) {
 	for _, suffix := range fsrv.EtagFileExtensions {
