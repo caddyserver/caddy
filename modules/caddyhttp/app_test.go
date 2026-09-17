@@ -15,12 +15,133 @@
 package caddyhttp
 
 import (
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"sync"
 	"testing"
+	"time"
+
+	"github.com/caddyserver/caddy/v2"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 )
+
+func TestStopWaitsForPreviousConfiguration(t *testing.T) {
+	for _, http2 := range []bool{false, true} {
+		for _, grace := range []time.Duration{0, 5 * time.Second} {
+			t.Run(fmt.Sprintf("http2=%t/grace=%s", http2, grace), func(t *testing.T) {
+				previous, response, release := appWithPendingResponse(t, http2)
+				previous.GracePeriod = caddy.Duration(grace)
+				if err := previous.stop(false); err != nil {
+					t.Fatal(err)
+				}
+
+				current := &App{logger: zap.NewNop()}
+				stopped := make(chan error, 1)
+				go func() { stopped <- current.stop(true) }()
+				select {
+				case err := <-stopped:
+					t.Fatalf("termination returned while the previous response was active: %v", err)
+				case <-time.After(50 * time.Millisecond):
+				}
+
+				release()
+				body, err := io.ReadAll(response.Body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if string(body) != "before\nafter\n" {
+					t.Fatalf("unexpected response body: %q", body)
+				}
+				select {
+				case err := <-stopped:
+					if err != nil {
+						t.Fatal(err)
+					}
+				case <-time.After(2 * time.Second):
+					t.Fatal("termination did not finish after the previous response completed")
+				}
+			})
+		}
+	}
+}
+
+func TestStopPreviousConfigurationGracePeriod(t *testing.T) {
+	previous, response, release := appWithPendingResponse(t, false)
+	if err := previous.stop(false); err != nil {
+		t.Fatal(err)
+	}
+
+	current := &App{GracePeriod: caddy.Duration(50 * time.Millisecond), logger: zap.NewNop()}
+	stopped := make(chan error, 1)
+	start := time.Now()
+	go func() { stopped <- current.stop(true) }()
+	select {
+	case err := <-stopped:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("termination ignored its grace period while waiting for the previous configuration")
+	}
+	if elapsed := time.Since(start); elapsed < time.Duration(current.GracePeriod) {
+		t.Errorf("termination returned after %s, before its grace period expired", elapsed)
+	}
+
+	release()
+	if _, err := io.Copy(io.Discard, response.Body); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func appWithPendingResponse(t *testing.T, http2 bool) (*App, *http.Response, func()) {
+	t.Helper()
+
+	released := make(chan struct{})
+	release := sync.OnceFunc(func() { close(released) })
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, "before")
+		http.NewResponseController(w).Flush()
+		select {
+		case <-released:
+			fmt.Fprintln(w, "after")
+		case <-r.Context().Done():
+		}
+	}))
+	server.EnableHTTP2 = http2
+	server.StartTLS()
+	t.Cleanup(server.Close)
+	t.Cleanup(release)
+
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := server.Client().Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { response.Body.Close() })
+	if http2 && response.ProtoMajor != 2 {
+		t.Fatalf("expected HTTP/2, got %s", response.Proto)
+	}
+	app := &App{
+		Servers: map[string]*Server{"test": {server: server.Config}},
+		logger:  zap.NewNop(),
+	}
+	t.Cleanup(func() {
+		release()
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		server.Config.Shutdown(ctx)
+	})
+	return app, response, release
+}
 
 // TestServerErrorLoggerLevels verifies that recovered net/http handler panics
 // written to http.Server.ErrorLog surface at ERROR level (so they're visible
