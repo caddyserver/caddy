@@ -29,6 +29,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pires/go-proxyproto"
@@ -37,6 +38,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/net/http2"
+	"golang.org/x/net/idna"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -164,6 +166,9 @@ type HTTPTransport struct {
 
 	h3Transport   *http3.Transport // TODO: EXPERIMENTAL (May 2024)
 	quicTransport *quic.Transport  // used by h3Transport if sni placeholder is used, otherwise nil
+
+	dynamicTLSConnLimiter *transportConnLimiter
+	dynamicTLSTransports  *dynamicTLSTransportCache
 }
 
 // CaddyModule returns the Caddy module information.
@@ -178,6 +183,107 @@ var (
 	allowedVersions       = []string{"1.1", "2", "h2c", "3"}
 	allowedVersionsString = strings.Join(allowedVersions, ", ")
 )
+
+type proxyLookupCtxKey struct{}
+
+type proxyLookupResult struct {
+	url *url.URL
+	err error
+}
+
+type dynamicTLSTransportCache struct {
+	mu         sync.Mutex
+	transports map[string]*http.Transport
+	closed     bool
+}
+
+func (c *dynamicTLSTransportCache) loadOrNew(key string, newTransport func() (*http.Transport, error)) (*http.Transport, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.closed {
+		return nil, fmt.Errorf("dynamic TLS transport cache is closed")
+	}
+	if transport := c.transports[key]; transport != nil {
+		return transport, nil
+	}
+	transport, err := newTransport()
+	if err != nil {
+		return nil, err
+	}
+	c.transports[key] = transport
+	return transport, nil
+}
+
+func (c *dynamicTLSTransportCache) closeIdleConnections() {
+	c.mu.Lock()
+	c.closed = true
+	transports := c.transports
+	c.transports = nil
+	c.mu.Unlock()
+
+	for _, transport := range transports {
+		transport.CloseIdleConnections()
+	}
+}
+
+type transportConnLimiter struct {
+	mu      sync.Mutex
+	limit   int
+	entries map[string]*transportConnLimitEntry
+}
+
+type transportConnLimitEntry struct {
+	permits chan struct{}
+	refs    int
+}
+
+func (l *transportConnLimiter) acquire(ctx context.Context, key string) (func(), error) {
+	l.mu.Lock()
+	entry := l.entries[key]
+	if entry == nil {
+		entry = &transportConnLimitEntry{permits: make(chan struct{}, l.limit)}
+		l.entries[key] = entry
+	}
+	entry.refs++
+	l.mu.Unlock()
+
+	select {
+	case entry.permits <- struct{}{}:
+		var once sync.Once
+		return func() {
+			once.Do(func() {
+				<-entry.permits
+				l.releaseRef(key, entry)
+			})
+		}, nil
+	case <-ctx.Done():
+		l.releaseRef(key, entry)
+		return nil, ctx.Err()
+	}
+}
+
+func (l *transportConnLimiter) releaseRef(key string, entry *transportConnLimitEntry) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	entry.refs--
+	if entry.refs == 0 && l.entries[key] == entry {
+		delete(l.entries, key)
+	}
+}
+
+type releaseConn struct {
+	net.Conn
+	release func()
+	once    sync.Once
+}
+
+func (c *releaseConn) Close() error {
+	err := c.Conn.Close()
+	c.once.Do(c.release)
+	return err
+}
 
 // Provision sets up h.Transport with a *http.Transport
 // that is ready to use.
@@ -205,6 +311,20 @@ func (h *HTTPTransport) Provision(ctx caddy.Context) error {
 
 // NewTransport builds a standard-lib-compatible http.Transport value from h.
 func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, error) {
+	if h.TLS != nil && strings.Contains(h.TLS.ServerName, "{") {
+		h.dynamicTLSTransports = &dynamicTLSTransportCache{transports: make(map[string]*http.Transport)}
+	} else {
+		h.dynamicTLSTransports = nil
+	}
+	if h.MaxConnsPerHost > 0 {
+		h.dynamicTLSConnLimiter = &transportConnLimiter{
+			limit:   h.MaxConnsPerHost,
+			entries: make(map[string]*transportConnLimitEntry),
+		}
+	} else {
+		h.dynamicTLSConnLimiter = nil
+	}
+
 	// Set keep-alive defaults if it wasn't otherwise configured
 	if h.KeepAlive == nil {
 		h.KeepAlive = new(KeepAlive)
@@ -393,16 +513,20 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 	}
 	// we need to keep track if a proxy is used for a request
 	proxyWrapper := func(req *http.Request) (*url.URL, error) {
-		if proxy == nil {
-			return nil, nil
+		var result proxyLookupResult
+		var cached bool
+		if result, cached = req.Context().Value(proxyLookupCtxKey{}).(proxyLookupResult); !cached {
+			if proxy == nil {
+				return nil, nil
+			}
+			result.url, result.err = proxy(req)
 		}
-		u, err := proxy(req)
-		if u == nil || err != nil {
-			return u, err
+		if result.url == nil || result.err != nil {
+			return result.url, result.err
 		}
 		// there must be a proxy for this request
-		caddyhttp.SetVar(req.Context(), proxyVarKey, u)
-		return u, nil
+		caddyhttp.SetVar(req.Context(), proxyVarKey, result.url)
+		return result.url, nil
 	}
 
 	rt := &http.Transport{
@@ -649,7 +773,107 @@ func (h *HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return h.h3Transport.RoundTrip(req)
 	}
 
-	return h.Transport.RoundTrip(req)
+	if req.URL.Scheme != "https" || h.TLS == nil || !strings.Contains(h.TLS.ServerName, "{") || h.Transport.Proxy == nil {
+		return h.Transport.RoundTrip(req)
+	}
+
+	proxyURL, proxyErr := h.Transport.Proxy(req)
+	requestCtx := context.WithValue(req.Context(), proxyLookupCtxKey{}, proxyLookupResult{url: proxyURL, err: proxyErr})
+	req = req.WithContext(requestCtx)
+	if proxyURL == nil || proxyErr != nil {
+		return h.Transport.RoundTrip(req)
+	}
+	repl := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	serverName := repl.ReplaceAll(h.Transport.TLSClientConfig.ServerName, "")
+	cacheKey := dynamicTLSConnKey(req, proxyURL) + "\x00" + serverName
+	transport, err := h.dynamicTLSTransports.loadOrNew(cacheKey, func() (*http.Transport, error) {
+		return h.newDynamicTLSTransport(req, proxyURL, serverName)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return transport.RoundTrip(req)
+}
+
+func (h *HTTPTransport) newDynamicTLSTransport(req *http.Request, proxyURL *url.URL, serverName string) (*http.Transport, error) {
+	// CONNECT tunnels bypass DialTLSContext, so use a transport whose TLS
+	// configuration is specific to the expanded server name.
+	transport := h.Transport.Clone()
+	transport.TLSClientConfig.ServerName = serverName
+
+	// Preserve max_conns_per_host across transports with different TLS configs.
+	if h.dynamicTLSConnLimiter != nil {
+		baseDialContext := transport.DialContext
+		connKey := dynamicTLSConnKey(req, proxyURL)
+		transport.MaxConnsPerHost = 0
+		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			release, err := h.dynamicTLSConnLimiter.acquire(ctx, connKey)
+			if err != nil {
+				return nil, err
+			}
+			conn, err := baseDialContext(ctx, network, addr)
+			if err != nil {
+				release()
+				return nil, err
+			}
+			return &releaseConn{Conn: conn, release: release}, nil
+		}
+	}
+
+	// Give HTTP/2 an isolated connection pool too.
+	if slices.Contains(h.Versions, "2") || slices.Contains(h.Versions, "h2c") {
+		transport.TLSNextProto = nil
+		if err := http2.ConfigureTransport(transport); err != nil {
+			return nil, fmt.Errorf("configuring HTTP/2 transport clone: %v", err)
+		}
+	}
+
+	if strings.EqualFold(proxyURL.Scheme, "https") {
+		baseDialContext := transport.DialContext
+		proxyTLSConfig := transport.TLSClientConfig.Clone()
+		proxyTLSConfig.ServerName = proxyURL.Hostname()
+		transport.DialTLSContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			conn, err := baseDialContext(ctx, network, addr)
+			if err != nil {
+				return nil, err
+			}
+			tlsConfig := proxyTLSConfig.Clone()
+			if caddyhttp.GetVar(ctx, tlsH1OnlyVarKey) == true {
+				tlsConfig.NextProtos = nil
+			}
+			tlsConn := tls.Client(conn, tlsConfig)
+			if transport.TLSHandshakeTimeout != 0 {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeoutCause(ctx, transport.TLSHandshakeTimeout, fmt.Errorf("HTTP transport TLS handshake %ds timeout", int(transport.TLSHandshakeTimeout.Seconds())))
+				defer cancel()
+			}
+			if err := tlsConn.HandshakeContext(ctx); err != nil {
+				_ = tlsConn.Close()
+				return nil, err
+			}
+			return tlsConn, nil
+		}
+	}
+
+	return transport, nil
+}
+
+func dynamicTLSConnKey(req *http.Request, proxyURL *url.URL) string {
+	port := req.URL.Port()
+	if port == "" {
+		port = "443"
+	}
+	targetHost := req.URL.Hostname()
+	if asciiHost, err := idna.Lookup.ToASCII(targetHost); err == nil {
+		targetHost = asciiHost
+	}
+	targetAddr := net.JoinHostPort(strings.ToLower(targetHost), port)
+	key := proxyURL.String() + "\x00" + req.URL.Scheme + "\x00" + targetAddr
+	if caddyhttp.GetVar(req.Context(), tlsH1OnlyVarKey) == true {
+		key += "\x00h1"
+	}
+	return key
 }
 
 // SetScheme ensures that the outbound request req
@@ -711,11 +935,14 @@ func (h HTTPTransport) ProxyProtocolEnabled() bool {
 }
 
 // Cleanup implements caddy.CleanerUpper and closes any idle connections.
-func (h HTTPTransport) Cleanup() error {
+func (h *HTTPTransport) Cleanup() error {
 	if h.Transport == nil {
 		return nil
 	}
 	h.Transport.CloseIdleConnections()
+	if h.dynamicTLSTransports != nil {
+		h.dynamicTLSTransports.closeIdleConnections()
+	}
 	// h3 related cleanup, errors are ignored as nothing can be done.
 	// TODO: log these errors if any
 	if h.h3Transport != nil {
