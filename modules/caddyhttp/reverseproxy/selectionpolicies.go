@@ -880,9 +880,7 @@ func hostByHashing(pool []*Upstream, s string) *Upstream {
 
 // hash calculates a fast hash based on s.
 func hash(s string) uint64 {
-	h := xxhash.New()
-	_, _ = h.Write([]byte(s))
-	return h.Sum64()
+	return xxhash.Sum64String(s)
 }
 
 func loadFallbackPolicy(d *caddyfile.Dispenser) (json.RawMessage, error) {
