@@ -1110,15 +1110,9 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 // that H3 is not silently broken by webtransport.Server.ServeQUICConn rejecting
 // every connection.
 func (s *Server) serveH3AcceptLoop(h3ln http3.QUICListener) {
-	if !s.webTransportEnabled() {
-		_ = s.h3server.ServeListener(h3ln)
-		return
-	}
-	if wtLn, ok := h3ln.(interface{ SupportsWebTransport() bool }); ok && !wtLn.SupportsWebTransport() {
-		if c := s.logger.Check(zapcore.WarnLevel, "WebTransport unavailable: QUIC listener was created without DATAGRAM support; restart Caddy to apply webtransport"); c != nil {
-			c.Write(zap.Stringer("address", h3ln.Addr()))
-		}
-		_ = s.h3server.ServeListener(h3ln)
+	h3 := s.http3ServerForListener(h3ln)
+	if h3 != s.h3server || s.wtServer == nil {
+		_ = h3.ServeListener(h3ln)
 		return
 	}
 	for {
@@ -1137,6 +1131,29 @@ func (s *Server) serveH3AcceptLoop(h3ln http3.QUICListener) {
 	}
 }
 
+// http3ServerForListener returns the HTTP/3 server that should serve h3ln.
+// When WebTransport is off, or when the listener was created without the
+// QUIC capabilities WT needs (pooled listener reused after a reload), this
+// is a plain HTTP/3 server that does not advertise WT in SETTINGS. The
+// latter case logs a warning: the config asked for WebTransport but this
+// socket cannot provide it.
+func (s *Server) http3ServerForListener(h3ln http3.QUICListener) *http3.Server {
+	if !s.webTransportEnabled() {
+		return s.h3server
+	}
+	if wtLn, ok := h3ln.(interface{ SupportsWebTransport() bool }); ok && !wtLn.SupportsWebTransport() {
+		if c := s.logger.Check(zapcore.WarnLevel, "WebTransport unavailable: QUIC listener was created without DATAGRAM support; restart Caddy to apply webtransport"); c != nil {
+			c.Write(zap.Stringer("address", h3ln.Addr()))
+		}
+		var tlsCfg *tls.Config
+		if s.h3server != nil {
+			tlsCfg = s.h3server.TLSConfig
+		}
+		return s.buildHTTP3ServerWithWebTransport(tlsCfg, false)
+	}
+	return s.h3server
+}
+
 // buildHTTP3Server constructs the http3.Server used by this server for
 // HTTP/3. When WebTransport is enabled, the server is additionally
 // configured for WebTransport: WT enablement is advertised in SETTINGS,
@@ -1146,6 +1163,10 @@ func (s *Server) serveH3AcceptLoop(h3ln http3.QUICListener) {
 // those modifications are applied and the returned server is
 // bit-for-bit identical to the pre-WebTransport implementation.
 func (s *Server) buildHTTP3Server(tlsCfg *tls.Config) *http3.Server {
+	return s.buildHTTP3ServerWithWebTransport(tlsCfg, s.webTransportEnabled())
+}
+
+func (s *Server) buildHTTP3ServerWithWebTransport(tlsCfg *tls.Config, enableWT bool) *http3.Server {
 	qc := &quic.Config{
 		Versions:          []quic.Version{quic.Version1, quic.Version2},
 		InitialPacketSize: 1200,
@@ -1158,7 +1179,7 @@ func (s *Server) buildHTTP3Server(tlsCfg *tls.Config) *http3.Server {
 		QUICConfig:     qc,
 		IdleTimeout:    time.Duration(s.IdleTimeout),
 	}
-	if s.webTransportEnabled() {
+	if enableWT {
 		qc.EnableStreamResetPartialDelivery = true
 		webtransport.ConfigureHTTP3Server(h3)
 	}
