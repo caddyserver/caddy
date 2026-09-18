@@ -1622,12 +1622,39 @@ func TestServeH3AcceptLoopFallsBackWhenListenerLacksWebTransport(t *testing.T) {
 	s := &Server{
 		WebTransport: new(WebTransportConfig),
 		logger:       zap.New(core),
-		h3server:           &http3.Server{},
+		h3server:     &http3.Server{},
 		// wtServer left nil: WebTransport path would nil-panic
 	}
-	// Must not panic: fallback uses h3server.ServeListener, not wtServer.
+	// Must not panic: fallback uses a plain ServeListener, not wtServer.
 	s.serveH3AcceptLoop(stubQUICListenerWithoutWT{})
 
+	if logs.FilterMessageSnippet("WebTransport unavailable").Len() != 1 {
+		t.Errorf("expected fallback warning to be logged, got logs: %v", logs.All())
+	}
+}
+
+// TestHTTP3ServerForListenerOmitsWebTransportSettingsWhenListenerLacksSupport
+// is the SETTINGS half of the fallback: the server used for that listener
+// must not advertise WebTransport, even though the parent Server opted in.
+func TestHTTP3ServerForListenerOmitsWebTransportSettingsWhenListenerLacksSupport(t *testing.T) {
+	core, logs := observer.New(zapcore.WarnLevel)
+	tlsCfg := &tls.Config{}
+	s := &Server{
+		WebTransport: new(WebTransportConfig),
+		logger:       zap.New(core),
+	}
+	s.h3server = s.buildHTTP3Server(tlsCfg)
+	assert.True(t, s.h3server.EnableDatagrams)
+	assert.NotEmpty(t, s.h3server.AdditionalSettings)
+
+	plain := s.http3ServerForListener(stubQUICListenerWithoutWT{})
+	if plain == s.h3server {
+		t.Fatal("fallback must not reuse the WebTransport-configured HTTP/3 server")
+	}
+	assert.False(t, plain.EnableDatagrams, "fallback must not enable DATAGRAMs")
+	assert.Empty(t, plain.AdditionalSettings, "fallback must not advertise WebTransport SETTINGS")
+	assert.Nil(t, plain.ConnContext)
+	assert.False(t, plain.QUICConfig.EnableStreamResetPartialDelivery)
 	if logs.FilterMessageSnippet("WebTransport unavailable").Len() != 1 {
 		t.Errorf("expected fallback warning to be logged, got logs: %v", logs.All())
 	}
