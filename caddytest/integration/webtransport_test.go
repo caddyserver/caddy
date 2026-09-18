@@ -28,6 +28,7 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -130,6 +131,208 @@ func TestWebTransport_ReverseProxyForwardsHeaders(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("upstream did not observe forwarded CONNECT headers in time")
+	}
+}
+
+// TestWebTransport_ReverseProxyForwardsPreparedHost proves header_up Host
+// is the CONNECT :authority the upstream sees. Dialer.Dial would otherwise
+// overwrite Host from the dial URL.
+func TestWebTransport_ReverseProxyForwardsPreparedHost(t *testing.T) {
+	if testing.Short() {
+		t.Skip()
+	}
+
+	gotHost := make(chan string, 1)
+	upstreamAddr, stopUpstream := startStandaloneWebTransport(t, func(sess *webtransport.Session, r *http.Request) {
+		select {
+		case gotHost <- r.Host:
+		default:
+		}
+		_ = sess.CloseWithError(0, "")
+	})
+	t.Cleanup(stopUpstream)
+
+	wantHost := fmt.Sprintf("127.0.0.1:%d", upstreamAddr.Port)
+	startWTProxy(t, wtReverseProxyHandler(fmt.Sprintf(`
+		"headers": {"request": {"set": {"Host": [%q]}}},
+		"upstreams": [{"dial": "127.0.0.1:%d"}]`, wantHost, upstreamAddr.Port)))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, sess := dialWT(t, ctx, nil, nil)
+	defer sess.CloseWithError(0, "")
+
+	select {
+	case got := <-gotHost:
+		if got != wantHost {
+			t.Errorf("upstream Host = %q, want %q", got, wantHost)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("upstream did not observe Host in time")
+	}
+}
+
+// TestWebTransport_ReverseProxyHeaderUpAvailableProtocols proves protocol
+// negotiation reads the prepared request, so header_up can inject
+// WT-Available-Protocols even when the client omitted the offer.
+func TestWebTransport_ReverseProxyHeaderUpAvailableProtocols(t *testing.T) {
+	if testing.Short() {
+		t.Skip()
+	}
+
+	gotHdr := make(chan http.Header, 1)
+	upstreamAddr, stopUpstream := startStandaloneWebTransport(t, func(sess *webtransport.Session, r *http.Request) {
+		select {
+		case gotHdr <- r.Header.Clone():
+		default:
+		}
+		_ = sess.CloseWithError(0, "")
+	}, "moqt-19")
+	t.Cleanup(stopUpstream)
+
+	// Client offers moqt-19 (so it will accept that selection). header_up
+	// replaces the prepared offer with moqt-19 plus a marker token. Parsing
+	// origReq would hide the marker from the upstream.
+	offer := `"moqt-19", "x-caddy-test"`
+	startWTProxy(t, wtReverseProxyHandler(fmt.Sprintf(`
+		"headers": {"request": {"set": {"WT-Available-Protocols": [%q]}}},
+		"upstreams": [{"dial": "127.0.0.1:%d"}]`, offer, upstreamAddr.Port)))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	rsp, sess := dialWT(t, ctx, nil, []string{"moqt-19"})
+	defer sess.CloseWithError(0, "")
+	if rsp != nil {
+		defer rsp.Body.Close()
+	}
+	if got := sess.SessionState().ApplicationProtocol; got != "moqt-19" {
+		t.Errorf("client ApplicationProtocol = %q, want moqt-19", got)
+	}
+	select {
+	case hdr := <-gotHdr:
+		if got := hdr.Get("WT-Available-Protocols"); !strings.Contains(got, "x-caddy-test") {
+			t.Errorf("upstream WT-Available-Protocols = %q, want header_up marker x-caddy-test", got)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("upstream did not observe CONNECT headers in time")
+	}
+}
+
+// TestWebTransport_ReverseProxyHeaderDown copies non-hop upstream response
+// headers onto the client 200 and applies header_down.
+func TestWebTransport_ReverseProxyHeaderDown(t *testing.T) {
+	if testing.Short() {
+		t.Skip()
+	}
+
+	upstreamAddr, stopUpstream := startStandaloneWebTransportBeforeUpgrade(t,
+		func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("X-Upstream", "from-backend")
+		},
+		func(sess *webtransport.Session, _ *http.Request) {
+			_ = sess.CloseWithError(0, "")
+		},
+	)
+	t.Cleanup(stopUpstream)
+
+	startWTProxy(t, wtReverseProxyHandler(fmt.Sprintf(`
+		"headers": {"response": {"set": {"X-Down": ["from-caddy"]}}},
+		"upstreams": [{"dial": "127.0.0.1:%d"}]`, upstreamAddr.Port)))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	rsp, sess := dialWT(t, ctx, nil, nil)
+	defer sess.CloseWithError(0, "")
+	if rsp != nil {
+		defer rsp.Body.Close()
+	}
+	if got := rsp.Header.Get("X-Upstream"); got != "from-backend" {
+		t.Errorf("X-Upstream = %q, want from-backend", got)
+	}
+	if got := rsp.Header.Get("X-Down"); got != "from-caddy" {
+		t.Errorf("X-Down = %q, want from-caddy", got)
+	}
+}
+
+// TestWebTransport_ReverseProxyAccessLogStatus records a hijacked 200 on
+// the response recorder so access logs do not report status 0.
+func TestWebTransport_ReverseProxyAccessLogStatus(t *testing.T) {
+	if testing.Short() {
+		t.Skip()
+	}
+
+	logFile := t.TempDir() + "/access.log"
+	upstreamAddr, stopUpstream := startStandaloneWebTransport(t, func(sess *webtransport.Session, _ *http.Request) {
+		_ = sess.CloseWithError(0, "")
+	})
+	t.Cleanup(stopUpstream)
+
+	cfg := fmt.Sprintf(`{
+  "admin": {"listen": "localhost:2999"},
+  "logging": {
+    "logs": {
+      "default": {
+        "exclude": ["http.log.access"]
+      },
+      "wtaccess": {
+        "writer": {"output": "file", "filename": %q},
+        "encoder": {"format": "json"},
+        "include": ["http.log.access"]
+      }
+    }
+  },
+  "apps": {
+    "http": {
+      "http_port": 9080,
+      "https_port": 9443,
+      "grace_period": 1,
+      "servers": {
+        "proxy": {
+          "listen": [":9443"],
+          "protocols": ["h3"],
+          "webtransport": {},
+          "logs": {"default_logger_name": "wtaccess"},
+          "routes": [{"handle": [%s]}],
+          "tls_connection_policies": [{
+            "certificate_selection": {"any_tag": ["cert0"]},
+            "default_sni": "a.caddy.localhost"
+          }]
+        }
+      }
+    },
+    "tls": {
+      "certificates": {
+        "load_files": [{
+          "certificate": "/a.caddy.localhost.crt",
+          "key": "/a.caddy.localhost.key",
+          "tags": ["cert0"]
+        }]
+      }
+    },
+    "pki": {"certificate_authorities": {"local": {"install_trust": false}}}
+  }
+}`, logFile, wtReverseProxyHandler(fmt.Sprintf(`"upstreams": [{"dial": "127.0.0.1:%d"}]`, upstreamAddr.Port)))
+
+	caddytest.NewTester(t).InitServer(cfg, "json")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	rsp, sess := dialWT(t, ctx, nil, nil)
+	if rsp != nil {
+		_ = rsp.Body.Close()
+	}
+	_ = sess.CloseWithError(0, "")
+
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		b, err := os.ReadFile(logFile)
+		if err == nil && strings.Contains(string(b), `"status":200`) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("access log did not record status 200; file=%q err=%v", b, err)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
 
@@ -409,19 +612,64 @@ func TestWebTransport_InFlightRequestsTracked(t *testing.T) {
 	}
 }
 
+// TestWebTransport_ReloadClosesActiveSession holds an in-flight WebTransport
+// session and reloads Caddy to a config with no HTTP servers. With the
+// default eternal grace period, HTTP/3 Shutdown waits for ServeQUICConn,
+// which waits for WT sessions — so wtServer.Close must run first, or the
+// session (and shutdown) hang until the client disconnects.
+func TestWebTransport_ReloadClosesActiveSession(t *testing.T) {
+	if testing.Short() {
+		t.Skip()
+	}
+
+	upstreamAddr, stopUpstream := startStandaloneWebTransport(t, func(sess *webtransport.Session, r *http.Request) {
+		<-sess.Context().Done()
+	})
+	t.Cleanup(stopUpstream)
+
+	tester := caddytest.NewTester(t)
+	tester.InitServer(wtJSONEternalGrace(`"proxy": `+wtH3Server(":9443",
+		wtReverseProxyHandler(fmt.Sprintf(`"upstreams": [{"dial": "127.0.0.1:%d"}]`, upstreamAddr.Port)))), "json")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	_, sess := dialWT(t, ctx, nil, nil)
+	defer sess.CloseWithError(0, "")
+
+	// Drop the HTTP app so Stop runs against the still-open WT session.
+	tester.InitServer(`{"admin": {"listen": "localhost:2999"}}`, "json")
+
+	select {
+	case <-sess.Context().Done():
+	case <-time.After(3 * time.Second):
+		t.Fatal("active WebTransport session was not closed on reload")
+	}
+}
+
 func startWTProxy(t *testing.T, handlerJSON string) {
 	t.Helper()
 	caddytest.NewTester(t).InitServer(wtJSON(`"proxy": `+wtH3Server(":9443", handlerJSON)), "json")
 }
 
 func wtJSON(serversJSON string) string {
+	return wtJSONWithHTTPPrefix(serversJSON, `"grace_period": 1,`)
+}
+
+// wtJSONEternalGrace omits grace_period so shutdown waits until connections
+// drain — the default, and the case that hangs if WebTransport sessions are
+// closed after HTTP/3 Shutdown instead of before.
+func wtJSONEternalGrace(serversJSON string) string {
+	return wtJSONWithHTTPPrefix(serversJSON, "")
+}
+
+func wtJSONWithHTTPPrefix(serversJSON, httpPrefix string) string {
 	return fmt.Sprintf(`{
   "admin": {"listen": "localhost:2999"},
   "apps": {
     "http": {
       "http_port": 9080,
       "https_port": 9443,
-      "grace_period": 1,
+      %s
       "servers": { %s }
     },
     "tls": {
@@ -437,7 +685,7 @@ func wtJSON(serversJSON string) string {
     },
     "pki": {"certificate_authorities": {"local": {"install_trust": false}}}
   }
-}`, serversJSON)
+}`, httpPrefix, serversJSON)
 }
 
 func wtH3Server(listen, handlerJSON string) string {
@@ -560,6 +808,10 @@ func waitForUpstreamRequests(t *testing.T, dial string, wantRequests int, timeou
 // port with a self-signed cert. handler runs after a successful Upgrade.
 // Returns the listener addr and a shutdown func.
 func startStandaloneWebTransport(t *testing.T, handler func(s *webtransport.Session, r *http.Request), protocols ...string) (*net.UDPAddr, func()) {
+	return startStandaloneWebTransportBeforeUpgrade(t, nil, handler, protocols...)
+}
+
+func startStandaloneWebTransportBeforeUpgrade(t *testing.T, beforeUpgrade func(http.ResponseWriter, *http.Request), handler func(s *webtransport.Session, r *http.Request), protocols ...string) (*net.UDPAddr, func()) {
 	t.Helper()
 	tlsCfg := newSelfSignedTLSConfig(t, "localhost")
 
@@ -582,6 +834,9 @@ func startStandaloneWebTransport(t *testing.T, handler func(s *webtransport.Sess
 		CheckOrigin: func(*http.Request) bool { return true },
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if beforeUpgrade != nil {
+			beforeUpgrade(w, r)
+		}
 		sess, err := wtServer.Upgrade(w, r)
 		if err != nil {
 			t.Logf("standalone WebTransport upgrade failed: %v", err)
