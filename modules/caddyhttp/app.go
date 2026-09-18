@@ -803,6 +803,17 @@ func (app *App) Stop() error {
 			}
 		}
 
+		// Close WebTransport sessions before HTTP/3 Shutdown. ServeQUICConn
+		// waits for those sessions, and with the default eternal grace period
+		// Shutdown would otherwise hang until every WT client disconnects.
+		if server.wtServer != nil {
+			if err := server.wtServer.Close(); err != nil {
+				app.logger.Error("WebTransport server close",
+					zap.Error(err),
+					zap.Strings("addresses", server.Listen))
+			}
+		}
+
 		if err := server.h3server.Shutdown(ctx); err != nil {
 			if cause := context.Cause(ctx); cause != nil && errors.Is(err, context.DeadlineExceeded) {
 				err = cause
@@ -810,17 +821,6 @@ func (app *App) Stop() error {
 			app.logger.Error("HTTP/3 server shutdown",
 				zap.Error(err),
 				zap.Strings("addresses", server.Listen))
-		}
-
-		// WebTransport session state is managed separately from the
-		// HTTP/3 server; Close after Shutdown to drop any remaining
-		// sessions and terminate the per-connection accept goroutines.
-		if server.wtServer != nil {
-			if err := server.wtServer.Close(); err != nil {
-				app.logger.Error("WebTransport server close",
-					zap.Error(err),
-					zap.Strings("addresses", server.Listen))
-			}
 		}
 
 		// close the underlying net.PacketConns now
