@@ -20,7 +20,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
+	"time"
 
 	"github.com/dunglas/httpsfv"
 	"github.com/quic-go/quic-go"
@@ -138,35 +140,27 @@ func (h *Handler) webTransportHijack(rw http.ResponseWriter, req *http.Request, 
 	// the request's encoded path and query.
 	//
 	// Application protocol negotiation (draft-ietf-webtrans-http3 §3.3)
-	// is relayed, not chosen here: parse the client's offer from origReq,
-	// put it on the upstream Dialer, and copy the upstream's WT-Protocol
-	// onto the client 200. Strip the offer from the forwarded headers so
-	// the Dialer remashals a spec-correct list. The shared
+	// is relayed, not chosen here: parse the offer from the prepared
+	// request (so transport and header_up ops apply), put it on the
+	// upstream Dialer, and copy the upstream's WT-Protocol onto the
+	// client 200. Strip the offer from the forwarded headers so the
+	// Dialer remashals a spec-correct list. The shared
 	// webtransport.Server keeps ApplicationProtocols empty so Caddy does
 	// not independently select a protocol.
-	offered := parseWTAvailableProtocols(origReq.Header)
+	offered := parseWTAvailableProtocols(req.Header)
 	req.Header.Del(wtAvailableProtocolsHeader)
 	upstreamURL := "https://" + di.Address + req.URL.RequestURI()
-	upstreamResp, upstreamSess, err := dialUpstreamWebTransport(req.Context(), tlsCfg, upstreamURL, req.Header, offered)
+	dialStart := time.Now()
+	upstreamResp, upstreamSess, err := dialUpstreamWebTransport(req.Context(), tlsCfg, upstreamURL, req.Header, offered, req.Host)
 	if err != nil {
 		return DialError{fmt.Errorf("webtransport upstream dial: %w", err)}
 	}
 	defer upstreamResp.Body.Close()
+	latency := time.Since(dialStart)
 
-	// Response-header ops (gated by Require, if configured) apply to the
-	// 200 OK the client will see. webtransport.Server.Upgrade flushes
-	// w.Header() along with the status, so setting these before Upgrade
-	// is sufficient. Matching against the upstream response mirrors the
-	// normal proxy path where upstream response == client response.
-	if h.Headers != nil && h.Headers.Response != nil {
-		if h.Headers.Response.Require == nil ||
-			h.Headers.Response.Require.Match(upstreamResp.StatusCode, upstreamResp.Header) {
-			h.Headers.Response.ApplyTo(rw.Header(), repl)
-		}
-	}
-	if proto := upstreamResp.Header.Get(wtProtocolHeader); proto != "" {
-		rw.Header().Set(wtProtocolHeader, proto)
-	}
+	// Copy filtered upstream headers, then apply header_down. Upgrade
+	// flushes rw.Header() with the 200, so this must happen first.
+	applyWebTransportResponseHeaders(rw, upstreamResp, h, repl)
 
 	clientSess, err := wtServer.Upgrade(naked, origReq)
 	if err != nil {
@@ -174,8 +168,12 @@ func (h *Handler) webTransportHijack(rw http.ResponseWriter, req *http.Request, 
 		return terminalError{caddyhttp.Error(http.StatusBadRequest,
 			fmt.Errorf("webtransport upgrade: %w", err))}
 	}
+	caddyhttp.RecordHijackedStatus(rw, http.StatusOK)
 
 	runWebTransportPump(clientSess, upstreamSess, h.logger)
+	h.recordUpstreamRoundTrip(di, repl, upstreamResp.StatusCode, latency)
+	repl.Set("http.reverse_proxy.upstream.duration", time.Since(dialStart))
+	repl.Set("http.reverse_proxy.upstream.duration_ms", time.Since(dialStart).Seconds()*1e3)
 	return nil
 }
 
@@ -186,10 +184,24 @@ func (h *Handler) webTransportHijack(rw http.ResponseWriter, req *http.Request, 
 // webtransport.Dialer.Dial: (response, session, error).
 // applicationProtocols is the client's WT-Available-Protocols offer,
 // forwarded so the Dialer will accept the upstream's WT-Protocol choice.
+// host, if non-empty, is the prepared Host / :authority for the CONNECT
+// (header_up Host); the QUIC dial still uses the URL host.
 //
 // EXPERIMENTAL: this helper is an internal building block for the upcoming
 // WebTransport reverse-proxy transport. Shape and behavior may change.
-func dialUpstreamWebTransport(ctx context.Context, tlsCfg *tls.Config, urlStr string, reqHdr http.Header, applicationProtocols []string) (*http.Response, *webtransport.Session, error) {
+func dialUpstreamWebTransport(ctx context.Context, tlsCfg *tls.Config, urlStr string, reqHdr http.Header, applicationProtocols []string, host string) (*http.Response, *webtransport.Session, error) {
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		return nil, nil, err
+	}
+	dialAddr := u.Host
+	if host != "" {
+		// Dialer.Dial always sets req.Host from the URL host, so put the
+		// prepared Host there. DialAddr keeps the QUIC dial on the real
+		// upstream address.
+		u.Host = host
+		urlStr = u.String()
+	}
 	d := &webtransport.Dialer{
 		TLSClientConfig:      tlsCfg,
 		ApplicationProtocols: applicationProtocols,
@@ -197,8 +209,32 @@ func dialUpstreamWebTransport(ctx context.Context, tlsCfg *tls.Config, urlStr st
 			EnableDatagrams:                  true,
 			EnableStreamResetPartialDelivery: true,
 		},
+		DialAddr: func(ctx context.Context, _ string, tlsCfg *tls.Config, cfg *quic.Config) (*quic.Conn, error) {
+			return quic.DialAddrEarly(ctx, dialAddr, tlsCfg, cfg)
+		},
 	}
 	return d.Dial(ctx, urlStr, reqHdr)
+}
+
+// applyWebTransportResponseHeaders copies non-hop upstream response headers
+// onto the client writer and then applies configured header_down ops, matching
+// finalizeResponse for regular proxy responses.
+func applyWebTransportResponseHeaders(rw http.ResponseWriter, upstream *http.Response, h *Handler, repl *caddy.Replacer) {
+	hdr := upstream.Header.Clone()
+	if hdr == nil {
+		hdr = make(http.Header)
+	}
+	removeConnectionHeaders(hdr)
+	for _, hop := range hopHeaders {
+		hdr.Del(hop)
+	}
+	if h.Headers != nil && h.Headers.Response != nil {
+		if h.Headers.Response.Require == nil ||
+			h.Headers.Response.Require.Match(upstream.StatusCode, hdr) {
+			h.Headers.Response.ApplyTo(hdr, repl)
+		}
+	}
+	copyHeader(rw.Header(), hdr)
 }
 
 // parseWTAvailableProtocols extracts application-protocol tokens from a

@@ -1093,30 +1093,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 		)
 	}
 
-	// duration until upstream wrote response headers (roundtrip duration)
-	repl.Set("http.reverse_proxy.upstream.latency", duration)
-	repl.Set("http.reverse_proxy.upstream.latency_ms", duration.Seconds()*1e3) // multiply seconds to preserve decimal (see #4666)
-
-	// update circuit breaker on current conditions
-	if di.Upstream.cb != nil {
-		di.Upstream.cb.RecordMetric(res.StatusCode, duration)
-	}
-
-	// perform passive health checks (if enabled)
-	if h.HealthChecks != nil && h.HealthChecks.Passive != nil {
-		// strike if the status code matches one that is "bad"
-		for _, badStatus := range h.HealthChecks.Passive.UnhealthyStatus {
-			if caddyhttp.StatusCodeMatches(res.StatusCode, badStatus) {
-				h.countFailure(di.Upstream)
-			}
-		}
-
-		// strike if the roundtrip took too long
-		if h.HealthChecks.Passive.UnhealthyLatency > 0 &&
-			duration >= time.Duration(h.HealthChecks.Passive.UnhealthyLatency) {
-			h.countFailure(di.Upstream)
-		}
-	}
+	h.recordUpstreamRoundTrip(di, repl, res.StatusCode, duration)
 
 	// if enabled, buffer the response body
 	if h.ResponseBuffers != 0 {
@@ -1566,6 +1543,31 @@ func copyHeader(dst, src http.Header) {
 	for k, vv := range src {
 		for _, v := range vv {
 			dst.Add(k, v)
+		}
+	}
+}
+
+// recordUpstreamRoundTrip publishes latency placeholders, records circuit
+// breaker metrics, and applies passive health-check strikes for one
+// completed upstream attempt. Used by both the HTTP round-trip path and
+// the WebTransport hijack path.
+func (h *Handler) recordUpstreamRoundTrip(di DialInfo, repl *caddy.Replacer, status int, duration time.Duration) {
+	repl.Set("http.reverse_proxy.upstream.latency", duration)
+	repl.Set("http.reverse_proxy.upstream.latency_ms", duration.Seconds()*1e3) // multiply seconds to preserve decimal (see #4666)
+
+	if di.Upstream != nil && di.Upstream.cb != nil {
+		di.Upstream.cb.RecordMetric(status, duration)
+	}
+
+	if h.HealthChecks != nil && h.HealthChecks.Passive != nil {
+		for _, badStatus := range h.HealthChecks.Passive.UnhealthyStatus {
+			if caddyhttp.StatusCodeMatches(status, badStatus) {
+				h.countFailure(di.Upstream)
+			}
+		}
+		if h.HealthChecks.Passive.UnhealthyLatency > 0 &&
+			duration >= time.Duration(h.HealthChecks.Passive.UnhealthyLatency) {
+			h.countFailure(di.Upstream)
 		}
 	}
 }
