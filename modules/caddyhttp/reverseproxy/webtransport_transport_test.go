@@ -26,12 +26,16 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 	"github.com/quic-go/webtransport-go"
+
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
 )
 
 // startTestWebTransportServer starts an in-process WebTransport server on a
@@ -140,7 +144,7 @@ func TestDialUpstreamWebTransport_Succeeds(t *testing.T) {
 	defer cancel()
 
 	url := fmt.Sprintf("https://localhost:%d/", addr.Port)
-	rsp, sess, err := dialUpstreamWebTransport(ctx, clientTLSFor(root), url, nil, nil)
+	rsp, sess, err := dialUpstreamWebTransport(ctx, clientTLSFor(root), url, nil, nil, "")
 	if err != nil {
 		t.Fatalf("dial failed: %v", err)
 	}
@@ -169,7 +173,7 @@ func TestDialUpstreamWebTransport_ForwardsHeaders(t *testing.T) {
 	hdr := http.Header{"User-Agent": []string{"caddy-wt-test"}}
 
 	url := fmt.Sprintf("https://localhost:%d/", addr.Port)
-	rsp, sess, err := dialUpstreamWebTransport(ctx, clientTLSFor(root), url, hdr, nil)
+	rsp, sess, err := dialUpstreamWebTransport(ctx, clientTLSFor(root), url, hdr, nil, "")
 	if err != nil {
 		t.Fatalf("dial failed: %v", err)
 	}
@@ -198,7 +202,7 @@ func TestDialUpstreamWebTransport_BadAddress(t *testing.T) {
 	// Use a loopback port we picked at random and left unbound.
 	freePort := pickFreeUDPPort(t)
 	url := fmt.Sprintf("https://127.0.0.1:%d/", freePort)
-	_, _, err := dialUpstreamWebTransport(ctx, &tls.Config{InsecureSkipVerify: true}, url, nil, nil) //nolint:gosec // test only
+	_, _, err := dialUpstreamWebTransport(ctx, &tls.Config{InsecureSkipVerify: true}, url, nil, nil, "") //nolint:gosec // test only
 	if err == nil {
 		t.Fatal("expected error dialing unbound port, got nil")
 	}
@@ -260,7 +264,7 @@ func TestDialUpstreamWebTransport_NegotiatesProtocol(t *testing.T) {
 	defer cancel()
 
 	url := fmt.Sprintf("https://localhost:%d/", addr.Port)
-	rsp, sess, err := dialUpstreamWebTransport(ctx, clientTLSFor(root), url, nil, []string{"moqt-19"})
+	rsp, sess, err := dialUpstreamWebTransport(ctx, clientTLSFor(root), url, nil, []string{"moqt-19"}, "")
 	if err != nil {
 		t.Fatalf("dial failed: %v", err)
 	}
@@ -273,6 +277,74 @@ func TestDialUpstreamWebTransport_NegotiatesProtocol(t *testing.T) {
 	}
 	if got := rsp.Header.Get(wtProtocolHeader); got == "" {
 		t.Error("expected WT-Protocol on the response")
+	}
+}
+
+func TestDialUpstreamWebTransport_PreparedHost(t *testing.T) {
+	if testing.Short() {
+		t.Skip()
+	}
+	gotHost := make(chan string, 1)
+	addr, root, shutdown := startTestWebTransportServer(t, func(sess *webtransport.Session, r *http.Request) {
+		gotHost <- r.Host
+		_ = sess.CloseWithError(0, "")
+	})
+	t.Cleanup(shutdown)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	url := fmt.Sprintf("https://localhost:%d/", addr.Port)
+	wantHost := "wt.example.test"
+	rsp, sess, err := dialUpstreamWebTransport(ctx, clientTLSFor(root), url, nil, nil, wantHost)
+	if err != nil {
+		t.Fatalf("dial failed: %v", err)
+	}
+	defer sess.CloseWithError(0, "")
+	if rsp != nil {
+		defer rsp.Body.Close()
+	}
+	select {
+	case got := <-gotHost:
+		if got != wantHost {
+			t.Errorf("Host = %q, want %q", got, wantHost)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("server handler did not observe Host in time")
+	}
+}
+
+func TestApplyWebTransportResponseHeaders(t *testing.T) {
+	rw := httptest.NewRecorder()
+	up := &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"X-Upstream":     []string{"yes"},
+			"Connection":     []string{"keep-alive"},
+			"Keep-Alive":     []string{"timeout=5"},
+			wtProtocolHeader: []string{"moqt-19"},
+		},
+	}
+	h := &Handler{
+		Headers: &headers.Handler{
+			Response: &headers.RespHeaderOps{
+				HeaderOps: &headers.HeaderOps{
+					Set: http.Header{"X-Down": []string{"from-caddy"}},
+				},
+			},
+		},
+	}
+	applyWebTransportResponseHeaders(rw, up, h, caddy.NewReplacer())
+	if got := rw.Header().Get("X-Upstream"); got != "yes" {
+		t.Errorf("X-Upstream = %q, want yes", got)
+	}
+	if got := rw.Header().Get("X-Down"); got != "from-caddy" {
+		t.Errorf("X-Down = %q, want from-caddy", got)
+	}
+	if got := rw.Header().Get(wtProtocolHeader); got != "moqt-19" {
+		t.Errorf("WT-Protocol = %q, want moqt-19", got)
+	}
+	if got := rw.Header().Get("Keep-Alive"); got != "" {
+		t.Errorf("hop-by-hop Keep-Alive leaked: %q", got)
 	}
 }
 
@@ -289,4 +361,3 @@ func pickFreeUDPPort(t *testing.T) int {
 	_ = l.Close()
 	return port
 }
-
