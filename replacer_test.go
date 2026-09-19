@@ -530,3 +530,35 @@ func testReplacer() Replacer {
 		mapMutex:  &sync.RWMutex{},
 	}
 }
+
+func TestReplacerDefaultValue(t *testing.T) {
+	rep := NewReplacer()
+	rep.Set("name", "John")
+	rep.Set("empty", "")
+
+	for i, tc := range []struct {
+		input, expect string
+	}{
+		// a recognized, non-empty placeholder ignores its default
+		{input: "{name:default}", expect: "John"},
+		// a recognized but empty placeholder uses its default
+		{input: "{empty:default}", expect: "default"},
+		// the default may itself be empty
+		{input: "{empty:}", expect: ""},
+		// the default may contain spaces and other characters
+		{input: "{empty:a default value}", expect: "a default value"},
+		// only the first colon delimits the default
+		{input: "{empty:a:b:c}", expect: "a:b:c"},
+		// a default has no effect without a colon
+		{input: "{empty}", expect: ""},
+		{input: "{name}", expect: "John"},
+		// an unrecognized placeholder name is left untouched (no default is
+		// applied), which also preserves JSON-like input
+		{input: "{unknown:default}", expect: ""},
+		{input: `{"json": "object"}`, expect: ""},
+	} {
+		if actual := rep.ReplaceAll(tc.input, ""); actual != tc.expect {
+			t.Errorf("Test %d: for input %q: expected %q but got %q", i, tc.input, tc.expect, actual)
+		}
+	}
+}
