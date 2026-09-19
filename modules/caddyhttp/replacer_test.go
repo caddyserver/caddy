@@ -19,6 +19,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -335,3 +336,73 @@ func TestHTTPVarReplacementUUID(t *testing.T) {
 	}
 }
 
+// failingBodyReader serves some bytes and then returns a fixed error, to
+// exercise the read failure path of the request body placeholders.
+type failingBodyReader struct {
+	data []byte
+	pos  int
+	err  error
+}
+
+func (b *failingBodyReader) Read(p []byte) (int, error) {
+	if b.pos < len(b.data) {
+		n := copy(p, b.data[b.pos:])
+		b.pos += n
+		return n, nil
+	}
+	return 0, b.err
+}
+
+func (b *failingBodyReader) Close() error { return nil }
+
+// TestRequestBodyPlaceholderErrorScoping verifies that only a max_size-driven
+// handler error from the request body read becomes a RequestBodyLimitError,
+// while every other error keeps the placeholder's old ignore-and-truncate
+// behavior.
+func TestRequestBodyPlaceholderErrorScoping(t *testing.T) {
+	maxBytes := &http.MaxBytesError{Limit: 10}
+	for _, tc := range []struct {
+		name       string
+		readErr    error
+		wantMarker bool
+	}{
+		{name: "max_size handler error becomes the marker", readErr: HandlerError{Err: maxBytes, StatusCode: http.StatusRequestEntityTooLarge}, wantMarker: true},
+		{name: "unrelated handler error keeps old behavior", readErr: HandlerError{Err: errors.New("boom"), StatusCode: http.StatusInternalServerError}},
+		{name: "raw max bytes error keeps old behavior", readErr: maxBytes},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/", nil)
+			req.Body = &failingBodyReader{data: []byte("abc"), err: tc.readErr}
+
+			body, err := readRequestBodyForPlaceholder(req)
+
+			if !tc.wantMarker {
+				if err != nil {
+					t.Fatalf("unrelated errors must be ignored like before but got %v", err)
+				}
+				if string(body) != "abc" {
+					t.Errorf("expected the truncated prefix %q but got %q", "abc", body)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("expected the body limit marker but got none")
+			}
+			var marker RequestBodyLimitError
+			if !errors.As(err, &marker) {
+				t.Fatalf("expected RequestBodyLimitError but got %T", err)
+			}
+			var handlerErr HandlerError
+			if errors.As(err, &handlerErr) {
+				t.Error("the marker must not be detectable as a HandlerError")
+			}
+			if marker.StatusCode() != http.StatusRequestEntityTooLarge {
+				t.Errorf("expected status 413 but got %d", marker.StatusCode())
+			}
+			var maxErr *http.MaxBytesError
+			if !errors.As(err, &maxErr) {
+				t.Error("the marker must unwrap to the MaxBytesError")
+			}
+		})
+	}
+}
