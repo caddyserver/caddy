@@ -34,7 +34,9 @@ func init() {
 
 // parseCaddyfileRewrite sets up a basic rewrite handler from Caddyfile tokens. Syntax:
 //
-//	rewrite [<matcher>] <to>
+//	rewrite [<matcher>] <to> {
+//		force_modify_query
+//	}
 //
 // Only URI components which are given in <to> will be set in the resulting URI.
 // See the docs for the rewrite handler for more information.
@@ -50,12 +52,30 @@ func parseCaddyfileRewrite(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue,
 		return nil, h.Errf("too many arguments; should only be a matcher and a URI")
 	}
 
+	parseBlock := func(rewr *Rewrite) error {
+		for nesting := h.Nesting(); h.NextBlock(nesting); {
+			switch h.Val() {
+			case "force_modify_query":
+				rewr.ForceModifyQuery = true
+
+			default:
+				return h.Errf("unknown subdirective: %s", h.Val())
+			}
+		}
+		return nil
+	}
+
 	// with only one arg, assume it's a rewrite URI with no matcher token
 	if argsCount == 1 {
 		if !h.NextArg() {
 			return nil, h.ArgErr()
 		}
-		return h.NewRoute(nil, Rewrite{URI: h.Val()}), nil
+		rewr := Rewrite{URI: h.Val()}
+		err := parseBlock(&rewr)
+		if err != nil {
+			return nil, err
+		}
+		return h.NewRoute(nil, rewr), nil
 	}
 
 	// parse the matcher token into a matcher set
@@ -66,7 +86,12 @@ func parseCaddyfileRewrite(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue,
 	h.Next() // consume directive name again, matcher parsing does a reset
 	h.Next() // advance to the rewrite URI
 
-	return h.NewRoute(userMatcherSet, Rewrite{URI: h.Val()}), nil
+	rewr := Rewrite{URI: h.Val()}
+	err = parseBlock(&rewr)
+	if err != nil {
+		return nil, err
+	}
+	return h.NewRoute(userMatcherSet, rewr), nil
 }
 
 // parseCaddyfileMethod sets up a basic method rewrite handler from Caddyfile tokens. Syntax:
