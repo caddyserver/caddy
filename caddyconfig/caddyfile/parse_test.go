@@ -1072,6 +1072,21 @@ func TestImportedSnippetDefinitionRetainsBlockPlaceholder(t *testing.T) {
 	}
 }
 
+func TestResolveImportGlob(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "a.caddy"), []byte("a\n"), 0o600)
+	os.WriteFile(filepath.Join(dir, "b.caddy"), []byte("b\n"), 0o600)
+	os.WriteFile(filepath.Join(dir, ".hidden.caddy"), []byte("h\n"), 0o600)
+	importer := filepath.Join(dir, "Caddyfile")
+	matches, _, err := resolveImportGlob(importer, "*.caddy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 2 { // dotfile skipped for glob
+		t.Errorf("got %d matches, want 2: %v", len(matches), matches)
+	}
+}
+
 func testParser(input string) parser {
 	return parser{Dispenser: NewTestDispenser(input)}
 }

@@ -34,6 +34,13 @@ type (
 		token        Token
 		line         int
 		skippedLines int
+
+		// format-mode configuration and state (Tasks 4-6)
+		opts       LexOptions
+		src        []byte // original input, for raw slicing
+		pos        int    // bytes consumed from src
+		lastSize   int    // byte size of the most recently read rune
+		tokenStart int    // byte offset in src where the current token began
 	}
 
 	// Token represents a single parsable unit.
@@ -45,16 +52,40 @@ type (
 		wasQuoted     rune // enclosing quote character, if any
 		heredocMarker string
 		snippetName   string
+
+		// format mode only (populated by Lex with LexOptions; zero on the parse path)
+		raw             string // verbatim source bytes of the token
+		isComment       bool   // this token is a # comment spanning to end-of-line
+		precededBySpace bool   // whitespace separated this token from the previous one on the same line
+		continuation    bool   // this token followed a '\'+newline line continuation
 	}
 )
 
-// Tokenize takes bytes as input and lexes it into
-// a list of tokens that can be parsed as a Caddyfile.
-// Also takes a filename to fill the token's File as
-// the source of the tokens, which is important to
-// determine relative paths for `import` directives.
+// LexOptions configures optional, non-default lexer behavior used for
+// formatting. The zero value reproduces Tokenize exactly.
+type LexOptions struct {
+	// Comments, when true, emits comment tokens (spanning '#' to end of line)
+	// instead of discarding comments.
+	Comments bool
+	// Raw, when true, records each token's verbatim source bytes in Token.raw.
+	Raw bool
+}
+
+// Tokenize takes bytes as input and lexes it into a list of tokens that can be
+// parsed as a Caddyfile. filename fills each token's File field.
 func Tokenize(input []byte, filename string) ([]Token, error) {
-	l := lexer{}
+	return Lex(input, filename, LexOptions{})
+}
+
+// Lex tokenizes input like Tokenize, but with the given options. With the zero
+// LexOptions it is identical to Tokenize. Format-mode options (Comments, Raw)
+// populate additional Token state used by the formatter and are not needed for
+// parsing.
+func Lex(input []byte, filename string, opts LexOptions) ([]Token, error) {
+	l := lexer{opts: opts}
+	if opts.Raw {
+		l.src = input
+	}
 	if err := l.load(bytes.NewReader(input)); err != nil {
 		return nil, err
 	}
@@ -73,6 +104,37 @@ func Tokenize(input []byte, filename string) ([]Token, error) {
 	return tokens, nil
 }
 
+// readRune reads the next rune and advances the byte position tracker.
+func (l *lexer) readRune() (rune, error) {
+	ch, size, err := l.reader.ReadRune()
+	if err == nil {
+		l.lastSize = size
+		l.pos += size
+	}
+	return ch, err
+}
+
+// unreadRune pushes back the last rune read by readRune, keeping pos in sync.
+func (l *lexer) unreadRune() error {
+	if err := l.reader.UnreadRune(); err != nil {
+		return err
+	}
+	l.pos -= l.lastSize
+	l.lastSize = 0
+	return nil
+}
+
+// rawSlice returns the verbatim source of the current token. trimLast
+// excludes the most recently read rune (used when a delimiter terminated
+// the token and should not be part of its raw span).
+func (l *lexer) rawSlice(trimLast bool) string {
+	end := l.pos
+	if trimLast {
+		end -= l.lastSize
+	}
+	return string(l.src[l.tokenStart:end])
+}
+
 // load prepares the lexer to scan an input for tokens.
 // It discards any leading byte order mark.
 func (l *lexer) load(input io.Reader) error {
@@ -80,12 +142,12 @@ func (l *lexer) load(input io.Reader) error {
 	l.line = 1
 
 	// discard byte order mark, if present
-	firstCh, _, err := l.reader.ReadRune()
+	firstCh, err := l.readRune()
 	if err != nil {
 		return err
 	}
 	if firstCh != 0xFEFF {
-		err := l.reader.UnreadRune()
+		err := l.unreadRune()
 		if err != nil {
 			return err
 		}
@@ -108,11 +170,21 @@ func (l *lexer) next() (bool, error) {
 	var val []rune
 	var comment, quoted, btQuoted, inHeredoc, heredocEscaped, escaped bool
 	var heredocMarker string
+	var tokenStartSet bool // whether l.tokenStart has been set for the current token
 
-	makeToken := func(quoted rune) bool {
+	// format-mode separator tracking: record how this token was separated from
+	// the previous one. Only maintained when opts.Comments || opts.Raw.
+	formatMode := l.opts.Comments || l.opts.Raw
+	var sawSpace, sawContinuation bool
+
+	makeToken := func(quoted rune, trimLast bool) bool {
 		l.token.Text = string(val)
 		l.token.wasQuoted = quoted
 		l.token.heredocMarker = heredocMarker
+		if l.opts.Raw {
+			l.token.raw = l.rawSlice(trimLast)
+		}
+		tokenStartSet = false
 		return true
 	}
 
@@ -121,14 +193,21 @@ func (l *lexer) next() (bool, error) {
 		// read some characters, make a token. If we
 		// reached EOF, then no more tokens to read.
 		// If no EOF, then we had a problem.
-		ch, _, err := l.reader.ReadRune()
+		ch, err := l.readRune()
 		if err != nil {
 			if len(val) > 0 {
 				if inHeredoc {
 					return false, fmt.Errorf("incomplete heredoc <<%s on line #%d, expected ending marker %s", heredocMarker, l.line+l.skippedLines, heredocMarker)
 				}
 
-				return makeToken(0), nil
+				return makeToken(0, false), nil
+			}
+			// An empty-bodied heredoc that hits EOF with no closing marker is
+			// silently dropped on the parse path (existing behavior). In format
+			// mode this loses the token and breaks idempotency, so surface it as
+			// an error there; Format then falls back to preserving the input.
+			if inHeredoc && formatMode {
+				return false, fmt.Errorf("incomplete heredoc <<%s on line #%d, expected ending marker %s", heredocMarker, l.line+l.skippedLines, heredocMarker)
 			}
 			if err == io.EOF {
 				return false, nil
@@ -141,7 +220,7 @@ func (l *lexer) next() (bool, error) {
 			len(val) > 1 && string(val[:2]) == "<<" {
 			// a space means it's just a regular token and not a heredoc
 			if ch == ' ' {
-				return makeToken(0), nil
+				return makeToken(0, true), nil
 			}
 
 			// skip CR, we only care about LF
@@ -196,7 +275,7 @@ func (l *lexer) next() (bool, error) {
 				// set the line counter, and make the token
 				l.line += l.skippedLines
 				l.skippedLines = 0
-				return makeToken('<'), nil
+				return makeToken('<', false), nil
 			}
 
 			// stay in the heredoc until we find the ending marker
@@ -206,6 +285,11 @@ func (l *lexer) next() (bool, error) {
 		// track whether we found an escape '\' for the next
 		// iteration to be contextually aware
 		if !escaped && !btQuoted && ch == '\\' {
+			// a leading backslash starts a new token (e.g. \<<marker)
+			if l.opts.Raw && len(val) == 0 && !tokenStartSet {
+				l.tokenStart = l.pos - l.lastSize
+				tokenStartSet = true
+			}
 			escaped = true
 			continue
 		}
@@ -220,7 +304,7 @@ func (l *lexer) next() (bool, error) {
 				escaped = false
 			} else {
 				if (quoted && ch == '"') || (btQuoted && ch == '`') {
-					return makeToken(ch), nil
+					return makeToken(ch, false), nil
 				}
 			}
 			// allow quoted text to wrap continue on multiple lines
@@ -240,41 +324,99 @@ func (l *lexer) next() (bool, error) {
 			}
 			// end of the line
 			if ch == '\n' {
-				// newlines can be escaped to chain arguments
-				// onto multiple lines; else, increment the line count
-				if escaped {
-					l.skippedLines++
-					escaped = false
+				// when emitting comment tokens, the newline is handled in the
+				// comment block below (unread + return); don't process it here.
+				if comment && l.opts.Comments {
+					// fall through to the comment block below
 				} else {
-					l.line += 1 + l.skippedLines
-					l.skippedLines = 0
+					// newlines can be escaped to chain arguments
+					// onto multiple lines; else, increment the line count
+					if escaped {
+						l.skippedLines++
+						escaped = false
+						if formatMode {
+							sawContinuation = true
+						}
+					} else {
+						l.line += 1 + l.skippedLines
+						l.skippedLines = 0
+					}
+					// comments (#) are single-line only
+					comment = false
+					// any kind of space means we're at the end of this token
+					if len(val) > 0 {
+						return makeToken(0, true), nil
+					}
+					continue
 				}
-				// comments (#) are single-line only
-				comment = false
+			} else {
+				// non-newline space: end token if we have one (unless in comment mode)
+				if comment && l.opts.Comments {
+					// spaces inside a comment are part of the comment text; fall through
+				} else {
+					if len(val) > 0 {
+						return makeToken(0, true), nil
+					}
+					if formatMode {
+						sawSpace = true
+					}
+					continue
+				}
 			}
-			// any kind of space means we're at the end of this token
-			if len(val) > 0 {
-				return makeToken(0), nil
-			}
-			continue
 		}
 
 		// comments must be at the start of a token,
 		// in other words, preceded by space or newline
 		if ch == '#' && len(val) == 0 {
 			comment = true
+			if l.opts.Comments {
+				// begin a comment token; record its start for raw capture
+				l.tokenStart = l.pos - l.lastSize
+				tokenStartSet = true
+				l.token = Token{Line: l.line, isComment: true}
+				if formatMode {
+					l.token.precededBySpace = sawSpace
+					l.token.continuation = sawContinuation
+					sawSpace, sawContinuation = false, false
+				}
+			}
 		}
 		if comment {
+			if l.opts.Comments {
+				// a newline ends the comment; don't consume it (leave line accounting
+				// to the normal whitespace path on the next iteration)
+				if ch == '\n' {
+					if err := l.unreadRune(); err != nil {
+						return false, err
+					}
+					l.token.isComment = true
+					return makeToken(0, false), nil
+				}
+				val = append(val, ch)
+			}
 			continue
 		}
 
 		if len(val) == 0 {
 			l.token = Token{Line: l.line}
+			if formatMode {
+				l.token.precededBySpace = sawSpace
+				l.token.continuation = sawContinuation
+				sawSpace, sawContinuation = false, false
+			}
 			if ch == '"' {
+				if l.opts.Raw && !tokenStartSet {
+					l.tokenStart = l.pos - l.lastSize
+					tokenStartSet = true
+				}
 				quoted = true
 				continue
 			}
 			if ch == '`' {
+				if l.opts.Raw && !tokenStartSet {
+					l.tokenStart = l.pos - l.lastSize
+					tokenStartSet = true
+				}
 				btQuoted = true
 				continue
 			}
@@ -288,6 +430,13 @@ func (l *lexer) next() (bool, error) {
 				val = append(val, '\\')
 			}
 			escaped = false
+		}
+
+		// first character of a new unquoted token (tokenStart may already be
+		// set by a leading backslash; only set it if not yet recorded)
+		if l.opts.Raw && len(val) == 0 && !tokenStartSet {
+			l.tokenStart = l.pos - l.lastSize
+			tokenStartSet = true
 		}
 
 		val = append(val, ch)
@@ -311,10 +460,13 @@ func (l *lexer) finalizeHeredoc(val []rune, marker string) ([]rune, error) {
 	paddingToStrip := stringVal[lastNewline+1 : len(stringVal)-len(marker)]
 
 	// iterate over each line and strip the whitespace from the front
-	var out string
+	var out strings.Builder
+	if lastNewline > 0 {
+		out.Grow(lastNewline)
+	}
 	for lineNum, lineText := range lines[:len(lines)-1] {
 		if lineText == "" || lineText == "\r" {
-			out += "\n"
+			out.WriteByte('\n')
 			continue
 		}
 
@@ -329,22 +481,45 @@ func (l *lexer) finalizeHeredoc(val []rune, marker string) ([]rune, error) {
 
 		// strip, then append the line, with the newline, to the output.
 		// also removes all "\r" because Windows.
-		out += strings.ReplaceAll(lineText[len(paddingToStrip):]+"\n", "\r", "")
+		for _, ch := range lineText[len(paddingToStrip):] {
+			if ch != '\r' {
+				out.WriteRune(ch)
+			}
+		}
+		out.WriteByte('\n')
 	}
 
 	// Remove the trailing newline from the loop
-	if len(out) > 0 && out[len(out)-1] == '\n' {
-		out = out[:len(out)-1]
+	result := out.String()
+	if len(result) > 0 && result[len(result)-1] == '\n' {
+		result = result[:len(result)-1]
 	}
 
 	// return the final value
-	return []rune(out), nil
+	return []rune(result), nil
 }
 
 // Quoted returns true if the token was enclosed in quotes
 // (i.e. double quotes, backticks, or heredoc).
 func (t Token) Quoted() bool {
 	return t.wasQuoted > 0
+}
+
+// Raw returns the verbatim source text of the token as it appeared in the
+// input, including quotes, backticks, escapes, and heredoc framing. It is only
+// populated when the token was produced by Lex in format mode; otherwise it
+// falls back to the processed Text.
+func (t Token) Raw() string {
+	if t.raw != "" {
+		return t.raw
+	}
+	return t.Text
+}
+
+// IsComment returns true if the token is a comment. Comment tokens are only
+// produced by Lex in format mode.
+func (t Token) IsComment() bool {
+	return t.isComment
 }
 
 // isOpenCurlyBrace returns true if the token is a structural (unquoted) open curly brace.
@@ -372,13 +547,17 @@ func (t Token) NumLineBreaks() int {
 // Clone returns a deep copy of the token.
 func (t Token) Clone() Token {
 	return Token{
-		File:          t.File,
-		imports:       append([]string{}, t.imports...),
-		Line:          t.Line,
-		Text:          t.Text,
-		wasQuoted:     t.wasQuoted,
-		heredocMarker: t.heredocMarker,
-		snippetName:   t.snippetName,
+		File:            t.File,
+		imports:         append([]string{}, t.imports...),
+		Line:            t.Line,
+		Text:            t.Text,
+		wasQuoted:       t.wasQuoted,
+		heredocMarker:   t.heredocMarker,
+		snippetName:     t.snippetName,
+		raw:             t.raw,
+		isComment:       t.isComment,
+		precededBySpace: t.precededBySpace,
+		continuation:    t.continuation,
 	}
 }
 
