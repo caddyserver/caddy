@@ -398,7 +398,7 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 			globResults, err = fs.Glob(fileSystem, fullPattern)
 			if err != nil {
 				if c := m.logger.Check(zapcore.ErrorLevel, "expanding glob"); c != nil {
-					c.Write(zap.Error(err))
+					c.Write(zap.Error(fmt.Errorf("%w: %s", err, fullPattern)))
 				}
 			}
 		}
