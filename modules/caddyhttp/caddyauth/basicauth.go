@@ -102,15 +102,18 @@ func (hba *HTTPBasicAuth) Provision(ctx caddy.Context) error {
 	// load account list
 	hba.Accounts = make(map[string]Account)
 	for i, acct := range hba.AccountList {
-		if _, ok := hba.Accounts[acct.Username]; ok {
-			return fmt.Errorf("account %d: username is not unique: %s", i, acct.Username)
-		}
-
 		acct.Username = repl.ReplaceAll(acct.Username, "")
 		acct.Password = repl.ReplaceAll(acct.Password, "")
 
 		if acct.Username == "" || acct.Password == "" {
 			return fmt.Errorf("account %d: username and password are required", i)
+		}
+
+		// Uniqueness must be checked after placeholder expansion so two
+		// accounts whose usernames only collide via {env.*} (or other
+		// replacements) are rejected instead of silently overwriting.
+		if _, ok := hba.Accounts[acct.Username]; ok {
+			return fmt.Errorf("account %d: username is not unique: %s", i, acct.Username)
 		}
 
 		// TODO: Remove support for redundantly-encoded b64-encoded hashes
