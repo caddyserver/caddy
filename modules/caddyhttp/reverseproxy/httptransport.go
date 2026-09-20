@@ -503,11 +503,10 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 	if len(h.Versions) == 1 && h.Versions[0] == "3" {
 		h.h3Transport = new(http3.Transport)
 		if h.TLS != nil {
-			var err error
-			h.h3Transport.TLSClientConfig, err = h.TLS.MakeTLSClientConfig(caddyCtx)
-			if err != nil {
-				return nil, fmt.Errorf("making TLS client config for HTTP/3 transport: %v", err)
-			}
+			// reuse the config built above; MakeTLSClientConfig must not be
+			// called twice, and we clone so the two transports can't affect
+			// each other's fields
+			h.h3Transport.TLSClientConfig = rt.TLSClientConfig.Clone()
 
 			if strings.Contains(h.TLS.ServerName, "{") {
 				// copied from quic-go
@@ -794,6 +793,10 @@ type TLSConfig struct {
 
 // MakeTLSClientConfig returns a tls.Config usable by a client to a backend.
 // If there is no custom TLS configuration, a nil config may be returned.
+//
+// This must only be called once per TLSConfig: loading the CA module consumes
+// CARaw, so a second call would silently return a config with no root CAs.
+// Clone the result instead if another copy is needed.
 func (t *TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) {
 	cfg := new(tls.Config)
 

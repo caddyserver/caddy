@@ -353,3 +353,45 @@ func TestHTTPTransport_DialContext_DialInfoOverride(t *testing.T) {
 		})
 	}
 }
+
+// TestHTTPTransportHTTP3TrustPool checks that the HTTP/3 transport gets the
+// configured CA pool. Loading the CA module clears CARaw, so building the TLS
+// config a second time used to leave HTTP/3 with no roots at all.
+func TestHTTPTransportHTTP3TrustPool(t *testing.T) {
+	const testCA = `MIIDSzCCAjOgAwIBAgIUfIRObjWNUA4jxQ/0x8BOCvE2Vw4wDQYJKoZIhvcNAQELBQAwFjEUMBIGA1UEAwwLRWFzeS1SU0EgQ0EwHhcNMTkwODI4MTYyNTU5WhcNMjkwODI1MTYyNTU5WjAWMRQwEgYDVQQDDAtFYXN5LVJTQSBDQTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAK5m5elxhQfMp/3aVJ4JnpN9PUSz6LlP6LePAPFU7gqohVVFVtDkChJAG3FNkNQNlieVTja/bgH9IcC6oKbROwdY1h0MvNV8AHHigvl03WuJD8g2ReVFXXwsnrPmKXCFzQyMI6TYk3m2gYrXsZOU1GLnfMRC3KAMRgE2F45twOs9hqG169YJ6mM2eQjzjCHWI6S2/iUYvYxRkCOlYUbLsMD/AhgAf1plzg6LPqNxtdlwxZnA0ytgkmhK67HtzJu0+ovUCsMv0RwcMhsEo9T8nyFAGt9XLZ63X5WpBCTUApaAUhnG0XnerjmUWb6eUWw4zev54sEfY5F3x002iQaW6cECAwEAAaOBkDCBjTAdBgNVHQ4EFgQU4CBUbZsS2GaNIkGRz/cBsD5ivjswUQYDVR0jBEowSIAU4CBUbZsS2GaNIkGRz/cBsD5ivjuhGqQYMBYxFDASBgNVBAMMC0Vhc3ktUlNBIENBghR8hE5uNY1QDiPFD/THwE4K8TZXDjAMBgNVHRMEBTADAQH/MAsGA1UdDwQEAwIBBjANBgkqhkiG9w0BAQsFAAOCAQEAKB3V4HIzoiO/Ch6WMj9bLJ2FGbpkMrcb/Eq01hT5zcfKD66lVS1MlK+cRL446Z2b2KDP1oFyVs+qmrmtdwrWgD+nfe2sBmmIHo9m9KygMkEOfG3MghGTEcS+0cTKEcoHYWYyOqQh6jnedXY8Cdm4GM1hAc9MiL3/sqV8YCVSLNnkoNysmr06/rZ0MCUZPGUtRmfd0heWhrfzAKw2HLgX+RAmpOE2MZqWcjvqKGyaRiaZks4nJkP6521aC2Lgp0HhCz1j8/uQ5ldoDszCnu/iro0NAsNtudTMD+YoLQxLqdleIh6CW+illc2VdXwj7mn6J04yns9jfE2jRjW/yTLFuQ==`
+
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+
+	ht := &HTTPTransport{
+		Versions: []string{"3"},
+		TLS: &TLSConfig{
+			CARaw: json.RawMessage(fmt.Sprintf(`{"provider":"inline","trusted_ca_certs":["%s"]}`, testCA)),
+		},
+	}
+
+	rt, err := ht.NewTransport(ctx)
+	if err != nil {
+		t.Fatalf("NewTransport: %v", err)
+	}
+
+	if ht.h3Transport == nil {
+		t.Fatal("expected an HTTP/3 transport")
+	}
+	if ht.h3Transport.TLSClientConfig == nil {
+		t.Fatal("HTTP/3 transport has no TLS config")
+	}
+	if ht.h3Transport.TLSClientConfig.RootCAs == nil {
+		t.Fatal("HTTP/3 transport has no root CAs")
+	}
+
+	// both transports must end up with the same roots
+	if !rt.TLSClientConfig.RootCAs.Equal(ht.h3Transport.TLSClientConfig.RootCAs) {
+		t.Error("HTTP/3 root CAs differ from the HTTP/1.1+2 transport")
+	}
+
+	// but not the same config, so they can't affect each other
+	if rt.TLSClientConfig == ht.h3Transport.TLSClientConfig {
+		t.Error("expected HTTP/3 to get a clone of the TLS config")
+	}
+}
