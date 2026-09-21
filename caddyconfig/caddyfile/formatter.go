@@ -367,6 +367,10 @@ func Format(input []byte) []byte {
 		beginningOfLine = false
 	}
 
+	if openBrace && !openBraceWritten {
+		write('{')
+	}
+
 	// the Caddyfile does not need any leading or trailing spaces, but...
 	trimmedResult := bytes.TrimSpace(out.Bytes())
 

@@ -495,6 +495,16 @@ import ./conf.d/matcher_not_my_subnet.caddy
 	order appsec after crowdsec
 }`,
 		},
+		{
+			description: "keep an opening brace that ends the input",
+			input:       `localhost {`,
+			expect:      `localhost {`,
+		},
+		{
+			description: "keep a standalone opening brace that ends the input",
+			input:       `{`,
+			expect:      `{`,
+		},
 	} {
 		// the formatter should output a trailing newline,
 		// even if the tests aren't written to expect that
