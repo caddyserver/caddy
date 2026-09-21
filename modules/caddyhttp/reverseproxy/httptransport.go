@@ -505,15 +505,7 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 		if h.TLS != nil {
 			// Reuse the TLS client config built above for the HTTP/1.1+2
 			// transport rather than calling MakeTLSClientConfig again.
-			// That method loads the CA module (tls_trust_pool) through
-			// ctx.LoadModule, which zeroes the raw module config after
-			// the first load, so a second call would silently produce
-			// a config with no RootCAs and the HTTP/3 transport would
-			// verify upstream certificates against the system roots.
-			// Building it once also avoids re-running client certificate
-			// management for client_certificate_automate.
-			// The h3 transport gets its own clone since both transports
-			// mutate their TLS config independently.
+			// Fixing: https://github.com/caddyserver/caddy/issues/8041
 			h.h3Transport.TLSClientConfig = rt.TLSClientConfig.Clone()
 
 			if strings.Contains(h.TLS.ServerName, "{") {
