@@ -308,7 +308,7 @@ func (h Handler) isBidirectionalStream(req *http.Request, res *http.Response) bo
 		(ae == "identity" || ae == "")
 }
 
-func (h Handler) copyResponse(dst http.ResponseWriter, src io.Reader, flushInterval time.Duration, logger *zap.Logger) error {
+func (h Handler) copyResponse(dst http.ResponseWriter, src io.Reader, firstChunk []byte, firstReadErr error, flushInterval time.Duration, logger *zap.Logger) error {
 	var w io.Writer = dst
 
 	if flushInterval != 0 {
@@ -332,6 +332,23 @@ func (h Handler) copyResponse(dst http.ResponseWriter, src io.Reader, flushInter
 		mlw.t = time.AfterFunc(flushInterval, mlw.delayedFlush)
 
 		w = mlw
+	}
+
+	if len(firstChunk) > 0 {
+		nw, werr := w.Write(firstChunk)
+		if werr != nil {
+			return fmt.Errorf("writing: %w", werr)
+		}
+		if nw != len(firstChunk) {
+			return io.ErrShortWrite
+		}
+	}
+
+	if firstReadErr != nil {
+		if firstReadErr == io.EOF {
+			return nil
+		}
+		return fmt.Errorf("reading: %w", firstReadErr)
 	}
 
 	buf := streamingBufPool.Get().(*[]byte)

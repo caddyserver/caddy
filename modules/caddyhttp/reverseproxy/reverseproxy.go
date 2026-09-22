@@ -1247,6 +1247,41 @@ func (h *Handler) finalizeResponse(
 		return nil
 	}
 
+	flushInterval := h.flushInterval(req, res)
+
+	// Check if this response is expected to have a body.
+	// Responses to HEAD requests, 1xx, 204 No Content, and 304 Not Modified never have a body.
+	// Also if Content-Length is explicitly 0, no body is expected.
+	hasBody := req.Method != http.MethodHead &&
+		res.StatusCode != http.StatusNoContent &&
+		res.StatusCode != http.StatusNotModified &&
+		res.StatusCode >= 200 &&
+		res.ContentLength != 0
+
+	var firstChunk []byte
+	var firstReadErr error
+
+	// If a body is expected and immediate flushing is not required, attempt to read
+	// the first chunk of the response body before writing headers downstream.
+	// If the upstream abruptly closes the connection or fails before sending any body,
+	// we haven't committed the downstream response yet, so we can retry or return 502
+	// instead of dropping the connection (see #7845).
+	if hasBody && flushInterval >= 0 {
+		buf := streamingBufPool.Get().(*[]byte)
+		var nr int
+		nr, firstReadErr = res.Body.Read(*buf)
+		if nr > 0 {
+			firstChunk = make([]byte, nr)
+			copy(firstChunk, (*buf)[:nr])
+		}
+		streamingBufPool.Put(buf)
+
+		if nr == 0 && firstReadErr != nil && firstReadErr != io.EOF {
+			_ = res.Body.Close()
+			return fmt.Errorf("reading response body from upstream: %w", firstReadErr)
+		}
+	}
+
 	// delete our Server header and use Via instead (see #6275)
 	rw.Header().Del("Server")
 	var protoPrefix string
@@ -1281,7 +1316,7 @@ func (h *Handler) finalizeResponse(
 		logger.Debug("wrote header")
 	}
 
-	err := h.copyResponse(rw, res.Body, h.flushInterval(req, res), logger)
+	err := h.copyResponse(rw, res.Body, firstChunk, firstReadErr, flushInterval, logger)
 	errClose := res.Body.Close() // close now, instead of defer, to populate res.Trailer
 	if h.VerboseLogs || errClose != nil {
 		if c := logger.Check(zapcore.DebugLevel, "closed response body from upstream"); c != nil {
@@ -1297,7 +1332,10 @@ func (h *Handler) finalizeResponse(
 		if c := logger.Check(zapcore.WarnLevel, "aborting with incomplete response"); c != nil {
 			c.Write(zap.Error(err))
 		}
-		// no extra logging from stdlib
+		// Flush any buffered headers and partial body so downstream client
+		// receives the truncated response instead of an empty reply.
+		//nolint:bodyclose
+		_ = http.NewResponseController(rw).Flush()
 		panic(http.ErrAbortHandler)
 	}
 
