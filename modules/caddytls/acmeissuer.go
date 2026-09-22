@@ -41,6 +41,28 @@ func init() {
 	caddy.RegisterModule(ACMEIssuer{})
 }
 
+const (
+	letsEncryptProductionDirectory = "https://acme-v02.api.letsencrypt.org/directory"
+	letsEncryptStagingDirectory    = "https://acme-staging-v02.api.letsencrypt.org/directory"
+	letsEncryptShortlivedProfile   = "shortlived"
+)
+
+// letsEncryptProfile returns the profile sent to the CA.
+// Let's Encrypt defaults to the shortlived profile. An explicit
+// profile, including "classic", is left alone. Other CAs do not
+// get a profile unless one was configured.
+func letsEncryptProfile(ca, profile string) string {
+	if profile != "" {
+		return profile
+	}
+	switch ca {
+	case "", letsEncryptProductionDirectory, letsEncryptStagingDirectory:
+		return letsEncryptShortlivedProfile
+	default:
+		return ""
+	}
+}
+
 // ACMEIssuer manages certificates using the ACME protocol (RFC 8555).
 type ACMEIssuer struct {
 	// The URL to the CA's ACME directory endpoint. Default:
@@ -63,6 +85,12 @@ type ACMEIssuer struct {
 	// Optionally select an ACME profile to use for certificate
 	// orders. Must be a profile name offered by the ACME server,
 	// which are listed at its directory endpoint.
+	//
+	// When this is empty and the CA is Let's Encrypt (the default
+	// directory, or either of Let's Encrypt's public directories),
+	// Caddy asks for the "shortlived" profile. Set this to "classic"
+	// to keep Let's Encrypt's long-lived profile. Other CAs are
+	// unchanged when this is empty.
 	//
 	// EXPERIMENTAL: Subject to change.
 	// See https://datatracker.ietf.org/doc/draft-aaron-acme-profiles/
@@ -256,7 +284,7 @@ func (iss *ACMEIssuer) makeIssuerTemplate(ctx caddy.Context) (certmagic.ACMEIssu
 		CA:                iss.CA,
 		TestCA:            iss.TestCA,
 		Email:             iss.Email,
-		Profile:           iss.Profile,
+		Profile:           letsEncryptProfile(iss.CA, iss.Profile),
 		AccountKeyPEM:     iss.AccountKey,
 		CertObtainTimeout: time.Duration(iss.ACMETimeout),
 		TrustedRoots:      iss.rootPool,
@@ -426,7 +454,7 @@ func (iss *ACMEIssuer) generateZeroSSLEABCredentials(ctx context.Context, acct a
 //	    dir <directory_url>
 //	    test_dir <test_directory_url>
 //	    email <email>
-//	    profile <profile_name>
+//	    profile <profile_name>  # Let's Encrypt default: shortlived. Use "classic" for the long-lived profile.
 //	    timeout <duration>
 //	    disable_http_challenge
 //	    disable_tlsalpn_challenge
