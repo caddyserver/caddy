@@ -505,6 +505,18 @@ import ./conf.d/matcher_not_my_subnet.caddy
 			input:       `{`,
 			expect:      `{`,
 		},
+		{
+			description: "keep adjacent opening braces that end the input",
+			input:       `{{`,
+			expect: `{
+	{`,
+		},
+		{
+			description: "keep spaced opening braces that end the input",
+			input:       `{ {`,
+			expect: `{
+	{`,
+		},
 	} {
 		// the formatter should output a trailing newline,
 		// even if the tests aren't written to expect that
