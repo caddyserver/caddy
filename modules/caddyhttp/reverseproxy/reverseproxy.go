@@ -1252,7 +1252,6 @@ func (h *Handler) finalizeResponse(
 	var (
 		buf         *[]byte
 		initialData []byte
-		initialErr  error
 	)
 
 	// If the response may have a body and does not require immediate flushing,
@@ -1262,14 +1261,14 @@ func (h *Handler) finalizeResponse(
 	// instead of dropping the connection (see #7845).
 	if h.shouldProbeResponseBody(req, res) {
 		buf = streamingBufPool.Get().(*[]byte)
-		var nr int
-		nr, initialErr = res.Body.Read(*buf)
+		nr, probeErr := res.Body.Read(*buf)
 		if nr > 0 {
 			initialData = (*buf)[:nr]
-		} else if initialErr != nil && initialErr != io.EOF {
+		}
+		if probeErr != nil && probeErr != io.EOF {
 			streamingBufPool.Put(buf)
 			_ = res.Body.Close()
-			return fmt.Errorf("reading response body from upstream: %w", initialErr)
+			return fmt.Errorf("reading response body from upstream: %w", probeErr)
 		}
 	}
 
@@ -1307,7 +1306,7 @@ func (h *Handler) finalizeResponse(
 		logger.Debug("wrote header")
 	}
 
-	err := h.copyResponse(rw, res.Body, buf, initialData, initialErr, flushInterval, logger)
+	err := h.copyResponse(rw, res.Body, buf, initialData, flushInterval, logger)
 	errClose := res.Body.Close() // close now, instead of defer, to populate res.Trailer
 	if h.VerboseLogs || errClose != nil {
 		if c := logger.Check(zapcore.DebugLevel, "closed response body from upstream"); c != nil {

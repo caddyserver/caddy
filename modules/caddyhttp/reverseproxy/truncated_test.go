@@ -100,6 +100,50 @@ func TestTruncatedResponse(t *testing.T) {
 		}
 	})
 
+	t.Run("both upstreams truncated returns 502", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("unexpected panic in ServeHTTP: %v", r)
+			}
+		}()
+
+		headerOnlyServer2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Length", "500")
+			w.WriteHeader(http.StatusOK)
+			_ = http.NewResponseController(w).Flush()
+			panic(http.ErrAbortHandler)
+		}))
+		t.Cleanup(headerOnlyServer2.Close)
+
+		upstreams := []*Upstream{
+			{Host: new(Host), Dial: headerOnlyServer.Listener.Addr().String()},
+			{Host: new(Host), Dial: headerOnlyServer2.Listener.Addr().String()},
+		}
+		h := minimalHandler(1, upstreams...)
+
+		req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+		req = prepareTestRequest(req)
+
+		rec := httptest.NewRecorder()
+		err := h.ServeHTTP(rec, req, caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			return nil
+		}))
+
+		gotStatus := rec.Code
+		if err != nil {
+			if herr, ok := err.(caddyhttp.HandlerError); ok {
+				gotStatus = herr.StatusCode
+			}
+		}
+
+		if gotStatus != http.StatusBadGateway {
+			t.Errorf("expected status %d (Bad Gateway) when both upstreams truncate, got %d (err: %v)", http.StatusBadGateway, gotStatus, err)
+		}
+		if rec.Flushed {
+			t.Errorf("expected downstream response to not be flushed when all upstreams truncate")
+		}
+	})
+
 	t.Run("clean response with Content-Length 0", func(t *testing.T) {
 		emptyBodyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Length", "0")
