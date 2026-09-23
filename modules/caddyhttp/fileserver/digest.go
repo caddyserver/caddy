@@ -121,6 +121,10 @@ func formatContentDigest(algos []string, content []byte) (string, error) {
 // Digest is emitted for 200 and 206 when Content-Encoding is absent or matches
 // a static precompressed sidecar; 304/416/other statuses omit it. HEAD 200
 // yields the empty-content digest (RFC 9530 Appendix B.2).
+//
+// For non-HEAD 200/206, Content-Length must be present and equal the buffered
+// byte count. Missing Content-Length omits the digest (e.g. multipart ranges);
+// a length mismatch or ReadFrom error fails finalize without committing.
 type contentDigestResponseWriter struct {
 	http.ResponseWriter
 	algos       []string
@@ -146,16 +150,12 @@ func (cd *contentDigestResponseWriter) WriteHeader(status int) {
 		cd.statusSet = true
 	}
 	// If ServeContent already advertised a body larger than the buffer budget,
-	// stream without digest instead of buffering. This only applies to requests
-	// with a body (not HEAD, where Content-Length describes the representation
-	// payload but no body bytes are buffered or sent).
+	// stream without digest instead of buffering. HEAD is excluded: its
+	// Content-Length describes the representation while the message body is empty.
+	// Missing Content-Length is handled in finalize (omit digest); we still
+	// buffer up to maxBuffer so ReadFrom errors remain observable.
 	if !cd.isHead && !cd.omitDigest && cd.maxBuffer > 0 {
-		cl := cd.Header().Get("Content-Length")
-		if cl == "" {
-			cd.omitDigest = true
-		} else if true { // length present
-		// was: if cl != ""
-		if cl != "" {
+		if cl := cd.Header().Get("Content-Length"); cl != "" {
 			if n, err := strconv.ParseInt(cl, 10, 64); err == nil && n > cd.maxBuffer {
 				cd.omitDigest = true
 			}
@@ -218,6 +218,7 @@ func (cd *contentDigestResponseWriter) switchToPassthrough() error {
 	cd.flushed = true
 	cd.omitDigest = true
 	cd.Header().Del("Content-Digest")
+	cd.releaseReservation()
 
 	status := cd.status
 	if !cd.statusSet {
@@ -248,6 +249,7 @@ func (cd *contentDigestResponseWriter) finalize() error {
 		return nil
 	}
 	if cd.readErr != nil {
+		cd.releaseReservation()
 		return fmt.Errorf("response body read error: %w", cd.readErr)
 	}
 	cd.flushed = true
@@ -258,14 +260,15 @@ func (cd *contentDigestResponseWriter) finalize() error {
 		status = http.StatusOK
 	}
 
-	// Validate buffered byte count against response Content-Length for non-HEAD 200/206 responses.
-	// http.ServeContent intentionally ignores the error from its final io.CopyN; if the source
-	// read fails prematurely, we must fail safely rather than committing a truncated body or
-	// publishing a digest over an incomplete response.
+	// Validate buffered byte count against response Content-Length for non-HEAD
+	// 200/206 responses. http.ServeContent intentionally ignores the error from
+	// its final io.CopyN; if the source read fails prematurely, we must fail
+	// safely rather than committing a truncated body or publishing a digest
+	// over an incomplete response.
 	if !cd.isHead && (status == http.StatusOK || status == http.StatusPartialContent) {
 		cl := cd.Header().Get("Content-Length")
 		if cl == "" {
-			// Cannot verify completeness (e.g. some range/precompressed responses).
+			// Cannot verify completeness (e.g. multipart ranges). Omit digest.
 			cd.omitDigest = true
 		} else if expectedLen, err := strconv.ParseInt(cl, 10, 64); err == nil && expectedLen >= 0 {
 			if int64(cd.buf.Len()) != expectedLen {
