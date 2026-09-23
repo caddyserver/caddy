@@ -527,7 +527,7 @@ func (app *App) Start() error {
 			// when h2c is enabled but h2 disabled, we already removed h2 from NextProtos
 			// the handshake will never succeed with h2
 			// http2.ConfigureServer will enable the server to handle both h2 and h2c
-			// ConfigureServer remains necessary for listener wrappers which do not expose a *tls.Conn.
+			// TODO: Migrate to http.Server.Protocols once listener-wrapper behaviour is covered.
 			//nolint:errcheck,staticcheck
 			http2.ConfigureServer(srv.server, new(http2.Server))
 		}
