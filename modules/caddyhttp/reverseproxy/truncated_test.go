@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
@@ -203,24 +204,17 @@ func TestTruncatedResponse(t *testing.T) {
 		}
 	})
 
-	t.Run("chunked header only returns 502 without panic", func(t *testing.T) {
-		defer func() {
-			if r := recover(); r != nil {
-				t.Fatalf("unexpected panic in ServeHTTP: %v", r)
-			}
-		}()
-
-		// Upstream sends chunked response without Content-Length, flushes headers, then immediately aborts.
-		chunkedServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Transfer-Encoding", "chunked")
+	t.Run("delayed fixed length response succeeds", func(t *testing.T) {
+		delayedServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Length", "11")
 			w.WriteHeader(http.StatusOK)
-			_ = http.NewResponseController(w).Flush()
-			panic(http.ErrAbortHandler)
+			time.Sleep(50 * time.Millisecond)
+			_, _ = io.WriteString(w, "hello world")
 		}))
-		t.Cleanup(chunkedServer.Close)
+		t.Cleanup(delayedServer.Close)
 
 		upstreams := []*Upstream{
-			{Host: new(Host), Dial: chunkedServer.Listener.Addr().String()},
+			{Host: new(Host), Dial: delayedServer.Listener.Addr().String()},
 		}
 		h := minimalHandler(0, upstreams...)
 
@@ -232,40 +226,31 @@ func TestTruncatedResponse(t *testing.T) {
 			return nil
 		}))
 
-		gotStatus := rec.Code
 		if err != nil {
-			if herr, ok := err.(caddyhttp.HandlerError); ok {
-				gotStatus = herr.StatusCode
-			}
+			t.Fatalf("unexpected error: %v", err)
 		}
-
-		if gotStatus != http.StatusBadGateway {
-			t.Errorf("expected status %d (Bad Gateway), got %d (err: %v)", http.StatusBadGateway, gotStatus, err)
+		if rec.Code != http.StatusOK {
+			t.Errorf("expected status 200, got %d", rec.Code)
+		}
+		if rec.Body.String() != "hello world" {
+			t.Errorf("expected body 'hello world', got %q", rec.Body.String())
 		}
 	})
 
-	t.Run("chunked header only retries to next upstream", func(t *testing.T) {
-		defer func() {
-			if r := recover(); r != nil {
-				t.Fatalf("unexpected panic in ServeHTTP: %v", r)
-			}
-		}()
-
-		chunkedServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	t.Run("chunked streaming delays first chunk without error", func(t *testing.T) {
+		chunkedDelayedServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Transfer-Encoding", "chunked")
 			w.WriteHeader(http.StatusOK)
 			_ = http.NewResponseController(w).Flush()
-			panic(http.ErrAbortHandler)
+			time.Sleep(50 * time.Millisecond)
+			_, _ = io.WriteString(w, "streamed")
 		}))
-		t.Cleanup(chunkedServer.Close)
+		t.Cleanup(chunkedDelayedServer.Close)
 
-		// RoundRobinSelection selects index 1 then index 0.
-		// Put goodServer at 0, chunkedServer at 1.
 		upstreams := []*Upstream{
-			{Host: new(Host), Dial: goodServer.Listener.Addr().String()},
-			{Host: new(Host), Dial: chunkedServer.Listener.Addr().String()},
+			{Host: new(Host), Dial: chunkedDelayedServer.Listener.Addr().String()},
 		}
-		h := minimalHandler(1, upstreams...)
+		h := minimalHandler(0, upstreams...)
 
 		req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
 		req = prepareTestRequest(req)
@@ -275,18 +260,14 @@ func TestTruncatedResponse(t *testing.T) {
 			return nil
 		}))
 
-		gotStatus := rec.Code
 		if err != nil {
-			if herr, ok := err.(caddyhttp.HandlerError); ok {
-				gotStatus = herr.StatusCode
-			}
+			t.Fatalf("unexpected error: %v", err)
 		}
-
-		if gotStatus != http.StatusOK {
-			t.Errorf("expected status 200 after retry, got %d (err: %v)", gotStatus, err)
+		if rec.Code != http.StatusOK {
+			t.Errorf("expected status 200, got %d", rec.Code)
 		}
-		if body := rec.Body.String(); body != "healthy response" {
-			t.Errorf("expected body 'healthy response', got %q", body)
+		if rec.Body.String() != "streamed" {
+			t.Errorf("expected body 'streamed', got %q", rec.Body.String())
 		}
 	})
 }

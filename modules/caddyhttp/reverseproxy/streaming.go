@@ -313,17 +313,18 @@ func (h Handler) isBidirectionalStream(req *http.Request, res *http.Response) bo
 // 502 Bad Gateway or performing load balancing retries when an upstream abruptly
 // disconnects before sending any body data (fixes #7845).
 //
-// We skip probing for:
-// - responses that never carry a body (HEAD requests, 1xx, 204 No Content, 304 Not Modified, Content-Length: 0)
-// - Server-Sent Events (text/event-stream) or bidirectional streams where upstream intentionally idles
-// - configurations where the user explicitly configured a negative FlushInterval to flush headers immediately
+// We strictly restrict probing to responses with a known, positive Content-Length under
+// the default flush interval (FlushInterval == 0).
+// Unknown-length / chunked responses (ContentLength == -1), Server-Sent Events,
+// bidirectional streams, and configurations with an explicit FlushInterval are excluded
+// to preserve immediate header streaming downstream.
 func (h Handler) shouldProbeResponseBody(req *http.Request, res *http.Response) bool {
 	if req.Method == http.MethodHead ||
 		res.StatusCode == http.StatusNoContent ||
 		res.StatusCode == http.StatusNotModified ||
 		res.StatusCode < 200 ||
-		res.ContentLength == 0 ||
-		h.FlushInterval < 0 ||
+		res.ContentLength <= 0 ||
+		h.FlushInterval != 0 ||
 		h.isBidirectionalStream(req, res) {
 		return false
 	}
