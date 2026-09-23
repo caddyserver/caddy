@@ -309,9 +309,9 @@ func (h Handler) isBidirectionalStream(req *http.Request, res *http.Response) bo
 }
 
 // shouldProbeResponseBody returns true if the response body should be probed with
-// a 1-byte read before committing response headers downstream. This enables returning
-// 502 Bad Gateway or performing load balancing retries when an upstream abruptly
-// disconnects before sending any body data (fixes #7845).
+// a read into the pooled streaming buffer before committing response headers
+// downstream. This enables returning 502 Bad Gateway or performing load balancing
+// retries when an upstream abruptly disconnects before sending any body data (fixes #7845).
 //
 // We strictly restrict probing to responses with a known, positive Content-Length under
 // the default flush interval (FlushInterval == 0).
