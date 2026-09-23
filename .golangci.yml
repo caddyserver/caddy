@@ -48,6 +48,13 @@ linters:
     - whitespace
     - zerologlint
   settings:
+    canonicalheader:
+      # Match net/http's canonical MIME map keys to avoid re-canonicalisation.
+      exclusions:
+        - Etag
+        - Sec-Websocket-Key
+        - Te
+        - Www-Authenticate
     staticcheck:
       checks: ["all", "-ST1000", "-ST1003", "-ST1016", "-ST1020", "-ST1021", "-ST1022",  "-QF1006", "-QF1008"] # default, and exclude 1 more undesired check
     errcheck:
