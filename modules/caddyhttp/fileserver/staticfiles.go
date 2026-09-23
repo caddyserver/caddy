@@ -187,13 +187,17 @@ type FileServer struct {
 	// buffered snapshot of the bytes http.ServeContent emits, so:
 	//   - GET 200 hashes the full selected representation (including a
 	//     precompressed sidecar when that is what is served)
-	//   - GET 206 hashes only the selected partial content (single or multipart)
+	//   - GET 206 hashes only the selected partial content when Content-Length
+	//     is present (single-range); multipart ranges omit Content-Length and
+	//     therefore omit Content-Digest
 	//   - HEAD 200 uses the empty-content digest (Appendix B.2); the selected
 	//     representation hash belongs on Repr-Digest, which this handler does not set
 	//   - 304/416 and other non-content outcomes omit the field
 	//
-	// Buffering is bounded by ContentDigestMaxBuffer (default 4 MiB). Responses
-	// larger than the limit are streamed without buffering and omit Content-Digest.
+	// Buffering is bounded by ContentDigestMaxBuffer (default 4 MiB) and a
+	// process-wide reservation budget. Oversized bodies or budget exhaustion
+	// stream without buffering and omit Content-Digest. Non-HEAD 200/206
+	// responses without a verifiable Content-Length also omit the field.
 	//
 	// If a later middleware dynamically re-encodes the body (encode gzip/zstd),
 	// Content-Digest is omitted/stripped because the client bytes differ.
@@ -692,18 +696,19 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		if maxBuf <= 0 {
 			maxBuf = defaultContentDigestMaxBuffer
 		}
-		digestWriter = &contentDigestResponseWriter{
-			ResponseWriter: w,
-			algos:          fsrv.ContentDigest,
-			precompress:    precompressEncoding,
-			maxBuffer:      maxBuf,
-			isHead:         r.Method == http.MethodHead,
-		}
+		// Reserve against the process-wide budget before wrapping. If the
+		// budget is exhausted, serve without digest rather than buffering.
 		if v := digestBufferInUse.Add(maxBuf); v > defaultGlobalDigestBudget {
 			digestBufferInUse.Add(-maxBuf)
-			// Over process-wide budget: serve without digest buffering.
 		} else {
-			digestWriter.reserved = maxBuf
+			digestWriter = &contentDigestResponseWriter{
+				ResponseWriter: w,
+				algos:          fsrv.ContentDigest,
+				precompress:    precompressEncoding,
+				maxBuffer:      maxBuf,
+				isHead:         r.Method == http.MethodHead,
+				reserved:       maxBuf,
+			}
 			w = digestWriter
 		}
 	}

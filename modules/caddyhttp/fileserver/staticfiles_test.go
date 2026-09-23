@@ -586,6 +586,7 @@ func TestContentDigestResponseWriterFinalize(t *testing.T) {
 	t.Run("hashes buffered 200 body", func(t *testing.T) {
 		rec := httptest.NewRecorder()
 		cd := &contentDigestResponseWriter{ResponseWriter: rec, algos: []string{"sha-256"}, maxBuffer: maxBuf}
+		cd.Header().Set("Content-Length", strconv.Itoa(len(content)))
 		cd.WriteHeader(http.StatusOK)
 		if _, err := cd.Write(content); err != nil {
 			t.Fatal(err)
@@ -611,6 +612,7 @@ func TestContentDigestResponseWriterFinalize(t *testing.T) {
 
 		rec := httptest.NewRecorder()
 		cd := &contentDigestResponseWriter{ResponseWriter: rec, algos: []string{"sha-256"}, maxBuffer: maxBuf}
+		cd.Header().Set("Content-Length", strconv.Itoa(len(partial)))
 		cd.WriteHeader(http.StatusPartialContent)
 		if _, err := cd.Write(partial); err != nil {
 			t.Fatal(err)
@@ -642,6 +644,7 @@ func TestContentDigestResponseWriterFinalize(t *testing.T) {
 		rec := httptest.NewRecorder()
 		cd := &contentDigestResponseWriter{ResponseWriter: rec, algos: []string{"sha-256"}, maxBuffer: maxBuf}
 		cd.Header().Set("Content-Encoding", "gzip")
+		cd.Header().Set("Content-Length", strconv.Itoa(len(content)))
 		cd.WriteHeader(http.StatusOK)
 		if _, err := cd.Write(content); err != nil {
 			t.Fatal(err)
@@ -663,6 +666,7 @@ func TestContentDigestResponseWriterFinalize(t *testing.T) {
 			maxBuffer:      maxBuf,
 		}
 		cd.Header().Set("Content-Encoding", "gzip")
+		cd.Header().Set("Content-Length", strconv.Itoa(len(content)))
 		cd.WriteHeader(http.StatusOK)
 		if _, err := cd.Write(content); err != nil {
 			t.Fatal(err)
@@ -747,6 +751,7 @@ func TestContentDigestResponseWriterFinalize(t *testing.T) {
 			algos:          []string{"sha-256"},
 			maxBuffer:      8,
 		}
+		cd.Header().Set("Content-Length", strconv.Itoa(len(body)))
 		cd.WriteHeader(http.StatusOK)
 		if _, err := cd.Write(body); err != nil {
 			t.Fatal(err)
@@ -781,6 +786,28 @@ func TestContentDigestResponseWriterFinalize(t *testing.T) {
 		wantEmpty := "sha-256=:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=:"
 		if got := rec.Header().Get("Content-Digest"); got != wantEmpty {
 			t.Fatalf("Content-Digest = %q, want %q", got, wantEmpty)
+		}
+	})
+
+	t.Run("missing Content-Length omits digest", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		cd := &contentDigestResponseWriter{
+			ResponseWriter: rec,
+			algos:          []string{"sha-256"},
+			maxBuffer:      maxBuf,
+		}
+		cd.WriteHeader(http.StatusOK)
+		if _, err := cd.Write(content); err != nil {
+			t.Fatal(err)
+		}
+		if err := cd.finalize(); err != nil {
+			t.Fatal(err)
+		}
+		if got := rec.Header().Get("Content-Digest"); got != "" {
+			t.Fatalf("Content-Digest = %q, want empty without Content-Length", got)
+		}
+		if !bytes.Equal(rec.Body.Bytes(), content) {
+			t.Fatalf("body = %q, want %q", rec.Body.Bytes(), content)
 		}
 	})
 
@@ -910,6 +937,47 @@ func TestContentDigestResponseWriterFinalize(t *testing.T) {
 			t.Fatalf("Content-Digest = %q, want empty on read failure", got)
 		}
 	})
+}
+
+func TestContentDigestGlobalBudget(t *testing.T) {
+	prev := digestBufferInUse.Load()
+	defer digestBufferInUse.Store(prev)
+
+	// Saturate the global budget so the next reservation is refused.
+	digestBufferInUse.Store(defaultGlobalDigestBudget)
+
+	root := t.TempDir()
+	content := []byte("budget test payload")
+	if err := os.WriteFile(filepath.Join(root, "file.txt"), content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fsrv := FileServer{
+		Root:          root,
+		CanonicalURIs: new(bool),
+		ContentDigest: []string{"sha-256"},
+	}
+	ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+	if err := fsrv.Provision(ctx); err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/file.txt", nil)
+	r = r.WithContext(context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
+	if err := fsrv.ServeHTTP(w, r, nil); err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	if !bytes.Equal(w.Body.Bytes(), content) {
+		t.Fatalf("body mismatch when budget exhausted")
+	}
+	if got := w.Header().Get("Content-Digest"); got != "" {
+		t.Fatalf("Content-Digest = %q, want empty when global budget exhausted", got)
+	}
+	if digestBufferInUse.Load() != defaultGlobalDigestBudget {
+		t.Fatalf("digestBufferInUse changed despite refused reservation: %d", digestBufferInUse.Load())
+	}
 }
 
 func TestContentDigestIntegration(t *testing.T) {
@@ -1137,11 +1205,18 @@ func TestContentDigestIntegration(t *testing.T) {
 		if err := fsrv.ServeHTTP(w, r, nil); err != nil {
 			t.Fatal(err)
 		}
-		// Digest must cover the exact message content ServeContent wrote (multipart body),
-		// not the full source file.
+		// Digest must cover the exact message content ServeContent wrote (multipart
+		// body), not the full source file. When Content-Length is present and matches
+		// the buffered body, the digest is emitted; otherwise it is omitted.
 		body := w.Body.Bytes()
 		if len(body) == 0 {
 			t.Fatal("expected multipart body")
+		}
+		if cl := w.Header().Get("Content-Length"); cl == "" {
+			if got := w.Header().Get("Content-Digest"); got != "" {
+				t.Fatalf("Content-Digest = %q, want empty without Content-Length", got)
+			}
+			return
 		}
 		hBody := sha256.Sum256(body)
 		wantBodyDigest := "sha-256=:" + base64.StdEncoding.EncodeToString(hBody[:]) + ":"
