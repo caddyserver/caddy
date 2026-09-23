@@ -1249,23 +1249,27 @@ func (h *Handler) finalizeResponse(
 
 	flushInterval := h.flushInterval(req, res)
 
-	var probe [1]byte
-	var hasProbeByte bool
-	var probeErr error
+	var (
+		buf         *[]byte
+		initialData []byte
+		initialErr  error
+	)
 
 	// If the response may have a body and does not require immediate flushing,
-	// probe the first byte on the stack before writing headers downstream.
+	// probe the first chunk using the pooled streaming buffer before writing headers downstream.
 	// If the upstream abruptly closes the connection or fails before sending any body,
 	// we haven't committed the downstream response yet, so we can retry or return 502
 	// instead of dropping the connection (see #7845).
 	if h.shouldProbeResponseBody(req, res) {
+		buf = streamingBufPool.Get().(*[]byte)
 		var nr int
-		nr, probeErr = res.Body.Read(probe[:])
+		nr, initialErr = res.Body.Read(*buf)
 		if nr > 0 {
-			hasProbeByte = true
-		} else if probeErr != nil && probeErr != io.EOF {
+			initialData = (*buf)[:nr]
+		} else if initialErr != nil && initialErr != io.EOF {
+			streamingBufPool.Put(buf)
 			_ = res.Body.Close()
-			return fmt.Errorf("reading response body from upstream: %w", probeErr)
+			return fmt.Errorf("reading response body from upstream: %w", initialErr)
 		}
 	}
 
@@ -1303,11 +1307,7 @@ func (h *Handler) finalizeResponse(
 		logger.Debug("wrote header")
 	}
 
-	var probeByte []byte
-	if hasProbeByte {
-		probeByte = probe[:1]
-	}
-	err := h.copyResponse(rw, res.Body, probeByte, probeErr, flushInterval, logger)
+	err := h.copyResponse(rw, res.Body, buf, initialData, initialErr, flushInterval, logger)
 	errClose := res.Body.Close() // close now, instead of defer, to populate res.Trailer
 	if h.VerboseLogs || errClose != nil {
 		if c := logger.Check(zapcore.DebugLevel, "closed response body from upstream"); c != nil {

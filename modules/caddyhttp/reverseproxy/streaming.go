@@ -337,7 +337,7 @@ func (h Handler) shouldProbeResponseBody(req *http.Request, res *http.Response) 
 	return true
 }
 
-func (h Handler) copyResponse(dst http.ResponseWriter, src io.Reader, probeByte []byte, probeErr error, flushInterval time.Duration, logger *zap.Logger) error {
+func (h Handler) copyResponse(dst http.ResponseWriter, src io.Reader, buf *[]byte, initialData []byte, initialErr error, flushInterval time.Duration, logger *zap.Logger) error {
 	var w io.Writer = dst
 
 	if flushInterval != 0 {
@@ -363,25 +363,27 @@ func (h Handler) copyResponse(dst http.ResponseWriter, src io.Reader, probeByte 
 		w = mlw
 	}
 
-	if len(probeByte) > 0 {
-		nw, werr := w.Write(probeByte)
+	if buf == nil {
+		buf = streamingBufPool.Get().(*[]byte)
+	}
+	defer streamingBufPool.Put(buf)
+
+	if len(initialData) > 0 {
+		nw, werr := w.Write(initialData)
 		if werr != nil {
 			return fmt.Errorf("writing: %w", werr)
 		}
-		if nw != len(probeByte) {
+		if nw != len(initialData) {
 			return io.ErrShortWrite
 		}
 	}
 
-	if probeErr != nil {
-		if probeErr == io.EOF {
+	if initialErr != nil {
+		if initialErr == io.EOF {
 			return nil
 		}
-		return fmt.Errorf("reading: %w", probeErr)
+		return fmt.Errorf("reading: %w", initialErr)
 	}
-
-	buf := streamingBufPool.Get().(*[]byte)
-	defer streamingBufPool.Put(buf)
 
 	var copyLogger *zap.Logger
 	if h.VerboseLogs {

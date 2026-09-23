@@ -34,7 +34,7 @@ func TestHandlerCopyResponse(t *testing.T) {
 	for _, d := range testdata {
 		src := bytes.NewBuffer([]byte(d))
 		dst.Reset()
-		err := h.copyResponse(recorder, src, nil, nil, 0, caddy.Log())
+		err := h.copyResponse(recorder, src, nil, nil, nil, 0, caddy.Log())
 		if err != nil {
 			t.Errorf("failed with error: %v", err)
 		}
