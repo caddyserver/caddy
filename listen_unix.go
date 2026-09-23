@@ -63,7 +63,7 @@ func reuseUnixSocket(network, addr string) (any, error) {
 			if err != nil {
 				return nil, err
 			}
-			atomic.AddInt32(unixSocket.count, 1)
+			unixSocket.count.Add(1)
 			unixSockets[socketKey] = &unixListener{ln.(*net.UnixListener), socketKey, unixSocket.count}
 
 		case *unixConn:
@@ -71,7 +71,7 @@ func reuseUnixSocket(network, addr string) (any, error) {
 			if err != nil {
 				return nil, err
 			}
-			atomic.AddInt32(unixSocket.count, 1)
+			unixSocket.count.Add(1)
 			unixSockets[socketKey] = &unixConn{pc.(*net.UnixConn), socketKey, unixSocket.count}
 		}
 
@@ -165,8 +165,9 @@ func listenReusable(ctx context.Context, lnKey string, network, address string, 
 		if !fd {
 			// TODO: Not 100% sure this is necessary, but we do this for net.UnixListener, so...
 			if unix, ok := ln.(*net.UnixConn); ok {
-				one := int32(1)
-				ln = &unixConn{unix, lnKey, &one}
+				cnt := new(atomic.Int32)
+				cnt.Store(1)
+				ln = &unixConn{unix, lnKey, cnt}
 				unixSockets[lnKey] = ln.(*unixConn)
 			}
 		}
@@ -181,8 +182,9 @@ func listenReusable(ctx context.Context, lnKey string, network, address string, 
 			// (we do our own "unlink on close" -- not required, but more tidy)
 			if unix, ok := ln.(*net.UnixListener); ok {
 				unix.SetUnlinkOnClose(false)
-				one := int32(1)
-				ln = &unixListener{unix, lnKey, &one}
+				cnt := new(atomic.Int32)
+				cnt.Store(1)
+				ln = &unixListener{unix, lnKey, cnt}
 				unixSockets[lnKey] = ln.(*unixListener)
 			}
 		}
@@ -216,11 +218,11 @@ func reusePort(network, address string, conn syscall.RawConn) error {
 type unixListener struct {
 	*net.UnixListener
 	mapKey string
-	count  *int32 // accessed atomically
+	count  *atomic.Int32
 }
 
 func (uln *unixListener) Close() error {
-	newCount := atomic.AddInt32(uln.count, -1)
+	newCount := uln.count.Add(-1)
 	if newCount == 0 {
 		file, err := uln.File()
 		var name string
@@ -242,11 +244,11 @@ func (uln *unixListener) Close() error {
 type unixConn struct {
 	*net.UnixConn
 	mapKey string
-	count  *int32 // accessed atomically
+	count  *atomic.Int32
 }
 
 func (uc *unixConn) Close() error {
-	newCount := atomic.AddInt32(uc.count, -1)
+	newCount := uc.count.Add(-1)
 	if newCount == 0 {
 		file, err := uc.File()
 		var name string

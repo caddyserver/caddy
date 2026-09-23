@@ -281,7 +281,13 @@ func (fsrv *FileServer) browseApplyQueryParams(w http.ResponseWriter, r *http.Re
 			sortParam = sortCookie.Value
 		}
 	case sortByName, sortByNameDirFirst, sortBySize, sortByTime:
-		http.SetCookie(w, &http.Cookie{Name: "sort", Value: sortParam, Secure: r.TLS != nil})
+		http.SetCookie(w, &http.Cookie{ //nolint:gosec // Secure depends on whether the request itself used TLS
+			Name:     "sort",
+			Value:    sortParam,
+			Secure:   r.TLS != nil,
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+		})
 	}
 
 	// then figure out the order
@@ -292,7 +298,13 @@ func (fsrv *FileServer) browseApplyQueryParams(w http.ResponseWriter, r *http.Re
 			orderParam = orderCookie.Value
 		}
 	case sortOrderAsc, sortOrderDesc:
-		http.SetCookie(w, &http.Cookie{Name: "order", Value: orderParam, Secure: r.TLS != nil})
+		http.SetCookie(w, &http.Cookie{ //nolint:gosec // Secure depends on whether the request itself used TLS
+			Name:     "order",
+			Value:    orderParam,
+			Secure:   r.TLS != nil,
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+		})
 	}
 
 	// finally, apply the sorting and limiting
@@ -319,20 +331,6 @@ func (fsrv *FileServer) makeBrowseTemplate(tplCtx *templateContext) (*template.T
 	}
 
 	return tpl, nil
-}
-
-// isSymlinkTargetDir returns true if f's symbolic link target
-// is a directory.
-func (fsrv *FileServer) isSymlinkTargetDir(fileSystem fs.FS, f fs.FileInfo, root, urlPath string) bool {
-	if !isSymlink(f) {
-		return false
-	}
-	target := caddyhttp.SanitizedPathJoin(root, path.Join(urlPath, f.Name()))
-	targetInfo, err := fs.Stat(fileSystem, target)
-	if err != nil {
-		return false
-	}
-	return targetInfo.IsDir()
 }
 
 // isSymlink return true if f is a symbolic link.

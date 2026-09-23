@@ -88,7 +88,7 @@ type Config struct {
 	storage      certmagic.Storage
 	eventEmitter eventEmitter
 
-	cancelFunc context.CancelFunc
+	cancelFunc context.CancelCauseFunc
 
 	// fileSystems is a dict of fileSystems that will later be loaded from and added to.
 	fileSystems FileSystems
@@ -127,10 +127,9 @@ func Load(cfgJSON []byte, forceReload bool) error {
 					zap.Error(notifyErr),
 					zap.String("reload_err", err.Error()))
 			}
-			return
 		}
-		if err := notify.Ready(); err != nil {
-			Log().Error("unable to notify to service manager of ready state", zap.Error(err))
+		if notifyErr := notify.Ready(); notifyErr != nil {
+			Log().Error("unable to notify to service manager of ready state", zap.Error(notifyErr))
 		}
 	}()
 
@@ -227,8 +226,18 @@ func changeConfig(method, path string, input []byte, ifMatchHeader string, force
 	idx := make(map[string]string)
 	err = indexConfigObjects(rawCfg[rawConfigKey], "/"+rawConfigKey, idx)
 	if err != nil {
+		if len(rawCfgJSON) > 0 {
+			var oldCfg any
+			err2 := json.Unmarshal(rawCfgJSON, &oldCfg)
+			if err2 != nil {
+				err = fmt.Errorf("%v; additionally, restoring old config: %v", err, err2)
+			}
+			rawCfg[rawConfigKey] = oldCfg
+		} else {
+			rawCfg[rawConfigKey] = nil
+		}
 		return APIError{
-			HTTPStatus: http.StatusInternalServerError,
+			HTTPStatus: http.StatusBadRequest,
 			Err:        fmt.Errorf("indexing config: %v", err),
 		}
 	}
@@ -248,6 +257,8 @@ func changeConfig(method, path string, input []byte, ifMatchHeader string, force
 				err = fmt.Errorf("%v; additionally, restoring old config: %v", err, err2)
 			}
 			rawCfg[rawConfigKey] = oldCfg
+		} else {
+			rawCfg[rawConfigKey] = nil
 		}
 
 		return fmt.Errorf("loading new config: %v", err)
@@ -281,14 +292,19 @@ func indexConfigObjects(ptr any, configPath string, index map[string]string) err
 	case map[string]any:
 		for k, v := range val {
 			if k == idKey {
+				var idStr string
 				switch idVal := v.(type) {
 				case string:
-					index[idVal] = configPath
+					idStr = idVal
 				case float64: // all JSON numbers decode as float64
-					index[fmt.Sprintf("%v", idVal)] = configPath
+					idStr = fmt.Sprintf("%v", idVal)
 				default:
 					return fmt.Errorf("%s: %s field must be a string or number", configPath, idKey)
 				}
+				if existingPath, ok := index[idStr]; ok {
+					return fmt.Errorf("duplicate ID '%s' found at %s and %s", idStr, existingPath, configPath)
+				}
+				index[idStr] = configPath
 				continue
 			}
 			// traverse this object property recursively
@@ -416,20 +432,13 @@ func run(newCfg *Config, start bool) (Context, error) {
 		// partially copied from provisionContext
 		if err != nil {
 			globalMetrics.configSuccess.Set(0)
-			ctx.cfg.cancelFunc()
+			ctx.cfg.cancelFunc(fmt.Errorf("configuration start error: %w", err))
 
 			if currentCtx.cfg != nil {
 				certmagic.Default.Storage = currentCtx.cfg.storage
 			}
 		}
 	}()
-
-	// Provision any admin routers which may need to access
-	// some of the other apps at runtime
-	err = ctx.cfg.Admin.provisionAdminRouters(ctx)
-	if err != nil {
-		return ctx, err
-	}
 
 	// Start
 	err = func() error {
@@ -492,7 +501,7 @@ func provisionContext(newCfg *Config, replaceAdminServer bool) (Context, error) 
 	// cleanup occurs when we return if there
 	// was an error; if no error, it will get
 	// cleaned up on next config cycle
-	ctx, cancel := NewContext(Context{Context: context.Background(), cfg: newCfg})
+	ctx, cancelCause := NewContextWithCause(Context{Context: context.Background(), cfg: newCfg})
 	defer func() {
 		if err != nil {
 			globalMetrics.configSuccess.Set(0)
@@ -501,7 +510,7 @@ func provisionContext(newCfg *Config, replaceAdminServer bool) (Context, error) 
 			// since the associated config won't be used;
 			// this will cause all modules that were newly
 			// provisioned to clean themselves up
-			cancel()
+			cancelCause(fmt.Errorf("configuration error: %w", err))
 
 			// also undo any other state changes we made
 			if currentCtx.cfg != nil {
@@ -509,7 +518,7 @@ func provisionContext(newCfg *Config, replaceAdminServer bool) (Context, error) 
 			}
 		}
 	}()
-	newCfg.cancelFunc = cancel // clean up later
+	newCfg.cancelFunc = cancelCause // clean up later
 
 	// set up logging before anything bad happens
 	if newCfg.Logging == nil {
@@ -683,21 +692,19 @@ type ConfigLoader interface {
 // stop the others. Stop should only be called
 // if not replacing with a new config.
 func Stop() error {
-	currentCtxMu.RLock()
-	ctx := currentCtx
-	currentCtxMu.RUnlock()
-
 	rawCfgMu.Lock()
-	unsyncedStop(ctx)
+	defer rawCfgMu.Unlock()
 
 	currentCtxMu.Lock()
+	ctx := currentCtx
 	currentCtx = Context{}
 	currentCtxMu.Unlock()
+
+	unsyncedStop(ctx)
 
 	rawCfgJSON = nil
 	rawCfgIndex = nil
 	rawCfg[rawConfigKey] = nil
-	rawCfgMu.Unlock()
 
 	return nil
 }
@@ -729,7 +736,7 @@ func unsyncedStop(ctx Context) {
 	}
 
 	// clean up all modules
-	ctx.cfg.cancelFunc()
+	ctx.cfg.cancelFunc(fmt.Errorf("stopping apps"))
 }
 
 // Validate loads, provisions, and validates
@@ -737,7 +744,7 @@ func unsyncedStop(ctx Context) {
 func Validate(cfg *Config) error {
 	_, err := run(cfg, false)
 	if err == nil {
-		cfg.cancelFunc() // call Cleanup on all modules
+		cfg.cancelFunc(fmt.Errorf("validation complete")) // call Cleanup on all modules
 	}
 	return err
 }
@@ -750,7 +757,7 @@ func Validate(cfg *Config) error {
 // code is emitted.
 func exitProcess(ctx context.Context, logger *zap.Logger) {
 	// let the rest of the program know we're quitting; only do it once
-	if !atomic.CompareAndSwapInt32(exiting, 0, 1) {
+	if !exiting.CompareAndSwap(false, true) {
 		return
 	}
 
@@ -829,11 +836,11 @@ func exitProcess(ctx context.Context, logger *zap.Logger) {
 	}()
 }
 
-var exiting = new(int32) // accessed atomically
+var exiting atomic.Bool
 
 // Exiting returns true if the process is exiting.
 // EXPERIMENTAL API: subject to change or removal.
-func Exiting() bool { return atomic.LoadInt32(exiting) == 1 }
+func Exiting() bool { return exiting.Load() }
 
 // OnExit registers a callback to invoke during process exit.
 // This registration is PROCESS-GLOBAL, meaning that each

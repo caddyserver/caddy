@@ -550,26 +550,11 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 		}
 
 	case acmeIssuer != nil:
-		// implicit ACME issuers (from various subdirectives) - use defaults; there might be more than one
-		defaultIssuers := caddytls.DefaultIssuers(acmeIssuer.Email)
-
-		// if an ACME CA endpoint was set, the user expects to use that specific one,
-		// not any others that may be defaults, so replace all defaults with that ACME CA
-		if acmeIssuer.CA != "" {
-			defaultIssuers = []certmagic.Issuer{acmeIssuer}
-		}
-
+		// implicit ACME issuers (from various subdirectives) should inherit from
+		// any globally-configured ACME issuer templates, then apply the local
+		// shortcut settings as overrides.
+		defaultIssuers := implicitACMEIssuers(h, acmeIssuer)
 		for _, issuer := range defaultIssuers {
-			// apply settings from the implicitly-configured ACMEIssuer to any
-			// default ACMEIssuers, but preserve each default issuer's CA endpoint,
-			// because, for example, if you configure the DNS challenge, it should
-			// apply to any of the default ACMEIssuers, but you don't want to trample
-			// out their unique CA endpoints
-			if iss, ok := issuer.(*caddytls.ACMEIssuer); ok && iss != nil {
-				acmeCopy := *acmeIssuer
-				acmeCopy.CA = iss.CA
-				issuer = &acmeCopy
-			}
 			configVals = append(configVals, ConfigValue{
 				Class: "tls.cert_issuer",
 				Value: issuer,
@@ -668,6 +653,8 @@ func parseRoot(h Helper) ([]ConfigValue, error) {
 		if !h.NextArg() {
 			return nil, h.ArgErr()
 		}
+		// store the unmatched root in block state so sibling directives can access it
+		h.BlockState["root"] = h.Val()
 		return h.NewRoute(nil, caddyhttp.VarsMiddleware{"root": h.Val()}), nil
 	}
 
@@ -681,6 +668,10 @@ func parseRoot(h Helper) ([]ConfigValue, error) {
 	// advance to the root path
 	if !h.NextArg() {
 		return nil, h.ArgErr()
+	}
+	// store the unmatched root in state so sibling/child directives can access it
+	if userMatcherSet == nil {
+		h.BlockState["root"] = h.Val()
 	}
 	// make the route with the matcher
 	return h.NewRoute(userMatcherSet, caddyhttp.VarsMiddleware{"root": h.Val()}), nil
@@ -827,7 +818,7 @@ func parseRoute(h Helper) (caddyhttp.MiddlewareHandler, error) {
 		}
 	}
 
-	return buildSubroute(allResults, h.groupCounter, false)
+	return buildSubroute(allResults, h.groupCounter, nil)
 }
 
 func parseHandle(h Helper) (caddyhttp.MiddlewareHandler, error) {
@@ -1004,6 +995,17 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 	// with a wildcard domain
 	customHostnames := []string{}
 	noHostname := false
+	// track single-valued subdirectives so that repeating one is an error
+	// rather than silently overriding the previous value; see
+	// https://caddy.community/t/logs-not-getting-written-to-journal/33852
+	seen := make(map[string]bool)
+	assertUnique := func(subdir string) error {
+		if seen[subdir] {
+			return h.Errf("'%s' subdirective specified more than once in the same log block", subdir)
+		}
+		seen[subdir] = true
+		return nil
+	}
 	for h.NextBlock(0) {
 		switch h.Val() {
 		case "hostnames":
@@ -1017,6 +1019,9 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 			customHostnames = append(customHostnames, args...)
 
 		case "output":
+			if err := assertUnique(h.Val()); err != nil {
+				return nil, err
+			}
 			if !h.NextArg() {
 				return nil, h.ArgErr()
 			}
@@ -1049,20 +1054,28 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 			cl.WriterRaw = caddyconfig.JSONModuleObject(wo, "output", moduleName, h.warnings)
 
 		case "sampling":
+			if err := assertUnique(h.Val()); err != nil {
+				return nil, err
+			}
 			d := h.Dispenser.NewFromNextSegment()
 			for d.NextArg() {
 				// consume any tokens on the same line, if any.
 			}
 
 			sampling := &caddy.LogSampling{}
+			samplingSeen := make(map[string]bool)
 			for nesting := d.Nesting(); d.NextBlock(nesting); {
 				subdir := d.Val()
+				if samplingSeen[subdir] {
+					return nil, d.Errf("'%s' specified more than once in the same sampling block", subdir)
+				}
+				samplingSeen[subdir] = true
 				switch subdir {
 				case "interval":
 					if !d.NextArg() {
 						return nil, d.ArgErr()
 					}
-					interval, err := time.ParseDuration(d.Val() + "ns")
+					interval, err := caddy.ParseDuration(d.Val())
 					if err != nil {
 						return nil, d.Errf("failed to parse interval: %v", err)
 					}
@@ -1093,6 +1106,9 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 			cl.Sampling = sampling
 
 		case "core":
+			if err := assertUnique(h.Val()); err != nil {
+				return nil, err
+			}
 			if !h.NextArg() {
 				return nil, h.ArgErr()
 			}
@@ -1109,6 +1125,9 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 			cl.CoreRaw = caddyconfig.JSONModuleObject(core, "module", moduleName, h.warnings)
 
 		case "format":
+			if err := assertUnique(h.Val()); err != nil {
+				return nil, err
+			}
 			if !h.NextArg() {
 				return nil, h.ArgErr()
 			}
@@ -1125,6 +1144,9 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 			cl.EncoderRaw = caddyconfig.JSONModuleObject(enc, "format", moduleName, h.warnings)
 
 		case "level":
+			if err := assertUnique(h.Val()); err != nil {
+				return nil, err
+			}
 			if !h.NextArg() {
 				return nil, h.ArgErr()
 			}
@@ -1150,6 +1172,9 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 			}
 
 		case "no_hostname":
+			if err := assertUnique(h.Val()); err != nil {
+				return nil, err
+			}
 			if h.NextArg() {
 				return nil, h.ArgErr()
 			}

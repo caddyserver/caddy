@@ -135,8 +135,8 @@ type client struct {
 	logger *zap.Logger
 }
 
-// Do made the request and returns a io.Reader that translates the data read
-// from fcgi responder out of fcgi packet before returning it.
+// Do makes the request and returns an io.Reader that translates the data read
+// from the FastCGI responder out of FastCGI packets before returning it.
 func (c *client) Do(p map[string]string, req io.Reader) (r io.Reader, err error) {
 	// check for CONTENT_LENGTH, since the lack of it or wrong value will cause the backend to hang
 	if clStr, ok := p["CONTENT_LENGTH"]; !ok {
@@ -179,7 +179,7 @@ func (c *client) Do(p map[string]string, req io.Reader) (r io.Reader, err error)
 	return r, err
 }
 
-// clientCloser is a io.ReadCloser. It wraps a io.Reader with a Closer
+// clientCloser is an io.ReadCloser. It wraps an io.Reader with a Closer
 // that closes the client connection.
 type clientCloser struct {
 	rwc net.Conn
@@ -208,8 +208,8 @@ func (f clientCloser) Close() error {
 	return f.rwc.Close()
 }
 
-// Request returns a HTTP Response with Header and Body
-// from fcgi responder
+// Request returns an HTTP response with header and body
+// from the FastCGI responder.
 func (c *client) Request(p map[string]string, req io.Reader) (resp *http.Response, err error) {
 	r, err := c.Do(p, req)
 	if err != nil {

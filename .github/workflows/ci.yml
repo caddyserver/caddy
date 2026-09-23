@@ -65,15 +65,15 @@ jobs:
       actions: write # to allow uploading artifacts and cache
     steps:
     - name: Harden the runner (Audit all outbound calls)
-      uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
       with:
         egress-policy: audit
 
     - name: Checkout code
-      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
     - name: Install Go
-      uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+      uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
       with:
         go-version: ${{ matrix.GO_SEMVER }}
         check-latest: true
@@ -120,7 +120,7 @@ jobs:
         ./caddy stop
 
     - name: Publish Build Artifact
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: caddy_${{ runner.os }}_go${{ matrix.go }}_${{ steps.vars.outputs.short_sha }}
         path: ${{ matrix.CADDY_BIN_PATH }}
@@ -133,8 +133,8 @@ jobs:
       # id: step_test
       # continue-on-error: true
       run: |
-        # (go test -v -coverprofile=cover-profile.out -race ./... 2>&1) > test-results/test-result.out
-        go test -v -coverprofile="cover-profile.out" -short -race ./...
+        # (go test -coverprofile=cover-profile.out -race ./... 2>&1) > test-results/test-result.out
+        go test -coverprofile="cover-profile.out" -short -race ./...
         # echo "status=$?" >> $GITHUB_OUTPUT
 
     # Relevant step if we reinvestigate publishing test/coverage reports
@@ -162,13 +162,13 @@ jobs:
     continue-on-error: true  # August 2020: s390x VM is down due to weather and power issues
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
           egress-policy: audit
           allowed-endpoints: ci-s390x.caddyserver.com:22
 
       - name: Checkout code
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Run Tests
         run: |
           set +e
@@ -191,7 +191,7 @@ jobs:
           retries=3
           exit_code=0
           while ((retries > 0)); do
-            CGO_ENABLED=0 go test -p 1 -v ./...
+            CGO_ENABLED=0 go test -p 1 ./...
             exit_code=$?
             if ((exit_code == 0)); then
               break
@@ -221,19 +221,19 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == 'caddyserver/caddy' && github.actor != 'dependabot[bot]'
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
           egress-policy: audit
 
       - name: Checkout code
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       
-      - uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6.4.0
+      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           version: latest
           args: check
       - name: Install Go
-        uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: "~1.26"
           check-latest: true
@@ -241,7 +241,7 @@ jobs:
         run: |
           go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
           xcaddy version
-      - uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6.4.0
+      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           version: latest
           args: build --single-target --snapshot

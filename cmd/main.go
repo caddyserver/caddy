@@ -482,9 +482,15 @@ func setResourceLimits(logger *zap.Logger) func() {
 
 	// Configure the maximum memory to use to match the Linux container quota (if any) or system memory
 	// See https://pkg.go.dev/runtime/debug#SetMemoryLimit
-	_, _ = memlimit.SetGoMemLimitWithOpts(
+	_, _ = memlimit.Set(
 		memlimit.WithLogger(
-			slog.New(zapslog.NewHandler(logger.Core())),
+			slog.New(zapslog.NewHandler(
+				logger.Core(),
+				zapslog.WithName("memlimit"),
+				// the default enables traces at ERROR level, this disables
+				// them by setting it to a level higher than any other level
+				zapslog.AddStacktraceAt(slog.Level(127)),
+			)),
 		),
 		memlimit.WithProvider(
 			memlimit.ApplyFallback(

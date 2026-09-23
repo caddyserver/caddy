@@ -121,6 +121,18 @@ func (r *Replacer) Delete(variable string) {
 	r.mapMutex.Unlock()
 }
 
+// DeleteByPrefix removes all static variables with
+// keys starting with the given prefix
+func (r *Replacer) DeleteByPrefix(prefix string) {
+	r.mapMutex.Lock()
+	for key := range r.static {
+		if strings.HasPrefix(key, prefix) {
+			delete(r.static, key)
+		}
+	}
+	r.mapMutex.Unlock()
+}
+
 // fromStatic provides values from r.static.
 func (r *Replacer) fromStatic(key string) (any, bool) {
 	r.mapMutex.RLock()
@@ -415,14 +427,10 @@ func readFileIntoBuffer(filename string, size int) ([]byte, error) {
 	}
 	defer file.Close()
 
-	buffer := make([]byte, size)
-	n, err := file.Read(buffer)
-	if err != nil && err != io.EOF {
-		return nil, err
-	}
-
-	// slice the buffer to the actual size
-	return buffer[:n], nil
+	// io.LimitReader ensures we never read more than 'size' bytes.
+	// io.ReadAll starts with a small buffer and grows it as needed,
+	// preventing a massive 1MB allocation for small files.
+	return io.ReadAll(io.LimitReader(file, int64(size)))
 }
 
 // ReplacementFunc is a function that is called when a

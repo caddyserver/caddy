@@ -1,7 +1,7 @@
 :80 {
 	log {
 		sampling {
-			interval 300
+			interval 5m
 			first 50
 			thereafter 40
 		}
@@ -18,7 +18,7 @@
 			},
 			"log0": {
 				"sampling": {
-					"interval": 300,
+					"interval": 300000000000,
 					"first": 50,
 					"thereafter": 40
 				},

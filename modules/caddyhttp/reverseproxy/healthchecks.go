@@ -430,17 +430,17 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 	// if body is provided, create a reader for it, otherwise nil
 	var requestBody io.Reader
 	if h.HealthChecks.Active.Body != "" {
-		// set body, using replacer
-		requestBody = strings.NewReader(repl.ReplaceAll(h.HealthChecks.Active.Body, ""))
+		// Set body, using replacer. Only known placeholders are replaced: the
+		// body is often JSON, whose braces would otherwise be read as
+		// placeholders and blanked, sending an empty body instead.
+		requestBody = strings.NewReader(repl.ReplaceKnown(h.HealthChecks.Active.Body, ""))
 	}
 
 	// attach dialing information to this request, as well as context values that
 	// may be expected by handlers of this request
 	ctx := h.ctx.Context
 	ctx = context.WithValue(ctx, caddy.ReplacerCtxKey, caddy.NewReplacer())
-	ctx = context.WithValue(ctx, caddyhttp.VarsCtxKey, map[string]any{
-		dialInfoVarKey: dialInfo,
-	})
+	ctx = context.WithValue(ctx, dialInfoCtxKey, dialInfo)
 	req, err := http.NewRequestWithContext(ctx, h.HealthChecks.Active.Method, u.String(), requestBody)
 	if err != nil {
 		return fmt.Errorf("making request: %v", err)
@@ -463,7 +463,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 
 	markUnhealthy := func() {
 		// increment failures and then check if it has reached the threshold to mark unhealthy
-		err := upstream.Host.countHealthFail(1)
+		err := upstream.countHealthFail(1)
 		if err != nil {
 			if c := h.HealthChecks.Active.logger.Check(zapcore.ErrorLevel, "could not count active health failure"); c != nil {
 				c.Write(
@@ -473,11 +473,11 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 			}
 			return
 		}
-		if upstream.Host.activeHealthFails() >= h.HealthChecks.Active.Fails {
+		if upstream.activeHealthFails() >= h.HealthChecks.Active.Fails {
 			// dispatch an event that the host newly became unhealthy
 			if upstream.setHealthy(false) {
 				h.events.Emit(h.ctx, "unhealthy", map[string]any{"host": hostAddr})
-				upstream.Host.resetHealth()
+				upstream.resetHealth()
 			}
 		}
 	}
@@ -494,13 +494,13 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 			}
 			return
 		}
-		if upstream.Host.activeHealthPasses() >= h.HealthChecks.Active.Passes {
+		if upstream.activeHealthPasses() >= h.HealthChecks.Active.Passes {
 			if upstream.setHealthy(true) {
 				if c := h.HealthChecks.Active.logger.Check(zapcore.InfoLevel, "host is up"); c != nil {
 					c.Write(zap.String("host", hostAddr))
 				}
 				h.events.Emit(h.ctx, "healthy", map[string]any{"host": hostAddr})
-				upstream.Host.resetHealth()
+				upstream.resetHealth()
 			}
 		}
 	}
@@ -522,7 +522,7 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 		body = io.LimitReader(body, h.HealthChecks.Active.MaxSize)
 	}
 	defer func() {
-		// drain any remaining body so connection could be re-used
+		// drain any remaining body so connection could be reused
 		_, _ = io.Copy(io.Discard, body)
 		resp.Body.Close()
 	}()

@@ -1,6 +1,8 @@
 package caddycmd
 
 import (
+	"errors"
+	"net"
 	"reflect"
 	"strings"
 	"testing"
@@ -167,6 +169,80 @@ here"
 			t.Errorf("Test %d: Expected %v but got %v", i, tc.expect, actual)
 		}
 	}
+}
+
+func TestListenTCPForPingbackUsesIPv4Loopback(t *testing.T) {
+	var calls []string
+	expected := &stubListener{addr: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 1234}}
+
+	actual, err := listenTCPForPingback(func(network, address string) (net.Listener, error) {
+		calls = append(calls, network+" "+address)
+		return expected, nil
+	})
+	if err != nil {
+		t.Fatalf("listenTCPForPingback returned error: %v", err)
+	}
+	if actual != expected {
+		t.Fatalf("expected listener %p, got %p", expected, actual)
+	}
+
+	expectCalls := []string{"tcp4 127.0.0.1:0"}
+	if !reflect.DeepEqual(calls, expectCalls) {
+		t.Fatalf("expected calls %v, got %v", expectCalls, calls)
+	}
+}
+
+func TestListenTCPForPingbackFallsBackToIPv6Loopback(t *testing.T) {
+	var calls []string
+	expected := &stubListener{addr: &net.TCPAddr{IP: net.ParseIP("::1"), Port: 1234}}
+
+	actual, err := listenTCPForPingback(func(network, address string) (net.Listener, error) {
+		calls = append(calls, network+" "+address)
+		if len(calls) == 1 {
+			return nil, errors.New("ipv4 unavailable")
+		}
+		return expected, nil
+	})
+	if err != nil {
+		t.Fatalf("listenTCPForPingback returned error: %v", err)
+	}
+	if actual != expected {
+		t.Fatalf("expected listener %p, got %p", expected, actual)
+	}
+
+	expectCalls := []string{"tcp4 127.0.0.1:0", "tcp6 [::1]:0"}
+	if !reflect.DeepEqual(calls, expectCalls) {
+		t.Fatalf("expected calls %v, got %v", expectCalls, calls)
+	}
+}
+
+func TestListenTCPForPingbackReportsBothFailures(t *testing.T) {
+	_, err := listenTCPForPingback(func(network, address string) (net.Listener, error) {
+		return nil, errors.New(network + " failed")
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "tcp4 failed") ||
+		!strings.Contains(err.Error(), "tcp6 failed") {
+		t.Fatalf("expected both listener errors, got: %v", err)
+	}
+}
+
+type stubListener struct {
+	addr net.Addr
+}
+
+func (sl *stubListener) Accept() (net.Conn, error) {
+	return nil, net.ErrClosed
+}
+
+func (sl *stubListener) Close() error {
+	return nil
+}
+
+func (sl *stubListener) Addr() net.Addr {
+	return sl.addr
 }
 
 func Test_isCaddyfile(t *testing.T) {

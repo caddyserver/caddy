@@ -25,17 +25,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/cel-go/cel"
-	"github.com/google/cel-go/common"
-	"github.com/google/cel-go/common/ast"
-	"github.com/google/cel-go/common/operators"
-	"github.com/google/cel-go/common/types"
-	"github.com/google/cel-go/common/types/ref"
-	"github.com/google/cel-go/common/types/traits"
-	"github.com/google/cel-go/ext"
-	"github.com/google/cel-go/interpreter"
-	"github.com/google/cel-go/interpreter/functions"
-	"github.com/google/cel-go/parser"
+	"cel.dev/cel-go/cel"
+	"cel.dev/cel-go/common"
+	"cel.dev/cel-go/common/ast"
+	"cel.dev/cel-go/common/operators"
+	"cel.dev/cel-go/common/types"
+	"cel.dev/cel-go/common/types/ref"
+	"cel.dev/cel-go/common/types/traits"
+	"cel.dev/cel-go/ext"
+	"cel.dev/cel-go/interpreter"
+	"cel.dev/cel-go/interpreter/functions"
+	"cel.dev/cel-go/parser"
 	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
@@ -108,7 +108,7 @@ func (m *MatchExpression) UnmarshalJSON(data []byte) error {
 		return json.Unmarshal(data, &m.Expr)
 	}
 	// otherwise, it's a full object, so unmarshal it,
-	// using an temp map to avoid infinite recursion
+	// using a temp map to avoid infinite recursion
 	var tmpJson map[string]any
 	err := json.Unmarshal(data, &tmpJson)
 	*m = MatchExpression{
@@ -118,7 +118,7 @@ func (m *MatchExpression) UnmarshalJSON(data []byte) error {
 	return err
 }
 
-// Provision sets ups m.
+// Provision sets up m.
 func (m *MatchExpression) Provision(ctx caddy.Context) error {
 	m.log = ctx.Logger()
 
@@ -319,7 +319,7 @@ func (cr celHTTPRequest) Value() any  { return cr }
 
 var pkixNameCELType = cel.ObjectType("pkix.Name", traits.ReceiverType)
 
-// celPkixName wraps an pkix.Name with
+// celPkixName wraps a pkix.Name with
 // methods to satisfy the ref.Val interface.
 type celPkixName struct{ *pkix.Name }
 
@@ -503,7 +503,7 @@ func CELMatcherDecorator(funcName string, fac any) interpreter.InterpretableDeco
 			}
 			return interpreter.NewCall(
 				i.ID(), funcName, funcName+"_opt",
-				[]interpreter.Interpretable{reqAttr},
+				[]interpreter.InterpretableV2{reqAttr},
 				func(args ...ref.Val) ref.Val {
 					// The request value, guaranteed to be of type celHTTPRequest
 					celReq := args[0]
@@ -526,7 +526,7 @@ func CELMatcherDecorator(funcName string, fac any) interpreter.InterpretableDeco
 			}
 			return interpreter.NewCall(
 				i.ID(), funcName, funcName+"_opt",
-				[]interpreter.Interpretable{reqAttr},
+				[]interpreter.InterpretableV2{reqAttr},
 				func(args ...ref.Val) ref.Val {
 					// The request value, guaranteed to be of type celHTTPRequest
 					celReq := args[0]

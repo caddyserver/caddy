@@ -101,7 +101,7 @@ type httpRedirectConn struct {
 
 // Read tries to peek at the first few bytes of the request, and if we get
 // an error reading the headers, and that error was due to the bytes looking
-// like an HTTP request, then we perform a HTTP->HTTPS redirect on the same
+// like an HTTP request, then we perform an HTTP->HTTPS redirect on the same
 // port as the original connection.
 func (c *httpRedirectConn) Read(p []byte) (int, error) {
 	if c.once {

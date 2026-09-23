@@ -47,6 +47,7 @@ import (
 	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2/caddyconfig/warning"
+	"github.com/caddyserver/caddy/v2/internal"
 )
 
 // testCertMagicStorageOverride is a package-level test hook. Tests may set
@@ -120,10 +121,6 @@ type AdminConfig struct {
 	//
 	// EXPERIMENTAL: This feature is subject to change.
 	Remote *RemoteAdmin `json:"remote,omitempty"`
-
-	// Holds onto the routers so that we can later provision them
-	// if they require provisioning.
-	routers []AdminRouter
 }
 
 // ConfigSettings configures the management of configuration.
@@ -212,8 +209,8 @@ type AdminAccess struct {
 // AdminPermissions specifies what kinds of requests are allowed
 // to be made to the admin endpoint.
 type AdminPermissions struct {
-	// The API paths allowed. Paths are simple prefix matches.
-	// Any subpath of the specified paths will be allowed.
+	// The API paths allowed. A request path must either equal an
+	// allowed path or be a subpath with a path-segment boundary.
 	Paths []string `json:"paths,omitempty"`
 
 	// The HTTP methods allowed for the given paths.
@@ -222,7 +219,7 @@ type AdminPermissions struct {
 
 // newAdminHandler reads admin's config and returns an http.Handler suitable
 // for use in an admin endpoint server, which will be listening on listenAddr.
-func (admin *AdminConfig) newAdminHandler(addr NetworkAddress, remote bool, _ Context) adminHandler {
+func (admin *AdminConfig) newAdminHandler(addr NetworkAddress, remote bool, ctx Context) (adminHandler, error) {
 	muxWrap := adminHandler{mux: http.NewServeMux()}
 
 	// secure the local or remote endpoint respectively
@@ -279,34 +276,21 @@ func (admin *AdminConfig) newAdminHandler(addr NetworkAddress, remote bool, _ Co
 	// register third-party module endpoints
 	for _, m := range GetModules("admin.api") {
 		router := m.New().(AdminRouter)
+
+		// provision the router before registering its routes, so
+		// handlers have access to all provisioned state
+		if provisioner, ok := router.(Provisioner); ok {
+			if err := provisioner.Provision(ctx); err != nil {
+				return adminHandler{}, fmt.Errorf("provisioning admin router module %s: %v", m.ID, err)
+			}
+		}
+
 		for _, route := range router.Routes() {
 			addRoute(route.Pattern, handlerLabel, route.Handler)
 		}
-		admin.routers = append(admin.routers, router)
 	}
 
-	return muxWrap
-}
-
-// provisionAdminRouters provisions all the router modules
-// in the admin.api namespace that need provisioning.
-func (admin *AdminConfig) provisionAdminRouters(ctx Context) error {
-	for _, router := range admin.routers {
-		provisioner, ok := router.(Provisioner)
-		if !ok {
-			continue
-		}
-
-		err := provisioner.Provision(ctx)
-		if err != nil {
-			return err
-		}
-	}
-
-	// We no longer need the routers once provisioned, allow for GC
-	admin.routers = nil
-
-	return nil
+	return muxWrap, nil
 }
 
 // allowedOrigins returns a list of origins that are allowed.
@@ -430,11 +414,7 @@ func replaceLocalAdminServer(cfg *Config, ctx Context) error {
 		return err
 	}
 
-	handler := cfg.Admin.newAdminHandler(addr, false, ctx)
-
-	// run the provisioners for loaded modules to make sure local
-	// state is properly re-initialized in the new admin server
-	err = cfg.Admin.provisionAdminRouters(ctx)
+	handler, err := cfg.Admin.newAdminHandler(addr, false, ctx)
 	if err != nil {
 		return err
 	}
@@ -558,11 +538,7 @@ func replaceRemoteAdminServer(ctx Context, cfg *Config) error {
 
 	// make the HTTP handler but disable Host/Origin enforcement
 	// because we are using TLS authentication instead
-	handler := cfg.Admin.newAdminHandler(addr, true, ctx)
-
-	// run the provisioners for loaded modules to make sure local
-	// state is properly re-initialized in the new admin server
-	err = cfg.Admin.provisionAdminRouters(ctx)
+	handler, err := cfg.Admin.newAdminHandler(addr, true, ctx)
 	if err != nil {
 		return err
 	}
@@ -578,6 +554,18 @@ func replaceRemoteAdminServer(ctx Context, cfg *Config) error {
 			}
 			accessControl.publicKeys = append(accessControl.publicKeys, cert.PublicKey)
 			clientCertPool.AddCert(cert)
+		}
+		for j, perm := range accessControl.Permissions {
+			for _, permPath := range perm.Paths {
+				if permPath == "" || permPath == "/" {
+					continue
+				}
+				cleanPath := path.Clean(permPath)
+				hasCanonicalTrailingSlash := cleanPath != "/" && strings.TrimSuffix(permPath, "/") == cleanPath
+				if cleanPath != permPath && !hasCanonicalTrailingSlash {
+					return fmt.Errorf("access control %d permission %d: path %q is not canonical (did you mean %q?)", i, j, permPath, cleanPath)
+				}
+			}
 		}
 	}
 
@@ -718,7 +706,7 @@ func (remote RemoteAdmin) enforceAccessControls(r *http.Request) error {
 						// verify path
 						pathFound := accessPerm.Paths == nil
 						for _, allowedPath := range accessPerm.Paths {
-							if strings.HasPrefix(r.URL.Path, allowedPath) {
+							if adminPathAllowed(r.URL.Path, allowedPath) {
 								pathFound = true
 								break
 							}
@@ -747,14 +735,35 @@ func (remote RemoteAdmin) enforceAccessControls(r *http.Request) error {
 	}
 }
 
+func adminPathAllowed(reqPath, allowedPath string) bool {
+	reqPathHadTrailingSlash := strings.HasSuffix(reqPath, "/")
+	reqPath = path.Clean(reqPath)
+	if allowedPath == "" {
+		return true
+	}
+	allowedPathHadTrailingSlash := allowedPath != "/" && strings.HasSuffix(allowedPath, "/")
+	allowedPath = path.Clean(allowedPath)
+	if allowedPath == "/" {
+		return true
+	}
+	if reqPath == allowedPath {
+		return !allowedPathHadTrailingSlash || reqPathHadTrailingSlash
+	}
+	return strings.HasPrefix(reqPath, allowedPath+"/")
+}
+
 func stopAdminServer(srv *http.Server) error {
 	if srv == nil {
 		return fmt.Errorf("no admin server")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	timeout := 10 * time.Second
+	ctx, cancel := context.WithTimeoutCause(context.Background(), timeout, fmt.Errorf("stopping admin server: %ds timeout", int(timeout.Seconds())))
 	defer cancel()
 	err := srv.Shutdown(ctx)
 	if err != nil {
+		if cause := context.Cause(ctx); cause != nil && errors.Is(err, context.DeadlineExceeded) {
+			err = cause
+		}
 		return fmt.Errorf("shutting down admin server: %v", err)
 	}
 	Log().Named("admin").Info("stopped previous server", zap.String("address", srv.Addr))
@@ -798,7 +807,7 @@ func (h adminHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		zap.String("uri", r.RequestURI),
 		zap.String("remote_ip", ip),
 		zap.String("remote_port", port),
-		zap.Reflect("headers", r.Header),
+		zap.Object("headers", internal.LoggableHTTPHeader{Header: r.Header}),
 	)
 	if r.TLS != nil {
 		log = log.With(
@@ -857,6 +866,7 @@ func (h adminHandler) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			Err:        errors.New("invalid origin 'null'"),
 			Message:    "Buggy browser is sending null Origin header.",
 		})
+		return
 	}
 
 	if h.enforceHost {
@@ -931,7 +941,9 @@ func (h adminHandler) handleError(w http.ResponseWriter, r *http.Request, err er
 // rebinding attacks.
 func (h adminHandler) checkHost(r *http.Request) error {
 	allowed := slices.ContainsFunc(h.allowedOrigins, func(u *url.URL) bool {
-		return r.Host == u.Host
+		// Host comparison is case-insensitive per RFC 3986 §3.2.2, same as
+		// the Origin check below; url.Parse does not normalize host case.
+		return strings.EqualFold(r.Host, u.Host)
 	})
 	if !allowed {
 		return APIError{
@@ -985,7 +997,9 @@ func (h adminHandler) originAllowed(origin *url.URL) bool {
 		if allowedOrigin.Scheme != "" && origin.Scheme != allowedOrigin.Scheme {
 			continue
 		}
-		if origin.Host == allowedOrigin.Host {
+		// Host comparison is case-insensitive per RFC 3986 §3.2.2; url.Parse
+		// does not normalize host case, so fold it here.
+		if strings.EqualFold(origin.Host, allowedOrigin.Host) {
 			return true
 		}
 	}
@@ -1057,6 +1071,9 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 			buf := bufPool.Get().(*bytes.Buffer)
 			buf.Reset()
 			defer bufPool.Put(buf)
+
+			const maxConfigSize = 100 * 1024 * 1024 // 100 MB
+			r.Body = http.MaxBytesReader(w, r.Body, maxConfigSize)
 
 			_, err := io.Copy(buf, r.Body)
 			if err != nil {
@@ -1140,6 +1157,20 @@ func handleStop(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+func parseCanonicalArrayIndex(idx string) (int, error) {
+	if idx == "" {
+		return 0, fmt.Errorf("empty index")
+	}
+	i, err := strconv.Atoi(idx)
+	if err != nil {
+		return 0, err
+	}
+	if strconv.Itoa(i) != idx {
+		return 0, fmt.Errorf("non-canonical array index")
+	}
+	return i, nil
+}
+
 // unsyncedConfigAccess traverses into the current config and performs
 // the operation at path according to method, using body and out as
 // needed. This is a low-level, unsynchronized function; most callers
@@ -1201,11 +1232,12 @@ traverseLoop:
 				var idx int
 				if method != http.MethodPost {
 					idxStr := parts[len(parts)-1]
-					idx, err = strconv.Atoi(idxStr)
+					idx, err = parseCanonicalArrayIndex(idxStr)
 					if err != nil {
 						return fmt.Errorf("[%s] invalid array index '%s': %v",
 							path, idxStr, err)
 					}
+
 					if idx < 0 || (method != http.MethodPut && idx >= len(arr)) || idx > len(arr) {
 						return fmt.Errorf("[%s] array index out of bounds: %s", path, idxStr)
 					}
@@ -1305,7 +1337,7 @@ traverseLoop:
 			}
 
 		case []any:
-			partInt, err := strconv.Atoi(part)
+			partInt, err := parseCanonicalArrayIndex(part)
 			if err != nil {
 				return fmt.Errorf("[/%s] invalid array index '%s': %v",
 					strings.Join(parts[:i+1], "/"), part, err)

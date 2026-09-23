@@ -1,6 +1,10 @@
 package fastcgi
 
 import (
+	"context"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -8,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
 func TestProvisionSplitPath(t *testing.T) {
@@ -191,6 +196,65 @@ func TestSplitPos(t *testing.T) {
 			splitPath: []string{".php"},
 			wantPos:   9,
 		},
+		// Regression tests adapted from FrankenPHP advisories
+		// GHSA-3g8v-8r37-cgjm and GHSA-v4h7-cj44-8fc8: search.IgnoreCase
+		// matched Unicode equivalents of ASCII letters as ".php", and an
+		// inner non-ASCII byte path could leave the match flag stale.
+		{
+			name:      "non-ascii byte after dot must not match",
+			path:      "/PoC-match-unset.¡.txt",
+			splitPath: []string{".php"},
+			wantPos:   -1,
+		},
+		{
+			name:      "non-ascii byte mid-extension must not match",
+			path:      "/script.p\xc2\xa1p",
+			splitPath: []string{".php"},
+			wantPos:   -1,
+		},
+		{
+			name:      "small full stop ﹒ in extension must not match",
+			path:      "/shell﹒php",
+			splitPath: []string{".php"},
+			wantPos:   -1,
+		},
+		{
+			name:      "fullwidth full stop ． in extension must not match",
+			path:      "/shell．php",
+			splitPath: []string{".php"},
+			wantPos:   -1,
+		},
+		{
+			name:      "fullwidth p in extension must not match",
+			path:      "/shell.ｐhp",
+			splitPath: []string{".php"},
+			wantPos:   -1,
+		},
+		{
+			name:      "circled php must not match",
+			path:      "/shell.ⓟⓗⓟ",
+			splitPath: []string{".php"},
+			wantPos:   -1,
+		},
+		{
+			name:      "mathematical sans-serif bold php must not match",
+			path:      "/shell.\U0001D5FD\U0001D5F5\U0001D5FD",
+			splitPath: []string{".php"},
+			wantPos:   -1,
+		},
+		{
+			name:      "mathematical script php must not match",
+			path:      "/shell.\U0001D4C5\U0001D4BD\U0001D4C5",
+			splitPath: []string{".php"},
+			wantPos:   -1,
+		},
+		{
+			name:      "circled php with later real php still picks the real one",
+			path:      "/shell.ⓟⓗⓟ.anything-after-payload.php",
+			splitPath: []string{".php"},
+			// "/shell." (7) + "ⓟⓗⓟ" (3*3 bytes) + ".anything-after-payload.php" (27) = 43
+			wantPos: 43,
+		},
 	}
 
 	for _, tt := range tests {
@@ -243,4 +307,181 @@ func TestSplitPosUnicodeSecurityRegression(t *testing.T) {
 		assert.Equal(t, "/ȺȺȺȺshell.php", scriptName, "script name should be the path up to first .php")
 		assert.Equal(t, ".txt.php", pathInfo, "path info should be the remainder after first .php")
 	}
+}
+
+// TestHeaderNameReplacer asserts the CGI header-to-env normalization rule:
+// hyphens are mapped to underscores while every other character (including
+// spaces and dots) is passed through. Spaces are not RFC 7230 tokens, so they
+// cannot reach this function from the wire; the only header names that
+// survive untouched at the server layer are sanitized by the underscore/dot
+// filter in caddyhttp.Server.serveHTTP (see GHSA-f59h-q822-g45g,
+// GHSA-49wc-4hcv-v58q).
+func TestHeaderNameReplacer(t *testing.T) {
+	tests := []struct {
+		in, want string
+	}{
+		{"X-Forwarded-For", "X_Forwarded_For"},
+		{"Remote-User", "Remote_User"},
+		// Underscores are preserved (the server has already dropped any
+		// underscore-named headers when the filter is on).
+		{"Remote_User", "Remote_User"},
+		// Dots are preserved by this replacer too; the server-layer filter is
+		// what prevents a dotted alias (e.g. Remote.User) from reaching here.
+		{"Remote.User", "Remote.User"},
+		// Spaces are not rewritten because Go's HTTP parser rejects whitespace in
+		// header field names.
+		{"Foo Bar", "Foo Bar"},
+	}
+	for _, tt := range tests {
+		assert.Equal(t, tt.want, headerNameReplacer.Replace(tt.in), "input %q", tt.in)
+	}
+}
+
+// TestSplitPosSecurityRegressionUnicodeBypass guards against the FrankenPHP
+// advisories GHSA-3g8v-8r37-cgjm (uninitialized match flag on inner non-ASCII
+// byte) and GHSA-v4h7-cj44-8fc8 (Unicode equivalence via search.IgnoreCase
+// folding fullwidth/mathematical/circled letters onto ASCII). Every payload
+// below produced a false positive in the vulnerable implementation; none
+// must match here.
+func TestSplitPosSecurityRegressionUnicodeBypass(t *testing.T) {
+	t.Parallel()
+
+	tr := Transport{SplitPath: []string{".php"}}
+	payloads := []string{
+		"/PoC-match-unset.¡.txt",                // GHSA-3g8v: stale match=true on IndexString fallback
+		"/shell﹒php",                            // U+FE52 small full stop
+		"/shell．php",                            // U+FF0E fullwidth full stop
+		"/shell.ｐhp",                            // U+FF50 fullwidth p
+		"/shell.pｈp",                            // U+FF48 fullwidth h
+		"/shell.phｐ",                            // U+FF50 fullwidth p (trailing)
+		"/shell.\U0001D5C1\U0001D5B5\U0001D5C1", // mathematical sans-serif p/h
+		"/shell.\U0001D5FD\U0001D5F5\U0001D5FD", // mathematical sans-serif bold p/h
+		"/shell.\U0001D4C5\U0001D4BD\U0001D4C5", // mathematical script p/h
+		"/shell.ⓟⓗⓟ",                            // circled latin small
+	}
+
+	for _, p := range payloads {
+		assert.Equalf(t, -1, tr.splitPos(p), "payload %q must not be detected as .php", p)
+	}
+}
+
+func TestBuildEnvServerAddr(t *testing.T) {
+	testCases := []struct {
+		name         string
+		localAddr    net.Addr
+		envVars      map[string]string
+		expectedAddr string
+		expectExists bool
+	}{
+		{
+			name:         "IPv4 TCP listener",
+			localAddr:    &net.TCPAddr{IP: net.ParseIP("10.0.0.12"), Port: 80},
+			expectedAddr: "10.0.0.12",
+			expectExists: true,
+		},
+		{
+			name:         "IPv6 TCP listener",
+			localAddr:    &net.TCPAddr{IP: net.ParseIP("2001:db8::1"), Port: 443},
+			expectedAddr: "2001:db8::1",
+			expectExists: true,
+		},
+		{
+			name:         "Missing local address context",
+			localAddr:    nil,
+			expectExists: false,
+		},
+		{
+			name:         "Unix listener",
+			localAddr:    &net.UnixAddr{Name: "/var/run/caddy.sock", Net: "unix"},
+			expectExists: false,
+		},
+		{
+			name:         "Explicitly configured SERVER_ADDR override",
+			localAddr:    &net.TCPAddr{IP: net.ParseIP("10.0.0.12"), Port: 80},
+			envVars:      map[string]string{"SERVER_ADDR": "192.168.1.100"},
+			expectedAddr: "192.168.1.100",
+			expectExists: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tr := Transport{
+				Root:    "/var/www",
+				EnvVars: tc.envVars,
+			}
+			err := tr.Provision(caddy.Context{})
+			require.NoError(t, err)
+
+			req, err := http.NewRequest(http.MethodGet, "http://localhost/index.php", nil)
+			require.NoError(t, err)
+
+			req = req.WithContext(context.WithValue(req.Context(), caddyhttp.OriginalRequestCtxKey, *req))
+			repl := caddy.NewReplacer()
+			req = req.WithContext(context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl))
+
+			if tc.localAddr != nil {
+				req = req.WithContext(context.WithValue(req.Context(), http.LocalAddrContextKey, tc.localAddr))
+			}
+
+			env, err := tr.buildEnv(req)
+			require.NoError(t, err)
+
+			val, exists := env["SERVER_ADDR"]
+			assert.Equal(t, tc.expectExists, exists)
+			if tc.expectExists {
+				assert.Equal(t, tc.expectedAddr, val)
+			}
+		})
+	}
+}
+
+// TestBuildEnvDropsProxyHeader guards against the HTTPoxy vulnerability
+// (CVE-2016-5385): a client-supplied `Proxy` request header must never be
+// translated into the HTTP_PROXY environment variable, since many HTTP client
+// libraries used by FastCGI backends honor HTTP_PROXY for outbound requests,
+// which would let an attacker hijack the backend's traffic.
+// See https://httpoxy.org.
+func TestBuildEnvDropsProxyHeader(t *testing.T) {
+	t.Parallel()
+
+	newRequest := func(headers http.Header) *http.Request {
+		r := httptest.NewRequest(http.MethodGet, "http://example.com/index.php", nil)
+		// Set the header map directly so non-canonical casing is preserved,
+		// mimicking a header that reaches buildEnv unmodified.
+		r.Header = headers
+		ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer())
+		ctx = context.WithValue(ctx, caddyhttp.VarsCtxKey, map[string]any{})
+		ctx = context.WithValue(ctx, caddyhttp.OriginalRequestCtxKey, *r)
+		return r.WithContext(ctx)
+	}
+
+	for _, casing := range []string{"Proxy", "proxy", "pRoXy", "PROXY"} {
+		t.Run("casing "+casing, func(t *testing.T) {
+			r := newRequest(http.Header{
+				casing:       []string{"http://attacker.example:8080"},
+				"X-Safe-Hdr": []string{"kept"},
+			})
+
+			env, err := Transport{}.buildEnv(r)
+			require.NoError(t, err)
+
+			assert.NotContains(t, env, "HTTP_PROXY", "HTTP_PROXY must never be set from a client header")
+			// Sanity check that unrelated headers are still forwarded, i.e. the
+			// filter is narrow and doesn't break normal header passthrough.
+			assert.Equal(t, "kept", env["HTTP_X_SAFE_HDR"])
+		})
+	}
+
+	t.Run("configured HTTP_PROXY is preserved", func(t *testing.T) {
+		// The filter must only drop the *client* header; an explicitly
+		// configured env var is trusted and must survive.
+		r := newRequest(http.Header{"Proxy": []string{"http://attacker.example:8080"}})
+
+		tr := Transport{EnvVars: map[string]string{"HTTP_PROXY": "http://trusted.example:3128"}}
+		env, err := tr.buildEnv(r)
+		require.NoError(t, err)
+
+		assert.Equal(t, "http://trusted.example:3128", env["HTTP_PROXY"])
+	})
 }

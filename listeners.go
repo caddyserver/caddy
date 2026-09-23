@@ -361,7 +361,7 @@ func ParseNetworkAddressWithDefaults(addr, defaultNetwork string, defaultPort ui
 		if end < start {
 			return NetworkAddress{}, fmt.Errorf("end port must not be less than start port")
 		}
-		if (end - start) > maxPortSpan {
+		if (end-start)+1 > maxPortSpan {
 			return NetworkAddress{}, fmt.Errorf("port range exceeds %d ports", maxPortSpan)
 		}
 	}
@@ -462,7 +462,10 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 		sqs := newSharedQUICState(tlsConf)
 		// http3.ConfigureTLSConfig only uses this field and tls App sets this field as well
 		//nolint:gosec
-		quicTlsConfig := &tls.Config{GetConfigForClient: sqs.getConfigForClient}
+		quicTlsConfig := &tls.Config{
+			GetConfigForClient:          sqs.getConfigForClient,
+			GetEncryptedClientHelloKeys: sqs.getEncryptedClientHelloKeys,
+		}
 		// Require clients to verify their source address when we're handling more than 1000 handshakes per second.
 		// TODO: make tunable?
 		limiter := rate.NewLimiter(1000, 1000)
@@ -477,8 +480,9 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 		earlyLn, err := tr.ListenEarly(
 			http3.ConfigureTLSConfig(quicTlsConfig),
 			&quic.Config{
-				Allow0RTT: allow0rtt,
-				Tracer:    h3qlog.DefaultConnectionTracer,
+				InitialPacketSize: 1200,
+				Allow0RTT:         allow0rtt,
+				Tracer:            h3qlog.DefaultConnectionTracer,
 			},
 		)
 		if err != nil {
@@ -512,7 +516,7 @@ func ListenerUsage(network, addr string) int {
 // contextAndCancelFunc groups context and its cancelFunc
 type contextAndCancelFunc struct {
 	context.Context
-	context.CancelFunc
+	context.CancelCauseFunc
 }
 
 // sharedQUICState manages GetConfigForClient
@@ -540,19 +544,29 @@ func (sqs *sharedQUICState) getConfigForClient(ch *tls.ClientHelloInfo) (*tls.Co
 	return sqs.activeTlsConf.GetConfigForClient(ch)
 }
 
+// getEncryptedClientHelloKeys is used as tls.Config's GetEncryptedClientHelloKeys field.
+func (sqs *sharedQUICState) getEncryptedClientHelloKeys(ch *tls.ClientHelloInfo) ([]tls.EncryptedClientHelloKey, error) {
+	sqs.rmu.RLock()
+	defer sqs.rmu.RUnlock()
+	if sqs.activeTlsConf.GetEncryptedClientHelloKeys == nil {
+		return nil, nil
+	}
+	return sqs.activeTlsConf.GetEncryptedClientHelloKeys(ch)
+}
+
 // addState adds tls.Config and activeRequests to the map if not present and returns the corresponding context and its cancelFunc
 // so that when cancelled, the active tls.Config will change
-func (sqs *sharedQUICState) addState(tlsConfig *tls.Config) (context.Context, context.CancelFunc) {
+func (sqs *sharedQUICState) addState(tlsConfig *tls.Config) (context.Context, context.CancelCauseFunc) {
 	sqs.rmu.Lock()
 	defer sqs.rmu.Unlock()
 
 	if cacc, ok := sqs.tlsConfs[tlsConfig]; ok {
-		return cacc.Context, cacc.CancelFunc
+		return cacc.Context, cacc.CancelCauseFunc
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	wrappedCancel := func() {
-		cancel()
+	ctx, cancel := context.WithCancelCause(context.Background())
+	wrappedCancel := func(cause error) {
+		cancel(cause)
 
 		sqs.rmu.Lock()
 		defer sqs.rmu.Unlock()
@@ -608,13 +622,13 @@ func fakeClosedErr(l interface{ Addr() net.Addr }) error {
 // indicating that it is pretending to be closed so that the
 // server using it can terminate, while the underlying
 // socket is actually left open.
-var errFakeClosed = fmt.Errorf("listener 'closed' 😉")
+var errFakeClosed = fmt.Errorf("QUIC listener 'closed' 😉")
 
 type fakeCloseQuicListener struct {
-	closed              int32 // accessed atomically; belongs to this struct only
-	*sharedQuicListener       // embedded, so we also become a quic.EarlyListener
+	closed              atomic.Int32
+	*sharedQuicListener // embedded, so we also become a quic.EarlyListener
 	context             context.Context
-	contextCancel       context.CancelFunc
+	contextCancel       context.CancelCauseFunc
 }
 
 // Currently Accept ignores the passed context, however a situation where
@@ -629,16 +643,16 @@ func (fcql *fakeCloseQuicListener) Accept(_ context.Context) (*quic.Conn, error)
 	}
 
 	// if the listener is "closed", return a fake closed error instead
-	if atomic.LoadInt32(&fcql.closed) == 1 && errors.Is(err, context.Canceled) {
+	if fcql.closed.Load() == 1 && errors.Is(err, context.Canceled) {
 		return nil, fakeClosedErr(fcql)
 	}
 	return nil, err
 }
 
 func (fcql *fakeCloseQuicListener) Close() error {
-	if atomic.CompareAndSwapInt32(&fcql.closed, 0, 1) {
-		fcql.contextCancel()
-	} else if atomic.CompareAndSwapInt32(&fcql.closed, 1, 2) {
+	if fcql.closed.CompareAndSwap(0, 1) {
+		fcql.contextCancel(errFakeClosed)
+	} else if fcql.closed.CompareAndSwap(1, 2) {
 		_, _ = listenerPool.Delete(fcql.sharedQuicListener.key)
 	}
 	return nil

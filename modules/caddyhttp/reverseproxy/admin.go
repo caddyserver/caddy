@@ -73,8 +73,9 @@ func (adminUpstreams) handleUpstreams(w http.ResponseWriter, r *http.Request) er
 
 	// Collect the results to respond with
 	results := []upstreamStatus{}
+	knownHosts := make(map[string]struct{})
 
-	// Iterate over the upstream pool (needs to be fast)
+	// Iterate over the static upstream pool (needs to be fast)
 	var rangeErr error
 	hosts.Range(func(key, val any) bool {
 		address, ok := key.(string)
@@ -95,6 +96,8 @@ func (adminUpstreams) handleUpstreams(w http.ResponseWriter, r *http.Request) er
 			return false
 		}
 
+		knownHosts[address] = struct{}{}
+
 		results = append(results, upstreamStatus{
 			Address:     address,
 			NumRequests: upstream.NumRequests(),
@@ -103,10 +106,31 @@ func (adminUpstreams) handleUpstreams(w http.ResponseWriter, r *http.Request) er
 		return true
 	})
 
-	// If an error happened during the range, return it
+	currentInFlight := getInFlightRequests()
+	for address, count := range currentInFlight {
+		if _, exists := knownHosts[address]; !exists && count > 0 {
+			results = append(results, upstreamStatus{
+				Address:     address,
+				NumRequests: int(count),
+				Fails:       0,
+			})
+		}
+	}
+
 	if rangeErr != nil {
 		return rangeErr
 	}
+
+	// Also include dynamic upstreams
+	dynamicHostsMu.RLock()
+	for address, entry := range dynamicHosts {
+		results = append(results, upstreamStatus{
+			Address:     address,
+			NumRequests: entry.host.NumRequests(),
+			Fails:       entry.host.Fails(),
+		})
+	}
+	dynamicHostsMu.RUnlock()
 
 	err := enc.Encode(results)
 	if err != nil {

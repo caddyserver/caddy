@@ -155,7 +155,7 @@ func (l *lexer) next() (bool, error) {
 			// want to keep.
 			if ch == '\n' {
 				if len(val) == 2 {
-					return false, fmt.Errorf("missing opening heredoc marker on line #%d; must contain only alpha-numeric characters, dashes and underscores; got empty string", l.line)
+					return false, fmt.Errorf("missing opening heredoc marker on line #%d; must contain only alphanumeric characters, dashes and underscores; got empty string", l.line)
 				}
 
 				// check if there's too many <
@@ -165,7 +165,7 @@ func (l *lexer) next() (bool, error) {
 
 				heredocMarker = string(val[2:])
 				if !heredocMarkerRegexp.Match([]byte(heredocMarker)) {
-					return false, fmt.Errorf("heredoc marker on line #%d must contain only alpha-numeric characters, dashes and underscores; got '%s'", l.line, heredocMarker)
+					return false, fmt.Errorf("heredoc marker on line #%d must contain only alphanumeric characters, dashes and underscores; got '%s'", l.line, heredocMarker)
 				}
 
 				inHeredoc = true
@@ -345,6 +345,16 @@ func (l *lexer) finalizeHeredoc(val []rune, marker string) ([]rune, error) {
 // (i.e. double quotes, backticks, or heredoc).
 func (t Token) Quoted() bool {
 	return t.wasQuoted > 0
+}
+
+// isOpenCurlyBrace returns true if the token is a structural (unquoted) open curly brace.
+func isOpenCurlyBrace(t Token) bool {
+	return t.Text == "{" && t.wasQuoted == 0
+}
+
+// isCloseCurlyBrace returns true if the token is a structural (unquoted) close curly brace.
+func isCloseCurlyBrace(t Token) bool {
+	return t.Text == "}" && t.wasQuoted == 0
 }
 
 // NumLineBreaks counts how many line breaks are in the token text.

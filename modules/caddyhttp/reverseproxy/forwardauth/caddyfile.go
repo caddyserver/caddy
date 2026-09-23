@@ -129,7 +129,11 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 				if !dispenser.NextArg() {
 					return nil, dispenser.ArgErr()
 				}
-				rpHandler.Rewrite.URI = dispenser.Val()
+				uri := dispenser.Val()
+				if rpHandler.Rewrite.URI != "" {
+					return nil, dispenser.Errf("cannot re-declare uri: %s", uri)
+				}
+				rpHandler.Rewrite.URI = uri
 				dispenser.DeleteN(2)
 
 			case "copy_headers":
@@ -208,6 +212,24 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 	for _, from := range sortedHeadersToCopy {
 		to := http.CanonicalHeaderKey(headersToCopy[from])
 		placeholderName := "http.reverse_proxy.header." + http.CanonicalHeaderKey(from)
+
+		// Always delete the client-supplied header before conditionally setting
+		// it from the auth response. Without this, a client that pre-supplies a
+		// header listed in copy_headers can inject arbitrary values when the auth
+		// service does not return that header: the MatchNot guard below would
+		// skip the Set entirely, leaving the original client-controlled value
+		// intact and forwarding it to the backend.
+		copyHeaderRoutes = append(copyHeaderRoutes, caddyhttp.Route{
+			HandlersRaw: []json.RawMessage{caddyconfig.JSONModuleObject(
+				&headers.Handler{
+					Request: &headers.HeaderOps{
+						Delete: []string{to},
+					},
+				},
+				"handler", "headers", nil,
+			)},
+		})
+
 		handler := &headers.Handler{
 			Request: &headers.HeaderOps{
 				Set: http.Header{

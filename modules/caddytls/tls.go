@@ -18,11 +18,13 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -135,12 +137,15 @@ type TLS struct {
 	certificateLoaders []CertificateLoader
 	automateNames      map[string]struct{}
 	ctx                caddy.Context
+	bgCtx              context.Context
+	bgCancel           context.CancelFunc
+	bgWg               *sync.WaitGroup
 	storageCleanTicker *time.Ticker
-	storageCleanStop   chan struct{}
+	echRotateInterval  time.Duration
 	logger             *zap.Logger
 	events             *caddyevents.App
 
-	serverNames   map[string]struct{}
+	serverNames   map[string]serverNameRegistration
 	serverNamesMu *sync.Mutex
 
 	// set of subjects with managed certificates,
@@ -168,7 +173,7 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	t.logger = ctx.Logger()
 	repl := caddy.NewReplacer()
 	t.managing, t.loaded = make(map[string]string), make(map[string]string)
-	t.serverNames = make(map[string]struct{})
+	t.serverNames = make(map[string]serverNameRegistration)
 	t.serverNamesMu = new(sync.Mutex)
 
 	// set up default DNS module, if any, and make sure it implements all the
@@ -410,6 +415,17 @@ func (t *TLS) Start() error {
 		}
 	}
 
+	if t.bgCtx == nil {
+		parentCtx := t.ctx.Context
+		if parentCtx == nil {
+			parentCtx = context.Background()
+		}
+		t.bgCtx, t.bgCancel = context.WithCancel(parentCtx)
+	}
+	if t.bgWg == nil {
+		t.bgWg = new(sync.WaitGroup)
+	}
+
 	// now that we are running, and all manual certificates have
 	// been loaded, time to load the automated/managed certificates
 	err := t.Manage(t.automateNames)
@@ -422,34 +438,57 @@ func (t *TLS) Start() error {
 
 		// publish ECH configs in the background; does not need to block
 		// server startup, as it could take a while; then keep keys rotated
-		go func() {
+		t.bgWg.Add(1)
+		go func(ctx context.Context) {
+			defer t.bgWg.Done()
+			defer func() {
+				if err := recover(); err != nil {
+					log.Printf("[PANIC] tls ech publisher: %v\n%s", err, debug.Stack())
+				}
+			}()
+
 			// publish immediately first
-			if err := t.publishECHConfigs(echLogger); err != nil {
-				echLogger.Error("publication(s) failed", zap.Error(err))
+			if err := t.publishECHConfigs(ctx, echLogger); err != nil {
+				if !errors.Is(err, context.Canceled) && ctx.Err() == nil {
+					echLogger.Error("publication(s) failed", zap.Error(err))
+				}
 			}
+
+			ticker := time.NewTicker(t.echRotationInterval())
+			defer ticker.Stop()
 
 			// then every so often, rotate and publish if needed
 			// (both of these functions only do something if needed)
 			for {
 				select {
-				case <-time.After(1 * time.Hour):
+				case <-ticker.C:
 					// ensure old keys are rotated out
 					t.EncryptedClientHello.configsMu.Lock()
-					err = t.EncryptedClientHello.rotateECHKeys(t.ctx, echLogger, false)
+					err := t.EncryptedClientHello.rotateECHKeys(t.caddyContext(ctx), echLogger, false)
 					t.EncryptedClientHello.configsMu.Unlock()
 					if err != nil {
-						echLogger.Error("rotating ECH configs failed", zap.Error(err))
+						if !errors.Is(err, context.Canceled) && ctx.Err() == nil {
+							echLogger.Error("rotating ECH configs failed", zap.Error(err))
+						}
+						if ctx.Err() != nil {
+							return
+						}
+						continue
+					}
+					if ctx.Err() != nil {
 						return
 					}
-					err := t.publishECHConfigs(echLogger)
+					err = t.publishECHConfigs(ctx, echLogger)
 					if err != nil {
-						echLogger.Error("publication(s) failed", zap.Error(err))
+						if !errors.Is(err, context.Canceled) && ctx.Err() == nil {
+							echLogger.Error("publication(s) failed", zap.Error(err))
+						}
 					}
-				case <-t.ctx.Done():
+				case <-ctx.Done():
 					return
 				}
 			}
-		}()
+		}(t.bgCtx)
 	}
 
 	if !t.DisableStorageClean {
@@ -463,12 +502,17 @@ func (t *TLS) Start() error {
 
 // Stop stops the TLS module and cleans up any allocations.
 func (t *TLS) Stop() error {
-	// stop the storage cleaner goroutine and ticker
-	if t.storageCleanStop != nil {
-		close(t.storageCleanStop)
+	// cancel all background goroutines (storage cleaner, ECH rotation/publication, etc.)
+	if t.bgCancel != nil {
+		t.bgCancel()
 	}
 	if t.storageCleanTicker != nil {
 		t.storageCleanTicker.Stop()
+	}
+	// wait for all background goroutines to finish before returning,
+	// ensuring no background storage users are active when module Cleanup() runs
+	if t.bgWg != nil {
+		t.bgWg.Wait()
 	}
 	return nil
 }
@@ -613,8 +657,8 @@ func (t *TLS) Manage(subjects map[string]struct{}) error {
 
 // managingWildcardFor returns true if the app is managing a certificate that covers that
 // subject name (including consideration of wildcards), either from its internal list of
-// names that it IS managing certs for, or from the otherSubjsToManage which includes names
-// that WILL be managed.
+// names that it IS managing certs for, from the otherSubjsToManage which includes names
+// that WILL be managed, or from names configured in the 'automate' loader.
 func (t *TLS) managingWildcardFor(subj string, otherSubjsToManage map[string]struct{}) bool {
 	// TODO: we could also consider manually-loaded certs using t.HasCertificateForSubject(),
 	// but that does not account for how manually-loaded certs may be restricted as to which
@@ -629,7 +673,9 @@ func (t *TLS) managingWildcardFor(subj string, otherSubjsToManage map[string]str
 		return managing
 	}
 
-	// replace labels of the domain with wildcards until we get a match
+	// replace labels of the domain with wildcards until we get a match from names
+	// already being managed, those about to be managed in this batch, or those
+	// configured for automation
 	labels := strings.Split(subj, ".")
 	for i := range labels {
 		if labels[i] == "*" {
@@ -643,32 +689,117 @@ func (t *TLS) managingWildcardFor(subj string, otherSubjsToManage map[string]str
 		if _, ok := otherSubjsToManage[candidate]; ok {
 			return true
 		}
+		if _, ok := t.automateNames[candidate]; ok {
+			return true
+		}
 	}
 
 	return false
 }
 
-// RegisterServerNames registers the provided DNS names with the TLS app.
-// This is currently used to auto-publish Encrypted ClientHello (ECH)
-// configurations, if enabled. Use of this function by apps using the TLS
-// app removes the need for the user to redundantly specify domain names
-// in their configuration. This function separates hostname and port
-// (keeping only the hotsname) and filters IP addresses, which can't be
-// used with ECH.
+// RegisterServerNames registers the provided DNS names with the TLS app and
+// associates them with the given HTTPS RR ALPN values, if any. This is
+// currently used to auto-publish Encrypted ClientHello (ECH) configurations,
+// if enabled. Use of this function by apps using the TLS app removes the need
+// for the user to redundantly specify domain names in their configuration.
+// This function separates hostname and port, keeping only the hostname, and
+// filters IP addresses which can't be used with ECH.
 //
 // EXPERIMENTAL: This function and its semantics/behavior are subject to change.
-func (t *TLS) RegisterServerNames(dnsNames []string) {
+func (t *TLS) RegisterServerNames(dnsNames, alpnValues []string) {
 	t.serverNamesMu.Lock()
+	defer t.serverNamesMu.Unlock()
+
 	for _, name := range dnsNames {
 		host, _, err := net.SplitHostPort(name)
 		if err != nil {
 			host = name
 		}
-		if strings.TrimSpace(host) != "" && !certmagic.SubjectIsIP(host) {
-			t.serverNames[strings.ToLower(host)] = struct{}{}
+		host = strings.ToLower(strings.TrimSpace(host))
+		if host == "" || certmagic.SubjectIsIP(host) {
+			continue
+		}
+
+		registration := t.serverNames[host]
+
+		if len(alpnValues) == 0 {
+			t.serverNames[host] = registration
+			continue
+		}
+
+		if registration.alpnValues == nil {
+			registration.alpnValues = make(map[string]struct{}, len(alpnValues))
+		}
+		for _, alpn := range alpnValues {
+			if alpn == "" {
+				continue
+			}
+			registration.alpnValues[alpn] = struct{}{}
+		}
+		t.serverNames[host] = registration
+	}
+}
+
+func (t *TLS) alpnValuesForServerNames(dnsNames []string) map[string][]string {
+	t.serverNamesMu.Lock()
+	defer t.serverNamesMu.Unlock()
+
+	result := make(map[string][]string, len(dnsNames))
+	for _, name := range dnsNames {
+		host, _, err := net.SplitHostPort(name)
+		if err != nil {
+			host = name
+		}
+		host = strings.ToLower(strings.TrimSpace(host))
+		if host == "" {
+			continue
+		}
+
+		registration, ok := t.serverNames[host]
+		if !ok || len(registration.alpnValues) == 0 {
+			continue
+		}
+		result[host] = OrderedHTTPSRRALPN(registration.alpnValues)
+	}
+
+	return result
+}
+
+// OrderedHTTPSRRALPN returns the HTTPS RR ALPN values in preferred order.
+func OrderedHTTPSRRALPN(alpnSet map[string]struct{}) []string {
+	if len(alpnSet) == 0 {
+		return nil
+	}
+
+	knownOrder := append([]string{"h3"}, defaultALPN...)
+	ordered := make([]string, 0, len(alpnSet))
+	seen := make(map[string]struct{}, len(alpnSet))
+
+	for _, alpn := range knownOrder {
+		if _, ok := alpnSet[alpn]; ok {
+			ordered = append(ordered, alpn)
+			seen[alpn] = struct{}{}
 		}
 	}
-	t.serverNamesMu.Unlock()
+
+	if len(ordered) == len(alpnSet) {
+		return ordered
+	}
+
+	var remaining []string
+	for alpn := range alpnSet {
+		if _, ok := seen[alpn]; ok {
+			continue
+		}
+		remaining = append(remaining, alpn)
+	}
+	slices.Sort(remaining)
+
+	return append(ordered, remaining...)
+}
+
+type serverNameRegistration struct {
+	alpnValues map[string]struct{}
 }
 
 // HandleHTTPChallenge ensures that the ACME HTTP challenge or ZeroSSL HTTP
@@ -791,6 +922,8 @@ func (t *TLS) getAutomationPolicyForName(name string) *AutomationPolicy {
 // AllMatchingCertificates returns the list of all certificates in
 // the cache which could be used to satisfy the given SAN.
 func AllMatchingCertificates(san string) []certmagic.Certificate {
+	certCacheMu.RLock()
+	defer certCacheMu.RUnlock()
 	return certCache.AllMatchingCertificates(san)
 }
 
@@ -817,29 +950,44 @@ func (t *TLS) HasCertificateForSubject(subject string) bool {
 // known storage units if it was not recently done, and then runs the
 // operation at every tick from t.storageCleanTicker.
 func (t *TLS) keepStorageClean() {
+	if t.bgCtx == nil {
+		parentCtx := t.ctx.Context
+		if parentCtx == nil {
+			parentCtx = context.Background()
+		}
+		t.bgCtx, t.bgCancel = context.WithCancel(parentCtx)
+	}
+	if t.bgWg == nil {
+		t.bgWg = new(sync.WaitGroup)
+	}
 	t.storageCleanTicker = time.NewTicker(t.storageCleanInterval())
-	t.storageCleanStop = make(chan struct{})
-	go func() {
+	t.bgWg.Add(1)
+	go func(ctx context.Context) {
+		defer t.bgWg.Done()
 		defer func() {
 			if err := recover(); err != nil {
 				log.Printf("[PANIC] storage cleaner: %v\n%s", err, debug.Stack())
 			}
 		}()
-		t.cleanStorageUnits()
+		t.cleanStorageUnits(ctx)
 		for {
 			select {
-			case <-t.storageCleanStop:
+			case <-ctx.Done():
 				return
 			case <-t.storageCleanTicker.C:
-				t.cleanStorageUnits()
+				t.cleanStorageUnits(ctx)
 			}
 		}
-	}()
+	}(t.bgCtx)
 }
 
-func (t *TLS) cleanStorageUnits() {
+func (t *TLS) cleanStorageUnits(ctx context.Context) {
 	storageCleanMu.Lock()
 	defer storageCleanMu.Unlock()
+
+	if err := ctx.Err(); err != nil {
+		return
+	}
 
 	// TODO: This check might not be needed anymore now that CertMagic syncs
 	// and throttles storage cleaning globally across the cluster.
@@ -873,12 +1021,17 @@ func (t *TLS) cleanStorageUnits() {
 	}
 
 	// start with the default/global storage
-	err = certmagic.CleanStorage(t.ctx, t.ctx.Storage(), options)
-	if err != nil {
-		// probably don't want to return early, since we should still
-		// see if any other storages can get cleaned up
-		if c := t.logger.Check(zapcore.ErrorLevel, "could not clean default/global storage"); c != nil {
-			c.Write(zap.Error(err))
+	if storage := t.ctx.Storage(); storage != nil {
+		err = certmagic.CleanStorage(ctx, storage, options)
+		if err != nil {
+			if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+				return
+			}
+			// probably don't want to return early, since we should still
+			// see if any other storages can get cleaned up
+			if c := t.logger.Check(zapcore.ErrorLevel, "could not clean default/global storage"); c != nil {
+				c.Write(zap.Error(err))
+			}
 		}
 	}
 
@@ -888,12 +1041,19 @@ func (t *TLS) cleanStorageUnits() {
 			if ap.storage == nil {
 				continue
 			}
-			if err := certmagic.CleanStorage(t.ctx, ap.storage, options); err != nil {
+			if err := certmagic.CleanStorage(ctx, ap.storage, options); err != nil {
+				if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+					return
+				}
 				if c := t.logger.Check(zapcore.ErrorLevel, "could not clean storage configured in automation policy"); c != nil {
 					c.Write(zap.Error(err))
 				}
 			}
 		}
+	}
+
+	if err := ctx.Err(); err != nil {
+		return
 	}
 
 	// remember last time storage was finished cleaning
@@ -907,6 +1067,19 @@ func (t *TLS) storageCleanInterval() time.Duration {
 		return time.Duration(t.Automation.StorageCleanInterval)
 	}
 	return defaultStorageCleanInterval
+}
+
+func (t *TLS) echRotationInterval() time.Duration {
+	if t.echRotateInterval > 0 {
+		return t.echRotateInterval
+	}
+	return 1 * time.Hour
+}
+
+func (t *TLS) caddyContext(ctx context.Context) caddy.Context {
+	caddyCtx := t.ctx
+	caddyCtx.Context = ctx
+	return caddyCtx
 }
 
 // onEvent translates CertMagic events into Caddy events then dispatches them.

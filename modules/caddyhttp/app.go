@@ -18,11 +18,13 @@ import (
 	"cmp"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
-	"maps"
+	"log"
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -46,6 +48,13 @@ func init() {
 // only on the HTTPS port but which do not have any TLS connection policies
 // defined by adding a good, default TLS connection policy.
 //
+// Similar to how other popular web servers work, incoming request header fields
+// with underscores or dots are ignored/dropped implicitly to mitigate security
+// risks. Specific headers to allow can be explicitly configured using
+// `expected_underscore_headers` and `expected_dot_headers`.
+//
+// ### Placeholders
+//
 // In HTTP routes, additional placeholders are available (replace any `*`):
 //
 // Placeholder | Description
@@ -68,8 +77,10 @@ func init() {
 // `{http.request.orig_uri.path.dir}` | The request's original directory
 // `{http.request.orig_uri.path.file}` | The request's original filename
 // `{http.request.orig_uri.query}` | The request's original query string (without `?`)
+// `{http.request.orig_uri.prefixed_query}` | The request's original query string with a `?` prefix, if non-empty
 // `{http.request.port}` | The port part of the request's Host header
-// `{http.request.proto}` | The protocol of the request
+// `{http.request.proto}` | The raw protocol of the request as returned by Go (e.g., HTTP/2.0 or HTTP/3.0)
+// `{http.request.proto_name}` | The spec-defined protocol of the request (e.g., HTTP/2 or HTTP/3)
 // `{http.request.local.host}` | The host (IP) part of the local address the connection arrived on
 // `{http.request.local.port}` | The port part of the local address the connection arrived on
 // `{http.request.local}` | The local address the connection arrived on
@@ -97,11 +108,15 @@ func init() {
 // `{http.request.tls.client.san.ips.*}` | SAN IP addresses (index optional)
 // `{http.request.tls.client.san.uris.*}` | SAN URIs (index optional)
 // `{http.request.uri}` | The full request URI
+// `{http.request.uri_escaped}` | The full request URI with query-style URL encoding applied (using url.QueryEscape)
 // `{http.request.uri.path}` | The path component of the request URI
+// `{http.request.uri.path_escaped}` | The path component of the request URI with query-style URL encoding applied (using url.QueryEscape)
 // `{http.request.uri.path.*}` | Parts of the path, split by `/` (0-based from left)
 // `{http.request.uri.path.dir}` | The directory, excluding leaf filename
 // `{http.request.uri.path.file}` | The filename of the path, excluding directory
 // `{http.request.uri.query}` | The query string (without `?`)
+// `{http.request.uri.query_escaped}` | The query string with query-style URL encoding applied (using url.QueryEscape)
+// `{http.request.uri.prefixed_query}` | The query string with a `?` prefix, if non-empty
 // `{http.request.uri.query.*}` | Individual query string value
 // `{http.response.header.*}` | Specific response header field
 // `{http.vars.*}` | Custom variables in the HTTP handler chain
@@ -202,6 +217,9 @@ func (app *App) Provision(ctx caddy.Context) error {
 		app.Metrics.httpMetrics = &httpMetrics{}
 		// Scan config for allowed hosts to prevent cardinality explosion
 		app.Metrics.scanConfigForHosts(app)
+		if err := app.Metrics.provisionOTLP(ctx); err != nil {
+			return err
+		}
 	}
 	// prepare each server
 	oldContext := ctx.Context
@@ -213,8 +231,6 @@ func (app *App) Provision(ctx caddy.Context) error {
 		srv.ctx = ctx
 		srv.logger = app.logger.Named("log")
 		srv.errorLogger = app.logger.Named("log.error")
-		srv.shutdownAtMu = new(sync.RWMutex)
-
 		if srv.Metrics != nil {
 			srv.logger.Warn("per-server 'metrics' is deprecated; use 'metrics' in the root 'http' app instead")
 			app.Metrics = cmp.Or(app.Metrics, &Metrics{
@@ -234,12 +250,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 
 		// if no protocols configured explicitly, enable all except h2c
 		if len(srv.Protocols) == 0 {
-			srv.Protocols = []string{"h1", "h2", "h3"}
-		}
-
-		srvProtocolsUnique := map[string]struct{}{}
-		for _, srvProtocol := range srv.Protocols {
-			srvProtocolsUnique[srvProtocol] = struct{}{}
+			srv.Protocols = srv.protocolsWithDefaults()
 		}
 
 		if srv.ListenProtocols != nil {
@@ -250,33 +261,15 @@ func (app *App) Provision(ctx caddy.Context) error {
 
 			for i, lnProtocols := range srv.ListenProtocols {
 				if lnProtocols != nil {
-					// populate empty listen protocols with server protocols
-					lnProtocolsDefault := false
-					var lnProtocolsInclude []string
-					srvProtocolsInclude := maps.Clone(srvProtocolsUnique)
-
-					// keep existing listener protocols unless they are empty
-					for _, lnProtocol := range lnProtocols {
-						if lnProtocol == "" {
-							lnProtocolsDefault = true
-						} else {
-							lnProtocolsInclude = append(lnProtocolsInclude, lnProtocol)
-							delete(srvProtocolsInclude, lnProtocol)
-						}
-					}
-
-					// append server protocols to listener protocols if any listener protocols were empty
-					if lnProtocolsDefault {
-						for _, srvProtocol := range srv.Protocols {
-							if _, ok := srvProtocolsInclude[srvProtocol]; ok {
-								lnProtocolsInclude = append(lnProtocolsInclude, srvProtocol)
-							}
-						}
-					}
-
-					srv.ListenProtocols[i] = lnProtocolsInclude
+					srv.ListenProtocols[i] = srv.listenerProtocolsWithDefaults(lnProtocols)
 				}
 			}
+		}
+
+		// limit max header bytes to a more reasonable default than 1MB from Go std lib
+		// (see https://github.com/php/frankenphp/issues/2459#issuecomment-4655612909)
+		if srv.MaxHeaderBytes <= 0 {
+			srv.MaxHeaderBytes = 16 * 1024
 		}
 
 		// if not explicitly configured by the user, disallow TLS
@@ -307,6 +300,14 @@ func (app *App) Provision(ctx caddy.Context) error {
 		// set the default client IP header to read from
 		if srv.ClientIPHeaders == nil {
 			srv.ClientIPHeaders = []string{"X-Forwarded-For"}
+		}
+
+		// precompute underscore and dot header allowlist rules
+		if err := srv.provisionUnderscoreHeaders(); err != nil {
+			return fmt.Errorf("server %s: %v", srvName, err)
+		}
+		if err := srv.provisionDotHeaders(); err != nil {
+			return fmt.Errorf("server %s: %v", srvName, err)
 		}
 
 		// process each listener address
@@ -406,6 +407,15 @@ func (app *App) Provision(ctx caddy.Context) error {
 		if srv.ReadHeaderTimeout == 0 {
 			srv.ReadHeaderTimeout = defaultReadHeaderTimeout // see #6663
 		}
+		if srv.ReadIdleTimeout == 0 {
+			srv.ReadIdleTimeout = defaultReadIdleTimeout
+		}
+		if srv.WriteIdleTimeout == 0 {
+			srv.WriteIdleTimeout = defaultWriteIdleTimeout
+		}
+		if srv.MaxWriteChunk == 0 {
+			srv.MaxWriteChunk = DefaultMaxWriteChunk
+		}
 	}
 	ctx.Context = oldContext
 	return nil
@@ -467,11 +477,9 @@ func removeTLSALPN(srv *Server, target string) {
 // Start runs the app. It finishes automatic HTTPS if enabled,
 // including management of certificates.
 func (app *App) Start() error {
-	// get a logger compatible with http.Server
-	serverLogger, err := zap.NewStdLogAt(app.logger.Named("stdlib"), zap.DebugLevel)
-	if err != nil {
-		return fmt.Errorf("failed to set up server logger: %v", err)
-	}
+	// get a logger compatible with http.Server; recovered handler panics are
+	// routed to ERROR so they remain visible at the default log level (#7923)
+	serverLogger := serverErrorLogger(app.logger.Named("stdlib"))
 
 	for srvName, srv := range app.Servers {
 		srv.server = &http.Server{
@@ -666,12 +674,44 @@ func (app *App) Start() error {
 
 	// finish automatic HTTPS by finally beginning
 	// certificate management
-	err = app.automaticHTTPSPhase2()
+	err := app.automaticHTTPSPhase2()
 	if err != nil {
 		return fmt.Errorf("finalizing automatic HTTPS: %v", err)
 	}
 
 	return nil
+}
+
+// stdlibLogPrefixPanic is the prefix Go's net/http server uses when it writes a
+// recovered handler panic (and its stack trace) to http.Server.ErrorLog.
+// See the deferred recover in net/http.(*conn).serve.
+const stdlibLogPrefixPanic = "http: panic serving"
+
+// serverErrorLogger returns a *log.Logger suitable for http.Server.ErrorLog
+// that forwards the standard library's server messages to Caddy's structured
+// logger. Most of these messages are low-signal and logged at DEBUG, but
+// recovered handler panics indicate a real server-side error, so they are
+// logged at ERROR to stay visible at the default log level.
+func serverErrorLogger(logger *zap.Logger) *log.Logger {
+	return log.New(stdlibLogRouter{logger: logger}, "", 0)
+}
+
+// stdlibLogRouter is an io.Writer that routes standard library http.Server
+// error-log messages to the appropriate level on the wrapped structured logger.
+type stdlibLogRouter struct {
+	logger *zap.Logger
+}
+
+func (w stdlibLogRouter) Write(p []byte) (int, error) {
+	// log.Logger always appends a trailing newline; trim it so the structured
+	// message doesn't carry a dangling blank line.
+	msg := strings.TrimSuffix(string(p), "\n")
+	if strings.HasPrefix(msg, stdlibLogPrefixPanic) {
+		w.logger.Error(msg)
+	} else {
+		w.logger.Debug(msg)
+	}
+	return len(p), nil
 }
 
 // Stop gracefully shuts down the HTTP server.
@@ -688,9 +728,7 @@ func (app *App) Stop() error {
 				for _, addr := range na.Expand() {
 					if caddy.ListenerUsage(addr.Network, addr.JoinHostPort(0)) < 2 {
 						app.logger.Debug("listener closing and shutdown delay is configured", zap.String("address", addr.String()))
-						server.shutdownAtMu.Lock()
-						server.shutdownAt = scheduledTime
-						server.shutdownAtMu.Unlock()
+						server.shutdownAt.Store(&scheduledTime)
 						delay = true
 					} else {
 						app.logger.Debug("shutdown delay configured but listener will remain open", zap.String("address", addr.String()))
@@ -711,9 +749,10 @@ func (app *App) Stop() error {
 	// enforce grace period if configured
 	if app.GracePeriod > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(app.GracePeriod))
+		timeout := time.Duration(app.GracePeriod)
+		ctx, cancel = context.WithTimeoutCause(ctx, timeout, fmt.Errorf("server graceful shutdown %ds timeout", int(timeout.Seconds())))
 		defer cancel()
-		app.logger.Info("servers shutting down; grace period initiated", zap.Duration("duration", time.Duration(app.GracePeriod)))
+		app.logger.Info("servers shutting down; grace period initiated", zap.Duration("duration", timeout))
 	} else {
 		app.logger.Info("servers shutting down with eternal grace period")
 	}
@@ -739,6 +778,9 @@ func (app *App) Stop() error {
 		}
 
 		if err := server.server.Shutdown(ctx); err != nil {
+			if cause := context.Cause(ctx); cause != nil && errors.Is(err, context.DeadlineExceeded) {
+				err = cause
+			}
 			app.logger.Error("server shutdown",
 				zap.Error(err),
 				zap.Strings("addresses", server.Listen))
@@ -762,6 +804,9 @@ func (app *App) Stop() error {
 		}
 
 		if err := server.h3server.Shutdown(ctx); err != nil {
+			if cause := context.Cause(ctx); cause != nil && errors.Is(err, context.DeadlineExceeded) {
+				err = cause
+			}
 			app.logger.Error("HTTP/3 server shutdown",
 				zap.Error(err),
 				zap.Strings("addresses", server.Listen))
@@ -808,6 +853,12 @@ func (app *App) Stop() error {
 		}
 	}
 
+	// flush and shut down the OTLP metrics exporter (if configured) so any
+	// last data point reaches the collector before the process exits
+	if err := app.Metrics.shutdown(ctx); err != nil {
+		app.logger.Error("shutting down OTLP metrics", zap.Error(err))
+	}
+
 	app.stopped = true
 	return nil
 }
@@ -849,6 +900,14 @@ const (
 	// long time even on legitimately slow connections or
 	// busy servers to read it.
 	defaultReadHeaderTimeout = caddy.Duration(time.Minute)
+
+	// defaultReadIdleTimeout and defaultWriteIdleTimeout mitigate
+	// slowloris-style attacks on the request body and response write.
+	// Unlike a hard deadline, these are safe defaults even for large
+	// payloads because the deadline is reset on every successful
+	// read/write; only a stalled connection is affected.
+	defaultReadIdleTimeout  = caddy.Duration(time.Minute)
+	defaultWriteIdleTimeout = caddy.Duration(time.Minute)
 )
 
 // Interface guards
