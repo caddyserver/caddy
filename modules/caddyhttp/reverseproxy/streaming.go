@@ -308,7 +308,35 @@ func (h Handler) isBidirectionalStream(req *http.Request, res *http.Response) bo
 		(ae == "identity" || ae == "")
 }
 
-func (h Handler) copyResponse(dst http.ResponseWriter, src io.Reader, firstChunk []byte, firstReadErr error, flushInterval time.Duration, logger *zap.Logger) error {
+// shouldProbeResponseBody returns true if the response body should be probed with
+// a 1-byte read before committing response headers downstream. This enables returning
+// 502 Bad Gateway or performing load balancing retries when an upstream abruptly
+// disconnects before sending any body data (fixes #7845).
+//
+// We skip probing for:
+// - responses that never carry a body (HEAD requests, 1xx, 204 No Content, 304 Not Modified, Content-Length: 0)
+// - Server-Sent Events (text/event-stream) or bidirectional streams where upstream intentionally idles
+// - configurations where the user explicitly configured a negative FlushInterval to flush headers immediately
+func (h Handler) shouldProbeResponseBody(req *http.Request, res *http.Response) bool {
+	if req.Method == http.MethodHead ||
+		res.StatusCode == http.StatusNoContent ||
+		res.StatusCode == http.StatusNotModified ||
+		res.StatusCode < 200 ||
+		res.ContentLength == 0 ||
+		h.FlushInterval < 0 ||
+		h.isBidirectionalStream(req, res) {
+		return false
+	}
+
+	resCTHeader := res.Header.Get("Content-Type")
+	if resCT, _, err := mime.ParseMediaType(resCTHeader); err == nil && resCT == "text/event-stream" {
+		return false
+	}
+
+	return true
+}
+
+func (h Handler) copyResponse(dst http.ResponseWriter, src io.Reader, probeByte []byte, probeErr error, flushInterval time.Duration, logger *zap.Logger) error {
 	var w io.Writer = dst
 
 	if flushInterval != 0 {
@@ -334,21 +362,21 @@ func (h Handler) copyResponse(dst http.ResponseWriter, src io.Reader, firstChunk
 		w = mlw
 	}
 
-	if len(firstChunk) > 0 {
-		nw, werr := w.Write(firstChunk)
+	if len(probeByte) > 0 {
+		nw, werr := w.Write(probeByte)
 		if werr != nil {
 			return fmt.Errorf("writing: %w", werr)
 		}
-		if nw != len(firstChunk) {
+		if nw != len(probeByte) {
 			return io.ErrShortWrite
 		}
 	}
 
-	if firstReadErr != nil {
-		if firstReadErr == io.EOF {
+	if probeErr != nil {
+		if probeErr == io.EOF {
 			return nil
 		}
-		return fmt.Errorf("reading: %w", firstReadErr)
+		return fmt.Errorf("reading: %w", probeErr)
 	}
 
 	buf := streamingBufPool.Get().(*[]byte)

@@ -198,5 +198,95 @@ func TestTruncatedResponse(t *testing.T) {
 		if rec.Body.String() != "partial" {
 			t.Errorf("expected partial body 'partial' flushed, got %q", rec.Body.String())
 		}
+		if !rec.Flushed {
+			t.Errorf("expected response to be flushed before stream abort")
+		}
+	})
+
+	t.Run("chunked header only returns 502 without panic", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("unexpected panic in ServeHTTP: %v", r)
+			}
+		}()
+
+		// Upstream sends chunked response without Content-Length, flushes headers, then immediately aborts.
+		chunkedServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Transfer-Encoding", "chunked")
+			w.WriteHeader(http.StatusOK)
+			_ = http.NewResponseController(w).Flush()
+			panic(http.ErrAbortHandler)
+		}))
+		t.Cleanup(chunkedServer.Close)
+
+		upstreams := []*Upstream{
+			{Host: new(Host), Dial: chunkedServer.Listener.Addr().String()},
+		}
+		h := minimalHandler(0, upstreams...)
+
+		req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+		req = prepareTestRequest(req)
+
+		rec := httptest.NewRecorder()
+		err := h.ServeHTTP(rec, req, caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			return nil
+		}))
+
+		gotStatus := rec.Code
+		if err != nil {
+			if herr, ok := err.(caddyhttp.HandlerError); ok {
+				gotStatus = herr.StatusCode
+			}
+		}
+
+		if gotStatus != http.StatusBadGateway {
+			t.Errorf("expected status %d (Bad Gateway), got %d (err: %v)", http.StatusBadGateway, gotStatus, err)
+		}
+	})
+
+	t.Run("chunked header only retries to next upstream", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("unexpected panic in ServeHTTP: %v", r)
+			}
+		}()
+
+		chunkedServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Transfer-Encoding", "chunked")
+			w.WriteHeader(http.StatusOK)
+			_ = http.NewResponseController(w).Flush()
+			panic(http.ErrAbortHandler)
+		}))
+		t.Cleanup(chunkedServer.Close)
+
+		// RoundRobinSelection selects index 1 then index 0.
+		// Put goodServer at 0, chunkedServer at 1.
+		upstreams := []*Upstream{
+			{Host: new(Host), Dial: goodServer.Listener.Addr().String()},
+			{Host: new(Host), Dial: chunkedServer.Listener.Addr().String()},
+		}
+		h := minimalHandler(1, upstreams...)
+
+		req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+		req = prepareTestRequest(req)
+
+		rec := httptest.NewRecorder()
+		err := h.ServeHTTP(rec, req, caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			return nil
+		}))
+
+		gotStatus := rec.Code
+		if err != nil {
+			if herr, ok := err.(caddyhttp.HandlerError); ok {
+				gotStatus = herr.StatusCode
+			}
+		}
+
+		if gotStatus != http.StatusOK {
+			t.Errorf("expected status 200 after retry, got %d (err: %v)", gotStatus, err)
+		}
+		if body := rec.Body.String(); body != "healthy response" {
+			t.Errorf("expected body 'healthy response', got %q", body)
+		}
 	})
 }

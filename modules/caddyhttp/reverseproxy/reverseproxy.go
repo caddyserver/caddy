@@ -1249,36 +1249,23 @@ func (h *Handler) finalizeResponse(
 
 	flushInterval := h.flushInterval(req, res)
 
-	// Check if this response is expected to have a body.
-	// Responses to HEAD requests, 1xx, 204 No Content, and 304 Not Modified never have a body.
-	// Also if Content-Length is explicitly 0, no body is expected.
-	hasBody := req.Method != http.MethodHead &&
-		res.StatusCode != http.StatusNoContent &&
-		res.StatusCode != http.StatusNotModified &&
-		res.StatusCode >= 200 &&
-		res.ContentLength != 0
+	var probe [1]byte
+	var hasProbeByte bool
+	var probeErr error
 
-	var firstChunk []byte
-	var firstReadErr error
-
-	// If a body is expected and immediate flushing is not required, attempt to read
-	// the first chunk of the response body before writing headers downstream.
+	// If the response may have a body and does not require immediate flushing,
+	// probe the first byte on the stack before writing headers downstream.
 	// If the upstream abruptly closes the connection or fails before sending any body,
 	// we haven't committed the downstream response yet, so we can retry or return 502
 	// instead of dropping the connection (see #7845).
-	if hasBody && flushInterval >= 0 {
-		buf := streamingBufPool.Get().(*[]byte)
+	if h.shouldProbeResponseBody(req, res) {
 		var nr int
-		nr, firstReadErr = res.Body.Read(*buf)
+		nr, probeErr = res.Body.Read(probe[:])
 		if nr > 0 {
-			firstChunk = make([]byte, nr)
-			copy(firstChunk, (*buf)[:nr])
-		}
-		streamingBufPool.Put(buf)
-
-		if nr == 0 && firstReadErr != nil && firstReadErr != io.EOF {
+			hasProbeByte = true
+		} else if probeErr != nil && probeErr != io.EOF {
 			_ = res.Body.Close()
-			return fmt.Errorf("reading response body from upstream: %w", firstReadErr)
+			return fmt.Errorf("reading response body from upstream: %w", probeErr)
 		}
 	}
 
@@ -1316,7 +1303,11 @@ func (h *Handler) finalizeResponse(
 		logger.Debug("wrote header")
 	}
 
-	err := h.copyResponse(rw, res.Body, firstChunk, firstReadErr, flushInterval, logger)
+	var probeByte []byte
+	if hasProbeByte {
+		probeByte = probe[:1]
+	}
+	err := h.copyResponse(rw, res.Body, probeByte, probeErr, flushInterval, logger)
 	errClose := res.Body.Close() // close now, instead of defer, to populate res.Trailer
 	if h.VerboseLogs || errClose != nil {
 		if c := logger.Check(zapcore.DebugLevel, "closed response body from upstream"); c != nil {
