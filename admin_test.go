@@ -225,6 +225,29 @@ func BenchmarkLoad(b *testing.B) {
 	}
 }
 
+func TestContextLocalAdminAddress(t *testing.T) {
+	ctx := Context{cfg: &Config{Admin: &AdminConfig{Listen: "localhost:2999"}}}
+	addr, enabled, err := ctx.LocalAdminAddress()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !enabled {
+		t.Fatal("admin endpoint reported disabled")
+	}
+	if got := addr.String(); got != "localhost:2999" {
+		t.Fatalf("admin address = %q, want %q", got, "localhost:2999")
+	}
+
+	ctx.cfg.Admin.Disabled = true
+	_, enabled, err = ctx.LocalAdminAddress()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if enabled {
+		t.Fatal("admin endpoint reported enabled")
+	}
+}
+
 func TestAdminHandlerErrorHandling(t *testing.T) {
 	initAdminMetrics()
 
