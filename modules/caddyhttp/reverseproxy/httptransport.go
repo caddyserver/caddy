@@ -533,6 +533,8 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 
 	// if h2/c is enabled, configure it explicitly
 	if slices.Contains(h.Versions, "2") || slices.Contains(h.Versions, "h2c") {
+		// ConfigureTransport preserves the explicit HTTP/2 transport setup used below.
+		//nolint:staticcheck
 		if err := http2.ConfigureTransport(rt); err != nil {
 			return nil, err
 		}

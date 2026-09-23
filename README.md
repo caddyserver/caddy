@@ -105,7 +105,7 @@ See [our online documentation](https://caddyserver.com/docs/install) for other i
 
 Requirements:
 
-- [Go 1.25.0 or newer](https://golang.org/dl/)
+- [Go 1.26.0 or newer](https://golang.org/dl/)
 
 ### For development
 

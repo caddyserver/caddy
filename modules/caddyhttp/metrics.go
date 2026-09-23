@@ -369,8 +369,7 @@ func (h *metricsInstrumentedRoute) ServeHTTP(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err != nil {
-		var handlerErr HandlerError
-		if errors.As(err, &handlerErr) {
+		if handlerErr, ok := errors.AsType[HandlerError](err); ok {
 			observeRequest(handlerErr.StatusCode)
 		}
 
