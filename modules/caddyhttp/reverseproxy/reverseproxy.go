@@ -1261,8 +1261,10 @@ func (h *Handler) finalizeResponse(
 	// If the response may have a body and does not require immediate flushing,
 	// probe the first chunk using the pooled streaming buffer before writing headers downstream.
 	// If the upstream abruptly closes the connection or fails before sending any body,
-	// we haven't committed the downstream response yet, so we can retry or return 502
-	// instead of dropping the connection (see #7845).
+	// wrap in roundtripSucceededError so that proxyLoopIteration will not silently retry
+	// across upstreams (which could repeat non-idempotent operations or fail if the request body
+	// has already been partially consumed; see #6259). Probing ensures downstream response
+	// headers have not been flushed yet, avoiding broken connection states (see #7845).
 	if h.shouldProbeResponseBody(req, res) {
 		buf = streamingBufPool.Get().(*[]byte)
 		nr, probeErr := res.Body.Read(*buf)
@@ -1272,7 +1274,7 @@ func (h *Handler) finalizeResponse(
 		if probeErr != nil && probeErr != io.EOF {
 			streamingBufPool.Put(buf)
 			_ = res.Body.Close()
-			return fmt.Errorf("reading response body from upstream: %w", probeErr)
+			return roundtripSucceededError{fmt.Errorf("reading response body from upstream: %w", probeErr)}
 		}
 	}
 

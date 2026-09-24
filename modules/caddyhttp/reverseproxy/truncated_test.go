@@ -62,7 +62,7 @@ func TestTruncatedResponse(t *testing.T) {
 		}
 	})
 
-	t.Run("header only retries to next upstream", func(t *testing.T) {
+	t.Run("header only does not silently retry to next upstream", func(t *testing.T) {
 		defer func() {
 			if r := recover(); r != nil {
 				t.Fatalf("unexpected panic in ServeHTTP: %v", r)
@@ -92,11 +92,14 @@ func TestTruncatedResponse(t *testing.T) {
 			}
 		}
 
-		if gotStatus != http.StatusOK {
-			t.Errorf("expected status 200 after retry, got %d (err: %v)", gotStatus, err)
+		// Since upstream already sent headers, the request may have had side effects.
+		// Reverseproxy must not silently retry across upstreams (wrapped in roundtripSucceededError),
+		// and must cleanly return 502 without having flushed downstream headers.
+		if gotStatus != http.StatusBadGateway {
+			t.Errorf("expected status %d (Bad Gateway) without retry, got %d (err: %v)", http.StatusBadGateway, gotStatus, err)
 		}
-		if body := rec.Body.String(); body != "healthy response" {
-			t.Errorf("expected body 'healthy response', got %q", body)
+		if rec.Flushed {
+			t.Errorf("expected downstream response to not be flushed")
 		}
 	})
 
