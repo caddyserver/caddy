@@ -17,6 +17,7 @@ package caddyauth
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
@@ -32,7 +33,7 @@ import (
 func init() {
 	caddycmd.RegisterCommand(caddycmd.Command{
 		Name:  "hash-password",
-		Usage: "[--plaintext <password>] [--algorithm <argon2id|bcrypt>] [--bcrypt-cost <difficulty>] [--argon2id-time <iterations>] [--argon2id-memory <KiB>] [--argon2id-threads <n>] [--argon2id-keylen <bytes>]",
+		Usage: "[--plaintext <password>] [--algorithm <argon2id|bcrypt|...>] [--bcrypt-cost <difficulty>] [--argon2id-time <iterations>] [--argon2id-memory <KiB>] [--argon2id-threads <n>] [--argon2id-keylen <bytes>]",
 		Short: "Hashes a password and writes base64",
 		Long: `
 Convenient way to hash a plaintext password. The resulting
@@ -46,6 +47,8 @@ hash is written to stdout as a base64 string.
     Selects the hashing algorithm. Valid options are:
       * 'argon2id' (recommended for modern security)
       * 'bcrypt'  (legacy, slower, configurable cost)
+      * the name of any other installed module in the
+        http.authentication.hashes namespace
 
 bcrypt-specific parameters:
 
@@ -172,7 +175,7 @@ func cmdHashPassword(fs caddycmd.Flags) (int, error) {
 
 		hashString = string(hash)
 	default:
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("unrecognized hash algorithm: %s", algorithm)
+		hashString, err = hashWithModule(algorithm, plaintext)
 	}
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, err
@@ -181,4 +184,32 @@ func cmdHashPassword(fs caddycmd.Flags) (int, error) {
 	fmt.Println(hashString)
 
 	return 0, nil
+}
+
+// hashWithModule hashes plaintext using the installed password
+// hashing module with the given name. The module must implement
+// Hasher to be usable for generating hashes.
+func hashWithModule(algorithm string, plaintext []byte) (string, error) {
+	modInfo, err := hashModuleInfo(algorithm)
+	if err != nil {
+		return "", err
+	}
+
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+
+	mod, err := ctx.LoadModuleByID(string(modInfo.ID), nil)
+	if err != nil {
+		return "", err
+	}
+	hasher, ok := mod.(Hasher)
+	if !ok {
+		return "", fmt.Errorf("hash algorithm %s does not support generating hashes", algorithm)
+	}
+
+	hash, err := hasher.Hash(plaintext)
+	if err != nil {
+		return "", err
+	}
+	return string(hash), nil
 }
