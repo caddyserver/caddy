@@ -50,6 +50,7 @@ func reuseUnixSocket(network, addr string) (any, error) {
 		if err != nil {
 			return nil, err
 		}
+		defer socketFile.Close()
 
 		// use copied fd to make new Listener or PacketConn, then replace
 		// it in the map so that future copies always come from the most
@@ -222,18 +223,17 @@ type unixListener struct {
 }
 
 func (uln *unixListener) Close() error {
+	var name string
+	if addr := uln.Addr(); addr != nil {
+		name = addr.String()
+	}
 	newCount := uln.count.Add(-1)
 	if newCount == 0 {
-		file, err := uln.File()
-		var name string
-		if err == nil {
-			name = file.Name()
-		}
 		defer func() {
 			unixSocketsMu.Lock()
 			delete(unixSockets, uln.mapKey)
 			unixSocketsMu.Unlock()
-			if err == nil {
+			if name != "" {
 				_ = syscall.Unlink(name)
 			}
 		}()
@@ -248,18 +248,17 @@ type unixConn struct {
 }
 
 func (uc *unixConn) Close() error {
+	var name string
+	if addr := uc.LocalAddr(); addr != nil {
+		name = addr.String()
+	}
 	newCount := uc.count.Add(-1)
 	if newCount == 0 {
-		file, err := uc.File()
-		var name string
-		if err == nil {
-			name = file.Name()
-		}
 		defer func() {
 			unixSocketsMu.Lock()
 			delete(unixSockets, uc.mapKey)
 			unixSocketsMu.Unlock()
-			if err == nil {
+			if name != "" {
 				_ = syscall.Unlink(name)
 			}
 		}()
