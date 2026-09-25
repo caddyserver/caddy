@@ -19,15 +19,55 @@ import (
 	"testing"
 )
 
-// TestRandString_SameCaseExcludesZero is the regression test for the
-// randString(sameCase=true) dictionary bug where '0' was still emitted
+// TestRandString_NotSameCaseExcludedChars is the regression test for the
+// randString(sameCase=false) dictionary bug where excluded was still emitted
 // despite being called out as a confusing character in the doc comment.
-func TestRandString_SameCaseExcludesZero(t *testing.T) {
-	// A sample of 5000 characters makes a leaked '0' extremely unlikely
-	// to go unnoticed: the dictionary is 33 characters, so the expected
-	// count for any single character would be ~151 if it were present.
+func TestRandString_NotSameCaseExcludedChars(t *testing.T) {
+	// A sample of 5000 characters makes a leaked excluded character extremely unlikely
+	// to go unnoticed: the dictionary is 55 characters, so the expected
+	// count for any single character would be ~90 if it were present.
+	s := randString(5000, false)
+	if strings.ContainsRune(s, 'l') {
+		t.Errorf("randString(n, sameCase=false) must not emit 'l'; got %q", s)
+	}
+	if strings.ContainsRune(s, 'I') {
+		t.Errorf("randString(n, sameCase=false) must not emit 'I'; got %q", s)
+	}
+	if strings.ContainsRune(s, 'O') {
+		t.Errorf("randString(n, sameCase=false) must not emit 'O'; got %q", s)
+	}
+	if strings.ContainsRune(s, 'S') {
+		t.Errorf("randString(n, sameCase=false) must not emit 'S'; got %q", s)
+	}
+	if strings.ContainsRune(s, '0') {
+		t.Errorf("randString(n, sameCase=false) must not emit '0'; got %q", s)
+	}
+	if strings.ContainsRune(s, '1') {
+		t.Errorf("randString(n, sameCase=false) must not emit '1'; got %q", s)
+	}
+}
+
+// TestRandString_SameCaseExcludedChars is the regression test for the
+// randString(sameCase=true) dictionary bug where excluded was still emitted
+// despite being called out as a confusing character in the doc comment.
+func TestRandString_SameCaseExcludedChars(t *testing.T) {
+	// A sample of 5000 characters makes a leaked excluded character extremely unlikely
+	// to go unnoticed: the dictionary is 32 characters, so the expected
+	// count for any single character would be ~156 if it were present.
 	s := randString(5000, true)
+	if strings.ToLower(s) != s {
+		t.Errorf("randString(n, sameCase=true) must not emit uppercase letters; got %q", s)
+	}
+	if strings.ContainsRune(s, 'l') {
+		t.Errorf("randString(n, sameCase=true) must not emit 'l'; got %q", s)
+	}
+	if strings.ContainsRune(s, 'o') {
+		t.Errorf("randString(n, sameCase=true) must not emit '0'; got %q", s)
+	}
 	if strings.ContainsRune(s, '0') {
 		t.Errorf("randString(n, sameCase=true) must not emit '0'; got %q", s)
+	}
+	if strings.ContainsRune(s, '1') {
+		t.Errorf("randString(n, sameCase=true) must not emit '1'; got %q", s)
 	}
 }
