@@ -692,6 +692,11 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 		}
 	}
 
+	// normalize websocket headers for compatibility with older servers
+	if upgradeType(r.Header) != "" {
+		normalizeWebsocketHeaders(r.Header)
+	}
+
 	// proxy the request to that upstream
 	proxyErr = h.reverseProxy(w, r, origReq, repl, dialInfo, next)
 	if proxyErr == nil {
@@ -840,7 +845,6 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	if reqUpgradeType != "" {
 		req.Header.Set("Connection", "Upgrade")
 		req.Header.Set("Upgrade", reqUpgradeType)
-		normalizeWebsocketHeaders(req.Header)
 	}
 
 	// Set up the PROXY protocol info
@@ -1297,6 +1301,10 @@ func (h *Handler) finalizeResponse(
 		if c := logger.Check(zapcore.WarnLevel, "aborting with incomplete response"); c != nil {
 			c.Write(zap.Error(err))
 		}
+		// flush the buffer to ensure the client sees the partial response
+		// see: https://github.com/caddyserver/caddy/issues/7845
+		//nolint:bodyclose
+		http.NewResponseController(rw).Flush()
 		// no extra logging from stdlib
 		panic(http.ErrAbortHandler)
 	}

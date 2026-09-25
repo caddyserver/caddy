@@ -18,6 +18,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net"
 	"reflect"
 	"slices"
@@ -62,6 +63,18 @@ func (st ServerType) Setup(
 	var warnings []caddyconfig.Warning
 	gc := counter{new(int)}
 	state := make(map[string]any)
+
+	// adaptation fills the options in as it goes, so work on our own copy;
+	// the caller may reuse or share the map they gave us
+	options = maps.Clone(options)
+	if options == nil {
+		options = make(map[string]any)
+	}
+
+	// an order accumulated by a previous adaptation must not carry into
+	// this one, so drop it and let the first "order" option start over
+	// from the order the plugins registered
+	delete(options, "order")
 
 	// load all the server blocks and associate them with a "pile" of config values
 	originalServerBlocks := make([]serverBlock, 0, len(inputServerBlocks))
@@ -918,7 +931,7 @@ func (st *ServerType) serversFromPairings(
 
 			// set up each handler directive, making sure to honor directive order
 			dirRoutes := sblock.pile["route"]
-			siteSubroute, err := buildSubroute(dirRoutes, groupCounter, true)
+			siteSubroute, err := buildSubroute(dirRoutes, groupCounter, directiveOrderFor(options))
 			if err != nil {
 				return nil, err
 			}
@@ -1421,15 +1434,17 @@ func appendSubrouteToRouteList(routeList caddyhttp.RouteList,
 
 // buildSubroute turns the config values, which are expected to be routes
 // into a clean and orderly subroute that has all the routes within it.
-func buildSubroute(routes []ConfigValue, groupCounter counter, needsSorting bool) (*caddyhttp.Subroute, error) {
-	if needsSorting {
+// The order is the one belonging to the current adaptation; pass nil to
+// keep the routes in the order they were written in.
+func buildSubroute(routes []ConfigValue, groupCounter counter, order []string) (*caddyhttp.Subroute, error) {
+	if order != nil {
 		for _, val := range routes {
-			if !slices.Contains(directiveOrder, val.directive) {
+			if !slices.Contains(order, val.directive) {
 				return nil, fmt.Errorf("directive '%s' is not an ordered HTTP handler, so it cannot be used here - try placing within a route block or using the order global option", val.directive)
 			}
 		}
 
-		sortRoutes(routes)
+		sortRoutes(routes, order)
 	}
 
 	subroute := new(caddyhttp.Subroute)

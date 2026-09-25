@@ -1,0 +1,9 @@
+:80
+
+file_server {
+	browse {
+		file_limit 12abc
+	}
+}
+----------
+file_limit should have an integer value

@@ -226,14 +226,42 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 	wg.Add(2)
 	go spc.copyToBackend(errc)
 	go spc.copyFromBackend(errc)
-	select {
-	case err := <-errc:
-		if c := logger.Check(zapcore.DebugLevel, "streaming error"); c != nil {
-			c.Write(zap.Error(err))
-		}
-	case time := <-timeoutc:
-		if c := logger.Check(zapcore.DebugLevel, "stream timed out"); c != nil {
-			c.Write(zap.Time("timeout", time))
+
+	// Wait for both directions to finish. A clean EOF in one direction is a
+	// half-close of that direction only, not the end of the tunnel: the copier
+	// propagates it to the destination with CloseWrite and reports nil, so the
+	// other direction is left open and pending bytes can still drain. Anything
+	// else ends the tunnel: a copy error, a failed CloseWrite, or errCopyDone
+	// when the destination has no write half to close.
+	//
+	// net/http/httputil expresses the same wait as:
+	//
+	//	err := <-errc
+	//	if err == nil {
+	//		err = <-errc
+	//	}
+	//
+	// which cannot be used verbatim here because this handler also selects on the
+	// stream timeout, so the wait is repeated inside that select instead. Both
+	// accept the same sequences; the loop only additionally lets the timeout win
+	// at either wait.
+	//
+	// See https://github.com/caddyserver/caddy/issues/8026, and the same class
+	// fixed upstream in net/http/httputil (https://go.dev/issue/35892).
+	for range 2 {
+		select {
+		case err := <-errc:
+			if err != nil {
+				if c := logger.Check(zapcore.DebugLevel, "streaming error"); c != nil {
+					c.Write(zap.Error(err))
+				}
+				return
+			}
+		case time := <-timeoutc:
+			if c := logger.Check(zapcore.DebugLevel, "stream timed out"); c != nil {
+				c.Write(zap.Time("timeout", time))
+			}
+			return
 		}
 	}
 }
@@ -644,16 +672,41 @@ type switchProtocolCopier struct {
 	bufferSize    int
 }
 
+// errCopyDone is reported by a direction that ended at a clean EOF on a
+// connection whose write half cannot be closed, so the end of that direction
+// could not be propagated to the peer.
+var errCopyDone = errors.New("hijacked connection copy complete")
+
 func (c switchProtocolCopier) copyFromBackend(errc chan<- error) {
-	_, err := io.CopyBuffer(c.user, c.backend, c.buffer())
-	errc <- err
-	c.wg.Done()
+	defer c.wg.Done()
+	if _, err := io.CopyBuffer(c.user, c.backend, c.buffer()); err != nil {
+		errc <- err
+		return
+	}
+
+	// backend conn has reached EOF so propagate close write to user conn
+	if wc, ok := c.user.(interface{ CloseWrite() error }); ok {
+		errc <- wc.CloseWrite()
+		return
+	}
+
+	errc <- errCopyDone
 }
 
 func (c switchProtocolCopier) copyToBackend(errc chan<- error) {
-	_, err := io.CopyBuffer(c.backend, c.user, c.buffer())
-	errc <- err
-	c.wg.Done()
+	defer c.wg.Done()
+	if _, err := io.CopyBuffer(c.backend, c.user, c.buffer()); err != nil {
+		errc <- err
+		return
+	}
+
+	// user conn has reached EOF so propagate close write to backend conn
+	if wc, ok := c.backend.(interface{ CloseWrite() error }); ok {
+		errc <- wc.CloseWrite()
+		return
+	}
+
+	errc <- errCopyDone
 }
 
 func (c switchProtocolCopier) buffer() []byte {
