@@ -16,6 +16,7 @@ package templates
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -250,7 +251,7 @@ func (c *TemplateContext) executeTemplateInBuffer(tplName string, buf *bytes.Buf
 	return c.tpl.Execute(buf, c)
 }
 
-func (c TemplateContext) funcPlaceholder(name string) string {
+func (c TemplateContext) funcPlaceholder(name string) (string, error) {
 	repl := c.Req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	// For safety, we don't want to allow the file placeholder in
@@ -258,8 +259,21 @@ func (c TemplateContext) funcPlaceholder(name string) string {
 	// if the template contents were not trusted.
 	repl = repl.WithoutFile()
 
-	value, _ := repl.GetString(name)
-	return value
+	value, _ := repl.Get(name)
+
+	// propagate the request-body limit marker (a 413 from the request_body
+	// max_size limit when {http.request.body} is truncated) so the template
+	// aborts with that status rather than rendering a silently-truncated
+	// body; the marker is wrapped in a status-carrying handler error so the
+	// server renders the 413, and any other value, including unrelated
+	// errors, is converted to a string as before
+	if err, ok := value.(error); ok {
+		var bodyLimit caddyhttp.RequestBodyLimitError
+		if errors.As(err, &bodyLimit) {
+			return "", caddyhttp.HandlerError{Err: bodyLimit, StatusCode: bodyLimit.StatusCode()}
+		}
+	}
+	return caddy.ToString(value), nil
 }
 
 func (TemplateContext) funcEnv(varName string) string {
