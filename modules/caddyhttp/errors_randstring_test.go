@@ -62,7 +62,7 @@ func TestRandString_SameCaseExcludedChars(t *testing.T) {
 		t.Errorf("randString(n, sameCase=true) must not emit 'l'; got %q", s)
 	}
 	if strings.ContainsRune(s, 'o') {
-		t.Errorf("randString(n, sameCase=true) must not emit '0'; got %q", s)
+		t.Errorf("randString(n, sameCase=true) must not emit 'o': got %q", s)
 	}
 	if strings.ContainsRune(s, '0') {
 		t.Errorf("randString(n, sameCase=true) must not emit '0'; got %q", s)
