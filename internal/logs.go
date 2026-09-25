@@ -2,9 +2,6 @@ package internal
 
 import "fmt"
 
-// MaxSizeSubjectsListForLog returns the keys in the map as a slice of maximum length
-// maxToDisplay. It is useful for logging domains being managed, for example, since a
-// map is typically needed for quick lookup, but a slice is needed for logging, and this
 // MaxSizeSubjectsListForLog returns up to maxToDisplay keys from subjects.
 // If any keys are omitted, it appends one additional entry summarising the
 // omitted count. This bounds the number of subject names placed in the log
