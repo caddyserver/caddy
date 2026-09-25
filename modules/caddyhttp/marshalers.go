@@ -75,6 +75,11 @@ func (t LoggableTLSConnState) MarshalLogObject(enc zapcore.ObjectEncoder) error 
 	enc.AddBool("resumed", t.DidResume)
 	enc.AddUint16("version", t.Version)
 	enc.AddUint16("cipher_suite", t.CipherSuite)
+	// CurveID is zero when no curve-based key exchange was used (a legacy
+	// RSA key exchange), so the field is omitted then.
+	if t.CurveID != 0 {
+		enc.AddUint16("curve", uint16(t.CurveID))
+	}
 	enc.AddString("proto", t.NegotiatedProtocol)
 	enc.AddString("server_name", t.ServerName)
 	enc.AddBool("ech", t.ECHAccepted)
