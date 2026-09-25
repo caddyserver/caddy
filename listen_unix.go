@@ -223,22 +223,22 @@ type unixListener struct {
 }
 
 func (uln *unixListener) Close() error {
+	unixSocketsMu.Lock()
+	defer unixSocketsMu.Unlock()
+
 	var name string
 	if addr := uln.Addr(); addr != nil {
 		name = addr.String()
 	}
 	newCount := uln.count.Add(-1)
+	err := uln.UnixListener.Close()
 	if newCount == 0 {
-		defer func() {
-			unixSocketsMu.Lock()
-			delete(unixSockets, uln.mapKey)
-			unixSocketsMu.Unlock()
-			if name != "" {
-				_ = syscall.Unlink(name)
-			}
-		}()
+		delete(unixSockets, uln.mapKey)
+		if name != "" {
+			_ = syscall.Unlink(name)
+		}
 	}
-	return uln.UnixListener.Close()
+	return err
 }
 
 type unixConn struct {
@@ -248,22 +248,22 @@ type unixConn struct {
 }
 
 func (uc *unixConn) Close() error {
+	unixSocketsMu.Lock()
+	defer unixSocketsMu.Unlock()
+
 	var name string
 	if addr := uc.LocalAddr(); addr != nil {
 		name = addr.String()
 	}
 	newCount := uc.count.Add(-1)
+	err := uc.UnixConn.Close()
 	if newCount == 0 {
-		defer func() {
-			unixSocketsMu.Lock()
-			delete(unixSockets, uc.mapKey)
-			unixSocketsMu.Unlock()
-			if name != "" {
-				_ = syscall.Unlink(name)
-			}
-		}()
+		delete(unixSockets, uc.mapKey)
+		if name != "" {
+			_ = syscall.Unlink(name)
+		}
 	}
-	return uc.UnixConn.Close()
+	return err
 }
 
 func (uc *unixConn) Unwrap() net.PacketConn {

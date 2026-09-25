@@ -22,6 +22,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -165,3 +166,104 @@ func TestUnixListenerReuseAndUnlinkOnlyWhenZeroCount(t *testing.T) {
 		t.Fatalf("expected socket file to be unlinked after closing all references, got: %v", err)
 	}
 }
+
+func TestUnixListenerConcurrentCloseAndRelisten(t *testing.T) {
+	tempDir := t.TempDir()
+	socketPath := filepath.Join(tempDir, "test_concurrent.sock")
+	na := NetworkAddress{Network: "unix", Host: socketPath}
+
+	for i := 0; i < 20; i++ {
+		ln, err := na.Listen(context.Background(), 0, net.ListenConfig{})
+		if err != nil {
+			t.Fatalf("iteration %d: initial listen failed: %v", i, err)
+		}
+		listener := ln.(net.Listener)
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		var newLn net.Listener
+		var listenErr error
+
+		go func() {
+			defer wg.Done()
+			_ = listener.Close()
+		}()
+
+		go func() {
+			defer wg.Done()
+			ln2, err := na.Listen(context.Background(), 0, net.ListenConfig{})
+			if err != nil {
+				listenErr = err
+				return
+			}
+			newLn = ln2.(net.Listener)
+		}()
+
+		wg.Wait()
+
+		if listenErr != nil {
+			t.Fatalf("iteration %d: concurrent listen failed: %v", i, listenErr)
+		}
+
+		if _, err := os.Stat(socketPath); err != nil {
+			t.Fatalf("iteration %d: socket file does not exist after concurrent relisten: %v", i, err)
+		}
+
+		clientConn, err := net.DialTimeout("unix", socketPath, 500*time.Millisecond)
+		if err != nil {
+			t.Fatalf("iteration %d: dialing concurrent listener failed: %v", i, err)
+		}
+		_ = clientConn.Close()
+
+		_ = newLn.Close()
+	}
+}
+
+func TestUnixConnConcurrentCloseAndRelisten(t *testing.T) {
+	tempDir := t.TempDir()
+	socketPath := filepath.Join(tempDir, "test_concurrent_conn.sock")
+	na := NetworkAddress{Network: "unixgram", Host: socketPath}
+
+	for i := 0; i < 20; i++ {
+		pc, err := na.Listen(context.Background(), 0, net.ListenConfig{})
+		if err != nil {
+			t.Fatalf("iteration %d: initial listen failed: %v", i, err)
+		}
+		packetConn := pc.(net.PacketConn)
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		var newPc net.PacketConn
+		var listenErr error
+
+		go func() {
+			defer wg.Done()
+			_ = packetConn.Close()
+		}()
+
+		go func() {
+			defer wg.Done()
+			pc2, err := na.Listen(context.Background(), 0, net.ListenConfig{})
+			if err != nil {
+				listenErr = err
+				return
+			}
+			newPc = pc2.(net.PacketConn)
+		}()
+
+		wg.Wait()
+
+		if listenErr != nil {
+			t.Fatalf("iteration %d: concurrent listen failed: %v", i, listenErr)
+		}
+
+		if _, err := os.Stat(socketPath); err != nil {
+			t.Fatalf("iteration %d: socket file does not exist after concurrent relisten: %v", i, err)
+		}
+
+		_ = newPc.Close()
+	}
+}
+
