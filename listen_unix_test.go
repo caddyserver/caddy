@@ -21,15 +21,31 @@ import (
 	"io"
 	"net"
 	"os"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 )
 
+// shortTempSocket returns a short unix socket path to avoid sockaddr_un
+// path length limits (104 bytes on Darwin/BSD, 108 bytes on Linux),
+// which can be exceeded by t.TempDir() in deeply nested temp directories.
+func shortTempSocket(t *testing.T) string {
+	t.Helper()
+	f, err := os.CreateTemp("", "c-*.sock")
+	if err != nil {
+		t.Fatalf("failed to create temp socket path: %v", err)
+	}
+	path := f.Name()
+	_ = f.Close()
+	_ = os.Remove(path)
+	t.Cleanup(func() {
+		_ = os.Remove(path)
+	})
+	return path
+}
+
 func TestUnixListenerClosesImmediatelyAndUnlinks(t *testing.T) {
-	tempDir := t.TempDir()
-	socketPath := filepath.Join(tempDir, "test_listener.sock")
+	socketPath := shortTempSocket(t)
 	lnKey := listenerKey("unix", socketPath)
 
 	ctx := context.Background()
@@ -100,8 +116,7 @@ func TestUnixListenerClosesImmediatelyAndUnlinks(t *testing.T) {
 }
 
 func TestUnixConnClosesImmediatelyAndUnlinks(t *testing.T) {
-	tempDir := t.TempDir()
-	socketPath := filepath.Join(tempDir, "test_conn.sock")
+	socketPath := shortTempSocket(t)
 	lnKey := listenerKey("unixgram", socketPath)
 
 	ctx := context.Background()
@@ -132,8 +147,7 @@ func TestUnixConnClosesImmediatelyAndUnlinks(t *testing.T) {
 }
 
 func TestUnixListenerReuseAndUnlinkOnlyWhenZeroCount(t *testing.T) {
-	tempDir := t.TempDir()
-	socketPath := filepath.Join(tempDir, "test_reuse.sock")
+	socketPath := shortTempSocket(t)
 	lnKey := listenerKey("unix", socketPath)
 
 	ctx := context.Background()
@@ -168,8 +182,7 @@ func TestUnixListenerReuseAndUnlinkOnlyWhenZeroCount(t *testing.T) {
 }
 
 func TestUnixListenerConcurrentCloseAndRelisten(t *testing.T) {
-	tempDir := t.TempDir()
-	socketPath := filepath.Join(tempDir, "test_concurrent.sock")
+	socketPath := shortTempSocket(t)
 	na := NetworkAddress{Network: "unix", Host: socketPath}
 
 	for i := 0; i < 20; i++ {
@@ -221,8 +234,7 @@ func TestUnixListenerConcurrentCloseAndRelisten(t *testing.T) {
 }
 
 func TestUnixConnConcurrentCloseAndRelisten(t *testing.T) {
-	tempDir := t.TempDir()
-	socketPath := filepath.Join(tempDir, "test_concurrent_conn.sock")
+	socketPath := shortTempSocket(t)
 	na := NetworkAddress{Network: "unixgram", Host: socketPath}
 
 	for i := 0; i < 20; i++ {
