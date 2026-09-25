@@ -296,6 +296,12 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 			// decide whether to retry a request
 			return nil, DialError{err}
 		}
+		keepConn := false
+		defer func() {
+			if !keepConn {
+				_ = conn.Close()
+			}
+		}()
 
 		if h.ProxyProtocol != "" {
 			proxyProtocolInfo, ok := caddyhttp.GetVar(ctx, proxyProtocolInfoVarKey).(ProxyProtocolInfo)
@@ -363,6 +369,7 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 			}
 		}
 
+		keepConn = true
 		return conn, nil
 	}
 
@@ -496,11 +503,10 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 	if len(h.Versions) == 1 && h.Versions[0] == "3" {
 		h.h3Transport = new(http3.Transport)
 		if h.TLS != nil {
-			var err error
-			h.h3Transport.TLSClientConfig, err = h.TLS.MakeTLSClientConfig(caddyCtx)
-			if err != nil {
-				return nil, fmt.Errorf("making TLS client config for HTTP/3 transport: %v", err)
-			}
+			// Reuse the TLS client config built above for the HTTP/1.1+2
+			// transport rather than calling MakeTLSClientConfig again.
+			// Fixing: https://github.com/caddyserver/caddy/issues/8041
+			h.h3Transport.TLSClientConfig = rt.TLSClientConfig.Clone()
 
 			if strings.Contains(h.TLS.ServerName, "{") {
 				// copied from quic-go

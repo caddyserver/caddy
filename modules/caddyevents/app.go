@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 )
@@ -205,12 +206,24 @@ func (app *App) On(eventName string, handler Handler) error {
 // Note that the data map is not copied, for efficiency. After Emit() is called, the
 // data passed in should not be changed in other goroutines.
 func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) caddy.Event {
-	logger := app.logger.With(zap.String("name", eventName))
-
 	e, err := caddy.NewEvent(ctx, eventName, data)
 	if err != nil {
-		logger.Error("failed to create event", zap.Error(err))
+		app.logger.Error("failed to create event",
+			zap.String("name", eventName), zap.Error(err))
 	}
+
+	// A handler can only be reached through subscriptions to this event by
+	// name or to all events, so if neither is bound, nothing can observe
+	// this event and the only remaining output is the debug log below.
+	// Bail out before deriving loggers and registering replacer values:
+	// some events, such as tls_get_certificate, are emitted on every TLS
+	// handshake, where that work is significant and always wasted.
+	if app.subscriptions[eventName] == nil && app.subscriptions[""] == nil &&
+		!app.logger.Core().Enabled(zapcore.DebugLevel) {
+		return e
+	}
+
+	logger := app.logger.With(zap.String("name", eventName))
 
 	var originModule caddy.ModuleInfo
 	var originModuleID caddy.ModuleID

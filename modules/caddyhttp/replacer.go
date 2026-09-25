@@ -57,7 +57,6 @@ func NewTestReplacer(req *http.Request) *caddy.Replacer {
 
 func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.ResponseWriter) {
 	SetVar(req.Context(), "start_time", time.Now())
-	SetVar(req.Context(), "uuid", new(requestID))
 
 	httpVars := func(key string) (any, bool) {
 		if req != nil {
@@ -213,8 +212,14 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 				return time.Since(start).Seconds() * 1e3, true // multiply seconds to preserve decimal (see #4666)
 
 			case "http.request.uuid":
-				// fetch the UUID for this request
-				id := GetVar(req.Context(), "uuid").(*requestID)
+				// fetch the UUID for this request, generating and caching it
+				// on first access so requests that never reference the UUID
+				// don't pay for the allocation
+				id, ok := GetVar(req.Context(), "uuid").(*requestID)
+				if !ok {
+					id = new(requestID)
+					SetVar(req.Context(), "uuid", id)
+				}
 
 				// set it to this request's access log
 				extra := req.Context().Value(ExtraLogFieldsCtxKey).(*ExtraLogFields)

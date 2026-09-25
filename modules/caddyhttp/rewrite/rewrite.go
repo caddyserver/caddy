@@ -215,8 +215,19 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 			newPath = repl.ReplaceAll(path, "")
 		}
 
+		// a fragment may have snuck into the path component during
+		// replacements; everything after the first '#' is fragment
+		// (RFC 3986 section 4.2), which is never sent to the server,
+		// so drop it. this mirrors how a literal '#' in the configured
+		// URI is handled by the scan above, and prevents the fragment
+		// from being mistaken for part of the path or query below.
+		if before, _, found := strings.Cut(newPath, "#"); found {
+			newPath = before
+		}
+
 		// before continuing, we need to check if a query string
 		// snuck into the path component during replacements
+		queryInjected := false
 		if before, after, found := strings.Cut(newPath, "?"); found {
 			// recompute; new path contains a query string
 			var injectedQuery string
@@ -233,6 +244,13 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 				injectedQuery = strings.ReplaceAll(injectedQuery, "{", "%7B")
 				injectedQuery = strings.ReplaceAll(injectedQuery, "}", "%7D")
 				query = injectedQuery
+
+				// the replacement value spoke about the query string, so the
+				// query must be written back even though the configured URI
+				// had no literal '?' to set qsStart. an injected query that
+				// is empty (a value ending in '?') clears the query, which is
+				// consistent with configuring a bare '?'.
+				queryInjected = true
 			}
 		}
 
@@ -253,7 +271,7 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 			}
 			r.URL.RawPath = "" // force recomputing when EscapedPath() is called
 		}
-		if qsStart >= 0 {
+		if qsStart >= 0 || queryInjected {
 			r.URL.RawQuery = newQuery
 		}
 		if fragStart >= 0 {
@@ -268,18 +286,30 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 			prefix = "/" + prefix
 		}
 		mergeSlashes := !strings.Contains(prefix, "//")
+		stripped := false
 		changePath(r, func(escapedPath string) string {
 			escapedPath = caddyhttp.CleanPath(escapedPath, mergeSlashes)
-			return trimPathPrefix(escapedPath, prefix)
+			trimmed := trimPathPrefix(escapedPath, prefix)
+			stripped = stripped || trimmed != escapedPath
+			return trimmed
 		})
+		if stripped {
+			canonicalizePath(r)
+		}
 	}
 	if rewr.StripPathSuffix != "" {
 		suffix := repl.ReplaceAll(rewr.StripPathSuffix, "")
 		mergeSlashes := !strings.Contains(suffix, "//")
+		stripped := false
 		changePath(r, func(escapedPath string) string {
 			escapedPath = caddyhttp.CleanPath(escapedPath, mergeSlashes)
-			return reverse(trimPathPrefix(reverse(escapedPath), reverse(suffix)))
+			trimmed := trimPathSuffix(escapedPath, suffix)
+			stripped = stripped || trimmed != escapedPath
+			return trimmed
 		})
+		if stripped {
+			canonicalizePath(r)
+		}
 	}
 
 	// substring replacements in URI
@@ -344,6 +374,12 @@ func buildQueryString(qs string, repl *caddy.Replacer) string {
 		// determine the end of this component, which will be at
 		// the next equal sign or ampersand, whichever comes first
 		nextEq, nextAmp := strings.Index(qs, "="), strings.Index(qs, "&")
+		if !wroteVal {
+			// we are consuming a value, and '=' only delimits a key from
+			// its value; any further '=' bytes are literal data, such as
+			// base64 padding in a signature. only '&' ends a value.
+			nextEq = -1
+		}
 		ampIsNext := nextAmp >= 0 && (nextAmp < nextEq || nextEq < 0)
 		end := len(qs) // assume no delimiter remains...
 		if ampIsNext {
@@ -440,12 +476,58 @@ func trimPathPrefix(escapedPath, prefix string) string {
 	return escapedPath
 }
 
-func reverse(s string) string {
-	r := []rune(s)
-	for i, j := 0, len(r)-1; i < len(r)/2; i, j = i+1, j-1 {
-		r[i], r[j] = r[j], r[i]
+// trimPathSuffix is the suffix counterpart of trimPathPrefix: it trims suffix
+// from the end of escapedPath using the same escape-aware, case-insensitive
+// comparison semantics. Both strings are iterated in lock-step from their ends,
+// and if escapedPath has a '%' encoding at a particular position where the
+// suffix pattern uses the decoded character, escapedPath's escape is decoded so
+// the comparison happens in normalized/unescaped space. Conversely, if the
+// suffix pattern itself uses an escape (`%xx`), escapedPath must literally use
+// the same escape at that position (the escapes are then compared byte-for-byte).
+//
+// A naive reverse-then-trimPathPrefix approach cannot be used here: reversing
+// the strings moves the '%' to the end of each escape sequence, which defeats
+// trimPathPrefix's escape detection (it expects '%' to precede the two hex
+// digits) and makes escaped path bytes compare unequal to their decoded form.
+func trimPathSuffix(escapedPath, suffix string) string {
+	iPath, iSuffix := len(escapedPath), len(suffix)
+	for iPath > 0 && iSuffix > 0 {
+		suffixCh := suffix[iSuffix-1]
+		ch := string(escapedPath[iPath-1])
+		step := 1
+
+		// if escapedPath uses a percent-encoding that ends at this position but
+		// the suffix pattern does not encode this position, decode escapedPath's
+		// escape so the comparison happens in normalized/unescaped space
+		pathHasEscape := iPath >= 3 && escapedPath[iPath-3] == '%'
+		suffixHasEscape := iSuffix >= 3 && suffix[iSuffix-3] == '%'
+		if pathHasEscape && !suffixHasEscape {
+			decoded, err := url.PathUnescape(escapedPath[iPath-3 : iPath])
+			if err != nil {
+				// should be impossible unless EscapedPath() is returning invalid values!
+				return escapedPath
+			}
+			ch = decoded
+			step = 3
+		}
+
+		// suffix comparisons are case-insensitive for consistency with
+		// trimPathPrefix, which is case-insensitive for good reasons
+		if !strings.EqualFold(ch, string(suffixCh)) {
+			return escapedPath
+		}
+
+		iPath -= step
+		iSuffix--
 	}
-	return string(r)
+
+	// if we iterated through the entire suffix, we found it, so trim it
+	if iSuffix <= 0 {
+		return escapedPath[:iPath]
+	}
+
+	// otherwise we did not find the suffix
+	return escapedPath
 }
 
 // substrReplacer describes either a simple and fast substring replacement.
@@ -513,10 +595,47 @@ func changePath(req *http.Request, newVal func(pathOrRawPath string) string) {
 	} else {
 		req.URL.Path = newVal(req.URL.Path)
 	}
-	// RawPath is only set if it's different from the normalized Path (std lib)
-	if req.URL.RawPath == req.URL.Path {
+	// RawPath is only needed if it is a valid, non-canonical encoding of Path;
+	// (see #6578). Mirror net/url.URL.setPath by comparing against the default
+	// escaping of Path instead.
+	if req.URL.RawPath == defaultEscapedPath(req.URL.Path) {
 		req.URL.RawPath = ""
 	}
+}
+
+// canonicalizePath anchors and cleans a stripped origin-form path while
+// preserving an alternate RawPath encoding when it still represents the
+// canonical Path. It is applied after prefix or suffix removal because stripping can
+// expose a relative path or dot segments that downstream handlers interpret
+// differently.
+func canonicalizePath(req *http.Request) {
+	p := req.URL.Path
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	cleaned := caddyhttp.CleanPath(defaultEscapedPath(p), false)
+	p, _ = url.PathUnescape(cleaned) // defaultEscapedPath always returns valid escapes
+
+	rawPath := req.URL.RawPath
+	if rawPath != "" {
+		if !strings.HasPrefix(rawPath, "/") {
+			rawPath = "/" + rawPath
+		}
+		decoded, err := url.PathUnescape(rawPath)
+		if err != nil || decoded != p || rawPath == defaultEscapedPath(p) {
+			rawPath = ""
+		}
+	}
+
+	req.URL.Path = p
+	req.URL.RawPath = rawPath
+}
+
+// defaultEscapedPath returns the canonical percent-encoding of p, matching
+// what net/url.URL.EscapedPath() produces when RawPath is empty. It mirrors
+// the comparison net/url.URL.setPath uses to decide whether RawPath is needed.
+func defaultEscapedPath(p string) string {
+	return (&url.URL{Path: p}).EscapedPath()
 }
 
 // queryOps describes the operations to perform on query keys: add, set, rename and delete.

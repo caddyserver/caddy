@@ -660,11 +660,6 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 		)
 	}
 
-	// attach to the request information about how to dial the upstream;
-	// this is necessary because the information cannot be sufficiently
-	// or satisfactorily represented in a URL
-	caddyhttp.SetVar(r.Context(), dialInfoVarKey, dialInfo)
-
 	// set placeholders with information about this upstream
 	repl.Set("http.reverse_proxy.upstream.address", dialInfo.String())
 	repl.Set("http.reverse_proxy.upstream.hostport", dialInfo.Address)
@@ -695,6 +690,11 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 		if userOps != nil {
 			userOps.ApplyToRequest(r)
 		}
+	}
+
+	// normalize websocket headers for compatibility with older servers
+	if upgradeType(r.Header) != "" {
+		normalizeWebsocketHeaders(r.Header)
 	}
 
 	// proxy the request to that upstream
@@ -845,7 +845,6 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	if reqUpgradeType != "" {
 		req.Header.Set("Connection", "Upgrade")
 		req.Header.Set("Upgrade", reqUpgradeType)
-		normalizeWebsocketHeaders(req.Header)
 	}
 
 	// Set up the PROXY protocol info
@@ -877,7 +876,7 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	}
 
 	// Via header(s)
-	req.Header.Add("Via", fmt.Sprintf("%d.%d Caddy", req.ProtoMajor, req.ProtoMinor))
+	req.Header.Add("Via", strconv.Itoa(req.ProtoMajor)+"."+strconv.Itoa(req.ProtoMinor)+" Caddy")
 
 	return req, nil
 }
@@ -1037,7 +1036,14 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 			return nil
 		},
 	}
-	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
+	// attach to the request information about how to dial the upstream;
+	// this is necessary because the information cannot be sufficiently
+	// or satisfactorily represented in a URL
+	// it's set before request is roundtripped to avoid a race condition when
+	// http.Transport reads a newer value to dial a new connection when that new
+	// value is updated by another reverse proxy handler, typically forward_auth.
+	ctx := context.WithValue(req.Context(), dialInfoCtxKey, di)
+	req = req.WithContext(httptrace.WithClientTrace(ctx, trace))
 
 	// do the round-trip
 	start := time.Now()
@@ -1251,7 +1257,7 @@ func (h *Handler) finalizeResponse(
 	if !strings.HasPrefix(strings.ToUpper(res.Proto), "HTTP/") {
 		protoPrefix = res.Proto[:strings.Index(res.Proto, "/")+1]
 	}
-	rw.Header().Add("Via", fmt.Sprintf("%s%d.%d Caddy", protoPrefix, res.ProtoMajor, res.ProtoMinor))
+	rw.Header().Add("Via", protoPrefix+strconv.Itoa(res.ProtoMajor)+"."+strconv.Itoa(res.ProtoMinor)+" Caddy")
 
 	// apply any response header operations
 	if h.Headers != nil && h.Headers.Response != nil {

@@ -16,6 +16,7 @@ package acmeserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	weakrand "math/rand/v2"
 	"net"
@@ -34,6 +35,7 @@ import (
 	"github.com/smallstep/certificates/authority/provisioner"
 	"github.com/smallstep/certificates/db"
 	"github.com/smallstep/nosql"
+	bolterrors "go.etcd.io/bbolt/errors"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
@@ -290,6 +292,10 @@ func (ash Handler) openDatabase() (*db.AuthDB, error) {
 			DataSource: dbPath,
 		}
 		database, err := db.New(dbConfig)
+		if errors.Is(err, bolterrors.ErrTimeout) {
+			// bbolt holds an exclusive file lock, so something else has this database open
+			err = fmt.Errorf("%w: CA database %s is already locked; this is usually another running Caddy instance, in which case use 'caddy reload' to apply config changes to it", err, dbPath)
+		}
 		return databaseCloser{&database}, err
 	})
 

@@ -923,13 +923,8 @@ func (h *Handler) FinalizeUnmarshalCaddyfile(helper httpcaddyfile.Helper) error 
 		d.Next()
 		args := d.RemainingArgs()
 
-		// TODO: Remove this check at some point in the future
-		if len(args) == 2 {
-			return d.Errf("configuring 'handle_response' for status code replacement is no longer supported. Use 'replace_status' instead.")
-		}
-
 		if len(args) > 1 {
-			return d.Errf("too many arguments for 'handle_response': %s", args)
+			return d.Errf("too many arguments for 'handle_response': only a single response matcher name is allowed, but got: %s", args)
 		}
 
 		var matcher *caddyhttp.ResponseMatcher

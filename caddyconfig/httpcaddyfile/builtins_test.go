@@ -76,6 +76,48 @@ func TestLogDirectiveSyntax(t *testing.T) {
 			output:      `{"logging":{"logs":{"default":{"exclude":["http.log.access.log0"]},"log0":{"sampling":{"interval":2000000000,"first":3,"thereafter":4},"include":["http.log.access.log0"]}}},"apps":{"http":{"servers":{"srv0":{"listen":[":8080"],"logs":{"default_logger_name":"log0"}}}}}}`,
 			expectError: false,
 		},
+		{
+			input: `:8080 {
+				log {
+					output stdout
+					output file foo.log
+				}
+			}
+			`,
+			expectError: true,
+		},
+		{
+			input: `:8080 {
+				log {
+					format json
+					format console
+				}
+			}
+			`,
+			expectError: true,
+		},
+		{
+			input: `:8080 {
+				log {
+					level INFO
+					level DEBUG
+				}
+			}
+			`,
+			expectError: true,
+		},
+		{
+			input: `:8080 {
+				log {
+					sampling {
+						interval 1s
+						interval 2s
+					}
+				}
+			}
+			`,
+			expectError: true,
+		},
 	} {
 
 		adapter := caddyfile.Adapter{

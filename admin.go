@@ -46,6 +46,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
+	"github.com/caddyserver/caddy/v2/caddyconfig/warning"
 	"github.com/caddyserver/caddy/v2/internal"
 )
 
@@ -554,6 +555,18 @@ func replaceRemoteAdminServer(ctx Context, cfg *Config) error {
 			accessControl.publicKeys = append(accessControl.publicKeys, cert.PublicKey)
 			clientCertPool.AddCert(cert)
 		}
+		for j, perm := range accessControl.Permissions {
+			for _, permPath := range perm.Paths {
+				if permPath == "" || permPath == "/" {
+					continue
+				}
+				cleanPath := path.Clean(permPath)
+				hasCanonicalTrailingSlash := cleanPath != "/" && strings.TrimSuffix(permPath, "/") == cleanPath
+				if cleanPath != permPath && !hasCanonicalTrailingSlash {
+					return fmt.Errorf("access control %d permission %d: path %q is not canonical (did you mean %q?)", i, j, permPath, cleanPath)
+				}
+			}
+		}
 	}
 
 	// create TLS config that will enforce mutual authentication
@@ -723,14 +736,18 @@ func (remote RemoteAdmin) enforceAccessControls(r *http.Request) error {
 }
 
 func adminPathAllowed(reqPath, allowedPath string) bool {
-	if allowedPath == "" || allowedPath == "/" {
-		return strings.HasPrefix(reqPath, allowedPath)
-	}
-	if reqPath == allowedPath {
+	reqPathHadTrailingSlash := strings.HasSuffix(reqPath, "/")
+	reqPath = path.Clean(reqPath)
+	if allowedPath == "" {
 		return true
 	}
-	if strings.HasSuffix(allowedPath, "/") {
-		return strings.HasPrefix(reqPath, allowedPath)
+	allowedPathHadTrailingSlash := allowedPath != "/" && strings.HasSuffix(allowedPath, "/")
+	allowedPath = path.Clean(allowedPath)
+	if allowedPath == "/" {
+		return true
+	}
+	if reqPath == allowedPath {
+		return !allowedPathHadTrailingSlash || reqPathHadTrailingSlash
 	}
 	return strings.HasPrefix(reqPath, allowedPath+"/")
 }
@@ -924,7 +941,9 @@ func (h adminHandler) handleError(w http.ResponseWriter, r *http.Request, err er
 // rebinding attacks.
 func (h adminHandler) checkHost(r *http.Request) error {
 	allowed := slices.ContainsFunc(h.allowedOrigins, func(u *url.URL) bool {
-		return r.Host == u.Host
+		// Host comparison is case-insensitive per RFC 3986 §3.2.2, same as
+		// the Origin check below; url.Parse does not normalize host case.
+		return strings.EqualFold(r.Host, u.Host)
 	})
 	if !allowed {
 		return APIError{
@@ -978,7 +997,9 @@ func (h adminHandler) originAllowed(origin *url.URL) bool {
 		if allowedOrigin.Scheme != "" && origin.Scheme != allowedOrigin.Scheme {
 			continue
 		}
-		if origin.Host == allowedOrigin.Host {
+		// Host comparison is case-insensitive per RFC 3986 §3.2.2; url.Parse
+		// does not normalize host case, so fold it here.
+		if strings.EqualFold(origin.Host, allowedOrigin.Host) {
 			return true
 		}
 	}
@@ -1374,9 +1395,10 @@ func (f AdminHandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) erro
 // and client responses. If Message is unset, then
 // Err.Error() will be serialized in its place.
 type APIError struct {
-	HTTPStatus int    `json:"-"`
-	Err        error  `json:"-"`
-	Message    string `json:"error"`
+	HTTPStatus int               `json:"-"`
+	Err        error             `json:"-"`
+	Message    string            `json:"error"`
+	Warnings   []warning.Warning `json:"warnings,omitempty"`
 }
 
 func (e APIError) Error() string {

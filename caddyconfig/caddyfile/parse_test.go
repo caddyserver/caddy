@@ -317,6 +317,18 @@ func TestParseOneAndImport(t *testing.T) {
 		{`localhost
 		  dir1 "{}"`, false, []string{"localhost"}, []int{2}},
 
+		// quoted braces are literal arguments: they must not open/close blocks or swallow directives
+		{"localhost {\n dir1 \"{\" `}`\n dir2 \"}\"\n dir3 \"{\"\n}",
+			false, []string{"localhost"}, []int{3, 2, 2}},
+
+		// quoted "{" as the last argument before a real block
+		{`localhost {
+		  dir1 "{" {
+		    a b
+		  }
+		  dir2 foo
+		}`, false, []string{"localhost"}, []int{6, 2}},
+
 		// import with args
 		{`import testdata/import_args0.txt a`, false, []string{"a"}, []int{}},
 		{`import testdata/import_args1.txt a b`, false, []string{"a", "b"}, []int{}},
@@ -787,6 +799,35 @@ func TestSnippets(t *testing.T) {
 	}
 	if actual, expected := blocks[0].Segments[1][1].Text, "stderr"; expected != actual {
 		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
+	}
+}
+
+func TestSnippetWithQuotedBraces(t *testing.T) {
+	// quoted braces inside a snippet are literal arguments and must not corrupt block nesting
+	p := testParser(`
+		(quoted) {
+			dir1 "}"
+			dir2 "{"
+		}
+		example.com {
+			import quoted
+			dir3 foo
+		}
+	`)
+	blocks, err := p.parseAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blocks) != 1 {
+		t.Fatalf("Expect exactly one server block. Got %d.", len(blocks))
+	}
+	if actual := len(blocks[0].Segments); actual != 3 {
+		t.Fatalf("Expected 3 segments, got %d: %+v", actual, blocks[0].Segments)
+	}
+	for i, expected := range []string{"}", "{", "foo"} {
+		if seg := blocks[0].Segments[i]; len(seg) != 2 || seg[1].Text != expected {
+			t.Errorf("Segment %d: expected 2 tokens with arg '%s', got %+v", i, expected, seg)
+		}
 	}
 }
 
