@@ -3,9 +3,10 @@ module github.com/caddyserver/caddy/v2
 go 1.25.1
 
 require (
+	cel.dev/cel-go v0.32.0
 	github.com/BurntSushi/toml v1.6.0
 	github.com/DeRuina/timberjack v1.4.5
-	github.com/KimMachineGun/automemlimit v0.7.5
+	github.com/KimMachineGun/automemlimit v1.0.0
 	github.com/Masterminds/sprig/v3 v3.3.0
 	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/aryann/difflib v0.0.0-20210328193216-ff5ff6dc229b
@@ -15,7 +16,6 @@ require (
 	github.com/dunglas/go-urlpattern v1.0.0
 	github.com/dustin/go-humanize v1.0.1
 	github.com/go-chi/chi/v5 v5.3.1
-	github.com/google/cel-go v0.29.2
 	github.com/google/uuid v1.6.0
 	github.com/klauspost/compress v1.19.0
 	github.com/klauspost/cpuid/v2 v2.4.0
@@ -42,9 +42,9 @@ require (
 	go.uber.org/automaxprocs v1.6.0
 	go.uber.org/zap v1.28.0
 	go.uber.org/zap/exp v0.3.0
-	golang.org/x/crypto v0.54.0
+	golang.org/x/crypto v0.55.0
 	golang.org/x/crypto/x509roots/fallback v0.0.0-20260709184058-243e02a382f8
-	golang.org/x/net v0.57.0
+	golang.org/x/net v0.58.0
 	golang.org/x/sync v0.22.0
 	golang.org/x/term v0.45.0
 	golang.org/x/time v0.15.0
@@ -52,7 +52,7 @@ require (
 )
 
 require (
-	cel.dev/expr v0.25.1 // indirect
+	cel.dev/expr v0.25.2 // indirect
 	cloud.google.com/go/auth v0.20.0 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
@@ -165,17 +165,17 @@ require (
 	github.com/slackhq/nebula v1.10.3 // indirect
 	github.com/spf13/cast v1.7.0 // indirect
 	github.com/urfave/cli v1.22.17 // indirect
-	go.etcd.io/bbolt v1.4.3 // indirect
+	go.etcd.io/bbolt v1.4.3
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.44.0 // indirect
 	go.opentelemetry.io/otel/metric v1.44.0 // indirect
 	go.opentelemetry.io/otel/trace v1.44.0
 	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/mod v0.37.0 // indirect
+	golang.org/x/mod v0.38.0 // indirect
 	golang.org/x/sys v0.47.0
-	golang.org/x/text v0.40.0 // indirect
-	golang.org/x/tools v0.47.0 // indirect
-	google.golang.org/grpc v1.82.1 // indirect
+	golang.org/x/text v0.41.0 // indirect
+	golang.org/x/tools v0.48.0 // indirect
+	google.golang.org/grpc v1.83.2 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	howett.net/plist v1.0.0 // indirect
 )

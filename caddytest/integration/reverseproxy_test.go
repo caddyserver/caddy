@@ -1,9 +1,13 @@
 package integration
 
 import (
+	"bufio"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/textproto"
 	"os"
 	"runtime"
 	"strings"
@@ -830,6 +834,103 @@ func TestReverseProxySNIPlaceHolder(t *testing.T) {
 		req.Header.Set("X-SNI", "example.com")
 		tester.AssertResponse(req, 200, "example.com")
 	}
+}
+
+func TestReverseProxyNormalizeWebSocketHeaders(t *testing.T) {
+	// 503s if it doesn't see "WebSocket" in a request
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	// http.Server would canonicalize these headers, so plain tcp:
+	errc := make(chan error, 1)
+	defer func() {
+		for range errc {
+		}
+	}()
+	defer ln.Close()
+	handleConn := func(conn net.Conn) error {
+		defer conn.Close()
+		rd := textproto.NewReader(bufio.NewReader(io.LimitReader(conn, 4096)))
+		status := 503
+		for {
+			line, err := rd.ReadLine()
+			if err != nil {
+				return fmt.Errorf("failed to read line: %v", err)
+			}
+			if len(line) == 0 {
+				break
+			}
+			if strings.Contains(line, "WebSocket") {
+				status = 200
+			}
+		}
+		res := fmt.Sprintf("HTTP/1.1 %d %s\r\nConnection: close\r\n\r\n", status, http.StatusText(status))
+		if _, err = conn.Write([]byte(res)); err != nil {
+			return fmt.Errorf("failed to write: %v", err)
+		}
+		return nil
+	}
+	go func() {
+		defer close(errc)
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				if !errors.Is(err, net.ErrClosed) {
+					errc <- fmt.Errorf("failed to accept: %v", err)
+				}
+				return
+			}
+			if err := handleConn(conn); err != nil {
+				errc <- fmt.Errorf("failed to handle: %v", err)
+			}
+		}
+	}()
+	checkServer := func() {
+		select {
+		case err := <-errc:
+			t.Fatalf("failed to serve test request: %v", err)
+		default:
+		}
+	}
+	tester := caddytest.NewTester(t)
+	tester.InitServer(fmt.Sprintf(`
+	{
+        skip_install_trust
+        local_certs
+        admin localhost:2999
+        http_port 9080
+        https_port 9443
+        grace_period 1ns
+	}
+	http://localhost:9080 {
+		reverse_proxy http://%s {
+			# test compatibility with header manipulations
+			header_up X-Add-Header "1"
+		}
+	}`, ln.Addr()), "caddyfile")
+	req, err := http.NewRequest(http.MethodGet, "http://localhost:9080/", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	// Only the first WebSocket header needs the manual assignment,
+	// but mixing in .Set is likely to be more confusing.
+	req.Header["Connection"] = []string{"Upgrade"}
+	req.Header["Upgrade"] = []string{"websocket"}
+	// 1. resembling a browser via http/1.1
+	req.Header["Sec-WebSocket-Version"] = []string{"13"}
+	tester.AssertResponse(req, 200, "")
+	checkServer()
+	delete(req.Header, "Sec-WebSocket-Version")
+	// 2. canonicalized is okay
+	req.Header["Sec-Websocket-Version"] = []string{"13"}
+	tester.AssertResponse(req, 200, "")
+	checkServer()
+	delete(req.Header, "Sec-Websocket-Version")
+	// 3. unknown header doesn't receive special handling
+	req.Header["Sec-Websocket-Unnormalizedkey"] = []string{"13"}
+	tester.AssertResponse(req, 503, "")
+	checkServer()
 }
 
 func TestWeightedRoundRobinSelectionValidation(t *testing.T) {

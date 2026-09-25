@@ -1,9 +1,15 @@
 package acmeserver
 
 import (
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	bolt "go.etcd.io/bbolt"
+	bolterrors "go.etcd.io/bbolt/errors"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 )
@@ -90,5 +96,44 @@ func TestHandler_warnIfPolicyAllowsAll(t *testing.T) {
 				t.Fatalf("expected allow_wildcard_names=%v, got %v", tt.wantAllowWildcard, ctx["allow_wildcard_names"])
 			}
 		})
+	}
+}
+
+func TestHandler_openDatabaseLocked(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping: bbolt waits 5s for the lock")
+	}
+
+	dataDir := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", dataDir)
+
+	ash := Handler{CA: "locked-db-test", logger: zap.NewNop()}
+	key := ash.getDatabaseKey()
+
+	dbFolder := filepath.Join(dataDir, "caddy", "acme_server", key)
+	if err := os.MkdirAll(dbFolder, 0o755); err != nil {
+		t.Fatalf("making database folder: %v", err)
+	}
+	dbPath := filepath.Join(dbFolder, "db")
+
+	// hold the lock like a running Caddy instance would
+	locked, err := bolt.Open(dbPath, 0o600, &bolt.Options{Timeout: 5 * time.Second})
+	if err != nil {
+		t.Fatalf("opening database: %v", err)
+	}
+	defer locked.Close()
+
+	_, err = ash.openDatabase()
+	if err == nil {
+		t.Fatal("expected an error opening a locked database, got none")
+	}
+	if !errors.Is(err, bolterrors.ErrTimeout) {
+		t.Errorf("expected error to wrap bolterrors.ErrTimeout, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "already locked") {
+		t.Errorf("expected error to explain the lock, got: %v", err)
+	}
+	if _, err := databasePool.Delete(key); err != nil {
+		t.Errorf("cleaning up database pool: %v", err)
 	}
 }

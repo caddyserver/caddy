@@ -46,6 +46,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
+	"github.com/caddyserver/caddy/v2/caddyconfig/warning"
 	"github.com/caddyserver/caddy/v2/internal"
 )
 
@@ -940,7 +941,9 @@ func (h adminHandler) handleError(w http.ResponseWriter, r *http.Request, err er
 // rebinding attacks.
 func (h adminHandler) checkHost(r *http.Request) error {
 	allowed := slices.ContainsFunc(h.allowedOrigins, func(u *url.URL) bool {
-		return r.Host == u.Host
+		// Host comparison is case-insensitive per RFC 3986 §3.2.2, same as
+		// the Origin check below; url.Parse does not normalize host case.
+		return strings.EqualFold(r.Host, u.Host)
 	})
 	if !allowed {
 		return APIError{
@@ -994,7 +997,9 @@ func (h adminHandler) originAllowed(origin *url.URL) bool {
 		if allowedOrigin.Scheme != "" && origin.Scheme != allowedOrigin.Scheme {
 			continue
 		}
-		if origin.Host == allowedOrigin.Host {
+		// Host comparison is case-insensitive per RFC 3986 §3.2.2; url.Parse
+		// does not normalize host case, so fold it here.
+		if strings.EqualFold(origin.Host, allowedOrigin.Host) {
 			return true
 		}
 	}
@@ -1390,9 +1395,10 @@ func (f AdminHandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) erro
 // and client responses. If Message is unset, then
 // Err.Error() will be serialized in its place.
 type APIError struct {
-	HTTPStatus int    `json:"-"`
-	Err        error  `json:"-"`
-	Message    string `json:"error"`
+	HTTPStatus int               `json:"-"`
+	Err        error             `json:"-"`
+	Message    string            `json:"error"`
+	Warnings   []warning.Warning `json:"warnings,omitempty"`
 }
 
 func (e APIError) Error() string {

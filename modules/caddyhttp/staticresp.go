@@ -194,10 +194,10 @@ func (s StaticResponse) ServeHTTP(w http.ResponseWriter, r *http.Request, next H
 
 	// set all headers
 	for field, vals := range s.Headers {
-		field = textproto.CanonicalMIMEHeaderKey(repl.ReplaceAll(field, ""))
+		field = textproto.CanonicalMIMEHeaderKey(repl.ReplaceKnown(field, ""))
 		newVals := make([]string, len(vals))
 		for i := range vals {
-			newVals[i] = repl.ReplaceAll(vals[i], "")
+			newVals[i] = repl.ReplaceKnown(vals[i], "")
 		}
 		w.Header()[field] = newVals
 	}

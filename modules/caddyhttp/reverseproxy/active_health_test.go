@@ -16,6 +16,7 @@ package reverseproxy
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -147,5 +148,73 @@ func TestActiveHealthChecksSameAddressDifferentChecksAreIndependent(t *testing.T
 	if !uB.Healthy() {
 		t.Errorf("vhost B's upstream was marked unhealthy after a single failed probe (fails=3); " +
 			"its health state was polluted by vhost A's health check against the same address")
+	}
+}
+
+// TestActiveHealthCheckBodyKeepsUnknownPlaceholders is a regression test for
+// https://github.com/caddyserver/caddy/issues/7021: an active health check
+// body is user-supplied and is commonly JSON, so its braces must not be read
+// as placeholders and blanked. Only globals are available to this replacer, so
+// replacing everything sent an empty body for any JSON health_request_body.
+func TestActiveHealthCheckBodyKeepsUnknownPlaceholders(t *testing.T) {
+	resetDynamicHosts()
+	defer drainHostsPool()
+
+	const jsonBody = `{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}`
+
+	var gotBody atomic.Value
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("reading request body: %v", err)
+		}
+		gotBody.Store(string(body))
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	addr := strings.TrimPrefix(srv.URL, "http://")
+
+	h, u, cancel := newActiveHandler(t, addr, "/health", 1)
+	defer cancel()
+
+	h.HealthChecks.Active.Body = jsonBody
+
+	runActiveHealthCheck(t, h, u)
+
+	if got, want := gotBody.Load(), jsonBody; got != want {
+		t.Errorf("health check body = %q, want %q", got, want)
+	}
+}
+
+// TestActiveHealthCheckBodyStillReplacesKnownPlaceholders guards the other
+// direction: switching to ReplaceKnown must not stop real placeholders from
+// being replaced.
+func TestActiveHealthCheckBodyStillReplacesKnownPlaceholders(t *testing.T) {
+	resetDynamicHosts()
+	defer drainHostsPool()
+
+	t.Setenv("CADDY_TEST_HEALTH_TOKEN", "s3cret")
+
+	var gotBody atomic.Value
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("reading request body: %v", err)
+		}
+		gotBody.Store(string(body))
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	addr := strings.TrimPrefix(srv.URL, "http://")
+
+	h, u, cancel := newActiveHandler(t, addr, "/health", 1)
+	defer cancel()
+
+	h.HealthChecks.Active.Body = `{"token":"{env.CADDY_TEST_HEALTH_TOKEN}"}`
+
+	runActiveHealthCheck(t, h, u)
+
+	if got, want := gotBody.Load(), `{"token":"s3cret"}`; got != want {
+		t.Errorf("health check body = %q, want %q", got, want)
 	}
 }

@@ -94,18 +94,18 @@ func (up *UsagePool) LoadOrNew(key any, construct Constructor) (value any, loade
 		value, err = construct()
 		if err == nil {
 			upv.value = value
+			upv.Unlock()
 		} else {
 			upv.err = err
+			upv.Unlock()
 			up.Lock()
-			// this *should* be safe, I think, because we have a
-			// write lock on upv, but we might also need to ensure
-			// that upv.err is nil before doing this, since we
-			// released the write lock on up during construct...
-			// but then again it's also after midnight...
-			delete(up.pool, key)
+			// Another constructor may have replaced a failed entry while
+			// this goroutine waited for the pool lock.
+			if up.pool[key] == upv {
+				delete(up.pool, key)
+			}
 			up.Unlock()
 		}
-		upv.Unlock()
 	}
 	return value, loaded, err
 }
