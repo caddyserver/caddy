@@ -335,3 +335,29 @@ func TestHTTPVarReplacementUUID(t *testing.T) {
 	}
 }
 
+func TestHTTPVarReplacementDefault(t *testing.T) {
+	req, _ := http.NewRequest(http.MethodGet, "/?a=1", nil)
+	req.Header.Set("X-Present", "here")
+	repl := caddy.NewReplacer()
+	ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+	req = req.WithContext(ctx)
+	res := httptest.NewRecorder()
+	addHTTPVarsToReplacer(repl, req, res)
+
+	for i, tc := range []struct {
+		input, expect string
+	}{
+		// a present header ignores its default
+		{input: "{http.request.header.X-Present:fallback}", expect: "here"},
+		// a missing header uses its default
+		{input: "{http.request.header.X-Missing:fallback}", expect: "fallback"},
+		// a present query parameter ignores its default
+		{input: "{http.request.uri.query.a:none}", expect: "1"},
+		// a missing query parameter uses its default
+		{input: "{http.request.uri.query.missing:none}", expect: "none"},
+	} {
+		if actual := repl.ReplaceAll(tc.input, ""); actual != tc.expect {
+			t.Errorf("Test %d: input %q: expected %q, got %q", i, tc.input, tc.expect, actual)
+		}
+	}
+}
