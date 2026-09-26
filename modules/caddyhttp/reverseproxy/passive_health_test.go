@@ -22,6 +22,48 @@ import (
 	"github.com/caddyserver/caddy/v2"
 )
 
+type recordCB struct {
+	status int
+	lat    time.Duration
+	n      int
+}
+
+func (c *recordCB) OK() bool { return true }
+
+func (c *recordCB) RecordMetric(statusCode int, latency time.Duration) {
+	c.status = statusCode
+	c.lat = latency
+	c.n++
+}
+
+func TestRecordUpstreamRoundTrip(t *testing.T) {
+	h, cancel := newPassiveHandler(t, 1, time.Minute)
+	defer cancel()
+	h.HealthChecks.Passive.UnhealthyLatency = caddy.Duration(time.Millisecond)
+	u, cleanup := provisionedStaticUpstream(t, h, "127.0.0.1:9")
+	defer cleanup()
+	cb := &recordCB{}
+	u.cb = cb
+
+	repl := caddy.NewReplacer()
+	lat := 5 * time.Millisecond
+	h.recordUpstreamRoundTrip(DialInfo{Upstream: u}, repl, 200, lat)
+
+	if cb.n != 1 || cb.status != 200 {
+		t.Errorf("circuit breaker RecordMetric calls=%d status=%d, want 1 / 200", cb.n, cb.status)
+	}
+	if cb.lat != lat {
+		t.Errorf("circuit breaker latency = %v, want %v", cb.lat, lat)
+	}
+	if got := u.Host.Fails(); got != 1 {
+		t.Errorf("passive fails = %d, want 1 (unhealthy latency)", got)
+	}
+	got, _ := repl.Get("http.reverse_proxy.upstream.latency")
+	if got != lat {
+		t.Errorf("latency placeholder = %v, want %v", got, lat)
+	}
+}
+
 // newPassiveHandler builds a minimal Handler with passive health checks
 // configured and a live caddy.Context so the fail-forgetter goroutine can
 // be cancelled cleanly. The caller must call cancel() when done.

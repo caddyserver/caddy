@@ -21,6 +21,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"reflect"
 )
 
 // ResponseWriterWrapper wraps an underlying ResponseWriter and
@@ -56,6 +57,71 @@ func (rww *ResponseWriterWrapper) ReadFrom(r io.Reader) (n int64, err error) {
 // http.ResponseController to work correctly.
 func (rww *ResponseWriterWrapper) Unwrap() http.ResponseWriter {
 	return rww.ResponseWriter
+}
+
+// UnwrapResponseWriterAs walks w through its Unwrap() http.ResponseWriter
+// chain and returns the first writer that satisfies T (along with true).
+// If no writer in the chain satisfies T, it returns the zero value of T
+// and false. This mirrors how http.ResponseController traverses wrapped
+// writers internally and is useful when code needs to reach interfaces
+// implemented only by the raw writer owned by the HTTP server — for
+// example, Extended CONNECT or WebTransport helpers that perform their
+// own type assertions and cannot see past a wrapper.
+func UnwrapResponseWriterAs[T any](w http.ResponseWriter) (T, bool) {
+	var zero T
+	seen := make(map[uintptr]struct{})
+	// Bound the walk so a cycle of uncomparable (non-pointer) writers
+	// cannot hang. Production wrapper stacks are a handful of layers.
+	for range 64 {
+		if w == nil {
+			return zero, false
+		}
+		if t, ok := any(w).(T); ok {
+			return t, true
+		}
+		if p := responseWriterPointer(w); p != 0 {
+			if _, dup := seen[p]; dup {
+				return zero, false
+			}
+			seen[p] = struct{}{}
+		}
+		u, ok := w.(interface{ Unwrap() http.ResponseWriter })
+		if !ok {
+			return zero, false
+		}
+		w = u.Unwrap()
+	}
+	return zero, false
+}
+
+func responseWriterPointer(w http.ResponseWriter) uintptr {
+	v := reflect.ValueOf(w)
+	switch v.Kind() {
+	case reflect.Pointer, reflect.Map, reflect.Chan, reflect.Func, reflect.Slice, reflect.UnsafePointer:
+		if v.IsNil() {
+			return 0
+		}
+		return v.Pointer()
+	default:
+		return 0
+	}
+}
+
+// RecordHijackedStatus records that a status was already flushed to the
+// client by a writer further down the unwrap chain (for example
+// webtransport.Server.Upgrade writing through the naked HTTP/3 writer).
+// It updates any wrapping responseRecorder so access logs and metrics
+// observe the client-visible status, without writing headers again.
+func RecordHijackedStatus(w http.ResponseWriter, status int) {
+	rec, ok := UnwrapResponseWriterAs[*responseRecorder](w)
+	if !ok || rec == nil {
+		return
+	}
+	if rec.statusCode == 0 {
+		rec.statusCode = status
+	}
+	rec.wroteHeader = true
+	rec.stream = true
 }
 
 // ErrNotImplemented is returned when an underlying
