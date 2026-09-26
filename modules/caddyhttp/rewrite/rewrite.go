@@ -559,9 +559,19 @@ func (rep substrReplacer) do(r *http.Request, repl *caddy.Replacer) {
 
 	mergeSlashes := !strings.Contains(rep.Find, "//")
 
+	changed := false
 	changePath(r, func(pathOrRawPath string) string {
-		return strings.Replace(caddyhttp.CleanPath(pathOrRawPath, mergeSlashes), find, replace, lim)
+		replaced := strings.Replace(caddyhttp.CleanPath(pathOrRawPath, mergeSlashes), find, replace, lim)
+		changed = changed || replaced != pathOrRawPath
+		return replaced
 	})
+	if changed {
+		// Canonicalize when a replacement actually altered the path, mirroring
+		// the guarded canonicalization in StripPathPrefix/StripPathSuffix (see
+		// ef1877210ed3 and GHSA-8rc4-w9gc-7wh9). No-op when nothing changed
+		// preserves OPTIONS *, RawPath, and paths the operator did not touch.
+		canonicalizePath(r)
+	}
 
 	r.URL.RawQuery = strings.Replace(r.URL.RawQuery, find, replace, lim)
 }
@@ -583,9 +593,17 @@ func (rep regexReplacer) do(r *http.Request, repl *caddy.Replacer) {
 		return
 	}
 	replace := repl.ReplaceAll(rep.Replace, "")
+	changed := false
 	changePath(r, func(pathOrRawPath string) string {
-		return rep.re.ReplaceAllString(pathOrRawPath, replace)
+		replaced := rep.re.ReplaceAllString(pathOrRawPath, replace)
+		changed = changed || replaced != pathOrRawPath
+		return replaced
 	})
+	if changed {
+		// Same guarded-canonicalization pattern as URISubstring.do and the
+		// strip primitives. See GHSA-8rc4-w9gc-7wh9.
+		canonicalizePath(r)
+	}
 }
 
 func changePath(req *http.Request, newVal func(pathOrRawPath string) string) {
