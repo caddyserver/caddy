@@ -5,11 +5,43 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
+
+func TestValidateDuplicateInputs(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		first   Mapping
+		second  Mapping
+		wantErr bool
+	}{
+		{name: "duplicate literals", first: Mapping{Input: "/abc"}, second: Mapping{Input: "/abc"}, wantErr: true},
+		{name: "duplicate regexps", first: Mapping{InputRegexp: "/abc"}, second: Mapping{InputRegexp: "/abc"}, wantErr: true},
+		{name: "literal then regexp", first: Mapping{Input: "/abc"}, second: Mapping{InputRegexp: "/abc"}},
+		{name: "regexp then literal", first: Mapping{InputRegexp: "/abc"}, second: Mapping{Input: "/abc"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.first.Outputs = []any{"first"}
+			tc.second.Outputs = []any{"second"}
+			h := Handler{
+				Destinations: []string{"{output}"},
+				Mappings:     []Mapping{tc.first, tc.second},
+			}
+			err := h.Validate()
+			if tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "duplicate input '/abc'") {
+					t.Fatalf("expected duplicate input error, got %v", err)
+				}
+			} else if err != nil {
+				t.Fatalf("unexpected validation error: %v", err)
+			}
+		})
+	}
+}
 
 func TestHandler(t *testing.T) {
 	for i, tc := range []struct {
