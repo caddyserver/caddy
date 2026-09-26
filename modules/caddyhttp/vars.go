@@ -59,9 +59,13 @@ func (m VarsMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next H
 	vars := r.Context().Value(VarsCtxKey).(map[string]any)
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	for k, v := range m {
-		keyExpanded := repl.ReplaceAll(k, "")
+		// Only known placeholders are replaced: the name and value are config
+		// data and commonly carry literal braces, so an unrecognized {...} must
+		// survive instead of being blanked, the same known-placeholder policy
+		// the respond and headers handlers follow.
+		keyExpanded := repl.ReplaceKnown(k, "")
 		if valStr, ok := v.(string); ok {
-			v = repl.ReplaceAll(valStr, "")
+			v = repl.ReplaceKnown(valStr, "")
 		}
 		vars[keyExpanded] = v
 
