@@ -106,6 +106,34 @@ func Format(input []byte) []byte {
 		beginningOfLine = true
 	}
 
+	flushOpenBrace := func() {
+		if nesting == 0 && last == '}' {
+			nextLine()
+			nextLine()
+		}
+
+		openBrace = false
+		if openBraceOwnLine && previousLineWasTopLevelImport {
+			if last != '\n' {
+				nextLine()
+			}
+			indent()
+		} else if beginningOfLine {
+			indent()
+		} else if !openBraceSpace || !unicode.IsSpace(last) {
+			write(' ')
+		}
+		write('{')
+		openBraceWritten = true
+		openBraceOwnLine = false
+		nextLine()
+		newLines = 0
+		// prevent infinite nesting from ridiculous inputs (issue #4169)
+		if nesting < 10 {
+			nesting++
+		}
+	}
+
 	for {
 		ch, _, err := rdr.ReadRune()
 		if err != nil {
@@ -270,36 +298,15 @@ func Format(input []byte) []byte {
 		}
 
 		if openBrace && spacePrior && !openBraceWritten {
-			if nesting == 0 && last == '}' {
-				nextLine()
-				nextLine()
-			}
-
-			openBrace = false
-			if openBraceOwnLine && previousLineWasTopLevelImport {
-				if last != '\n' {
-					nextLine()
-				}
-				indent()
-			} else if beginningOfLine {
-				indent()
-			} else if !openBraceSpace || !unicode.IsSpace(last) {
-				write(' ')
-			}
-			write('{')
-			openBraceWritten = true
-			openBraceOwnLine = false
-			nextLine()
-			newLines = 0
-			// prevent infinite nesting from ridiculous inputs (issue #4169)
-			if nesting < 10 {
-				nesting++
-			}
+			flushOpenBrace()
 		}
 
 		switch {
 		case ch == '{':
 			finishToken()
+			if openBrace && !openBraceWritten {
+				flushOpenBrace()
+			}
 			openBrace = true
 			openBraceSpace = spacePrior && !beginningOfLine
 			openBraceOwnLine = newLines > 0
@@ -365,6 +372,10 @@ func Format(input []byte) []byte {
 		write(ch)
 
 		beginningOfLine = false
+	}
+
+	if openBrace && !openBraceWritten {
+		flushOpenBrace()
 	}
 
 	// the Caddyfile does not need any leading or trailing spaces, but...
