@@ -204,8 +204,7 @@ func (sa *StringArray) UnmarshalJSON(b []byte) error {
 // If err is a HandlerError, the returned values will
 // have richer information.
 func errLogValues(err error) (status int, msg string, fields func() []zapcore.Field) {
-	var handlerErr HandlerError
-	if errors.As(err, &handlerErr) {
+	if handlerErr, ok := errors.AsType[HandlerError](err); ok {
 		status = handlerErr.StatusCode
 		if handlerErr.Err == nil {
 			msg = err.Error()

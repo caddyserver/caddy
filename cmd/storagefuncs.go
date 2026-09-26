@@ -51,8 +51,7 @@ func determineStorage(configFile string, configAdapter string) (*storVal, error)
 	err = json.Unmarshal(cfg, &tmpStruct)
 	if err != nil {
 		// default case, ignore the error
-		var jsonError *json.SyntaxError
-		if errors.As(err, &jsonError) {
+		if _, ok := errors.AsType[*json.SyntaxError](err); ok {
 			return nil, nil
 		}
 		return nil, err
