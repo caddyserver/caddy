@@ -797,6 +797,10 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 		}
 	}
 
+	if err := normalizeHTTP3EmptyBody(req); err != nil {
+		return nil, err
+	}
+
 	if req.ContentLength == 0 {
 		req.Body = nil // Issue golang/go#16036: nil Body for http.Transport retries
 	}
@@ -879,6 +883,58 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	req.Header.Add("Via", strconv.Itoa(req.ProtoMajor)+"."+strconv.Itoa(req.ProtoMinor)+" Caddy")
 
 	return req, nil
+}
+
+// normalizeHTTP3EmptyBody inspects HTTP/3 client requests that have an indeterminate
+// body length (ContentLength < 0) and a non-nil Body. Under HTTP/3 (quic-go), bodyless
+// requests (such as GET or HEAD) are delivered with ContentLength: -1 and a non-nil Body
+// because DATA frames might arrive after HEADERS. When forwarded upstream over HTTP/2,
+// an indeterminate body triggers a separate DATA frame with END_STREAM, which strict
+// HTTP/2 upstreams (such as IIS/ARR or Apache) reject with 502/403 (see #7835).
+// By probing at most 1 byte:
+// - If the read yields immediate EOF (n == 0), the body is proven empty, so we normalize
+//   it to ContentLength = 0, Body = nil, GetBody = nil, and TransferEncoding = nil.
+// - If data is read (n > 0), the byte is prepended via io.MultiReader and streaming is preserved.
+// - If a read error occurs, it fails closed so broken requests are not forwarded.
+func normalizeHTTP3EmptyBody(req *http.Request) error {
+	if req.ProtoMajor != 3 || req.ContentLength >= 0 || req.Body == nil || req.Body == http.NoBody || len(req.Trailer) > 0 {
+		return nil
+	}
+
+	var probe [1]byte
+	n, err := req.Body.Read(probe[:])
+	if n == 0 {
+		if err == io.EOF {
+			_ = req.Body.Close()
+			req.Body = nil
+			req.ContentLength = 0
+			req.GetBody = nil
+			req.TransferEncoding = nil
+			return nil
+		}
+		if err != nil {
+			_ = req.Body.Close()
+			return fmt.Errorf("reading HTTP/3 request body: %w", err)
+		}
+		return nil
+	}
+
+	// n > 0: A body is present. Replay the read byte(s) before the rest of the stream.
+	origBody := req.Body
+	req.Body = struct {
+		io.Reader
+		io.Closer
+	}{
+		Reader: io.MultiReader(bytes.NewReader(probe[:n]), origBody),
+		Closer: origBody,
+	}
+
+	if err != nil && err != io.EOF {
+		_ = origBody.Close()
+		return fmt.Errorf("reading HTTP/3 request body: %w", err)
+	}
+
+	return nil
 }
 
 // addForwardedHeaders adds the de-facto standard X-Forwarded-*
