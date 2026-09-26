@@ -166,6 +166,38 @@ type nopReadWriteCloser struct {
 
 func (nopReadWriteCloser) Close() error { return nil }
 
+// A response carrying the Incremental header field (RFC 10036) must be
+// forwarded without buffering, whatever its Content-Type and Content-Length.
+func TestFlushIntervalIncremental(t *testing.T) {
+	h := Handler{FlushInterval: caddy.Duration(time.Second)}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+
+	for _, tc := range []struct {
+		name                string
+		incremental         string
+		receivedIncremental bool
+		want                time.Duration
+	}{
+		{name: "incremental", incremental: "?1", want: -1},
+		{name: "not incremental", incremental: "?0", want: time.Second},
+		{name: "absent", want: time.Second},
+		{name: "removed by header operations", receivedIncremental: true, want: -1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			res := &http.Response{
+				Header:        http.Header{"Content-Type": []string{"application/json"}},
+				ContentLength: 42,
+			}
+			if tc.incremental != "" {
+				res.Header.Set("Incremental", tc.incremental)
+			}
+			if got := h.flushInterval(req, res, tc.receivedIncremental); got != tc.want {
+				t.Errorf("flushInterval() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 // closeWriteRecorder is a destination that supports closing only its write
 // half, and records whether that happened.
 type closeWriteRecorder struct {

@@ -101,6 +101,9 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //	    stream_close_delay <duration>
 //	    verbose_logs
 //
+//	    # reporting
+//	    proxy_status_name <name>
+//
 //	    # request manipulation
 //	    trusted_proxies [private_ranges] <ranges...>
 //	    header_up   [+|-]<field> [<value|regexp> [<replacement>]]
@@ -673,6 +676,15 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				h.ResponseBuffers = size
 			case "stream_buffer_size":
 				h.StreamBufferSize = int(size)
+			}
+
+		case "proxy_status_name":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			h.ProxyStatusName = d.Val()
+			if d.NextArg() {
+				return d.ArgErr()
 			}
 
 		case "stream_timeout":
