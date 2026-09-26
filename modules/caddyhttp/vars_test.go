@@ -158,6 +158,7 @@ func TestMatchVarsREDoesNotExpandResolvedValues(t *testing.T) {
 		})
 	}
 }
+
 // TestVarsMatchersTreatErrorsByType verifies the error handling split in the
 // vars matchers: only the request-body limit marker aborts request handling,
 // while unrelated errors are matched on their text exactly like before.
@@ -223,4 +224,32 @@ func TestVarsMatchersTreatErrorsByType(t *testing.T) {
 			t.Error("no regexp match should happen when the marker aborts")
 		}
 	})
+}
+
+func TestVarsMiddlewareKeepsUnknownPlaceholders(t *testing.T) {
+	req, repl := newVarsTestRequest(t, "", nil, nil)
+	repl.Set("testvar", "replaced")
+
+	m := VarsMiddleware{
+		"json":             `{"a":1}`,
+		"mixed":            `{"host":"{testvar}"}`,
+		"literal-{name}-k": "kept",
+	}
+
+	err := m.ServeHTTP(httptest.NewRecorder(), req, HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+		return nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for name, want := range map[string]any{
+		"json":             `{"a":1}`,
+		"mixed":            `{"host":"replaced"}`,
+		"literal-{name}-k": "kept",
+	} {
+		if got := GetVar(req.Context(), name); got != want {
+			t.Errorf("var %q = %v, want %v", name, got, want)
+		}
+	}
 }
