@@ -61,10 +61,12 @@ type Browse struct {
 	// It includes the following options:
 	//   - sort_by: name(default), namedirfirst, size, time
 	//   - order: asc(default), desc
+	//   - sort_method: lex(default), natural
 	// eg.:
 	//   - `sort time desc` will sort by time in descending order
 	//   - `sort size` will sort by size in ascending order
-	// The first option must be `sort_by` and the second option must be `order` (if exists).
+	//   - `sort name natural` will sort by name using "natural sort", so e.g.
+	//     "9th Grade" sorts before "10th Grade", although '9' > '1' char-wise
 	SortOptions []string `json:"sort,omitempty"`
 
 	// FileLimit limits the number of up to n DirEntry values in directory order.
@@ -238,19 +240,18 @@ func (fsrv *FileServer) loadDirectoryContents(ctx context.Context, fileSystem fs
 // It mutates the listing and may set cookies.
 func (fsrv *FileServer) browseApplyQueryParams(w http.ResponseWriter, r *http.Request, listing *browseTemplateContext) {
 	var orderParam, sortParam string
+	methodParam := sortMethodLexicographic
 
 	// The configs in Caddyfile have lower priority than Query params,
 	// so put it at first.
-	for idx, item := range fsrv.Browse.SortOptions {
-		// Only `sort` & `order`, 2 params are allowed
-		if idx >= 2 {
-			break
-		}
+	for _, item := range fsrv.Browse.SortOptions {
 		switch item {
 		case sortByName, sortByNameDirFirst, sortBySize, sortByTime:
 			sortParam = item
 		case sortOrderAsc, sortOrderDesc:
 			orderParam = item
+		case sortMethodLexicographic, sortMethodNatural:
+			methodParam = item
 		}
 	}
 
@@ -308,7 +309,7 @@ func (fsrv *FileServer) browseApplyQueryParams(w http.ResponseWriter, r *http.Re
 	}
 
 	// finally, apply the sorting and limiting
-	listing.applySortAndLimit(sortParam, orderParam, limitParam, offsetParam)
+	listing.applySortAndLimit(sortParam, orderParam, methodParam, limitParam, offsetParam)
 }
 
 // makeBrowseTemplate creates the template to be used for directory listings.
