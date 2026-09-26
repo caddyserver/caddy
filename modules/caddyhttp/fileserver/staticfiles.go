@@ -23,6 +23,7 @@ import (
 	weakrand "math/rand/v2"
 	"mime"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -848,15 +849,15 @@ func (fsrv *FileServer) getEtagFromFile(fileSystem fs.FS, filename string) (stri
 // redirect performs a redirect to a given path. The 'toPath' parameter
 // MUST be solely a path, and MUST NOT include a query.
 func redirect(w http.ResponseWriter, r *http.Request, toPath string) error {
-	for strings.HasPrefix(toPath, "//") {
+	toURL := &url.URL{Path: toPath}
+	for strings.HasPrefix(toURL.Path, "//") {
 		// prevent path-based open redirects
-		toPath = strings.TrimPrefix(toPath, "/")
+		toURL.Path = strings.TrimPrefix(toURL.Path, "/")
 	}
 	// preserve the query string if present
-	if r.URL.RawQuery != "" {
-		toPath += "?" + r.URL.RawQuery
-	}
-	http.Redirect(w, r, toPath, http.StatusPermanentRedirect) //nolint:gosec // toPath is a same-origin path and leading // is stripped above
+	toURL.RawQuery = r.URL.RawQuery
+	// escape the path so it can be safely included in the Location header.
+	http.Redirect(w, r, toURL.String(), http.StatusPermanentRedirect) //nolint:gosec // toPath is a same-origin path and leading // is stripped above
 	return nil
 }
 
