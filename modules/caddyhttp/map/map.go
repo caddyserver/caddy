@@ -94,7 +94,8 @@ func (h *Handler) Validate() error {
 		return fmt.Errorf("%d destinations != %d defaults", nDest, nDef)
 	}
 
-	seen := make(map[string]int)
+	seenLiterals := make(map[string]int)
+	seenRegexps := make(map[string]int)
 	for i, m := range h.Mappings {
 		// prevent confusing/ambiguous mappings
 		if m.Input != "" && m.InputRegexp != "" {
@@ -102,9 +103,9 @@ func (h *Handler) Validate() error {
 		}
 
 		// prevent duplicate mappings
-		input := m.Input
+		input, seen := m.Input, seenLiterals
 		if m.InputRegexp != "" {
-			input = m.InputRegexp
+			input, seen = m.InputRegexp, seenRegexps
 		}
 		if prev, ok := seen[input]; ok {
 			return fmt.Errorf("mapping %d has a duplicate input '%s' previously used with mapping %d", i, input, prev)
