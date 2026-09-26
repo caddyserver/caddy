@@ -18,6 +18,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"os/signal"
@@ -188,7 +189,9 @@ func cmdHashPassword(fs caddycmd.Flags) (int, error) {
 
 // hashWithModule hashes plaintext using the installed password
 // hashing module with the given name. The module must implement
-// Hasher to be usable for generating hashes.
+// Hasher to be usable for generating hashes. Hashes in Modular Crypt
+// Format are returned as-is; any other hash is base64-encoded, which is
+// the form HTTPBasicAuth reads non-MCF passwords in.
 func hashWithModule(algorithm string, plaintext []byte) (string, error) {
 	modInfo, err := hashModuleInfo(algorithm)
 	if err != nil {
@@ -211,5 +214,8 @@ func hashWithModule(algorithm string, plaintext []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return string(hash), nil
+	if bytes.HasPrefix(hash, []byte("$")) {
+		return string(hash), nil
+	}
+	return base64.StdEncoding.EncodeToString(hash), nil
 }

@@ -34,6 +34,7 @@ import (
 func init() {
 	caddy.RegisterModule(testHash{})
 	caddy.RegisterModule(testCompareOnlyHash{})
+	caddy.RegisterModule(testMCFHash{})
 }
 
 // testHash is a third-party-style hash module used to
@@ -81,6 +82,26 @@ func (testCompareOnlyHash) CaddyModule() caddy.ModuleInfo {
 func (testCompareOnlyHash) Compare(hashed, plaintext []byte) (bool, error) {
 	return bytes.Equal(hashed, plaintext), nil
 }
+
+// testMCFHash produces hashes in Modular Crypt Format.
+type testMCFHash struct{}
+
+func (testMCFHash) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "http.authentication.hashes.testmcf",
+		New: func() caddy.Module { return new(testMCFHash) },
+	}
+}
+
+func (testMCFHash) Compare(hashed, plaintext []byte) (bool, error) {
+	return bytes.Equal(hashed, append([]byte("$testmcf$"), plaintext...)), nil
+}
+
+func (testMCFHash) Hash(plaintext []byte) ([]byte, error) {
+	return append([]byte("$testmcf$"), plaintext...), nil
+}
+
+func (testMCFHash) FakeHash() []byte { return []byte("$testmcf$fake") }
 
 func adaptBasicAuth(t *testing.T, input string) (string, error) {
 	t.Helper()
@@ -192,6 +213,10 @@ func runHashPassword(t *testing.T, algorithm, plaintext string) (string, error) 
 	fs.String("plaintext", plaintext, "")
 	fs.String("algorithm", algorithm, "")
 	fs.Int("bcrypt-cost", defaultBcryptCost, "")
+	fs.Uint32("argon2id-time", defaultArgon2idTime, "")
+	fs.Uint32("argon2id-memory", defaultArgon2idMemory, "")
+	fs.Uint8("argon2id-threads", defaultArgon2idThreads, "")
+	fs.Uint32("argon2id-keylen", defaultArgon2idKeylen, "")
 
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -215,8 +240,45 @@ func TestHashPasswordCommandHashModule(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if out != "testhash:secret" {
-		t.Errorf("expected output %q, got %q", "testhash:secret", out)
+	if out != "dGVzdGhhc2g6c2VjcmV0" { // base64("testhash:secret")
+		t.Errorf("expected output %q, got %q", "dGVzdGhhc2g6c2VjcmV0", out)
+	}
+
+	out, err = runHashPassword(t, "testmcf", "secret")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out != "$testmcf$secret" {
+		t.Errorf("expected MCF output %q unchanged, got %q", "$testmcf$secret", out)
+	}
+}
+
+// TestHashPasswordCommandRoundTrip checks that the output of the
+// hash-password command is accepted by HTTPBasicAuth as an account password.
+func TestHashPasswordCommandRoundTrip(t *testing.T) {
+	for _, algorithm := range []string{"testhash", "testmcf", "bcrypt", "argon2id"} {
+		t.Run(algorithm, func(t *testing.T) {
+			out, err := runHashPassword(t, algorithm, "secret")
+			if err != nil {
+				t.Fatalf("hash-password: %v", err)
+			}
+
+			ctx, cancel := caddy.NewContext(caddy.Context{Context: t.Context()})
+			defer cancel()
+			hba := HTTPBasicAuth{
+				HashRaw:     json.RawMessage(`{"algorithm": "` + algorithm + `"}`),
+				AccountList: []Account{{Username: "alice", Password: out}},
+			}
+			if err := hba.Provision(ctx); err != nil {
+				t.Fatalf("provisioning with %q: %v", out, err)
+			}
+			if ok, err := hba.correctPassword(hba.Accounts["alice"], []byte("secret")); err != nil || !ok {
+				t.Errorf("expected password to match (err=%v)", err)
+			}
+			if ok, err := hba.correctPassword(hba.Accounts["alice"], []byte("wrong")); err != nil || ok {
+				t.Errorf("expected wrong password not to match (err=%v)", err)
+			}
+		})
 	}
 }
 
