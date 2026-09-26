@@ -56,7 +56,10 @@ func (rb RequestBody) ServeHTTP(w http.ResponseWriter, r *http.Request, next cad
 			}
 		}
 		repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-		replacedBody := repl.ReplaceAll(rb.Set, "")
+		// Only known placeholders are replaced: the body is user-supplied and
+		// often JSON, whose braces would otherwise be read as placeholders and
+		// blanked, sending an empty body instead. This matches the respond body.
+		replacedBody := repl.ReplaceKnown(rb.Set, "")
 		r.Body = io.NopCloser(strings.NewReader(replacedBody))
 		r.ContentLength = int64(len(replacedBody))
 	}
