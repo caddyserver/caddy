@@ -6,6 +6,27 @@ import (
 	"testing"
 )
 
+func TestLetsEncryptProfileDefault(t *testing.T) {
+	if got := letsEncryptProfile("", "", ""); got != letsEncryptShortlivedProfile {
+		t.Fatalf("default Let's Encrypt endpoints: got %q, want %q", got, letsEncryptShortlivedProfile)
+	}
+	if got := letsEncryptProfile(letsEncryptProductionDirectory, "", ""); got != letsEncryptShortlivedProfile {
+		t.Fatalf("production directory: got %q, want %q", got, letsEncryptShortlivedProfile)
+	}
+	if got := letsEncryptProfile(letsEncryptStagingDirectory, letsEncryptStagingDirectory, ""); got != letsEncryptShortlivedProfile {
+		t.Fatalf("staging directory: got %q, want %q", got, letsEncryptShortlivedProfile)
+	}
+	if got := letsEncryptProfile("", "", "classic"); got != "classic" {
+		t.Fatalf("long-lived opt-out: got %q, want classic", got)
+	}
+	if got := letsEncryptProfile("https://acme.example.com/directory", "", ""); got != "" {
+		t.Fatalf("other CA: got %q, want empty", got)
+	}
+	if got := letsEncryptProfile("", "https://acme.example.com/directory", ""); got != "" {
+		t.Fatalf("custom TestCA: got %q, want empty", got)
+	}
+}
+
 func TestACMEIssuerExpandPlaceholders(t *testing.T) {
 	t.Setenv("CADDY_TEST_CA_URL", "https://acme.example.com/directory")
 	t.Setenv("CADDY_TEST_TEST_CA_URL", "https://acme2.example.com/directory")
