@@ -15,9 +15,11 @@
 package intercept
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -182,13 +184,24 @@ func (ir Intercept) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 		return nil
 	}
 
+	// a response that declares its own Content-Length must not frame the body
+	// that the response handlers write instead, so hold the status back until
+	// the first body write shows which body is being written
+	var routeWriter http.ResponseWriter = w
+	if w.Header().Get("Content-Length") != "" {
+		routeWriter = &deferredHeaderWriter{ResponseWriter: w}
+	}
+
 	// response recorder doesn't create a new copy of the original headers, they're
 	// present in the original response writer
 	// create a new recorder to see if any response body from the new handler is present,
 	// if not, use the already buffered response body
-	recorder := caddyhttp.NewResponseRecorder(w, nil, nil)
+	recorder := caddyhttp.NewResponseRecorder(routeWriter, nil, nil)
 	if err := rec.handler.Routes.Compile(emptyHandler).ServeHTTP(recorder, r); err != nil {
 		return err
+	}
+	if dhw, ok := routeWriter.(*deferredHeaderWriter); ok {
+		dhw.commit()
 	}
 
 	// no new response status and the status is not 0
@@ -204,6 +217,67 @@ func (ir Intercept) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 		return err
 	}
 	return nil
+}
+
+// deferredHeaderWriter holds the status code back until a body is written.
+// The original response's Content-Length must frame its own body and must not
+// frame a body that replaces it, and only a body write says which is which.
+type deferredHeaderWriter struct {
+	http.ResponseWriter
+	statusCode  int
+	held        bool
+	wroteHeader bool
+}
+
+// Unwrap lets http.ResponseController reach the underlying writer.
+func (w *deferredHeaderWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
+}
+
+func (w *deferredHeaderWriter) WriteHeader(statusCode int) {
+	if w.wroteHeader {
+		return
+	}
+	// informational responses are not final, so they are not held
+	if statusCode >= 100 && statusCode <= 199 {
+		w.ResponseWriter.WriteHeader(statusCode)
+		return
+	}
+	w.statusCode = statusCode
+	w.held = true
+}
+
+func (w *deferredHeaderWriter) Write(p []byte) (int, error) {
+	if !w.wroteHeader {
+		if len(p) > 0 {
+			// this body replaces the original response, so the original
+			// Content-Length does not describe it
+			w.Header().Del("Content-Length")
+		}
+		w.commit()
+		w.wroteHeader = true
+	}
+	return w.ResponseWriter.Write(p)
+}
+
+func (w *deferredHeaderWriter) Flush() {
+	w.commit()
+	_ = http.NewResponseController(w.ResponseWriter).Flush()
+}
+
+func (w *deferredHeaderWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	w.commit()
+	return http.NewResponseController(w.ResponseWriter).Hijack()
+}
+
+// commit writes a status code that was held for a response without a body.
+func (w *deferredHeaderWriter) commit() {
+	if w.wroteHeader || !w.held {
+		return
+	}
+	w.wroteHeader = true
+	w.held = false
+	w.ResponseWriter.WriteHeader(w.statusCode)
 }
 
 // this handler does nothing because everything we need is already buffered
