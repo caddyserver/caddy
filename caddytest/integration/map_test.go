@@ -65,6 +65,51 @@ func TestMapRespondWithDefault(t *testing.T) {
 	tester.AssertPostResponseBody("http://localhost:9080/version", []string{}, bytes.NewBuffer([]byte{}), 200, "hello from localhost unknown")
 }
 
+func TestMapInvalidDestination(t *testing.T) {
+	// see https://github.com/caddyserver/caddy/issues/8073
+	failureCases := []struct {
+		name          string
+		destination   string
+		expectedError string
+	}{
+		{
+			name:          "trailing text",
+			destination:   "{dest-name}suffix",
+			expectedError: "destination 0 must be a placeholder and only a placeholder, but got '{dest-name}suffix'",
+		},
+		{
+			name:          "missing closing brace",
+			destination:   "{dest-name",
+			expectedError: "destination 0 must be a placeholder and only a placeholder, but got '{dest-name'",
+		},
+		{
+			name:          "double closing brace",
+			destination:   "{dest-name}}",
+			expectedError: "destination 0 must be a placeholder and only a placeholder, but got '{dest-name}}'",
+		},
+	}
+
+	for _, tc := range failureCases {
+		t.Run(tc.name, func(t *testing.T) {
+			caddytest.AssertLoadError(t, `
+			{
+				skip_install_trust
+				admin localhost:2999
+				http_port 9080
+				https_port 9443
+			}
+	
+			localhost:9080 {
+				map {http.request.uri.path} `+tc.destination+` {
+					/foo mapped
+				}
+				respond "{result}"
+			}
+			`, "caddyfile", tc.expectedError)
+		})
+	}
+}
+
 func TestMapAsJSON(t *testing.T) {
 	// arrange
 	tester := caddytest.NewTester(t)
