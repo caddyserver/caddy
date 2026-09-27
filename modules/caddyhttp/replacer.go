@@ -601,6 +601,13 @@ func getReqTLSReplacement(req *http.Request, key string) (any, bool) {
 		return req.TLS.ServerName, true
 	case "ech":
 		return req.TLS.ECHAccepted, true
+	case "curve":
+		// CurveID 0 means no curve-based key exchange was recorded
+		// (e.g. legacy RSA). Treat as empty/omitted.
+		if req.TLS.CurveID == 0 {
+			return "", true
+		}
+		return req.TLS.CurveID.String(), true
 	}
 	return nil, false
 }

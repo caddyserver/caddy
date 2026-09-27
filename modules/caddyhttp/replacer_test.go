@@ -67,6 +67,7 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 		HandshakeComplete:          true,
 		ServerName:                 "example.com",
 		CipherSuite:                tls.TLS_AES_256_GCM_SHA384,
+		CurveID:                    tls.X25519MLKEM768,
 		PeerCertificates:           []*x509.Certificate{cert},
 		NegotiatedProtocol:         "h2",
 		NegotiatedProtocolIsMutual: true,
@@ -195,6 +196,10 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 		{
 			get:    "http.request.tls.cipher_suite",
 			expect: "TLS_AES_256_GCM_SHA384",
+		},
+		{
+			get:    "http.request.tls.curve",
+			expect: "X25519MLKEM768",
 		},
 		{
 			get:    "http.request.tls.proto",
@@ -404,5 +409,26 @@ func TestRequestBodyPlaceholderErrorScoping(t *testing.T) {
 				t.Error("the marker must unwrap to the MaxBytesError")
 			}
 		})
+	}
+}
+
+func TestTLSCurvePlaceholderEmpty(t *testing.T) {
+	req, _ := http.NewRequest(http.MethodGet, "/", nil)
+	repl := caddy.NewReplacer()
+	req = req.WithContext(context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl))
+	req.TLS = &tls.ConnectionState{
+		Version:           tls.VersionTLS13,
+		HandshakeComplete: true,
+		CipherSuite:       tls.TLS_AES_256_GCM_SHA384,
+		// CurveID left at zero: no curve-based key exchange recorded
+	}
+	addHTTPVarsToReplacer(repl, req, httptest.NewRecorder())
+
+	actual, got := repl.GetString("http.request.tls.curve")
+	if !got {
+		t.Fatal("expected http.request.tls.curve to be a known placeholder")
+	}
+	if actual != "" {
+		t.Fatalf("curve = %q, want empty string when CurveID is 0", actual)
 	}
 }
