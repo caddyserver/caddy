@@ -16,6 +16,7 @@ package caddyzstd
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/klauspost/compress/zstd"
 
@@ -37,8 +38,16 @@ type Zstd struct {
 	// If unset, the upstream zstd library default is preserved.
 	Checksum *bool `json:"checksum,omitempty"`
 
+	// Path to a zstd dictionary produced by `zstd --train`. Responses are
+	// compressed against the dictionary, which is not carried in the frame,
+	// so only clients holding the same dictionary can decode them. Leave
+	// unset to compress without a dictionary.
+	Dictionary string `json:"dictionary,omitempty"`
+
 	// Compression level refer to type constants value from zstd.SpeedFastest to zstd.SpeedBestCompression
 	level zstd.EncoderLevel
+
+	dict []byte
 }
 
 // CaddyModule returns the Caddy module information.
@@ -79,6 +88,16 @@ func (z *Zstd) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 			z.Level = args[0]
 
+		case "dictionary":
+			args := d.RemainingArgs()
+			if len(args) != 1 {
+				return d.ArgErr()
+			}
+			if z.Dictionary != "" {
+				return d.Err("dictionary already specified")
+			}
+			z.Dictionary = args[0]
+
 		case "disable_checksum":
 			if d.NextArg() {
 				return d.ArgErr()
@@ -107,6 +126,20 @@ func (z *Zstd) Provision(ctx caddy.Context) error {
 		return err
 	}
 	z.level = level
+
+	if z.Dictionary != "" {
+		dict, err := os.ReadFile(z.Dictionary)
+		if err != nil {
+			return fmt.Errorf("loading zstd dictionary: %v", err)
+		}
+		// Fail here rather than per-request: NewEncoder cannot report an error,
+		// and a raw sample file is a likely mistake for a trained dictionary.
+		if _, err := zstd.NewWriter(nil, zstd.WithEncoderDict(dict)); err != nil {
+			return fmt.Errorf("invalid zstd dictionary %s (expected the output of `zstd --train`): %v", z.Dictionary, err)
+		}
+		z.dict = dict
+	}
+
 	return nil
 }
 
@@ -132,6 +165,9 @@ func (z Zstd) writerOptions(windowSize int) []zstd.EOption {
 	}
 	if z.Checksum != nil {
 		opts = append(opts, zstd.WithEncoderCRC(*z.Checksum))
+	}
+	if z.dict != nil {
+		opts = append(opts, zstd.WithEncoderDict(z.dict))
 	}
 	return opts
 }

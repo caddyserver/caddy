@@ -1,0 +1,38 @@
+:80
+
+encode {
+	zstd {
+		dictionary /etc/caddy/api.dict
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"encodings": {
+										"zstd": {
+											"dictionary": "/etc/caddy/api.dict"
+										}
+									},
+									"handler": "encode",
+									"prefer": [
+										"zstd"
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}
