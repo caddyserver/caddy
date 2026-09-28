@@ -267,6 +267,19 @@ func TestHandler(t *testing.T) {
 	}
 }
 
+func TestHeaderOpsSetMultipleCookies(t *testing.T) {
+	ops := HeaderOps{Set: http.Header{
+		"Set-Cookie": {"a=1; Path=/", "b=2; Path=/"},
+	}}
+	hdr := http.Header{"Set-Cookie": {"old=1"}}
+	ops.ApplyTo(hdr, caddy.NewReplacer())
+
+	want := []string{"a=1; Path=/", "b=2; Path=/"}
+	if got := hdr.Values("Set-Cookie"); !reflect.DeepEqual(got, want) {
+		t.Errorf("Set-Cookie values = %q, want %q", got, want)
+	}
+}
+
 type nextHandler func(http.ResponseWriter, *http.Request) error
 
 func (f nextHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) error {
