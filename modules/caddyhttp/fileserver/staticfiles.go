@@ -314,6 +314,9 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 		if fsrv.ContentDigestMaxBuffer < 0 {
 			return fmt.Errorf("content_digest_max_buffer must not be negative")
 		}
+		if fsrv.ContentDigestMaxBuffer > defaultGlobalDigestBudget {
+			return fmt.Errorf("content_digest_max_buffer (%d) exceeds global digest budget (%d)", fsrv.ContentDigestMaxBuffer, defaultGlobalDigestBudget)
+		}
 		if fsrv.ContentDigestMaxBuffer == 0 {
 			fsrv.ContentDigestMaxBuffer = defaultContentDigestMaxBuffer
 		}

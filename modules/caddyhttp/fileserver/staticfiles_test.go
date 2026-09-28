@@ -1393,6 +1393,39 @@ func TestContentDigestIntegration(t *testing.T) {
 		}
 	})
 
+	t.Run("Provision max buffer exceeding global budget rejected", func(t *testing.T) {
+		fs := FileServer{
+			ContentDigest:          []string{"sha-256"},
+			ContentDigestMaxBuffer: defaultGlobalDigestBudget + 1,
+		}
+		ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+		if err := fs.Provision(ctx); err == nil {
+			t.Fatal("expected error when ContentDigestMaxBuffer exceeds global budget")
+		}
+	})
+
+	t.Run("Provision max buffer negative rejected", func(t *testing.T) {
+		fs := FileServer{
+			ContentDigest:          []string{"sha-256"},
+			ContentDigestMaxBuffer: -1,
+		}
+		ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+		if err := fs.Provision(ctx); err == nil {
+			t.Fatal("expected error when ContentDigestMaxBuffer is negative")
+		}
+	})
+
+	t.Run("Provision max buffer at boundary accepted", func(t *testing.T) {
+		fs := FileServer{
+			ContentDigest:          []string{"sha-256"},
+			ContentDigestMaxBuffer: defaultGlobalDigestBudget,
+		}
+		ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+		if err := fs.Provision(ctx); err != nil {
+			t.Fatalf("unexpected error when ContentDigestMaxBuffer equals global budget: %v", err)
+		}
+	})
+
 	t.Run("oversized response omits Content-Digest", func(t *testing.T) {
 		// Body larger than a tiny max buffer: stream without digest.
 		big := bytes.Repeat([]byte("x"), 64)
