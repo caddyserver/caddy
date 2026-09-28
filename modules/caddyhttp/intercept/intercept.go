@@ -186,7 +186,7 @@ func (ir Intercept) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 
 	// a response that declares its own Content-Length must not frame the body
 	// that the response handlers write instead, so hold the status back until
-	// the first body write shows which body is being written
+	// the handlers write or flush and show which response is being written
 	var routeWriter http.ResponseWriter = w
 	if w.Header().Get("Content-Length") != "" {
 		routeWriter = &deferredHeaderWriter{ResponseWriter: w}
@@ -219,9 +219,10 @@ func (ir Intercept) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 	return nil
 }
 
-// deferredHeaderWriter holds the status code back until a body is written.
-// The original response's Content-Length must frame its own body and must not
-// frame a body that replaces it, and only a body write says which is which.
+// deferredHeaderWriter holds the status code back until the response handlers
+// write or flush, because the original response's Content-Length still frames
+// the body that the intercept module writes when they produce none, and must
+// not frame a response they start themselves.
 type deferredHeaderWriter struct {
 	http.ResponseWriter
 	statusCode  int
@@ -249,11 +250,9 @@ func (w *deferredHeaderWriter) WriteHeader(statusCode int) {
 
 func (w *deferredHeaderWriter) Write(p []byte) (int, error) {
 	if !w.wroteHeader {
-		if len(p) > 0 {
-			// this body replaces the original response, so the original
-			// Content-Length does not describe it
-			w.Header().Del("Content-Length")
-		}
+		// the replacement response starts here, so the original
+		// Content-Length does not describe its body
+		w.Header().Del("Content-Length")
 		w.commit()
 		w.wroteHeader = true
 	}
@@ -261,7 +260,13 @@ func (w *deferredHeaderWriter) Write(p []byte) (int, error) {
 }
 
 func (w *deferredHeaderWriter) Flush() {
-	w.commit()
+	if !w.wroteHeader {
+		// the replacement response starts here, so the original
+		// Content-Length does not describe its body
+		w.Header().Del("Content-Length")
+		w.commit()
+		w.wroteHeader = true
+	}
 	_ = http.NewResponseController(w.ResponseWriter).Flush()
 }
 
