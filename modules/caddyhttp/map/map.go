@@ -64,10 +64,12 @@ func (Handler) CaddyModule() caddy.ModuleInfo {
 // Provision sets up h.
 func (h *Handler) Provision(_ caddy.Context) error {
 	for j, dest := range h.Destinations {
-		if strings.Count(dest, "{") != 1 || !strings.HasPrefix(dest, "{") {
-			return fmt.Errorf("destination must be a placeholder and only a placeholder")
+		if !strings.HasPrefix(dest, "{") || !strings.HasSuffix(dest, "}") ||
+			strings.Count(dest, "{") != 1 || strings.Count(dest, "}") != 1 ||
+			len(dest) < 3 {
+			return fmt.Errorf("destination %d must be a placeholder and only a placeholder, but got '%s'", j, dest)
 		}
-		h.Destinations[j] = strings.Trim(dest, "{}")
+		h.Destinations[j] = dest[1 : len(dest)-1]
 	}
 
 	for i, m := range h.Mappings {
