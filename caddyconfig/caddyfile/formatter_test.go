@@ -26,6 +26,16 @@ func TestFormatter(t *testing.T) {
 		expect      string
 	}{
 		{
+			description: "trailing open brace is not dropped",
+			input:       `localhost {`,
+			expect:      `localhost {`,
+		},
+		{
+			description: "input of only an open brace is not dropped",
+			input:       `{`,
+			expect:      `{`,
+		},
+		{
 			description: "very simple",
 			input: `abc   def
 	g hi jkl
