@@ -65,7 +65,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //	    content_digest [<algorithms...>]
 //	    content_digest_max_buffer <size>
 //	}
-
+//
 // The FinalizeUnmarshalCaddyfile method should be called after this
 // to finalize setup of hidden Caddyfiles.
 func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {

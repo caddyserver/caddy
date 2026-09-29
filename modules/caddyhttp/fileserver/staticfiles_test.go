@@ -21,8 +21,11 @@ import (
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -35,6 +38,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/internal/filesystems"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/encode"
 )
@@ -819,6 +823,7 @@ func TestContentDigestResponseWriterFinalize(t *testing.T) {
 			maxBuffer:      maxBuf,
 		}
 		cd.Header().Set("Content-Length", "100")
+		cd.Header().Set("Content-Type", "text/plain")
 		cd.WriteHeader(http.StatusOK)
 		if _, err := cd.Write([]byte("short")); err != nil {
 			t.Fatal(err)
@@ -829,6 +834,7 @@ func TestContentDigestResponseWriterFinalize(t *testing.T) {
 		if rec.Flushed || len(rec.Body.Bytes()) != 0 {
 			t.Fatalf("ResponseWriter was committed: body = %q", rec.Body.Bytes())
 		}
+		assertNoStaleFraming(t, rec.Header())
 	})
 
 	t.Run("truncated 206 body returns error without committing", func(t *testing.T) {
@@ -839,6 +845,7 @@ func TestContentDigestResponseWriterFinalize(t *testing.T) {
 			maxBuffer:      maxBuf,
 		}
 		cd.Header().Set("Content-Length", "50")
+		cd.Header().Set("Content-Range", "bytes 0-49/100")
 		cd.WriteHeader(http.StatusPartialContent)
 		if _, err := cd.Write([]byte("short")); err != nil {
 			t.Fatal(err)
@@ -849,6 +856,7 @@ func TestContentDigestResponseWriterFinalize(t *testing.T) {
 		if rec.Flushed || len(rec.Body.Bytes()) != 0 {
 			t.Fatalf("ResponseWriter was committed: body = %q", rec.Body.Bytes())
 		}
+		assertNoStaleFraming(t, rec.Header())
 	})
 
 	t.Run("ServeContent with failing ReadSeeker returns error and does not commit", func(t *testing.T) {
@@ -873,9 +881,7 @@ func TestContentDigestResponseWriterFinalize(t *testing.T) {
 		if rec.Flushed || len(rec.Body.Bytes()) != 0 {
 			t.Fatalf("ResponseWriter was committed despite read failure: body = %q", rec.Body.Bytes())
 		}
-		if got := rec.Header().Get("Content-Digest"); got != "" {
-			t.Fatalf("Content-Digest = %q, want empty on read failure", got)
-		}
+		assertNoStaleFraming(t, rec.Header())
 	})
 
 	t.Run("ServeContent with failing ReadSeeker on 206 range returns error", func(t *testing.T) {
@@ -901,6 +907,7 @@ func TestContentDigestResponseWriterFinalize(t *testing.T) {
 		if rec.Flushed || len(rec.Body.Bytes()) != 0 {
 			t.Fatalf("ResponseWriter was committed despite read failure: body = %q", rec.Body.Bytes())
 		}
+		assertNoStaleFraming(t, rec.Header())
 	})
 
 	t.Run("ServeContent with failing ReadSeeker on precompressed 206 range returns error", func(t *testing.T) {
@@ -933,10 +940,26 @@ func TestContentDigestResponseWriterFinalize(t *testing.T) {
 		if rec.Flushed || len(rec.Body.Bytes()) != 0 {
 			t.Fatalf("ResponseWriter was committed despite read failure: body = %q", rec.Body.Bytes())
 		}
-		if got := rec.Header().Get("Content-Digest"); got != "" {
-			t.Fatalf("Content-Digest = %q, want empty on read failure", got)
-		}
+		assertNoStaleFraming(t, rec.Header())
 	})
+}
+
+func assertNoStaleFraming(t *testing.T, h http.Header) {
+	t.Helper()
+	for _, key := range []string{
+		"Content-Length",
+		"Content-Type",
+		"Content-Encoding",
+		"Content-Range",
+		"Content-Digest",
+		"Etag",
+		"Last-Modified",
+		"Accept-Ranges",
+	} {
+		if got := h.Get(key); got != "" {
+			t.Fatalf("%s = %q, want empty after finalize failure (stale framing)", key, got)
+		}
+	}
 }
 
 func TestContentDigestGlobalBudget(t *testing.T) {
@@ -1426,6 +1449,17 @@ func TestContentDigestIntegration(t *testing.T) {
 		}
 	})
 
+	t.Run("Provision max buffer near MaxInt64 rejected", func(t *testing.T) {
+		fs := FileServer{
+			ContentDigest:          []string{"sha-256"},
+			ContentDigestMaxBuffer: math.MaxInt64,
+		}
+		ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+		if err := fs.Provision(ctx); err == nil {
+			t.Fatal("expected error when ContentDigestMaxBuffer is MaxInt64")
+		}
+	})
+
 	t.Run("oversized response omits Content-Digest", func(t *testing.T) {
 		// Body larger than a tiny max buffer: stream without digest.
 		big := bytes.Repeat([]byte("x"), 64)
@@ -1492,6 +1526,118 @@ func TestContentDigestIntegration(t *testing.T) {
 		}
 	})
 }
+
+// TestContentDigestServeHTTPReadFailureClearsFraming ensures a mid-read failure
+// during Content-Digest buffering returns a HandlerError 500 without leaving
+// ServeContent's Content-Length (or other framing) on the shared header map.
+// Caddy's error path WriteHeader must therefore produce a usable 500, not a
+// response framed as a truncated file body.
+func TestContentDigestServeHTTPReadFailureClearsFraming(t *testing.T) {
+	content := []byte("0123456789abcdef0123456789abcdef") // 32 bytes
+	failFS := &failingContentFS{
+		content: content,
+		failAt:  10,
+		modTime: time.Unix(1000, 0),
+	}
+	fsmap := &filesystems.FileSystemMap{}
+	fsmap.Register("", failFS)
+
+	fsrv := FileServer{
+		Root:          ".",
+		CanonicalURIs: new(bool),
+		ContentDigest: []string{"sha-256"},
+	}
+	ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+	if err := fsrv.Provision(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// Provision installs the context filesystem map; swap in the failing FS.
+	fsrv.fsmap = fsmap
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/file.txt", nil)
+	r = r.WithContext(context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
+
+	err := fsrv.ServeHTTP(w, r, nil)
+	if err == nil {
+		t.Fatal("expected ServeHTTP error on mid-read failure, got nil")
+	}
+	var he caddyhttp.HandlerError
+	if !errors.As(err, &he) {
+		t.Fatalf("error type = %T, want caddyhttp.HandlerError", err)
+	}
+	if he.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", he.StatusCode)
+	}
+	if w.Body.Len() != 0 {
+		t.Fatalf("body committed before error handler: %q", w.Body.Bytes())
+	}
+	assertNoStaleFraming(t, w.Header())
+
+	// Simulate Caddy's default error path writing onto the same ResponseWriter.
+	w.WriteHeader(he.StatusCode)
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("after error WriteHeader: status = %d, want 500", w.Code)
+	}
+	assertNoStaleFraming(t, w.Header())
+	if cl := w.Result().ContentLength; cl > 0 {
+		t.Fatalf("500 ContentLength = %d, want unset/zero (not file size %d)", cl, len(content))
+	}
+}
+
+type failingContentFS struct {
+	content []byte
+	failAt  int
+	modTime time.Time
+}
+
+func (f *failingContentFS) Open(name string) (fs.File, error) {
+	base := filepath.Base(name)
+	if base == "." || base == string(filepath.Separator) || base == "/" {
+		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
+	}
+	return &failingFile{
+		failingReadSeeker: failingReadSeeker{content: f.content, failAt: f.failAt},
+		name:              base,
+		size:              int64(len(f.content)),
+		modTime:           f.modTime,
+	}, nil
+}
+
+func (f *failingContentFS) Stat(name string) (fs.FileInfo, error) {
+	file, err := f.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	return file.Stat()
+}
+
+type failingFile struct {
+	failingReadSeeker
+	name    string
+	size    int64
+	modTime time.Time
+}
+
+func (f *failingFile) Close() error { return nil }
+
+func (f *failingFile) Stat() (fs.FileInfo, error) {
+	return failingFileInfo{name: f.name, size: f.size, modTime: f.modTime}, nil
+}
+
+type failingFileInfo struct {
+	name    string
+	size    int64
+	modTime time.Time
+}
+
+func (i failingFileInfo) Name() string       { return i.name }
+func (i failingFileInfo) Size() int64        { return i.size }
+func (i failingFileInfo) Mode() fs.FileMode  { return 0o644 }
+func (i failingFileInfo) ModTime() time.Time { return i.modTime }
+func (i failingFileInfo) IsDir() bool        { return false }
+func (i failingFileInfo) Sys() any           { return nil }
 
 type dynamicCompressResponseWriter struct {
 	http.ResponseWriter

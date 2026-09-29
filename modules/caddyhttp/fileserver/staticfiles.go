@@ -701,9 +701,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		}
 		// Reserve against the process-wide budget before wrapping. If the
 		// budget is exhausted, serve without digest rather than buffering.
-		if v := digestBufferInUse.Add(maxBuf); v > defaultGlobalDigestBudget {
-			digestBufferInUse.Add(-maxBuf)
-		} else {
+		if tryReserveDigestBuffer(maxBuf) {
 			digestWriter = &contentDigestResponseWriter{
 				ResponseWriter: w,
 				algos:          fsrv.ContentDigest,

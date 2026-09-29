@@ -35,6 +35,25 @@ var digestBufferInUse atomic.Int64
 // defaultGlobalDigestBudget is the process-wide cap on reserved digest buffers.
 const defaultGlobalDigestBudget int64 = 32 << 20 // 32 MiB
 
+// tryReserveDigestBuffer reserves n bytes against the process-wide budget.
+// n must already be capped at or below defaultGlobalDigestBudget (enforced at
+// Provision). Uses CAS so concurrent reservations cannot overflow int64 or
+// silently bypass the cap via wraparound.
+func tryReserveDigestBuffer(n int64) bool {
+	if n <= 0 || n > defaultGlobalDigestBudget {
+		return false
+	}
+	for {
+		cur := digestBufferInUse.Load()
+		if cur < 0 || cur > defaultGlobalDigestBudget-n {
+			return false
+		}
+		if digestBufferInUse.CompareAndSwap(cur, cur+n) {
+			return true
+		}
+	}
+}
+
 // normalizeContentDigestAlgos validates supported algorithms and removes duplicates.
 // Canonical names follow the IANA "Hash Algorithms for HTTP Digest Fields" registry
 // (RFC 9530): "sha-256", "sha-512".
@@ -241,6 +260,18 @@ func (cd *contentDigestResponseWriter) releaseReservation() {
 	cd.reserved = 0
 }
 
+// clearResponseFraming drops headers http.ServeContent (and callers) may have
+// already placed on the shared header map. finalize can still fail before
+// WriteHeader; without this, Caddy's error handler writes 500 against the same
+// map and can retain Content-Length / Content-Range framing from the file.
+func (cd *contentDigestResponseWriter) clearResponseFraming() {
+	h := cd.Header()
+	for k := range h {
+		delete(h, k)
+	}
+	cd.buf.Reset()
+}
+
 // finalize hashes the buffered message content, sets or clears Content-Digest,
 // then writes the real status line and body to the underlying ResponseWriter.
 // No-op if the body was already streamed via the over-limit passthrough path.
@@ -250,10 +281,9 @@ func (cd *contentDigestResponseWriter) finalize() error {
 	}
 	if cd.readErr != nil {
 		cd.releaseReservation()
+		cd.clearResponseFraming()
 		return fmt.Errorf("response body read error: %w", cd.readErr)
 	}
-	cd.flushed = true
-	defer cd.releaseReservation()
 
 	status := cd.status
 	if !cd.statusSet {
@@ -272,10 +302,15 @@ func (cd *contentDigestResponseWriter) finalize() error {
 			cd.omitDigest = true
 		} else if expectedLen, err := strconv.ParseInt(cl, 10, 64); err == nil && expectedLen >= 0 {
 			if int64(cd.buf.Len()) != expectedLen {
+				cd.releaseReservation()
+				cd.clearResponseFraming()
 				return fmt.Errorf("response body truncated: expected %d bytes (Content-Length), got %d buffered bytes", expectedLen, cd.buf.Len())
 			}
 		}
 	}
+
+	cd.flushed = true
+	defer cd.releaseReservation()
 
 	enc := cd.Header().Get("Content-Encoding")
 	allowDigest := !cd.omitDigest &&
@@ -284,6 +319,7 @@ func (cd *contentDigestResponseWriter) finalize() error {
 	if allowDigest {
 		digest, err := formatContentDigest(cd.algos, cd.buf.Bytes())
 		if err != nil {
+			cd.clearResponseFraming()
 			return err
 		}
 		if digest != "" {
