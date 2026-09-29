@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
@@ -106,4 +107,53 @@ func accountUsernames(hba HTTPBasicAuth) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+func TestBasicAuthProvisionRejectsUsernamesThatCollideAfterExpansion(t *testing.T) {
+	t.Setenv("CADDYTEST_BASICAUTH_A", "carol")
+	t.Setenv("CADDYTEST_BASICAUTH_B", "carol")
+	t.Setenv("CADDYTEST_BASICAUTH_C", "dave")
+
+	tests := []struct {
+		name      string
+		usernames [2]string
+		wantErr   bool
+	}{
+		{name: "literal duplicates", usernames: [2]string{"carol", "carol"}, wantErr: true},
+		{name: "both placeholders expand to the same name", usernames: [2]string{"{env.CADDYTEST_BASICAUTH_A}", "{env.CADDYTEST_BASICAUTH_B}"}, wantErr: true},
+		{name: "literal and expanded", usernames: [2]string{"carol", "{env.CADDYTEST_BASICAUTH_B}"}, wantErr: true},
+		{name: "same placeholder twice", usernames: [2]string{"{env.CADDYTEST_BASICAUTH_A}", "{env.CADDYTEST_BASICAUTH_A}"}, wantErr: true},
+		{name: "distinct after expansion", usernames: [2]string{"{env.CADDYTEST_BASICAUTH_A}", "{env.CADDYTEST_BASICAUTH_C}"}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			hba := HTTPBasicAuth{
+				AccountList: []Account{
+					{Username: test.usernames[0], Password: testBasicAuthHash},
+					{Username: test.usernames[1], Password: testBasicAuthHash},
+				},
+			}
+			ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+			defer cancel()
+			err := hba.Provision(ctx)
+
+			if test.wantErr {
+				if err == nil {
+					t.Fatalf("expected a username uniqueness error, got accounts %q", accountUsernames(hba))
+				}
+				if !strings.Contains(err.Error(), "username is not unique") {
+					t.Fatalf("expected a username uniqueness error, got %v", err)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("provisioning failed: %v", err)
+			}
+			if len(hba.Accounts) != 2 {
+				t.Fatalf("expected 2 accounts, got %d: %q", len(hba.Accounts), accountUsernames(hba))
+			}
+		})
+	}
 }

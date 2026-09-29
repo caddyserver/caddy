@@ -102,12 +102,15 @@ func (hba *HTTPBasicAuth) Provision(ctx caddy.Context) error {
 	// load account list
 	hba.Accounts = make(map[string]Account)
 	for i, acct := range hba.AccountList {
+		acct.Username = repl.ReplaceKnown(acct.Username, "")
+		acct.Password = repl.ReplaceKnown(acct.Password, "")
+
+		// placeholders such as {env.USER} are distinct until they are
+		// expanded, so the uniqueness check has to run on the names that
+		// will actually be stored in hba.Accounts
 		if _, ok := hba.Accounts[acct.Username]; ok {
 			return fmt.Errorf("account %d: username is not unique: %s", i, acct.Username)
 		}
-
-		acct.Username = repl.ReplaceKnown(acct.Username, "")
-		acct.Password = repl.ReplaceKnown(acct.Password, "")
 
 		if acct.Username == "" || acct.Password == "" {
 			return fmt.Errorf("account %d: username and password are required", i)
