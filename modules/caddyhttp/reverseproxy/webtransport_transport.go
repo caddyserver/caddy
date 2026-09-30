@@ -168,6 +168,8 @@ func (h *Handler) webTransportHijack(rw http.ResponseWriter, req *http.Request, 
 		return terminalError{caddyhttp.Error(http.StatusBadRequest,
 			fmt.Errorf("webtransport upgrade: %w", err))}
 	}
+	unregister := server.RegisterWebTransportSession(webTransportSessionCloser{sess: clientSess})
+	defer unregister()
 	caddyhttp.RecordHijackedStatus(rw, http.StatusOK)
 
 	runWebTransportPump(clientSess, upstreamSess, h.logger)
@@ -175,6 +177,17 @@ func (h *Handler) webTransportHijack(rw http.ResponseWriter, req *http.Request, 
 	repl.Set("http.reverse_proxy.upstream.duration", time.Since(dialStart))
 	repl.Set("http.reverse_proxy.upstream.duration_ms", time.Since(dialStart).Seconds()*1e3)
 	return nil
+}
+
+// webTransportSessionCloser closes one downstream WebTransport session
+// during server shutdown. io.Closer keeps *webtransport.Session out of
+// caddyhttp's exported API.
+type webTransportSessionCloser struct {
+	sess *webtransport.Session
+}
+
+func (w webTransportSessionCloser) Close() error {
+	return w.sess.CloseWithError(0, "server shutting down")
 }
 
 // dialUpstreamWebTransport opens a WebTransport session to the upstream at

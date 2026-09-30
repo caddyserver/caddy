@@ -28,6 +28,7 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -614,9 +615,8 @@ func TestWebTransport_InFlightRequestsTracked(t *testing.T) {
 
 // TestWebTransport_ReloadClosesActiveSession holds an in-flight WebTransport
 // session and reloads Caddy to a config with no HTTP servers. With the
-// default eternal grace period, HTTP/3 Shutdown waits for ServeQUICConn,
-// which waits for WT sessions — so wtServer.Close must run first, or the
-// session (and shutdown) hang until the client disconnects.
+// default eternal grace period, shutdown would wait until the client
+// disconnects unless the session is closed first.
 func TestWebTransport_ReloadClosesActiveSession(t *testing.T) {
 	if testing.Short() {
 		t.Skip()
@@ -644,6 +644,151 @@ func TestWebTransport_ReloadClosesActiveSession(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("active WebTransport session was not closed on reload")
 	}
+}
+
+// TestWebTransport_ShutdownDrainsPlainHTTP3 holds a WebTransport session and
+// a plain HTTP/3 request open, then reloads. The session is closed, and the
+// HTTP/3 request is allowed to finish during the grace period.
+func TestWebTransport_ShutdownDrainsPlainHTTP3(t *testing.T) {
+	if testing.Short() {
+		t.Skip()
+	}
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-release
+		_, _ = io.WriteString(w, "slow-ok")
+	}))
+	t.Cleanup(upstream.Close)
+
+	wtUpstream, stopWT := startStandaloneWebTransport(t, func(sess *webtransport.Session, r *http.Request) {
+		<-sess.Context().Done()
+	})
+	t.Cleanup(stopWT)
+
+	routes := fmt.Sprintf(`{
+		"match": [{"path": ["/slow"]}],
+		"handle": [{
+			"handler": "reverse_proxy",
+			"upstreams": [{"dial": "%s"}]
+		}]
+	}, {
+		"handle": [%s]
+	}`, upstream.Listener.Addr().String(),
+		wtReverseProxyHandler(fmt.Sprintf(`"upstreams": [{"dial": "127.0.0.1:%d"}]`, wtUpstream.Port)))
+
+	grace := 3 * time.Second
+	tester := caddytest.NewTester(t)
+	tester.InitServer(wtJSONWithHTTPPrefix(
+		`"proxy": `+wtH3ServerRoutes(":9443", routes),
+		fmt.Sprintf(`"grace_period": %d,`, grace.Nanoseconds()),
+	), "json")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	_, sess := dialWT(t, ctx, nil, nil)
+	defer sess.CloseWithError(0, "")
+
+	tr := &http3.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true, //nolint:gosec // local CA
+			ServerName:         "a.caddy.localhost",
+			NextProtos:         []string{http3.NextProtoH3},
+		},
+		QUICConfig: &quic.Config{
+			EnableDatagrams:                  true,
+			EnableStreamResetPartialDelivery: true,
+		},
+	}
+	t.Cleanup(func() { _ = tr.Close() })
+
+	type h3Result struct {
+		body string
+		err  error
+	}
+	got := make(chan h3Result, 1)
+	go func() {
+		req, err := http.NewRequest(http.MethodGet, "https://127.0.0.1:9443/slow", nil)
+		if err != nil {
+			got <- h3Result{err: err}
+			return
+		}
+		resp, err := tr.RoundTrip(req)
+		if err != nil {
+			got <- h3Result{err: err}
+			return
+		}
+		defer resp.Body.Close()
+		b, err := io.ReadAll(resp.Body)
+		if err != nil {
+			got <- h3Result{err: err}
+			return
+		}
+		if resp.StatusCode != http.StatusOK {
+			got <- h3Result{err: fmt.Errorf("status %d", resp.StatusCode)}
+			return
+		}
+		got <- h3Result{body: string(b)}
+	}()
+
+	select {
+	case <-started:
+	case res := <-got:
+		t.Fatalf("plain HTTP/3 request failed before the handler started: %v", res.err)
+	case <-time.After(3 * time.Second):
+		t.Fatal("plain HTTP/3 request did not reach the upstream")
+	}
+
+	reloadDone := make(chan struct{})
+	go func() {
+		tester.InitServer(`{"admin": {"listen": "localhost:2999"}}`, "json")
+		close(reloadDone)
+	}()
+
+	// Session close runs before the QUIC sockets are dropped. The plain
+	// request is still blocked in the upstream at this point.
+	select {
+	case <-sess.Context().Done():
+	case <-time.After(3 * time.Second):
+		t.Fatal("active WebTransport session was not closed on reload")
+	}
+	close(release)
+
+	select {
+	case res := <-got:
+		if res.err != nil {
+			t.Fatalf("plain HTTP/3 request aborted during grace: %v", res.err)
+		}
+		if res.body != "slow-ok" {
+			t.Fatalf("plain HTTP/3 body = %q", res.body)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("plain HTTP/3 request did not finish during grace")
+	}
+
+	_ = tr.Close()
+	select {
+	case <-reloadDone:
+	case <-time.After(grace + time.Second):
+		t.Fatal("reload did not finish after HTTP/3 drained")
+	}
+}
+
+func wtH3ServerRoutes(listen, routesJSON string) string {
+	return fmt.Sprintf(`{
+  "listen": [%q],
+  "protocols": ["h3"],
+  "webtransport": {},
+  "routes": [%s],
+  "tls_connection_policies": [
+    {
+      "certificate_selection": {"any_tag": ["cert0"]},
+      "default_sni": "a.caddy.localhost"
+    }
+  ]
+}`, listen, routesJSON)
 }
 
 func startWTProxy(t *testing.T, handlerJSON string) {

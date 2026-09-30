@@ -28,6 +28,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -405,6 +406,15 @@ type Server struct {
 	h3server  *http3.Server
 	wtServer  *webtransport.Server
 	addresses []caddy.NetworkAddress
+
+	// wtSessions are upgraded WebTransport sessions closed on shutdown
+	// without closing the shared HTTP/3 server. wtConns counts
+	// ServeQUICConn accept loops. wtStopping is set before waiting on
+	// wtConns so Add cannot race with Wait.
+	wtServeMu  sync.Mutex
+	wtStopping bool
+	wtConns    sync.WaitGroup
+	wtSessions map[io.Closer]struct{}
 
 	trustedProxies IPRangeSource
 
@@ -1120,14 +1130,23 @@ func (s *Server) serveH3AcceptLoop(h3ln http3.QUICListener) {
 		if err != nil {
 			return
 		}
-		go func() {
+		s.wtServeMu.Lock()
+		if s.wtStopping {
+			s.wtServeMu.Unlock()
+			_ = conn.CloseWithError(0, "")
+			continue
+		}
+		s.wtConns.Add(1)
+		s.wtServeMu.Unlock()
+		go func(conn *quic.Conn) {
+			defer s.wtConns.Done()
 			err := s.wtServer.ServeQUICConn(conn)
 			if err != nil && !errors.Is(err, http.ErrServerClosed) {
 				if c := s.logger.Check(zapcore.ErrorLevel, "serving WebTransport QUIC connection"); c != nil {
 					c.Write(zap.Error(err))
 				}
 			}
-		}()
+		}(conn)
 	}
 }
 
@@ -1499,6 +1518,71 @@ func (s *Server) WebTransportServer() any {
 		return nil
 	}
 	return s.wtServer
+}
+
+// RegisterWebTransportSession tracks c so shutdown can close the session
+// without closing the shared HTTP/3 server. webtransport.Server.Close also
+// calls http3.Server.Close, which aborts ordinary HTTP/3 requests on the
+// same server and waits with no grace deadline. The returned function
+// removes c from the set and does not close it.
+//
+// EXPERIMENTAL: Subject to change or removal.
+func (s *Server) RegisterWebTransportSession(c io.Closer) (unregister func()) {
+	if s == nil || c == nil {
+		return func() {}
+	}
+	s.wtServeMu.Lock()
+	if s.wtSessions == nil {
+		s.wtSessions = make(map[io.Closer]struct{})
+	}
+	s.wtSessions[c] = struct{}{}
+	s.wtServeMu.Unlock()
+	return func() {
+		s.wtServeMu.Lock()
+		delete(s.wtSessions, c)
+		s.wtServeMu.Unlock()
+	}
+}
+
+// closeWebTransportSessions closes sessions registered with
+// RegisterWebTransportSession. It does not close QUIC connections or the
+// HTTP/3 server.
+func (s *Server) closeWebTransportSessions() {
+	if s == nil {
+		return
+	}
+	s.wtServeMu.Lock()
+	closers := make([]io.Closer, 0, len(s.wtSessions))
+	for c := range s.wtSessions {
+		closers = append(closers, c)
+	}
+	s.wtSessions = nil
+	s.wtServeMu.Unlock()
+	for _, c := range closers {
+		_ = c.Close()
+	}
+}
+
+// waitWebTransportConns waits until ServeQUICConn loops finish, or until
+// ctx ends. Those connections are not tracked by http3.Server.Shutdown
+// because webtransport.Server serves them through NewRawServerConn.
+func (s *Server) waitWebTransportConns(ctx context.Context) {
+	if s == nil {
+		return
+	}
+	s.wtServeMu.Lock()
+	s.wtStopping = true
+	s.wtServeMu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		s.wtConns.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
+	}
 }
 
 // PrepareRequest fills the request r for use in a Caddy HTTP handler chain. w and s can
