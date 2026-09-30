@@ -306,7 +306,7 @@ func TestPump_CloseWithErrorPropagatesClientToUpstream(t *testing.T) {
 			t.Fatal("upstream expected error after client close; got nil")
 		}
 		// Close propagation is best-effort for a client-initiated close:
-		// webtransport-go's Dialer tears down the dedicated QUIC connection
+		// webtransport-go's Transport tears down the dedicated QUIC connection
 		// immediately after CloseWithError, and on the pump's server-side
 		// session the WT_CLOSE_SESSION capsule can lose the race to the
 		// QUIC close — in which case parseNextCapsule stores a non-

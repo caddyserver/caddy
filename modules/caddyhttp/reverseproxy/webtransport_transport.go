@@ -121,7 +121,7 @@ func (h *Handler) webTransportHijack(rw http.ResponseWriter, req *http.Request, 
 
 	// Expand SNI placeholders (e.g. tls_server_name {http.request.host}) per
 	// session. The normal HTTP/3 path does this via a custom h3Transport.Dial
-	// hook (#7737); the WebTransport path dials through its own Dialer and
+	// hook (#7737); the WebTransport path dials through its own Transport and
 	// bypasses that hook, so expand here. Clone first — the transport's TLS
 	// config is shared across sessions and must not be mutated in place.
 	if strings.Contains(tlsCfg.ServerName, "{") {
@@ -142,9 +142,9 @@ func (h *Handler) webTransportHijack(rw http.ResponseWriter, req *http.Request, 
 	// Application protocol negotiation (draft-ietf-webtrans-http3 §3.3)
 	// is relayed, not chosen here: parse the offer from the prepared
 	// request (so transport and header_up ops apply), put it on the
-	// upstream Dialer, and copy the upstream's WT-Protocol onto the
+	// upstream Transport, and copy the upstream's WT-Protocol onto the
 	// client 200. Strip the offer from the forwarded headers so the
-	// Dialer remashals a spec-correct list. The shared
+	// Transport remashals a spec-correct list. The shared
 	// webtransport.Server keeps ApplicationProtocols empty so Caddy does
 	// not independently select a protocol.
 	offered := parseWTAvailableProtocols(req.Header)
@@ -181,9 +181,9 @@ func (h *Handler) webTransportHijack(rw http.ResponseWriter, req *http.Request, 
 // urlStr (an https URL), forwarding reqHdr as headers on the Extended
 // CONNECT request. The returned session is owned by the caller and must be
 // closed when no longer in use. Return-value order matches
-// webtransport.Dialer.Dial: (response, session, error).
+// webtransport.Transport.Dial: (response, session, error).
 // applicationProtocols is the client's WT-Available-Protocols offer,
-// forwarded so the Dialer will accept the upstream's WT-Protocol choice.
+// forwarded so the Transport will accept the upstream's WT-Protocol choice.
 // host, if non-empty, is the prepared Host / :authority for the CONNECT
 // (header_up Host); the QUIC dial still uses the URL host.
 //
@@ -196,13 +196,13 @@ func dialUpstreamWebTransport(ctx context.Context, tlsCfg *tls.Config, urlStr st
 	}
 	dialAddr := u.Host
 	if host != "" {
-		// Dialer.Dial always sets req.Host from the URL host, so put the
+		// Transport.Dial always sets req.Host from the URL host, so put the
 		// prepared Host there. DialAddr keeps the QUIC dial on the real
 		// upstream address.
 		u.Host = host
 		urlStr = u.String()
 	}
-	d := &webtransport.Dialer{
+	d := &webtransport.Transport{
 		TLSClientConfig:      tlsCfg,
 		ApplicationProtocols: applicationProtocols,
 		QUICConfig: &quic.Config{
