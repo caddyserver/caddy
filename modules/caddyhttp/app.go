@@ -746,12 +746,12 @@ func (app *App) Stop() error {
 		time.Sleep(time.Duration(app.ShutdownDelay))
 	}
 
-	// enforce grace period if configured
+	// enforce grace period if configured; cancel is not deferred, since we
+	// return while the servers are still draining; the finalizer cancels it
+	var cancel context.CancelFunc
 	if app.GracePeriod > 0 {
-		var cancel context.CancelFunc
 		timeout := time.Duration(app.GracePeriod)
 		ctx, cancel = context.WithTimeoutCause(ctx, timeout, fmt.Errorf("server graceful shutdown %ds timeout", int(timeout.Seconds())))
-		defer cancel()
 		app.logger.Info("servers shutting down; grace period initiated", zap.Duration("duration", timeout))
 	} else {
 		app.logger.Info("servers shutting down with eternal grace period")
@@ -767,6 +767,10 @@ func (app *App) Stop() error {
 	// calling Shutdown(), but it's unlikely)
 	var startedShutdown, finishedShutdown sync.WaitGroup
 
+	// servers that ran out of grace period, for the finalizer to close;
+	// buffered so no shutdown blocks on sending
+	timedOut := make(chan *Server, len(app.Servers))
+
 	// these will run in goroutines
 	stopServer := func(server *Server) {
 		defer finishedShutdown.Done()
@@ -778,8 +782,12 @@ func (app *App) Stop() error {
 		}
 
 		if err := server.server.Shutdown(ctx); err != nil {
-			if cause := context.Cause(ctx); cause != nil && errors.Is(err, context.DeadlineExceeded) {
-				err = cause
+			if errors.Is(err, context.DeadlineExceeded) {
+				// Shutdown leaves the remaining connections open
+				timedOut <- server
+				if cause := context.Cause(ctx); cause != nil {
+					err = cause
+				}
 			}
 			app.logger.Error("server shutdown",
 				zap.Error(err),
@@ -829,39 +837,71 @@ func (app *App) Stop() error {
 		go stopH3Server(server)
 	}
 
+	// one finalizer owns what happens after the servers are done: the forced
+	// close, the cleanup, and cancelling the context. it runs in a goroutine
+	// because on a reload the shutdowns outlive this method
+	finalized := make(chan struct{})
+	go func() {
+		defer close(finalized)
+
+		finishedShutdown.Wait()
+
+		// net/http gives up on the leftover connections but leaves them
+		// open, still serving the old config, so close them; this covers
+		// HTTP/1.1 and HTTP/2, and HTTP/3 closes its own
+		close(timedOut)
+		for server := range timedOut {
+			if err := server.server.Close(); err != nil {
+				app.logger.Error("server close after grace period",
+					zap.Error(err),
+					zap.Strings("addresses", server.Listen))
+			}
+		}
+
+		// the servers are done, so release the grace period timer
+		if cancel != nil {
+			cancel()
+		}
+
+		// ctx is already expired if the grace period ran out, so the
+		// cleanup below gets a new context with its own time limit
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), stopCleanupTimeout)
+		defer cleanupCancel()
+
+		// run stop callbacks now that the server shutdowns are complete
+		for name, s := range app.Servers {
+			for _, stopHook := range s.onStopFuncs {
+				if err := stopHook(cleanupCtx); err != nil {
+					app.logger.Error("server stop hook", zap.String("server", name), zap.Error(err))
+				}
+			}
+		}
+
+		// flush and shut down the OTLP metrics exporter (if configured) so any
+		// last data point reaches the collector before the process exits
+		if err := app.Metrics.shutdown(cleanupCtx); err != nil {
+			app.logger.Error("shutting down OTLP metrics", zap.Error(err))
+		}
+	}()
+
 	// block until all the goroutines have been run by the scheduler;
 	// this means that they have likely called Shutdown() by now
 	startedShutdown.Wait()
 
-	// if the process is exiting, we need to block here and wait
-	// for the grace periods to complete, otherwise the process will
-	// terminate before the servers are finished shutting down; but
-	// we don't really need to wait for the grace period to finish
-	// if the process isn't exiting (but note that frequent config
-	// reloads with long grace periods for a sustained length of time
-	// may deplete resources)
+	// if the process is exiting, wait for the finalizer, or we'd terminate
+	// mid-shutdown; on a reload we don't (but note that frequent reloads
+	// with long grace periods for a sustained time may deplete resources)
 	if caddy.Exiting() {
-		finishedShutdown.Wait()
-	}
-
-	// run stop callbacks now that the server shutdowns are complete
-	for name, s := range app.Servers {
-		for _, stopHook := range s.onStopFuncs {
-			if err := stopHook(ctx); err != nil {
-				app.logger.Error("server stop hook", zap.String("server", name), zap.Error(err))
-			}
-		}
-	}
-
-	// flush and shut down the OTLP metrics exporter (if configured) so any
-	// last data point reaches the collector before the process exits
-	if err := app.Metrics.shutdown(ctx); err != nil {
-		app.logger.Error("shutting down OTLP metrics", zap.Error(err))
+		<-finalized
 	}
 
 	app.stopped = true
 	return nil
 }
+
+// stopCleanupTimeout is how long the stop hooks and the metrics
+// exporter get to finish their work after the servers are shut down.
+const stopCleanupTimeout = 10 * time.Second
 
 // Cleanup will close remaining listeners if they still remain
 // because some of the servers fail to start.
