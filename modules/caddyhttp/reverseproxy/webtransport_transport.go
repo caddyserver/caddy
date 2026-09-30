@@ -213,7 +213,24 @@ func dialUpstreamWebTransport(ctx context.Context, tlsCfg *tls.Config, urlStr st
 			return quic.DialAddrEarly(ctx, dialAddr, tlsCfg, cfg)
 		},
 	}
-	return d.Dial(ctx, urlStr, reqHdr)
+	return finishUpstreamWebTransportDial(d.Dial(ctx, urlStr, reqHdr))
+}
+
+// finishUpstreamWebTransportDial closes a rejected dial. Transport.Dial
+// returns a non-nil response with an error when the peer rejects the
+// Extended CONNECT, and the body must be closed. The session is nil on
+// that path; close it too if a future dial returns both.
+func finishUpstreamWebTransportDial(rsp *http.Response, sess *webtransport.Session, err error) (*http.Response, *webtransport.Session, error) {
+	if err == nil {
+		return rsp, sess, nil
+	}
+	if rsp != nil && rsp.Body != nil {
+		_ = rsp.Body.Close()
+	}
+	if sess != nil {
+		_ = sess.CloseWithError(0, "")
+	}
+	return nil, nil, err
 }
 
 // applyWebTransportResponseHeaders copies non-hop upstream response headers
