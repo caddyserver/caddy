@@ -1,0 +1,92 @@
+{
+	email nobody@example.com
+	tls_automate_names foo.example.com bar.example.com
+}
+
+foo.example.com {
+	tls {
+		ca https://acme.example.test/directory
+	}
+	respond "served with its own issuer"
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"foo.example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "served with its own issuer",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		},
+		"tls": {
+			"certificates": {
+				"automate": [
+					"bar.example.com",
+					"foo.example.com"
+				]
+			},
+			"automation": {
+				"policies": [
+					{
+						"subjects": [
+							"foo.example.com"
+						],
+						"issuers": [
+							{
+								"ca": "https://acme.example.test/directory",
+								"email": "nobody@example.com",
+								"module": "acme"
+							}
+						]
+					},
+					{
+						"subjects": [
+							"bar.example.com"
+						],
+						"issuers": [
+							{
+								"email": "nobody@example.com",
+								"module": "acme"
+							},
+							{
+								"ca": "https://acme.zerossl.com/v2/DV90",
+								"email": "nobody@example.com",
+								"module": "acme"
+							}
+						]
+					}
+				]
+			}
+		}
+	}
+}
