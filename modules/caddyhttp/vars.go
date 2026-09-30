@@ -203,8 +203,7 @@ func (m VarsMatcher) MatchWithError(r *http.Request) (bool, error) {
 			// request_body max_size limit when {http.request.body} is
 			// truncated) instead of matching on its error text; unrelated
 			// errors are matched on their text as before
-			var bodyLimit RequestBodyLimitError
-			if errors.As(vv, &bodyLimit) {
+			if bodyLimit, ok := errors.AsType[RequestBodyLimitError](vv); ok {
 				// wrap in a status-carrying handler error so the server
 				// renders the 413
 				return false, HandlerError{Err: bodyLimit, StatusCode: bodyLimit.StatusCode()}
@@ -350,8 +349,7 @@ func (m MatchVarsRE) MatchWithError(r *http.Request) (bool, error) {
 			// request_body max_size limit when {http.request.body} is
 			// truncated) instead of matching on its error text; unrelated
 			// errors are matched on their text as before
-			var bodyLimit RequestBodyLimitError
-			if errors.As(vv, &bodyLimit) {
+			if bodyLimit, ok := errors.AsType[RequestBodyLimitError](vv); ok {
 				// wrap in a status-carrying handler error so the server
 				// renders the 413
 				return false, HandlerError{Err: bodyLimit, StatusCode: bodyLimit.StatusCode()}

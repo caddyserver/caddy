@@ -268,8 +268,7 @@ func (c TemplateContext) funcPlaceholder(name string) (string, error) {
 	// server renders the 413, and any other value, including unrelated
 	// errors, is converted to a string as before
 	if err, ok := value.(error); ok {
-		var bodyLimit caddyhttp.RequestBodyLimitError
-		if errors.As(err, &bodyLimit) {
+		if bodyLimit, ok := errors.AsType[caddyhttp.RequestBodyLimitError](err); ok {
 			return "", caddyhttp.HandlerError{Err: bodyLimit, StatusCode: bodyLimit.StatusCode()}
 		}
 	}
