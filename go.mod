@@ -5,7 +5,7 @@ go 1.26.0
 require (
 	cel.dev/cel-go v0.32.0
 	github.com/BurntSushi/toml v1.6.0
-	github.com/DeRuina/timberjack v1.4.7
+	github.com/DeRuina/timberjack v1.4.8
 	github.com/KimMachineGun/automemlimit v1.0.0
 	github.com/Masterminds/sprig/v3 v3.3.0
 	github.com/alecthomas/chroma/v2 v2.27.0
@@ -17,9 +17,9 @@ require (
 	github.com/dustin/go-humanize v1.1.0
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/google/uuid v1.6.0
-	github.com/klauspost/compress v1.20.0
+	github.com/klauspost/compress v1.20.1
 	github.com/klauspost/cpuid/v2 v2.4.0
-	github.com/mholt/acmez/v3 v3.1.6
+	github.com/mholt/acmez/v3 v3.1.7
 	github.com/prometheus/client_golang v1.24.1
 	github.com/quic-go/quic-go v0.63.0
 	github.com/smallstep/certificates v0.30.2
