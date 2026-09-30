@@ -376,3 +376,47 @@ func TestPlaceholderInSearchRegexp(t *testing.T) {
 		t.Errorf("Expected header value %q, got %q", expected, result)
 	}
 }
+
+func TestHeaderOps_SetCookieMultipleValues(t *testing.T) {
+	// Regression test for https://github.com/caddyserver/caddy/issues/8079
+	// Multiple Set-Cookie values must be written as separate header lines,
+	// not joined with commas (RFC 6265, RFC 9110 section 5.3).
+	ops := &HeaderOps{
+		Set: http.Header{
+			"Set-Cookie": []string{"a=1; Path=/", "b=2; Path=/"},
+		},
+	}
+	hdr := http.Header{}
+	ops.ApplyTo(hdr, caddy.NewReplacer())
+
+	got := hdr.Values("Set-Cookie")
+	if len(got) != 2 {
+		t.Fatalf("expected 2 Set-Cookie values, got %d: %v", len(got), got)
+	}
+	if got[0] != "a=1; Path=/" {
+		t.Errorf("expected first value %q, got %q", "a=1; Path=/", got[0])
+	}
+	if got[1] != "b=2; Path=/" {
+		t.Errorf("expected second value %q, got %q", "b=2; Path=/", got[1])
+	}
+}
+
+func TestHeaderOps_NonSetCookieStillJoined(t *testing.T) {
+	// Ensure the fix for Set-Cookie does not change behavior for other
+	// headers, which are still joined into a single comma-separated field.
+	ops := &HeaderOps{
+		Set: http.Header{
+			"Cache-Control": []string{"no-store", "no-cache"},
+		},
+	}
+	hdr := http.Header{}
+	ops.ApplyTo(hdr, caddy.NewReplacer())
+
+	got := hdr.Values("Cache-Control")
+	if len(got) != 1 {
+		t.Fatalf("expected 1 joined Cache-Control value, got %d: %v", len(got), got)
+	}
+	if got[0] != "no-store,no-cache" {
+		t.Errorf("expected %q, got %q", "no-store,no-cache", got[0])
+	}
+}

@@ -249,7 +249,14 @@ func (ops *HeaderOps) ApplyTo(hdr http.Header, repl *caddy.Replacer) {
 			// the original values in ops.Set
 			newVals = append(newVals, repl.ReplaceKnown(vals[i], ""))
 		}
-		hdr.Set(fieldName, strings.Join(newVals, ","))
+		hdr.Del(fieldName)
+		if http.CanonicalHeaderKey(fieldName) == "Set-Cookie" {
+			for _, v := range newVals {
+				hdr.Add(fieldName, v)
+			}
+		} else {
+			hdr.Set(fieldName, strings.Join(newVals, ","))
+		}
 	}
 
 	// delete
