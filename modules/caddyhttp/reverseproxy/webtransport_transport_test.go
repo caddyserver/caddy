@@ -23,6 +23,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"fmt"
+	"io"
 	"math/big"
 	"net"
 	"net/http"
@@ -96,6 +97,57 @@ func startTestWebTransportServer(t *testing.T, handler func(s *webtransport.Sess
 	return udpConn.LocalAddr().(*net.UDPAddr), trustRoot, shutdown
 }
 
+// startRejectingWebTransportServer advertises WebTransport but answers the
+// Extended CONNECT with status instead of upgrading. Transport.Dial then
+// returns a non-nil response and an error.
+func startRejectingWebTransportServer(t *testing.T, status int) (addr *net.UDPAddr, trustRoot *x509.Certificate, shutdown func()) {
+	t.Helper()
+
+	trustRoot, tlsCfg := generateSelfSignedTLS(t, "localhost")
+	h3 := &http3.Server{
+		TLSConfig: tlsCfg,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(status)
+		}),
+		QUICConfig: &quic.Config{
+			EnableDatagrams:                  true,
+			EnableStreamResetPartialDelivery: true,
+		},
+	}
+	webtransport.ConfigureHTTP3Server(h3)
+	wtServer := &webtransport.Server{H3: h3}
+
+	udpAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	udpConn, err := net.ListenUDP("udp", udpAddr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	servErr := make(chan error, 1)
+	go func() {
+		servErr <- wtServer.Serve(udpConn)
+	}()
+	shutdown = func() {
+		_ = wtServer.Close()
+		<-servErr
+		_ = udpConn.Close()
+	}
+	return udpConn.LocalAddr().(*net.UDPAddr), trustRoot, shutdown
+}
+
+type bodyCloseRecorder struct {
+	closed bool
+}
+
+func (b *bodyCloseRecorder) Read([]byte) (int, error) { return 0, io.EOF }
+
+func (b *bodyCloseRecorder) Close() error {
+	b.closed = true
+	return nil
+}
+
 func generateSelfSignedTLS(t *testing.T, commonName string) (*x509.Certificate, *tls.Config) {
 	t.Helper()
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -154,6 +206,40 @@ func TestDialUpstreamWebTransport_Succeeds(t *testing.T) {
 	}
 	if rsp.StatusCode != http.StatusOK {
 		t.Fatalf("unexpected status %d", rsp.StatusCode)
+	}
+}
+
+func TestDialUpstreamWebTransport_RejectedConnectClosesBody(t *testing.T) {
+	body := &bodyCloseRecorder{}
+	rsp, sess, err := finishUpstreamWebTransportDial(&http.Response{
+		StatusCode: http.StatusForbidden,
+		Body:       body,
+	}, nil, fmt.Errorf("received status %d", http.StatusForbidden))
+	if err == nil {
+		t.Fatal("expected dial error")
+	}
+	if rsp != nil || sess != nil {
+		t.Fatalf("rejected dial returned rsp=%v sess=%v", rsp, sess)
+	}
+	if !body.closed {
+		t.Fatal("response body was not closed")
+	}
+
+	if testing.Short() {
+		t.Skip()
+	}
+	addr, root, shutdown := startRejectingWebTransportServer(t, http.StatusForbidden)
+	t.Cleanup(shutdown)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	url := fmt.Sprintf("https://localhost:%d/", addr.Port)
+	rsp, sess, err = dialUpstreamWebTransport(ctx, clientTLSFor(root), url, nil, nil, "")
+	if err == nil {
+		t.Fatal("expected rejected CONNECT to fail")
+	}
+	if rsp != nil || sess != nil {
+		t.Fatalf("rejected CONNECT returned rsp=%v sess=%v; body must be closed before return", rsp, sess)
 	}
 }
 
