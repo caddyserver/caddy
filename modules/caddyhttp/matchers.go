@@ -1482,6 +1482,31 @@ func (m *MatchTLS) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
+// CELLibrary produces options that expose this matcher for use in CEL
+// expression matchers.
+//
+// Example:
+//
+//	expression tls_handshake_complete('true')
+func (MatchTLS) CELLibrary(ctx caddy.Context) (cel.Library, error) {
+	return CELMatcherImpl(
+		"tls_handshake_complete",
+		"tls_handshake_complete_request_string",
+		[]*cel.Type{cel.StringType},
+		func(data ref.Val) (RequestMatcherWithError, error) {
+			str, ok := data.(types.String)
+			if !ok {
+				return nil, errors.New("tls_handshake_complete argument was not a string")
+			}
+			complete, err := strconv.ParseBool(string(str))
+			if err != nil {
+				return nil, fmt.Errorf("tls_handshake_complete argument must be a boolean string: %v", err)
+			}
+			return MatchTLS{HandshakeComplete: &complete}, nil
+		},
+	)
+}
+
 // CaddyModule returns the Caddy module information.
 func (MatchNot) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
@@ -1787,6 +1812,7 @@ var (
 	_ CELLibraryProducer = (*MatchHeader)(nil)
 	_ CELLibraryProducer = (*MatchHeaderRE)(nil)
 	_ CELLibraryProducer = (*MatchProtocol)(nil)
+	_ CELLibraryProducer = (*MatchTLS)(nil)
 	_ CELLibraryProducer = (*VarsMatcher)(nil)
 	_ CELLibraryProducer = (*MatchVarsRE)(nil)
 
