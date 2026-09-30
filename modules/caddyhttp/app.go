@@ -167,6 +167,9 @@ type App struct {
 	logger *zap.Logger
 	tlsApp *caddytls.TLS
 
+	adminAddr    caddy.NetworkAddress
+	adminEnabled bool
+
 	// stopped indicates whether the app has stopped
 	// It can only happen if it has started successfully in the first place.
 	// Otherwise, Cleanup will call Stop to clean up resources.
@@ -189,6 +192,11 @@ func (app *App) Provision(ctx caddy.Context) error {
 	// store some references
 	app.logger = ctx.Logger()
 	app.ctx = ctx
+	var err error
+	app.adminAddr, app.adminEnabled, err = ctx.LocalAdminAddress()
+	if err != nil {
+		return fmt.Errorf("parsing local admin address: %v", err)
+	}
 
 	// provision TLS and events apps
 	tlsAppIface, err := ctx.App("tls")
@@ -432,6 +440,12 @@ func (app *App) Validate() error {
 			if err != nil {
 				return fmt.Errorf("invalid listener address '%s': %v", addr, err)
 			}
+			if app.adminEnabled && listenerIncludesAddress(listenAddr, app.adminAddr) && app.logger != nil {
+				app.logger.Warn("HTTP listener uses the local admin API address; requests may be handled by either server",
+					zap.String("server", srvName),
+					zap.String("listener", addr),
+					zap.String("admin_address", app.adminAddr.String()))
+			}
 			// check that every address in the port range is unique to this server;
 			// we do not use <= here because PortRangeSize() adds 1 to EndPort for us
 			for i := uint(0); i < listenAddr.PortRangeSize(); i++ {
@@ -453,6 +467,13 @@ func (app *App) Validate() error {
 		}
 	}
 	return nil
+}
+
+func listenerIncludesAddress(listener, target caddy.NetworkAddress) bool {
+	return listener.Network == target.Network &&
+		listener.Host == target.Host &&
+		listener.StartPort <= target.StartPort &&
+		target.EndPort <= listener.EndPort
 }
 
 func removeTLSALPN(srv *Server, target string) {
