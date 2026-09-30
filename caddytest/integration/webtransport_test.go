@@ -44,7 +44,7 @@ const wtProxyListen = "https://127.0.0.1:9443/"
 
 // TestWebTransport_EchoHandlerBidi spins up Caddy with an HTTP/3 listener
 // that terminates a WebTransport session via the http.handlers.webtransport
-// echo handler, then dials it with a real webtransport.Dialer and asserts
+// echo handler, then dials it with a real webtransport.Transport and asserts
 // an end-to-end bidirectional-stream round-trip. This exercises the
 // serveH3AcceptLoop path (webtransport.Server.ServeQUICConn instead of
 // http3.Server.ServeListener) and the UnwrapResponseWriterAs helper.
@@ -67,7 +67,7 @@ func TestWebTransport_EchoHandlerBidi(t *testing.T) {
 // TestWebTransport_ReverseProxyEndToEnd spins up a single Caddy instance
 // running two HTTP/3 servers: one on :9443 acting as the WebTransport
 // reverse proxy, and one on :9444 acting as the terminating echo
-// upstream. A real webtransport.Dialer dials the proxy; the pump should
+// upstream. A real webtransport.Transport dials the proxy; the pump should
 // bridge to the upstream so bytes written on a bidi stream are echoed.
 func TestWebTransport_ReverseProxyEndToEnd(t *testing.T) {
 	if testing.Short() {
@@ -135,7 +135,7 @@ func TestWebTransport_ReverseProxyForwardsHeaders(t *testing.T) {
 }
 
 // TestWebTransport_ReverseProxyForwardsPreparedHost proves header_up Host
-// is the CONNECT :authority the upstream sees. Dialer.Dial would otherwise
+// is the CONNECT :authority the upstream sees. Transport.Dial would otherwise
 // overwrite Host from the dial URL.
 func TestWebTransport_ReverseProxyForwardsPreparedHost(t *testing.T) {
 	if testing.Short() {
@@ -475,7 +475,7 @@ func TestWebTransport_ReverseProxyMOQLike(t *testing.T) {
 // header) is expanded per session before the WebTransport upstream dial, so
 // the upstream observes the resolved SNI rather than the literal "{...}"
 // string. The normal HTTP/3 path handles this via a custom h3Transport.Dial
-// hook (#7737); the WebTransport path dials through its own Dialer and so
+// hook (#7737); the WebTransport path dials through its own Transport and so
 // must expand the placeholder itself.
 func TestWebTransport_ReverseProxyExpandsSNIPlaceholder(t *testing.T) {
 	if testing.Short() {
@@ -720,8 +720,8 @@ func wtReverseProxyHandler(extraJSON string, tlsExtra ...string) string {
 	return "{" + body + "}"
 }
 
-func newWTDialer(protocols []string) *webtransport.Dialer {
-	return &webtransport.Dialer{
+func newWTDialer(protocols []string) *webtransport.Transport {
+	return &webtransport.Transport{
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: true, //nolint:gosec // local CA
 			ServerName:         "a.caddy.localhost",
