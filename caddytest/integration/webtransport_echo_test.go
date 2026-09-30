@@ -101,9 +101,20 @@ func (h *WebTransportEcho) ServeHTTP(w http.ResponseWriter, r *http.Request, nex
 		return caddyhttp.Error(http.StatusBadRequest,
 			fmt.Errorf("webtransport upgrade: %w", err))
 	}
+	unregister := srv.RegisterWebTransportSession(webTransportEchoCloser{sess: session})
+	defer unregister()
 
 	h.echoStreams(session)
 	return nil
+}
+
+// webTransportEchoCloser closes a terminating test session on shutdown.
+type webTransportEchoCloser struct {
+	sess *webtransport.Session
+}
+
+func (w webTransportEchoCloser) Close() error {
+	return w.sess.CloseWithError(0, "server shutting down")
 }
 
 // echoStreams accepts bidirectional streams on session until the session
