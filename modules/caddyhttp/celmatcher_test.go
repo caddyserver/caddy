@@ -375,6 +375,22 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			wantErr: true,
 		},
 		{
+			name: "tls(false) does not match a plain non-TLS request (MatchTLS)",
+			expression: &MatchExpression{
+				Expr: `tls(false)`,
+			},
+			urlTarget:  "http://example.com",
+			wantResult: false,
+		},
+		{
+			name: "tls(true) does not match a plain non-TLS request (MatchTLS)",
+			expression: &MatchExpression{
+				Expr: `tls(true)`,
+			},
+			urlTarget:  "http://example.com",
+			wantResult: false,
+		},
+		{
 			name: "query does not match against a specific value (MatchQuery)",
 			expression: &MatchExpression{
 				Expr: `query({"debug": "1"})`,
