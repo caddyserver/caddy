@@ -15,9 +15,11 @@
 package intercept
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -53,6 +55,18 @@ type Intercept struct {
 	// Three new placeholders are available in this handler chain:
 	// - `{http.intercept.status_code}` The status code from the response
 	// - `{http.intercept.header.*}` The headers from the response
+	//
+	// The routes own the response once one of them writes, flushes, or
+	// sets a status; a route that only sets a status sends an empty
+	// body. Until then the routes see the intercepted response's headers
+	// and may add, replace, or delete any field. A replacement response
+	// does not inherit representation fields of the intercepted response
+	// (for example Content-Length, ETag or Last-Modified) that the routes
+	// left untouched; use copy_response_headers to carry such a field
+	// over explicitly. A field set to exactly the intercepted value is
+	// indistinguishable from an untouched one and is dropped. If no route
+	// produces output, the intercepted response is sent with the routes'
+	// header changes applied.
 	HandleResponse []caddyhttp.ResponseHandler `json:"handle_response,omitempty"`
 
 	// Holds the named response matchers from the Caddyfile while adapting
@@ -116,6 +130,8 @@ func (ir Intercept) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	defer bufPool.Put(buf)
+
+	initialHeaders := w.Header().Clone()
 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	rec := interceptedResponseHandler{replacer: repl}
@@ -182,34 +198,337 @@ func (ir Intercept) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 		return nil
 	}
 
-	// response recorder doesn't create a new copy of the original headers, they're
-	// present in the original response writer
-	// create a new recorder to see if any response body from the new handler is present,
-	// if not, use the already buffered response body
-	recorder := caddyhttp.NewResponseRecorder(w, nil, nil)
-	if err := rec.handler.Routes.Compile(emptyHandler).ServeHTTP(recorder, r); err != nil {
-		return err
+	// routes own a copy of the intercepted headers; the intercepted
+	// map stays untouched so the fallback can replay it
+	snapshot := rec.Header().Clone()
+	routeHeaders := snapshot.Clone()
+	recorded := make(map[string]struct{})
+	interceptStatus := rec.Status()
+	if interceptStatus == 0 {
+		interceptStatus = http.StatusOK
 	}
-
-	// no new response status and the status is not 0
-	if recorder.Status() == 0 && rec.Status() != 0 {
-		w.WriteHeader(rec.Status())
+	dw := &ownershipWriter{
+		rw:       w,
+		header:   routeHeaders,
+		snapshot: snapshot,
+		status:   interceptStatus,
+		recorded: recorded,
 	}
+	copier := &interceptCopier{
+		snapshot: snapshot,
+		status:   interceptStatus,
+		body:     buf,
+		recorded: recorded,
+	}
+	r = r.WithContext(caddyhttp.WithResponseCopier(r.Context(), copier))
 
-	// no new response body and there is some in the original response
-	// TODO: what if the new response doesn't have a body by design?
-	// see: https://github.com/caddyserver/caddy/pull/6232#issue-2235224400
-	if recorder.Size() == 0 && buf.Len() > 0 {
-		_, err := io.Copy(w, buf)
+	sentinel := caddyhttp.HandlerFunc(func(sw http.ResponseWriter, req *http.Request) error {
+		if dw.committed || dw.hijacked {
+			return nil
+		}
+		dw.fallback = true
+		sw.WriteHeader(dw.status)
+		if buf.Len() > 0 {
+			_, err := io.Copy(sw, bytes.NewReader(buf.Bytes()))
+			return err
+		}
+		return nil
+	})
+
+	routeErr := rec.handler.Routes.Compile(sentinel).ServeHTTP(dw, r)
+	if dw.hijacked {
+		return routeErr
+	}
+	if routeErr != nil {
+		if !dw.committed {
+			clear(w.Header())
+			for k, vv := range initialHeaders {
+				w.Header()[k] = vv
+			}
+		}
+		return routeErr
+	}
+	if dw.committed {
+		return nil
+	}
+	dw.commitFallback(dw.status)
+	if buf.Len() > 0 {
+		_, err := io.Copy(w, bytes.NewReader(buf.Bytes()))
 		return err
 	}
 	return nil
 }
 
-// this handler does nothing because everything we need is already buffered
-var emptyHandler caddyhttp.Handler = caddyhttp.HandlerFunc(func(_ http.ResponseWriter, req *http.Request) error {
+// representationHeaders are dropped from a replacement response when
+// the route left them untouched, so framing follows the new body.
+var representationHeaders = map[string]struct{}{
+	"Content-Length":   {},
+	"Content-Type":     {},
+	"Content-Encoding": {},
+	"Content-Range":    {},
+	"Content-Language": {},
+	"Content-Location": {},
+	"Accept-Ranges":    {},
+	"Etag":             {},
+	"Last-Modified":    {},
+	"Digest":           {},
+}
+
+func equalHeaderValues(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// ownershipWriter holds the route's commit back until it produces output.
+type ownershipWriter struct {
+	rw        http.ResponseWriter
+	header    http.Header
+	snapshot  http.Header
+	status    int
+	recorded  map[string]struct{}
+	committed bool
+	fallback  bool
+	hijacked  bool
+}
+
+func (dw *ownershipWriter) Header() http.Header {
+	if dw.committed || dw.hijacked {
+		return dw.rw.Header()
+	}
+	return dw.header
+}
+
+func (dw *ownershipWriter) WriteHeader(status int) {
+	if dw.hijacked || dw.committed {
+		return
+	}
+	if status >= 100 && status <= 199 {
+		if status == http.StatusSwitchingProtocols {
+			if dw.fallback {
+				dw.commitFallback(status)
+			} else {
+				dw.commitReplacement(status)
+			}
+			return
+		}
+		// informational responses carry the route's headers, not the
+		// intercepted response's
+		dw.installRouteHeaders()
+		dw.rw.WriteHeader(status)
+		return
+	}
+	if dw.fallback {
+		dw.commitFallback(status)
+		return
+	}
+	dw.commitReplacement(status)
+}
+
+func (dw *ownershipWriter) Write(p []byte) (int, error) {
+	if dw.hijacked {
+		return 0, http.ErrHijacked
+	}
+	if !dw.committed {
+		if dw.fallback {
+			dw.commitFallback(dw.status)
+		} else {
+			dw.commitReplacement(http.StatusOK)
+		}
+	}
+	return dw.rw.Write(p)
+}
+
+// Flush commits on first output, then flushes the real writer.
+func (dw *ownershipWriter) Flush() {
+	if dw.hijacked {
+		return
+	}
+	if !dw.committed {
+		if dw.fallback {
+			dw.commitFallback(dw.status)
+		} else {
+			dw.commitReplacement(http.StatusOK)
+		}
+	}
+	//nolint:bodyclose
+	http.NewResponseController(dw.rw).Flush()
+}
+
+// FlushError commits on first output, then flushes the real writer.
+func (dw *ownershipWriter) FlushError() error {
+	if dw.hijacked {
+		return http.ErrHijacked
+	}
+	if !dw.committed {
+		if dw.fallback {
+			dw.commitFallback(dw.status)
+		} else {
+			dw.commitReplacement(http.StatusOK)
+		}
+	}
+	//nolint:bodyclose
+	return http.NewResponseController(dw.rw).Flush()
+}
+
+func (dw *ownershipWriter) ReadFrom(r io.Reader) (int64, error) {
+	if dw.hijacked {
+		return 0, http.ErrHijacked
+	}
+	if !dw.committed {
+		if dw.fallback {
+			dw.commitFallback(dw.status)
+		} else {
+			dw.commitReplacement(http.StatusOK)
+		}
+	}
+	if rf, ok := dw.rw.(io.ReaderFrom); ok {
+		return rf.ReadFrom(r)
+	}
+	return io.Copy(dw.rw, r)
+}
+
+// Push never commits the response.
+func (dw *ownershipWriter) Push(target string, opts *http.PushOptions) error {
+	if pusher, ok := dw.rw.(http.Pusher); ok {
+		return pusher.Push(target, opts)
+	}
+	return caddyhttp.ErrNotImplemented
+}
+
+func (dw *ownershipWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if dw.hijacked {
+		return nil, nil, http.ErrHijacked
+	}
+	//nolint:bodyclose
+	conn, brw, err := http.NewResponseController(dw.rw).Hijack()
+	if err != nil {
+		return nil, nil, err
+	}
+	// the flag also stops a later Flush from touching the hijacked writer
+	dw.hijacked = true
+	return conn, brw, nil
+}
+
+// Unwrap returns the real writer so ResponseController reaches it.
+func (dw *ownershipWriter) Unwrap() http.ResponseWriter {
+	return dw.rw
+}
+
+func (dw *ownershipWriter) commitReplacement(status int) {
+	if dw.committed || dw.hijacked {
+		return
+	}
+	filtered := make(http.Header, len(dw.header))
+	for k, vv := range dw.header {
+		ck := http.CanonicalHeaderKey(k)
+		if _, ok := representationHeaders[ck]; ok {
+			_, wasRecorded := dw.recorded[ck]
+			// an empty value is a deliberate marker (no-sniff), not inherited metadata
+			if !wasRecorded && len(vv) > 0 && equalHeaderValues(vv, dw.snapshot[ck]) {
+				continue
+			}
+		}
+		filtered[k] = append([]string(nil), vv...)
+	}
+	dw.installHeaders(filtered)
+	dw.rw.WriteHeader(status)
+	dw.committed = true
+}
+
+func (dw *ownershipWriter) commitFallback(status int) {
+	if dw.committed || dw.hijacked {
+		return
+	}
+	dw.installRouteHeaders()
+	dw.rw.WriteHeader(status)
+	dw.committed = true
+}
+
+func (dw *ownershipWriter) installRouteHeaders() {
+	dw.installHeaders(dw.header)
+}
+
+func (dw *ownershipWriter) installHeaders(header http.Header) {
+	clear(dw.rw.Header())
+	for k, vv := range header {
+		dw.rw.Header()[k] = append([]string(nil), vv...)
+	}
+}
+
+// interceptCopier replays the intercepted response for copy handlers.
+type interceptCopier struct {
+	snapshot http.Header
+	status   int
+	body     *bytes.Buffer
+	recorded map[string]struct{}
+}
+
+func (c *interceptCopier) CopyResponseHeaders(w http.ResponseWriter, include, exclude map[string]struct{}) {
+	for field, values := range c.snapshot {
+		if len(include) > 0 {
+			if _, ok := include[field]; !ok {
+				continue
+			}
+		}
+		if len(exclude) > 0 {
+			if _, ok := exclude[field]; ok {
+				continue
+			}
+		}
+		// the route map starts as a clone, so only add missing values
+		existing := w.Header()[field]
+		for _, value := range values {
+			duplicate := false
+			for _, v := range existing {
+				if v == value {
+					duplicate = true
+					break
+				}
+			}
+			if !duplicate {
+				w.Header().Add(field, value)
+			}
+		}
+		// framing follows the new body, so Content-Length is never kept
+		if ck := http.CanonicalHeaderKey(field); ck != "Content-Length" {
+			if _, ok := representationHeaders[ck]; ok {
+				c.recorded[ck] = struct{}{}
+			}
+		}
+	}
+}
+
+func (c *interceptCopier) CopyResponse(w http.ResponseWriter, r *http.Request, statusCode int) error {
+	// the bytes are the intercepted body, so the intercepted
+	// representation fields still describe them
+	for field := range c.snapshot {
+		if ck := http.CanonicalHeaderKey(field); ck != "Content-Length" {
+			if _, ok := representationHeaders[ck]; ok {
+				c.recorded[ck] = struct{}{}
+			}
+		}
+	}
+	status := statusCode
+	if status == 0 {
+		status = c.status
+	}
+	if status == 0 {
+		status = http.StatusOK
+	}
+	w.WriteHeader(status)
+	if c.body.Len() > 0 {
+		_, err := io.Copy(w, bytes.NewReader(c.body.Bytes()))
+		return err
+	}
 	return nil
-})
+}
 
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens. Syntax:
 //
@@ -381,4 +700,10 @@ var (
 	_ caddy.Provisioner           = (*Intercept)(nil)
 	_ caddyfile.Unmarshaler       = (*Intercept)(nil)
 	_ caddyhttp.MiddlewareHandler = (*Intercept)(nil)
+	_ caddyhttp.ResponseCopier    = (*interceptCopier)(nil)
+	_ http.ResponseWriter         = (*ownershipWriter)(nil)
+	_ http.Flusher                = (*ownershipWriter)(nil)
+	_ http.Hijacker               = (*ownershipWriter)(nil)
+	_ http.Pusher                 = (*ownershipWriter)(nil)
+	_ io.ReaderFrom               = (*ownershipWriter)(nil)
 )

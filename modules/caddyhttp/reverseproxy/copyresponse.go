@@ -30,10 +30,11 @@ func init() {
 }
 
 // CopyResponseHandler is a special HTTP handler which may
-// only be used within reverse_proxy's handle_response routes,
-// to copy the proxy response. EXPERIMENTAL, subject to change.
+// only be used within reverse_proxy's or intercept's handle_response
+// routes, to copy the response that module is handling. EXPERIMENTAL,
+// subject to change.
 type CopyResponseHandler struct {
-	// To write the upstream response's body but with a different
+	// To write the response body but with a different
 	// status code, set this field to the desired status code.
 	StatusCode caddyhttp.WeakString `json:"status_code,omitempty"`
 
@@ -57,36 +58,32 @@ func (h *CopyResponseHandler) Provision(ctx caddy.Context) error {
 // ServeHTTP implements the Handler interface.
 func (h CopyResponseHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request, _ caddyhttp.Handler) error {
 	repl := req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-	hrc, ok := req.Context().Value(proxyHandleResponseContextCtxKey).(*handleResponseContext)
+	copier, ok := caddyhttp.GetResponseCopier(req.Context())
 
 	// don't allow this to be used outside of handle_response routes
 	if !ok {
 		return caddyhttp.Error(http.StatusInternalServerError,
-			fmt.Errorf("cannot use 'copy_response' outside of reverse_proxy's handle_response routes"))
+			fmt.Errorf("cannot use 'copy_response' outside of reverse_proxy's or intercept's handle_response routes"))
 	}
 
 	// allow a custom status code to be written; otherwise the
-	// status code from the upstream response is written
+	// status code from the intercepted response is written
+	statusCode := 0
 	if codeStr := h.StatusCode.String(); codeStr != "" {
 		intVal, err := strconv.Atoi(repl.ReplaceAll(codeStr, ""))
 		if err != nil {
 			return caddyhttp.Error(http.StatusInternalServerError, err)
 		}
-		hrc.response.StatusCode = intVal
+		statusCode = intVal
 	}
 
-	// make sure the reverse_proxy handler doesn't try to call
-	// finalizeResponse again after we've already done it here.
-	hrc.isFinalized = true
-
-	// write the response
-	return hrc.handler.finalizeResponse(rw, req, hrc.response, repl, hrc.start, hrc.logger)
+	return copier.CopyResponse(rw, req, statusCode)
 }
 
 // CopyResponseHeadersHandler is a special HTTP handler which may
-// only be used within reverse_proxy's handle_response routes,
-// to copy headers from the proxy response. EXPERIMENTAL;
-// subject to change.
+// only be used within reverse_proxy's or intercept's handle_response
+// routes, to copy headers from the response that module is
+// handling. EXPERIMENTAL; subject to change.
 type CopyResponseHeadersHandler struct {
 	// A list of header fields to copy from the response.
 	// Cannot be defined at the same time as Exclude.
@@ -143,36 +140,15 @@ func (h *CopyResponseHeadersHandler) Provision(ctx caddy.Context) error {
 
 // ServeHTTP implements the Handler interface.
 func (h CopyResponseHeadersHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request, next caddyhttp.Handler) error {
-	hrc, ok := req.Context().Value(proxyHandleResponseContextCtxKey).(*handleResponseContext)
+	copier, ok := caddyhttp.GetResponseCopier(req.Context())
 
 	// don't allow this to be used outside of handle_response routes
 	if !ok {
 		return caddyhttp.Error(http.StatusInternalServerError,
-			fmt.Errorf("cannot use 'copy_response_headers' outside of reverse_proxy's handle_response routes"))
+			fmt.Errorf("cannot use 'copy_response_headers' outside of reverse_proxy's or intercept's handle_response routes"))
 	}
 
-	for field, values := range hrc.response.Header {
-		// Check the include list first, skip
-		// the header if it's _not_ in this list.
-		if len(h.includeMap) > 0 {
-			if _, ok := h.includeMap[field]; !ok {
-				continue
-			}
-		}
-
-		// Then, check the exclude list, skip
-		// the header if it _is_ in this list.
-		if len(h.excludeMap) > 0 {
-			if _, ok := h.excludeMap[field]; ok {
-				continue
-			}
-		}
-
-		// Copy all the values for the header.
-		for _, value := range values {
-			rw.Header().Add(field, value)
-		}
-	}
+	copier.CopyResponseHeaders(rw, h.includeMap, h.excludeMap)
 
 	return next.ServeHTTP(rw, req)
 }

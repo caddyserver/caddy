@@ -58,7 +58,7 @@ var defaultDirectiveOrder = []string{
 	"log_name",
 
 	"header",
-	"copy_response_headers", // only in reverse_proxy's handle_response
+	"copy_response_headers", // only in handle_response (reverse_proxy, intercept)
 	"request_body",
 	"timeouts", // wraps the response writer, so keep it close to the real writer, ahead of encode/push/etc.
 
@@ -89,7 +89,7 @@ var defaultDirectiveOrder = []string{
 	// handlers that typically respond to requests
 	"abort",
 	"error",
-	"copy_response", // only in reverse_proxy's handle_response
+	"copy_response", // only in handle_response (reverse_proxy, intercept)
 	"respond",
 	"metrics",
 	"reverse_proxy",

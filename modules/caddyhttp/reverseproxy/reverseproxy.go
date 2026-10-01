@@ -1188,7 +1188,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 			logger:   logger,
 		}
 		ctx := origReq.Context()
-		ctx = context.WithValue(ctx, proxyHandleResponseContextCtxKey, hrc)
+		ctx = caddyhttp.WithResponseCopier(ctx, hrc)
 
 		// pass the request through the response handler routes
 		routeErr := rh.Routes.Compile(next).ServeHTTP(rw, origReq.WithContext(ctx))
@@ -1886,10 +1886,34 @@ type handleResponseContext struct {
 	isFinalized bool
 }
 
-// proxyHandleResponseContextCtxKey is the context key for the active proxy handler
-// so that handle_response routes can inherit some config options
-// from the proxy handler.
-const proxyHandleResponseContextCtxKey caddy.CtxKey = "reverse_proxy_handle_response_context"
+// CopyResponseHeaders copies header fields from the upstream response.
+func (hrc *handleResponseContext) CopyResponseHeaders(w http.ResponseWriter, include, exclude map[string]struct{}) {
+	for field, values := range hrc.response.Header {
+		if len(include) > 0 {
+			if _, ok := include[field]; !ok {
+				continue
+			}
+		}
+		if len(exclude) > 0 {
+			if _, ok := exclude[field]; ok {
+				continue
+			}
+		}
+		for _, value := range values {
+			w.Header().Add(field, value)
+		}
+	}
+}
+
+// CopyResponse finalizes the upstream response through w.
+func (hrc *handleResponseContext) CopyResponse(w http.ResponseWriter, r *http.Request, statusCode int) error {
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	if statusCode != 0 {
+		hrc.response.StatusCode = statusCode
+	}
+	hrc.isFinalized = true
+	return hrc.handler.finalizeResponse(w, r, hrc.response, repl, hrc.start, hrc.logger)
+}
 
 // errNoUpstream occurs when there are no upstream available.
 var errNoUpstream = fmt.Errorf("no upstreams available")
@@ -1899,4 +1923,5 @@ var (
 	_ caddy.Provisioner           = (*Handler)(nil)
 	_ caddy.CleanerUpper          = (*Handler)(nil)
 	_ caddyhttp.MiddlewareHandler = (*Handler)(nil)
+	_ caddyhttp.ResponseCopier    = (*handleResponseContext)(nil)
 )
