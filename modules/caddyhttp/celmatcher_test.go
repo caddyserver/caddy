@@ -334,50 +334,43 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			wantErr: true,
 		},
 		{
-			name: "tls_handshake_complete matches when handshake is complete (MatchTLS)",
+			name: "tls(true) matches when handshake is complete (MatchTLS)",
 			expression: &MatchExpression{
-				Expr: `tls_handshake_complete('true')`,
+				Expr: `tls(true)`,
 			},
 			urlTarget:            "https://example.com",
 			tlsHandshakeComplete: boolPtr(true),
 			wantResult:           true,
 		},
 		{
-			name: "tls_handshake_complete does not match when handshake is incomplete (MatchTLS)",
+			name: "tls(true) does not match when handshake is incomplete (MatchTLS)",
 			expression: &MatchExpression{
-				Expr: `tls_handshake_complete('true')`,
+				Expr: `tls(true)`,
 			},
 			urlTarget:            "https://example.com",
 			tlsHandshakeComplete: boolPtr(false),
 			wantResult:           false,
 		},
 		{
-			name: "tls_handshake_complete('false') matches an incomplete handshake (MatchTLS)",
+			name: "tls(false) matches an incomplete handshake (MatchTLS)",
 			expression: &MatchExpression{
-				Expr: `tls_handshake_complete('false')`,
+				Expr: `tls(false)`,
 			},
 			urlTarget:            "https://example.com",
 			tlsHandshakeComplete: boolPtr(false),
 			wantResult:           true,
 		},
 		{
-			name: "tls_handshake_complete invocation error no args (MatchTLS)",
+			name: "tls invocation error no args (MatchTLS)",
 			expression: &MatchExpression{
-				Expr: `tls_handshake_complete()`,
+				Expr: `tls()`,
 			},
 			wantErr: true,
 		},
 		{
-			name: "tls_handshake_complete invocation error wrong arg type (MatchTLS)",
+			name: "tls invocation error wrong arg type (MatchTLS)",
 			expression: &MatchExpression{
-				Expr: `tls_handshake_complete(true)`,
-			},
-			wantErr: true,
-		},
-		{
-			name: "tls_handshake_complete invocation error non-boolean string (MatchTLS)",
-			expression: &MatchExpression{
-				Expr: `tls_handshake_complete('nope')`,
+				Expr: `tls('true')`,
 			},
 			wantErr: true,
 		},

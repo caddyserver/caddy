@@ -1487,21 +1487,18 @@ func (m *MatchTLS) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 //
 // Example:
 //
-//	expression tls_handshake_complete('true')
+//	expression tls(true)
 func (MatchTLS) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 	return CELMatcherImpl(
-		"tls_handshake_complete",
-		"tls_handshake_complete_request_string",
-		[]*cel.Type{cel.StringType},
+		"tls",
+		"tls_request_bool",
+		[]*cel.Type{cel.BoolType},
 		func(data ref.Val) (RequestMatcherWithError, error) {
-			str, ok := data.(types.String)
+			b, ok := data.(types.Bool)
 			if !ok {
-				return nil, errors.New("tls_handshake_complete argument was not a string")
+				return nil, errors.New("tls argument was not a bool")
 			}
-			complete, err := strconv.ParseBool(string(str))
-			if err != nil {
-				return nil, fmt.Errorf("tls_handshake_complete argument must be a boolean string: %v", err)
-			}
+			complete := bool(b)
 			return MatchTLS{HandshakeComplete: &complete}, nil
 		},
 	)
