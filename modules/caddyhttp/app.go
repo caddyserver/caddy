@@ -814,11 +814,16 @@ func (app *App) stop(exiting bool) error {
 			}
 		}
 
-		// Close WebTransport sessions before HTTP/3 shutdown. Do not call
-		// webtransport.Server.Close: it also closes the shared HTTP/3 server
-		// and aborts every QUIC connection, ahead of the grace deadline.
-		// ServeQUICConn stays up until the connection ends, so ordinary
-		// HTTP/3 requests can finish within the grace period.
+		// ServeQUICConn connections are not in the HTTP/3 server's set, so
+		// Shutdown does not wait for them and, with none tracked, it closes
+		// the server immediately. webtransport.Server.Close would do that
+		// too. waitWebTransportConns keeps the sockets up until the accept
+		// loops finish. GracePeriod 0 is eternal: the wait ends when the
+		// peer leaves, and the session is not force-closed. A finite grace
+		// period closes sessions at the deadline, while the sockets are
+		// still up, so the close capsule can reach the client.
+		// The close below is for a session whose loop already returned.
+		server.waitWebTransportConns(ctx)
 		server.closeWebTransportSessions()
 
 		if err := server.h3server.Shutdown(ctx); err != nil {
@@ -829,12 +834,6 @@ func (app *App) stop(exiting bool) error {
 				zap.Error(err),
 				zap.Strings("addresses", server.Listen))
 		}
-
-		// Connections served by webtransport.Server.ServeQUICConn are not
-		// in the HTTP/3 server's connection set, so Shutdown does not wait
-		// for them. Keep the sockets open until those loops return or the
-		// grace context ends.
-		server.waitWebTransportConns(ctx)
 
 		// close the underlying net.PacketConns now
 		// see the comment for ListenQUIC
