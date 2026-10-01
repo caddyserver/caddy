@@ -439,8 +439,12 @@ type MatchLocalIP struct {
 	// The IPs or CIDR ranges to match.
 	Ranges []string `json:"ranges,omitempty"`
 
-	cidrs  []netip.Prefix
-	logger *zap.Logger
+	// The IPs or CIDR ranges to *NOT* match.
+	NotRanges []string `json:"not_ranges,omitempty"`
+
+	cidrs    []netip.Prefix
+	notCidrs []netip.Prefix
+	logger   *zap.Logger
 }
 
 // CaddyModule returns the Caddy module information.
@@ -463,6 +467,14 @@ func (m *MatchLocalIP) Provision(ctx caddy.Context) error {
 		}
 		m.cidrs = append(m.cidrs, cidrs...)
 	}
+	for _, str := range m.NotRanges {
+		rs := repl.ReplaceAll(str, "")
+		cidrs, err := m.parseIPRange(rs)
+		if err != nil {
+			return err
+		}
+		m.notCidrs = append(m.notCidrs, cidrs...)
+	}
 	return nil
 }
 
@@ -480,7 +492,8 @@ func (m MatchLocalIP) Match(hello *tls.ClientHelloInfo) bool {
 		}
 		return false
 	}
-	return (len(m.cidrs) == 0 || m.matches(ipAddr, m.cidrs))
+	return (len(m.cidrs) == 0 || m.matches(ipAddr, m.cidrs)) &&
+		(len(m.notCidrs) == 0 || !m.matches(ipAddr, m.notCidrs))
 }
 
 func (MatchLocalIP) parseIPRange(str string) ([]netip.Prefix, error) {
@@ -511,6 +524,8 @@ func (MatchLocalIP) matches(ip netip.Addr, ranges []netip.Prefix) bool {
 // UnmarshalCaddyfile sets up the MatchLocalIP from Caddyfile tokens. Syntax:
 //
 //	local_ip <ranges...>
+//
+// Note: IPs and CIDRs prefixed with ! symbol are treated as not_ranges
 func (m *MatchLocalIP) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		wrapper := d.Val()
@@ -522,11 +537,19 @@ func (m *MatchLocalIP) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 		for d.NextArg() {
 			val := d.Val()
-			if val == "private_ranges" {
-				m.Ranges = append(m.Ranges, internal.PrivateRangesCIDR()...)
-				continue
+			var exclamation bool
+			if len(val) > 1 && val[0] == '!' {
+				exclamation, val = true, val[1:]
 			}
-			m.Ranges = append(m.Ranges, val)
+			ranges := []string{val}
+			if val == "private_ranges" {
+				ranges = internal.PrivateRangesCIDR()
+			}
+			if exclamation {
+				m.NotRanges = append(m.NotRanges, ranges...)
+			} else {
+				m.Ranges = append(m.Ranges, ranges...)
+			}
 		}
 
 		// No blocks are supported

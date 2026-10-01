@@ -236,9 +236,10 @@ func TestLocalIPMatcher(t *testing.T) {
 	defer cancel()
 
 	for i, tc := range []struct {
-		ranges []string
-		input  string
-		expect bool
+		ranges    []string
+		notRanges []string
+		input     string
+		expect    bool
 	}{
 		{
 			ranges: []string{"127.0.0.1"},
@@ -284,8 +285,36 @@ func TestLocalIPMatcher(t *testing.T) {
 			input:  "127.0.0.300",
 			expect: false,
 		},
+		{
+			notRanges: []string{"127.0.0.1"},
+			input:     "127.0.0.1:12345",
+			expect:    false,
+		},
+		{
+			notRanges: []string{"127.0.0.2"},
+			input:     "127.0.0.1:12345",
+			expect:    true,
+		},
+		{
+			ranges:    []string{"127.0.0.1"},
+			notRanges: []string{"127.0.0.2"},
+			input:     "127.0.0.1:12345",
+			expect:    true,
+		},
+		{
+			ranges:    []string{"127.0.0.2"},
+			notRanges: []string{"127.0.0.2"},
+			input:     "127.0.0.2:12345",
+			expect:    false,
+		},
+		{
+			ranges:    []string{"127.0.0.2"},
+			notRanges: []string{"127.0.0.2"},
+			input:     "127.0.0.3:12345",
+			expect:    false,
+		},
 	} {
-		matcher := MatchLocalIP{Ranges: tc.ranges}
+		matcher := MatchLocalIP{Ranges: tc.ranges, NotRanges: tc.notRanges}
 		err := matcher.Provision(ctx)
 		if err != nil {
 			t.Fatalf("Test %d: Provision failed: %v", i, err)
@@ -296,8 +325,8 @@ func TestLocalIPMatcher(t *testing.T) {
 
 		actual := matcher.Match(chi)
 		if actual != tc.expect {
-			t.Errorf("Test %d: Expected %t but got %t (input=%s ranges=%v)",
-				i, tc.expect, actual, tc.input, tc.ranges)
+			t.Errorf("Test %d: Expected %t but got %t (input=%s ranges=%v notRanges=%v)",
+				i, tc.expect, actual, tc.input, tc.ranges, tc.notRanges)
 		}
 	}
 }
