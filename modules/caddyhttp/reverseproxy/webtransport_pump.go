@@ -195,8 +195,8 @@ func (p *webtransportPump) pumpDatagrams(src, dst *webtransport.Session, propaga
 // represents a session close. The bool is false when err is nil or not
 // a *webtransport.SessionError.
 func closeCodeFromErr(err error) (webtransport.SessionErrorCode, string, bool) {
-	var sessErr *webtransport.SessionError
-	if errors.As(err, &sessErr) {
+	sessErr, ok := errors.AsType[*webtransport.SessionError](err)
+	if ok {
 		return sessErr.ErrorCode, sessErr.Message, true
 	}
 	return 0, "", false
