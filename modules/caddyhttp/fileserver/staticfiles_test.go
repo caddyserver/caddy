@@ -946,15 +946,14 @@ func TestContentDigestResponseWriterFinalize(t *testing.T) {
 
 func assertNoStaleFraming(t *testing.T, h http.Header) {
 	t.Helper()
+	// Only body-framing headers must be cleared so Caddy's error handler does
+	// not inherit file Content-Length / Content-Range. Representation metadata
+	// (Content-Type, ETag, Last-Modified, Accept-Ranges) may remain.
 	for _, key := range []string{
 		"Content-Length",
-		"Content-Type",
-		"Content-Encoding",
 		"Content-Range",
 		"Content-Digest",
-		"Etag",
-		"Last-Modified",
-		"Accept-Ranges",
+		"Transfer-Encoding",
 	} {
 		if got := h.Get(key); got != "" {
 			t.Fatalf("%s = %q, want empty after finalize failure (stale framing)", key, got)

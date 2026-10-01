@@ -260,15 +260,17 @@ func (cd *contentDigestResponseWriter) releaseReservation() {
 	cd.reserved = 0
 }
 
-// clearResponseFraming drops headers http.ServeContent (and callers) may have
-// already placed on the shared header map. finalize can still fail before
-// WriteHeader; without this, Caddy's error handler writes 500 against the same
-// map and can retain Content-Length / Content-Range framing from the file.
+// clearResponseFraming drops only body-framing headers that http.ServeContent
+// (and callers) may have already placed on the shared header map. finalize can
+// still fail before WriteHeader; without this, Caddy's error handler writes 500
+// against the same map and can retain Content-Length / Content-Range framing
+// from the file. Other headers (Content-Type, ETag, Cache-Control, etc.) stay.
 func (cd *contentDigestResponseWriter) clearResponseFraming() {
 	h := cd.Header()
-	for k := range h {
-		delete(h, k)
-	}
+	h.Del("Content-Length")
+	h.Del("Content-Range")
+	h.Del("Content-Digest")
+	h.Del("Transfer-Encoding")
 	cd.buf.Reset()
 }
 
