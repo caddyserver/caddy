@@ -407,10 +407,12 @@ type Server struct {
 	wtServer  *webtransport.Server
 	addresses []caddy.NetworkAddress
 
-	// wtSessions are upgraded WebTransport sessions closed on shutdown
-	// without closing the shared HTTP/3 server. wtConns counts
-	// ServeQUICConn accept loops. wtStopping is set before waiting on
-	// wtConns so Add cannot race with Wait.
+	// wtSessions are upgraded WebTransport sessions. A finite grace
+	// period closes them when the deadline passes, without closing the
+	// shared HTTP/3 server. Eternal grace leaves them until the peer
+	// ends the session. wtConns counts ServeQUICConn accept loops.
+	// wtStopping is set before waiting on wtConns so Add cannot race
+	// with Wait.
 	wtServeMu  sync.Mutex
 	wtStopping bool
 	wtConns    sync.WaitGroup
@@ -1566,6 +1568,12 @@ func (s *Server) closeWebTransportSessions() {
 // waitWebTransportConns waits until ServeQUICConn loops finish, or until
 // ctx ends. Those connections are not tracked by http3.Server.Shutdown
 // because webtransport.Server serves them through NewRawServerConn.
+//
+// When ctx ends first, registered sessions are closed while the packet
+// conns are still open so the close capsule can reach the peer. The
+// loops then get a short window to exit before the caller drops the
+// sockets. A nil ctx.Done (eternal grace) waits until the peer leaves
+// and does not force-close.
 func (s *Server) waitWebTransportConns(ctx context.Context) {
 	if s == nil {
 		return
@@ -1581,7 +1589,14 @@ func (s *Server) waitWebTransportConns(ctx context.Context) {
 	}()
 	select {
 	case <-done:
+		return
 	case <-ctx.Done():
+	}
+
+	s.closeWebTransportSessions()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
 	}
 }
 
