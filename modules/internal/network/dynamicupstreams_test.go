@@ -231,10 +231,14 @@ func TestACacheBound(t *testing.T) {
 	}
 }
 
-// TestSRVConcurrentRefreshDeduplicates covers the double-checked locking: when
-// two goroutines miss the read-lock fast path for the same key, only the first
-// performs the lookup; the second re-checks under the write lock and is served
-// from the freshly populated cache (no second lookup).
+// TestSRVConcurrentRefreshDeduplicates verifies that two concurrent callers
+// missing the cache for the same key result in a single lookup: the first
+// performs it while holding the write lock, and the second is served the
+// cached result once the first releases. Depending on scheduling the second
+// caller may be served by either the read-lock fast path or the write-lock
+// re-check — this test does not force one branch over the other; it asserts
+// deduplication (exactly one lookup). Run under -race it also guards against
+// data races on the shared cache.
 func TestSRVConcurrentRefreshDeduplicates(t *testing.T) {
 	srvMu.Lock()
 	srvCache = make(map[string]cacheEntry)
@@ -264,12 +268,15 @@ func TestSRVConcurrentRefreshDeduplicates(t *testing.T) {
 	}()
 	<-inLookup // G1 now holds the write lock; cache is still empty
 
-	// G2: passes the empty read-lock check, then blocks on the write lock.
+	// G2: a second caller for the same key. While G1 holds the write lock, G2
+	// cannot acquire srvMu at all (a reader blocks behind the writer); once G1
+	// populates the cache and releases, G2 observes the cached entry and
+	// performs no lookup. Ordering here is enforced by the channels below, not
+	// by timing.
 	go func() {
 		_, _ = SRV(context.Background(), lookup, "svc-conc", "tcp", "x", time.Minute, 0, zap.NewNop())
 		done <- struct{}{}
 	}()
-	time.Sleep(50 * time.Millisecond) // let G2 queue on srvMu.Lock()
 
 	close(release) // G1 populates the cache and releases the lock
 	<-done
@@ -279,11 +286,13 @@ func TestSRVConcurrentRefreshDeduplicates(t *testing.T) {
 	got := calls
 	mu.Unlock()
 	if got != 1 {
-		t.Fatalf("lookup calls = %d, want 1 (second goroutine must hit the cache re-check)", got)
+		t.Fatalf("lookup calls = %d, want 1 (concurrent callers for the same key must share one lookup)", got)
 	}
 }
 
-// TestAConcurrentRefreshDeduplicates is the A-cache equivalent of the above.
+// TestAConcurrentRefreshDeduplicates is the A-cache equivalent of the above:
+// it asserts deduplication (one lookup for two concurrent callers) and, under
+// -race, race-safety; it does not force a particular locking branch.
 func TestAConcurrentRefreshDeduplicates(t *testing.T) {
 	aMu.Lock()
 	aCache = make(map[string]cacheEntry)
@@ -312,11 +321,12 @@ func TestAConcurrentRefreshDeduplicates(t *testing.T) {
 	}()
 	<-inLookup
 
+	// Second caller for the same key; ordering is enforced by the channels,
+	// not by timing (see the SRV test above).
 	go func() {
 		_, _ = A(context.Background(), lookup, "ip", "db.conc", "5432", time.Minute, zap.NewNop())
 		done <- struct{}{}
 	}()
-	time.Sleep(50 * time.Millisecond)
 
 	close(release)
 	<-done
@@ -326,6 +336,6 @@ func TestAConcurrentRefreshDeduplicates(t *testing.T) {
 	got := calls
 	mu.Unlock()
 	if got != 1 {
-		t.Fatalf("lookup calls = %d, want 1 (second goroutine must hit the cache re-check)", got)
+		t.Fatalf("lookup calls = %d, want 1 (concurrent callers for the same key must share one lookup)", got)
 	}
 }
