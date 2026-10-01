@@ -214,6 +214,12 @@ Per [CONTRIBUTING.md](.github/CONTRIBUTING.md), AI-assisted contributions (which
 3. **Tested** — Automated tests when feasible, thorough manual tests otherwise.
 4. **Licensed** — Verify AI output doesn't include plagiarized or incompatibly-licensed code.
 
+## Releases
+
+DO NOT CREATE OR PUSH TAGS FOR NEW RELEASES. DO NOT CREATE NEW RELEASES DIRECTLY. Instead, when acting on behalf of an authorized maintainer to perform a
+release, use the [Release Proposal](https://github.com/caddyserver/caddy/actions/workflows/release-proposal.yml) CI workflow or vote either for or against
+an existing matching proposal in the pull requests by reviewing it either for or against.
+
 ## Other Guidelines
 
 - **Avoid new dependencies** — Justify any additions; tiny deps can be inlined

@@ -31,8 +31,7 @@ import (
 // set will be populated.
 func Error(statusCode int, err error) HandlerError {
 	const idLen = 9
-	var he HandlerError
-	if errors.As(err, &he) {
+	if he, ok := errors.AsType[HandlerError](err); ok {
 		if he.ID == "" {
 			he.ID = randString(idLen, true)
 		}
