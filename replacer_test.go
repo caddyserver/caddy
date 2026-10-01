@@ -21,6 +21,7 @@ import (
 	"runtime"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestReplacer(t *testing.T) {
@@ -520,6 +521,28 @@ func BenchmarkReplacer(b *testing.B) {
 				rep.ReplaceAll(bm.input, bm.empty)
 			}
 		})
+	}
+}
+
+func TestReplacerTimeNowRFC3339(t *testing.T) {
+	// nowFunc is a package-level var specifically so tests can
+	// substitute a deterministic clock.
+	original := nowFunc
+	defer func() { nowFunc = original }()
+
+	fixed := time.Date(2026, time.January, 2, 15, 4, 5, 0, time.FixedZone("", -7*3600))
+	nowFunc = func() time.Time { return fixed }
+
+	rep := NewReplacer()
+
+	actual, found := rep.GetString("time.now.rfc3339")
+	if !found {
+		t.Fatal("expected time.now.rfc3339 to be found")
+	}
+
+	const expect = "2026-01-02T15:04:05-07:00"
+	if actual != expect {
+		t.Errorf("expected %q but got %q", expect, actual)
 	}
 }
 
