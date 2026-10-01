@@ -669,11 +669,11 @@ func TestWebTransport_InFlightRequestsTracked(t *testing.T) {
 	}
 }
 
-// TestWebTransport_ReloadClosesActiveSession holds an in-flight WebTransport
-// session and reloads Caddy to a config with no HTTP servers. With the
-// default eternal grace period, shutdown would wait until the client
-// disconnects unless the session is closed first.
-func TestWebTransport_ReloadClosesActiveSession(t *testing.T) {
+// TestWebTransport_EternalGraceKeepsActiveSession holds an in-flight
+// WebTransport session and reloads Caddy to a config with no HTTP servers.
+// The default grace period is eternal, so the reload returns and the
+// session stays up until the client ends it.
+func TestWebTransport_EternalGraceKeepsActiveSession(t *testing.T) {
 	if testing.Short() {
 		t.Skip()
 	}
@@ -690,21 +690,77 @@ func TestWebTransport_ReloadClosesActiveSession(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 	_, sess := dialWT(t, ctx, nil, nil)
+
+	reloaded := make(chan struct{})
+	go func() {
+		tester.InitServer(`{"admin": {"listen": "localhost:2999"}}`, "json")
+		close(reloaded)
+	}()
+	select {
+	case <-reloaded:
+	case <-time.After(3 * time.Second):
+		t.Fatal("reload did not return while the WebTransport session was still open")
+	}
+	select {
+	case <-sess.Context().Done():
+		t.Fatal("eternal grace closed the active WebTransport session")
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	_ = sess.CloseWithError(0, "")
+	waitForUDPPortFree(t, 9443)
+}
+
+// TestWebTransport_GracePeriodClosesSession holds a session across a reload
+// with a finite grace period. The session stays open during the window and
+// is closed once the deadline passes.
+func TestWebTransport_GracePeriodClosesSession(t *testing.T) {
+	if testing.Short() {
+		t.Skip()
+	}
+
+	upstreamAddr, stopUpstream := startStandaloneWebTransport(t, func(sess *webtransport.Session, r *http.Request) {
+		<-sess.Context().Done()
+	})
+	t.Cleanup(stopUpstream)
+
+	grace := time.Second
+	tester := caddytest.NewTester(t)
+	tester.InitServer(wtJSONWithHTTPPrefix(
+		`"proxy": `+wtH3Server(":9443",
+			wtReverseProxyHandler(fmt.Sprintf(`"upstreams": [{"dial": "127.0.0.1:%d"}]`, upstreamAddr.Port))),
+		fmt.Sprintf(`"grace_period": %d,`, grace.Nanoseconds()),
+	), "json")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	_, sess := dialWT(t, ctx, nil, nil)
 	defer sess.CloseWithError(0, "")
 
-	// Drop the HTTP app so Stop runs against the still-open WT session.
-	tester.InitServer(`{"admin": {"listen": "localhost:2999"}}`, "json")
+	reloadStart := time.Now()
+	go tester.InitServer(`{"admin": {"listen": "localhost:2999"}}`, "json")
 
 	select {
 	case <-sess.Context().Done():
-	case <-time.After(3 * time.Second):
-		t.Fatal("active WebTransport session was not closed on reload")
+		t.Fatal("WebTransport session closed before the grace period")
+	case <-time.After(200 * time.Millisecond):
 	}
+
+	select {
+	case <-sess.Context().Done():
+		if time.Since(reloadStart) < grace-300*time.Millisecond {
+			t.Fatalf("session closed after %s, before grace period %s", time.Since(reloadStart), grace)
+		}
+	case <-time.After(grace + time.Second):
+		t.Fatal("WebTransport session was not closed when the grace period ended")
+	}
+	waitForUDPPortFree(t, 9443)
 }
 
 // TestWebTransport_ShutdownDrainsPlainHTTP3 holds a WebTransport session and
-// a plain HTTP/3 request open, then reloads. The session is closed, and the
-// HTTP/3 request is allowed to finish during the grace period.
+// a plain HTTP/3 request open, then reloads. The HTTP/3 request finishes
+// during the grace period while the session is still open. The session is
+// closed when the grace period ends.
 func TestWebTransport_ShutdownDrainsPlainHTTP3(t *testing.T) {
 	if testing.Short() {
 		t.Skip()
@@ -735,7 +791,7 @@ func TestWebTransport_ShutdownDrainsPlainHTTP3(t *testing.T) {
 	}`, upstream.Listener.Addr().String(),
 		wtReverseProxyHandler(fmt.Sprintf(`"upstreams": [{"dial": "127.0.0.1:%d"}]`, wtUpstream.Port)))
 
-	grace := 3 * time.Second
+	grace := 2 * time.Second
 	tester := caddytest.NewTester(t)
 	tester.InitServer(wtJSONWithHTTPPrefix(
 		`"proxy": `+wtH3ServerRoutes(":9443", routes),
@@ -797,18 +853,17 @@ func TestWebTransport_ShutdownDrainsPlainHTTP3(t *testing.T) {
 		t.Fatal("plain HTTP/3 request did not reach the upstream")
 	}
 
+	reloadStart := time.Now()
 	reloadDone := make(chan struct{})
 	go func() {
 		tester.InitServer(`{"admin": {"listen": "localhost:2999"}}`, "json")
 		close(reloadDone)
 	}()
 
-	// Session close runs before the QUIC sockets are dropped. The plain
-	// request is still blocked in the upstream at this point.
 	select {
 	case <-sess.Context().Done():
-	case <-time.After(3 * time.Second):
-		t.Fatal("active WebTransport session was not closed on reload")
+		t.Fatal("WebTransport session closed before the plain HTTP/3 request finished")
+	case <-time.After(200 * time.Millisecond):
 	}
 	close(release)
 
@@ -823,13 +878,28 @@ func TestWebTransport_ShutdownDrainsPlainHTTP3(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("plain HTTP/3 request did not finish during grace")
 	}
+	select {
+	case <-sess.Context().Done():
+		t.Fatal("WebTransport session closed while the grace period was still running")
+	default:
+	}
+
+	select {
+	case <-sess.Context().Done():
+		if time.Since(reloadStart) < grace-300*time.Millisecond {
+			t.Fatalf("session closed after %s, before grace period %s", time.Since(reloadStart), grace)
+		}
+	case <-time.After(grace + time.Second):
+		t.Fatal("WebTransport session was not closed when the grace period ended")
+	}
 
 	_ = tr.Close()
 	select {
 	case <-reloadDone:
-	case <-time.After(grace + time.Second):
+	case <-time.After(time.Second):
 		t.Fatal("reload did not finish after HTTP/3 drained")
 	}
+	waitForUDPPortFree(t, 9443)
 }
 
 func wtH3ServerRoutes(listen, routesJSON string) string {
@@ -856,9 +926,9 @@ func wtJSON(serversJSON string) string {
 	return wtJSONWithHTTPPrefix(serversJSON, `"grace_period": 1,`)
 }
 
-// wtJSONEternalGrace omits grace_period so shutdown waits until connections
-// drain — the default, and the case that hangs if WebTransport sessions are
-// closed after HTTP/3 Shutdown instead of before.
+// wtJSONEternalGrace omits grace_period. Shutdown waits until active
+// connections finish, which is the default. A WebTransport session stays
+// open until the client ends it.
 func wtJSONEternalGrace(serversJSON string) string {
 	return wtJSONWithHTTPPrefix(serversJSON, "")
 }
@@ -1003,6 +1073,23 @@ func waitForUpstreamRequests(t *testing.T, dial string, wantRequests int, timeou
 		time.Sleep(50 * time.Millisecond)
 	}
 	return false
+}
+
+// waitForUDPPortFree returns once addr can be bound. Shutdown keeps the
+// packet conn open until WebTransport accept loops finish, and the next
+// test listens on the same port.
+func waitForUDPPortFree(t *testing.T, port int) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: port})
+		if err == nil {
+			_ = conn.Close()
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("UDP port %d still in use", port)
 }
 
 // startClosingQUICServer accepts QUIC handshakes and closes them. The
