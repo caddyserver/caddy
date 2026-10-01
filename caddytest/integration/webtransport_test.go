@@ -419,6 +419,62 @@ func TestWebTransport_ReverseProxyNegotiatesApplicationProtocol(t *testing.T) {
 	}
 }
 
+// TestWebTransport_RetryPreservesApplicationProtocol fails the first
+// upstream dial and retries. Round-robin picks index 1 first. That dial
+// fails, and the second upstream must still see WT-Available-Protocols.
+// Deleting the offer on the request header removes it for every later
+// attempt, because the proxy loop reuses the request and does not
+// recopy headers when no header ops are configured.
+func TestWebTransport_RetryPreservesApplicationProtocol(t *testing.T) {
+	if testing.Short() {
+		t.Skip()
+	}
+
+	badPort, stopBad := startClosingQUICServer(t)
+	t.Cleanup(stopBad)
+
+	gotHeaders := make(chan http.Header, 1)
+	goodAddr, stopGood := startStandaloneWebTransport(t, func(sess *webtransport.Session, r *http.Request) {
+		select {
+		case gotHeaders <- r.Header.Clone():
+		default:
+		}
+		_ = sess.CloseWithError(0, "")
+	}, "moqt-19")
+	t.Cleanup(stopGood)
+
+	startWTProxy(t, wtReverseProxyHandler(fmt.Sprintf(`
+		"load_balancing": {
+			"selection_policy": {"policy": "round_robin"},
+			"retries": 1
+		},
+		"upstreams": [
+			{"dial": "127.0.0.1:%d"},
+			{"dial": "127.0.0.1:%d"}
+		]`, goodAddr.Port, badPort)))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	rsp, sess := dialWT(t, ctx, nil, []string{"moqt-19"})
+	defer sess.CloseWithError(0, "")
+	if rsp != nil {
+		defer rsp.Body.Close()
+	}
+
+	if got := sess.SessionState().ApplicationProtocol; got != "moqt-19" {
+		t.Errorf("client ApplicationProtocol = %q, want moqt-19", got)
+	}
+
+	select {
+	case hdr := <-gotHeaders:
+		if got := hdr.Get("WT-Available-Protocols"); !strings.Contains(got, "moqt-19") {
+			t.Errorf("second upstream WT-Available-Protocols = %q, want to contain moqt-19", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("second upstream did not observe a WebTransport session")
+	}
+}
+
 // TestWebTransport_ReverseProxyMOQLike is the MediaMTX scenario from #7669:
 // the client offers moqt-19 AND header_up rewrites Host. Both of elee's
 // bugs fire together — Upgrade must use origReq (CheckOrigin against the
@@ -947,6 +1003,34 @@ func waitForUpstreamRequests(t *testing.T, dial string, wantRequests int, timeou
 		time.Sleep(50 * time.Millisecond)
 	}
 	return false
+}
+
+// startClosingQUICServer accepts QUIC handshakes and closes them. The
+// WebTransport dial fails quickly, so a retry can run without waiting
+// out a handshake timeout.
+func startClosingQUICServer(t *testing.T) (int, func()) {
+	t.Helper()
+	ln, err := quic.ListenAddr("127.0.0.1:0", newSelfSignedTLSConfig(t, "localhost"), &quic.Config{
+		EnableDatagrams:                  true,
+		EnableStreamResetPartialDelivery: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		for {
+			conn, err := ln.Accept(ctx)
+			if err != nil {
+				return
+			}
+			_ = conn.CloseWithError(0, "unavailable")
+		}
+	}()
+	return ln.Addr().(*net.UDPAddr).Port, func() {
+		cancel()
+		_ = ln.Close()
+	}
 }
 
 // startStandaloneWebTransport starts a webtransport.Server on a random UDP

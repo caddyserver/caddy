@@ -143,15 +143,19 @@ func (h *Handler) webTransportHijack(rw http.ResponseWriter, req *http.Request, 
 	// is relayed, not chosen here: parse the offer from the prepared
 	// request (so transport and header_up ops apply), put it on the
 	// upstream Transport, and copy the upstream's WT-Protocol onto the
-	// client 200. Strip the offer from the forwarded headers so the
-	// Transport remashals a spec-correct list. The shared
-	// webtransport.Server keeps ApplicationProtocols empty so Caddy does
-	// not independently select a protocol.
+	// client 200. Strip the offer from a clone of the forwarded headers
+	// so the Transport remashals a spec-correct list. The proxy loop
+	// reuses this request on retries and only recopies headers when
+	// header ops are configured, so the original map has to stay intact
+	// for the next upstream. The shared webtransport.Server keeps
+	// ApplicationProtocols empty so Caddy does not independently select
+	// a protocol.
 	offered := parseWTAvailableProtocols(req.Header)
-	req.Header.Del(wtAvailableProtocolsHeader)
+	dialHdr := req.Header.Clone()
+	dialHdr.Del(wtAvailableProtocolsHeader)
 	upstreamURL := "https://" + di.Address + req.URL.RequestURI()
 	dialStart := time.Now()
-	upstreamResp, upstreamSess, err := dialUpstreamWebTransport(req.Context(), tlsCfg, upstreamURL, req.Header, offered, req.Host)
+	upstreamResp, upstreamSess, err := dialUpstreamWebTransport(req.Context(), tlsCfg, upstreamURL, dialHdr, offered, req.Host)
 	if err != nil {
 		return DialError{fmt.Errorf("webtransport upstream dial: %w", err)}
 	}
