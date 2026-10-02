@@ -586,7 +586,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeHardDeadline = start.Add(time.Duration(s.WriteTimeout))
 	}
 	if s.ReadIdleTimeout > 0 && r.Body != nil {
-		r.Body = &IdleTimeoutReader{
+		idleReader := &IdleTimeoutReader{
 			ReadCloser: r.Body,
 			Ctrl:       rc,
 			Deadline: IdleDeadline{
@@ -597,6 +597,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			},
 			Logger: s.logger,
 		}
+		// the body may outlive this handler (see IdleTimeoutReader)
+		defer idleReader.handlerDone()
+		r.Body = idleReader
 	}
 	if s.WriteIdleTimeout > 0 {
 		w = &IdleTimeoutWriter{

@@ -17,6 +17,7 @@ package caddyhttp
 import (
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -73,17 +74,28 @@ func (d *IdleDeadline) next() (deadline time.Time) {
 // IdleTimeoutReader wraps a request body with IdleDeadline, resetting
 // the read deadline before every Read call instead of bounding the
 // whole body transfer with a single hard deadline.
+//
+// The body may still be read after the handler has returned, e.g. by
+// the reverse proxy transport when an upstream responds before
+// consuming the whole request body. Ctrl must not be used by then: the
+// HTTP/2 response writer releases its state when the handler returns,
+// and an HTTP/1 connection may already be serving the next request.
+// The handler that installed the reader calls handlerDone before
+// returning, after which deadlines are no longer touched.
 type IdleTimeoutReader struct {
 	io.ReadCloser
 	Ctrl     *http.ResponseController
 	Deadline IdleDeadline
 	Logger   *zap.Logger
 
+	mu          sync.Mutex
 	unsupported bool
+	done        bool
 }
 
 func (r *IdleTimeoutReader) Read(p []byte) (int, error) {
-	if !r.unsupported {
+	r.mu.Lock()
+	if !r.unsupported && !r.done {
 		if err := r.Ctrl.SetReadDeadline(r.Deadline.next()); err != nil {
 			r.unsupported = true
 			if c := r.Logger.Check(zapcore.DebugLevel, "could not set read deadline"); c != nil {
@@ -91,11 +103,20 @@ func (r *IdleTimeoutReader) Read(p []byte) (int, error) {
 			}
 		}
 	}
+	r.mu.Unlock()
 
 	n, err := r.ReadCloser.Read(p)
 	r.Deadline.transferred += int64(n)
 
 	return n, err
+}
+
+// handlerDone stops r from setting read deadlines. It must be called
+// before the handler that installed r returns.
+func (r *IdleTimeoutReader) handlerDone() {
+	r.mu.Lock()
+	r.done = true
+	r.mu.Unlock()
 }
 
 // IdleTimeoutWriter wraps a ResponseWriter with IdleDeadline, resetting
