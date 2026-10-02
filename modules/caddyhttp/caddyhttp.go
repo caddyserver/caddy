@@ -286,6 +286,7 @@ func CleanPath(p string, collapseSlashes bool) string {
 	// and then remove the remaining temporary characters.
 	const tmpCh = 0xff
 	var sb strings.Builder
+	sb.Grow(len(p) + 1)
 	for i, ch := range p {
 		if ch == '/' && i > 0 && p[i-1] == '/' {
 			sb.WriteByte(tmpCh)
