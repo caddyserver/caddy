@@ -158,6 +158,7 @@ func TestMatchVarsREDoesNotExpandResolvedValues(t *testing.T) {
 		})
 	}
 }
+
 // TestVarsMatchersTreatErrorsByType verifies the error handling split in the
 // vars matchers: only the request-body limit marker aborts request handling,
 // while unrelated errors are matched on their text exactly like before.
@@ -234,8 +235,8 @@ func TestVarsMatchersOnlyExpandExactPlaceholders(t *testing.T) {
 	}{
 		{name: "extra closing brace", key: "{http.request.host}}"},
 		{name: "extra opening brace", key: "{{http.request.host}"},
-		{name: "empty braces", key: "{}"},
 		{name: "trailing text", key: "{http.request.host}x"},
+		{name: "unclosed", key: "{http.request.host"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -260,6 +261,50 @@ func TestVarsMatchersOnlyExpandExactPlaceholders(t *testing.T) {
 			}
 			if !matched {
 				t.Errorf("MatchVarsRE did not match the literal variable named %q", tc.key)
+			}
+		})
+	}
+}
+
+func TestVarsMatchersKeepEscapedBraceAndEmptyKeyPlaceholders(t *testing.T) {
+	// an escaped brace is not a delimiter, and the empty key still expands to
+	// the empty variable name, both the way the replacer resolves them
+	for _, tc := range []struct {
+		name string
+		key  string
+		// the variable name the key has to resolve to
+		want string
+	}{
+		{name: "escaped closing brace", key: "{foo\\}bar}", want: "foo\\}bar"},
+		{name: "escaped opening brace", key: "{foo\\{bar}", want: "foo\\{bar"},
+		{name: "empty key", key: "{}", want: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			// no vars are set, so a match can only come from the
+			// placeholder path through the replacer
+			req, repl := newVarsTestRequest(t, "", nil, nil)
+			repl.Set(tc.want, "resolved")
+
+			matched, err := VarsMatcher{tc.key: []string{"resolved"}}.MatchWithError(req)
+			if err != nil {
+				t.Fatalf("MatchWithError() error = %v", err)
+			}
+			if !matched {
+				t.Errorf("VarsMatcher did not expand %q to the variable named %q", tc.key, tc.want)
+			}
+
+			re := MatchVarsRE{tc.key: &MatchRegexp{Pattern: "^resolved$"}}
+			if err := re.Provision(caddy.Context{}); err != nil {
+				t.Fatalf("provisioning the regexp: %v", err)
+			}
+			matched, err = re.MatchWithError(req)
+			if err != nil {
+				t.Fatalf("MatchWithError() error = %v", err)
+			}
+			if !matched {
+				t.Errorf("MatchVarsRE did not expand %q to the variable named %q", tc.key, tc.want)
 			}
 		})
 	}

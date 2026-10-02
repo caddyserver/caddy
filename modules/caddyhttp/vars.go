@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
-	"strings"
 
 	"cel.dev/cel-go/cel"
 	"cel.dev/cel-go/common/types/ref"
@@ -173,6 +172,33 @@ func (m VarsMatcher) Match(r *http.Request) bool {
 	return match
 }
 
+// placeholderVarName reports whether key is exactly one placeholder under the
+// replacer's brace rules and, if so, returns the variable name to look up. A
+// brace preceded by a backslash is escaped, so the first unescaped closing
+// brace has to be the last byte of key, and the name keeps its backslashes the
+// same way the replacer keeps them. A second unescaped opening brace, or any
+// byte after the closing brace, means the key is not one placeholder and has
+// to be matched as a literal variable name.
+func placeholderVarName(key string) (string, bool) {
+	if len(key) < 2 || key[0] != '{' {
+		return "", false
+	}
+	for i := 1; i < len(key); i++ {
+		switch key[i] {
+		case '\\':
+			i++ // the next byte is escaped
+		case '{':
+			return "", false
+		case '}':
+			if i != len(key)-1 {
+				return "", false
+			}
+			return key[1:i], true
+		}
+	}
+	return "", false
+}
+
 // MatchWithError returns true if r matches m.
 func (m VarsMatcher) MatchWithError(r *http.Request) (bool, error) {
 	if len(m) == 0 {
@@ -185,12 +211,8 @@ func (m VarsMatcher) MatchWithError(r *http.Request) (bool, error) {
 	var matcherValExpanded, varStr string
 	var varValue any
 	for key, vals := range m {
-		if strings.HasPrefix(key, "{") &&
-			strings.HasSuffix(key, "}") &&
-			strings.Count(key, "{") == 1 &&
-			strings.Count(key, "}") == 1 &&
-			len(key) > 2 {
-			varValue, _ = repl.Get(key[1 : len(key)-1])
+		if name, ok := placeholderVarName(key); ok {
+			varValue, _ = repl.Get(name)
 		} else {
 			varValue = vars[key]
 		}
@@ -333,12 +355,8 @@ func (m MatchVarsRE) MatchWithError(r *http.Request) (bool, error) {
 	var varStr string
 	var varValue any
 	for key, val := range m {
-		if strings.HasPrefix(key, "{") &&
-			strings.HasSuffix(key, "}") &&
-			strings.Count(key, "{") == 1 &&
-			strings.Count(key, "}") == 1 &&
-			len(key) > 2 {
-			varValue, _ = repl.Get(key[1 : len(key)-1])
+		if name, ok := placeholderVarName(key); ok {
+			varValue, _ = repl.Get(name)
 		} else {
 			varValue = vars[key]
 		}
