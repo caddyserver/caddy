@@ -748,3 +748,18 @@ func reqEqual(r1, r2 *http.Request) bool {
 		r1.URL.RawQuery == r2.URL.RawQuery &&
 		r1.URL.Fragment == r2.URL.Fragment
 }
+{
+	rule: Rewrite{StripPathPrefix: "/café"},
+	input: newRequest(t, "GET", "/café/x"),
+	expect: newRequest(t, "GET", "/x"),
+},
+{
+	rule: Rewrite{StripPathPrefix: "/café"},
+	input: newRequest(t, "GET", "/caf%C3%A9/x"),
+	expect: newRequest(t, "GET", "/x"),
+},
+{
+	rule: Rewrite{StripPathPrefix: "/한"},
+	input: newRequest(t, "GET", "/한/x"),
+	expect: newRequest(t, "GET", "/x"),
+},
