@@ -792,9 +792,54 @@ func BufferedLog() (*zap.Logger, *zap.Logger, *internal.LogBufferCore) {
 	defaultLoggerMu.Lock()
 	defer defaultLoggerMu.Unlock()
 	origLogger := defaultLogger.logger
-	bufferCore := internal.NewLogBufferCore(zap.InfoLevel)
+	// the buffer remembers origLogger so that FlushLogs can still write the
+	// entries out even if they are never flushed to a loaded config's logger
+	bufferCore := internal.NewLogBufferCore(zap.InfoLevel, origLogger)
 	defaultLogger.logger = zap.New(bufferCore)
 	return defaultLogger.logger, origLogger, bufferCore
+}
+
+// FlushLogs writes out any log entries that are still held in the startup
+// buffer, sending them to the logger that was in use when the buffer was
+// created. It is a no-op if the default logger is not currently buffered,
+// and safe to call more than once.
+//
+// Call this before terminating the process while the buffer may still hold
+// entries. Entries logged before a config is loaded are held back so they can
+// be written to the configured output in order, but if the config fails to
+// load, or the process is interrupted, the buffer is never handed off and
+// those entries would be discarded unread.
+func FlushLogs() {
+	defaultLoggerMu.RLock()
+	defer defaultLoggerMu.RUnlock()
+	if bufferCore, ok := defaultLogger.logger.Core().(internal.LogBufferCoreInterface); ok {
+		bufferCore.Flush()
+	}
+}
+
+// flushLogsTimeout bounds how long an exit path that must not be delayed will
+// wait for buffered entries to be written out.
+const flushLogsTimeout = 2 * time.Second
+
+// flushLogsBeforeExit writes out any buffered log entries, but gives up after
+// flushLogsTimeout. It is for exit paths that must not be able to block
+// indefinitely -- a second interrupt is how a user escapes a wedged process --
+// so a few lost log lines are better than a process that will not die. The
+// ordinary shutdown paths should call FlushLogs directly and wait as long as
+// the writes take.
+func flushLogsBeforeExit() {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		FlushLogs()
+	}()
+	select {
+	case <-done:
+	case <-time.After(flushLogsTimeout):
+		// deliberately not logged: Log() could be blocked waiting on the very
+		// locks that made the flush time out, which is what we are trying to
+		// avoid here
+	}
 }
 
 var (

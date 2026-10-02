@@ -42,6 +42,12 @@ func trapSignalsPosix() {
 			case syscall.SIGQUIT:
 				Log().Info("quitting process immediately", zap.String("signal", "SIGQUIT"))
 				certmagic.CleanUpOwnLocks(context.TODO(), Log()) // try to clean up locks anyway, it's important
+				// we are about to terminate without running any deferred
+				// cleanup, so write out anything still buffered; if a config
+				// failed to load we would otherwise exit silently. This path
+				// must not be able to hang, since it is the user's way out of
+				// a wedged process, so the flush is bounded.
+				flushLogsBeforeExit()
 				os.Exit(ExitCodeForceQuit)
 
 			case syscall.SIGTERM:
