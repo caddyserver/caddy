@@ -179,7 +179,7 @@ func (na NetworkAddress) listen(ctx context.Context, portOffset uint, config net
 		if ln == nil && err == nil {
 			// otherwise, create a new listener
 			lnKey := listenerKey(na.Network, address)
-			ln, err = na.withBindCapability(portOffset, func() (any, error) {
+			ln, err = internal.WithBindCapability(na.Network, address, func() (any, error) {
 				return listenReusable(ctx, lnKey, na.Network, address, config)
 			})
 		}

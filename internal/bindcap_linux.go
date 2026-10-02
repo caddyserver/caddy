@@ -12,18 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package caddy
+//go:build linux
+
+package internal
 
 import (
 	"fmt"
+	"net"
 	"runtime"
+	"strconv"
+	"strings"
 
 	"golang.org/x/sys/unix"
 )
 
-// withBindCapability calls listen, raising CAP_NET_BIND_SERVICE for the
-// duration of the call if na is a privileged port and the capability is
-// in the permitted set but not the effective set.
+// WithBindCapability calls listen, which should bind to address on
+// network, raising CAP_NET_BIND_SERVICE for the duration of the call
+// if address is a privileged TCP or UDP port and the capability is in
+// the permitted set but not the effective set.
 //
 // This allows the caddy binary to be granted the capability with
 // `setcap cap_net_bind_service=+p` instead of `=+ep`. With the effective
@@ -32,11 +38,8 @@ import (
 // `--cap-drop ALL`, or systemd units with an empty CapabilityBoundingSet),
 // even if Caddy never binds a privileged port. See "Safety checking for
 // capability-dumb binaries" in capabilities(7).
-func (na NetworkAddress) withBindCapability(portOffset uint, listen func() (any, error)) (any, error) {
-	if na.IsUnixNetwork() || na.IsFdNetwork() {
-		return listen()
-	}
-	if port := na.StartPort + portOffset; port == 0 || port >= 1024 {
+func WithBindCapability(network, address string, listen func() (any, error)) (any, error) {
+	if !isPrivilegedPort(network, address) {
 		return listen()
 	}
 	if raise, err := shouldRaiseBindCapability(); err != nil || !raise {
@@ -65,6 +68,20 @@ func (na NetworkAddress) withBindCapability(portOffset uint, listen func() (any,
 	}()
 	r := <-ch
 	return r.ln, r.err
+}
+
+// isPrivilegedPort reports whether address is a TCP or UDP
+// address with a port below 1024 (other than 0).
+func isPrivilegedPort(network, address string) bool {
+	if !strings.HasPrefix(network, "tcp") && !strings.HasPrefix(network, "udp") {
+		return false
+	}
+	_, portStr, err := net.SplitHostPort(address)
+	if err != nil {
+		return false
+	}
+	port, err := strconv.ParseUint(portStr, 10, 16)
+	return err == nil && port > 0 && port < 1024
 }
 
 const bindCapabilityMask = 1 << unix.CAP_NET_BIND_SERVICE

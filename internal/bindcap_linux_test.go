@@ -12,12 +12,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package caddy
+package internal
 
 import (
 	"errors"
 	"testing"
 )
+
+func TestIsPrivilegedPort(t *testing.T) {
+	for _, tc := range []struct {
+		network, address string
+		want             bool
+	}{
+		{"tcp", ":80", true},
+		{"tcp4", "127.0.0.1:443", true},
+		{"udp6", "[::1]:443", true},
+		{"tcp", ":1023", true},
+		{"tcp", ":1024", false},
+		{"tcp", ":8080", false},
+		{"tcp", ":0", false},
+		{"unix", "/run/caddy.sock", false},
+		{"fd", "3", false},
+		{"ip4:icmp", "127.0.0.1", false},
+	} {
+		if got := isPrivilegedPort(tc.network, tc.address); got != tc.want {
+			t.Errorf("isPrivilegedPort(%q, %q) = %v, want %v", tc.network, tc.address, got, tc.want)
+		}
+	}
+}
 
 func TestWithBindCapabilityPassthrough(t *testing.T) {
 	before, err := shouldRaiseBindCapability()
@@ -26,16 +48,16 @@ func TestWithBindCapabilityPassthrough(t *testing.T) {
 	}
 
 	sentinel := errors.New("sentinel")
-	for _, na := range []NetworkAddress{
-		{Network: "tcp", Host: "localhost", StartPort: 80, EndPort: 80},
-		{Network: "udp", Host: "localhost", StartPort: 8080, EndPort: 8080},
-		{Network: "unix", Host: "/tmp/caddy.sock"},
+	for _, tc := range []struct{ network, address string }{
+		{"tcp", "localhost:80"},
+		{"udp", ":8080"},
+		{"unix", "/tmp/caddy.sock"},
 	} {
-		ln, err := na.withBindCapability(0, func() (any, error) {
+		ln, err := WithBindCapability(tc.network, tc.address, func() (any, error) {
 			return "listener", sentinel
 		})
 		if ln != "listener" || !errors.Is(err, sentinel) {
-			t.Errorf("%s: got (%v, %v), want listen's return values", na, ln, err)
+			t.Errorf("%s/%s: got (%v, %v), want listen's return values", tc.network, tc.address, ln, err)
 		}
 	}
 

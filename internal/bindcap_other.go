@@ -14,8 +14,10 @@
 
 //go:build !linux
 
-package caddy
+package internal
 
-func (na NetworkAddress) withBindCapability(_ uint, listen func() (any, error)) (any, error) {
+// WithBindCapability calls listen. Raising capabilities is only
+// supported on Linux.
+func WithBindCapability(_, _ string, listen func() (any, error)) (any, error) {
 	return listen()
 }
