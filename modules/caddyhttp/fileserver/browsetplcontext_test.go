@@ -15,8 +15,105 @@
 package fileserver
 
 import (
+	"context"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+	"time"
+
+	"go.uber.org/zap"
+
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/internal/filesystems"
 )
+
+func TestDirectoryListingSymlinks(t *testing.T) {
+	for _, dirPath := range []string{
+		"/",
+		"/nested/",
+		"/Amelia Watson/",
+		"/音乐/",
+		"/100% coverage/",
+		"/literal%20name/",
+		"/literal%2Fname/",
+		"/parent/Amelia Watson/",
+	} {
+		t.Run(dirPath, func(t *testing.T) {
+			root := t.TempDir()
+			dir := filepath.Join(root, filepath.FromSlash(strings.TrimPrefix(dirPath, "/")))
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+
+			targetRoot := t.TempDir()
+			dirTarget := filepath.Join(targetRoot, "directory")
+			if err := os.Mkdir(dirTarget, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			fileTarget := filepath.Join(targetRoot, "file.txt")
+			fileContents := []byte("symlink target contents")
+			if err := os.WriteFile(fileTarget, fileContents, 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			links := map[string]string{
+				"directory link": dirTarget,
+				"file link":      fileTarget,
+				"broken link":    filepath.Join(targetRoot, "missing"),
+			}
+			for name, target := range links {
+				if err := os.Symlink(target, filepath.Join(dir, name)); err != nil {
+					t.Skipf("symlink not supported on this platform: %v", err)
+				}
+			}
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			fsrv := FileServer{
+				Browse: &Browse{RevealSymlinks: true},
+				logger: zap.NewNop(),
+			}
+			u := url.URL{Path: dirPath}
+			escapedPath := u.EscapedPath()
+			listing := fsrv.directoryListing(context.Background(), filesystems.OsFS{}, time.Time{}, entries, dirPath != "/", root, escapedPath, caddy.NewReplacer())
+			if listing.Path != escapedPath {
+				t.Errorf("listing path: got %q, want %q", listing.Path, escapedPath)
+			}
+			if listing.NumDirs != 1 || listing.NumFiles != 2 || len(listing.Items) != len(links) {
+				t.Errorf("listing: got %d directories, %d files, %d items; want 1 directory, 2 files, 3 items", listing.NumDirs, listing.NumFiles, len(listing.Items))
+			}
+			for _, item := range listing.Items {
+				name := strings.TrimSuffix(item.Name, "/")
+				if !item.IsSymlink {
+					t.Errorf("%q should be a symlink", item.Name)
+				}
+				if item.SymlinkPath != links[name] {
+					t.Errorf("%q symlink target: got %q, want %q", item.Name, item.SymlinkPath, links[name])
+				}
+				switch name {
+				case "directory link":
+					if !item.IsDir || item.Name != "directory link/" || item.URL != "./directory%20link/" {
+						t.Errorf("directory symlink: got IsDir=%v, Name=%q, URL=%q", item.IsDir, item.Name, item.URL)
+					}
+				case "file link":
+					if item.IsDir || item.Size != int64(len(fileContents)) {
+						t.Errorf("file symlink: got IsDir=%v, Size=%d; want false, %d", item.IsDir, item.Size, len(fileContents))
+					}
+				case "broken link":
+					if item.IsDir {
+						t.Error("broken symlink should not be a directory")
+					}
+				default:
+					t.Errorf("unexpected listing entry %q", item.Name)
+				}
+			}
+		})
+	}
+}
 
 func TestBreadcrumbs(t *testing.T) {
 	testdata := []struct {
