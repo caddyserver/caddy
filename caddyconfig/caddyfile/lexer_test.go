@@ -15,6 +15,7 @@
 package caddyfile
 
 import (
+	"reflect"
 	"testing"
 )
 
@@ -521,6 +522,70 @@ EOF`),
 	}
 }
 
+func TestTokenFormatModeAccessors(t *testing.T) {
+	tok := Token{Text: "hello", raw: `"hello"`, isComment: false}
+	if tok.Raw() != `"hello"` {
+		t.Errorf("Raw() = %q, want %q", tok.Raw(), `"hello"`)
+	}
+	// falls back to Text when raw not captured
+	if (Token{Text: "hi"}).Raw() != "hi" {
+		t.Errorf("Raw() fallback = %q, want %q", (Token{Text: "hi"}).Raw(), "hi")
+	}
+	c := Token{Text: "# note", raw: "# note", isComment: true}
+	if !c.IsComment() {
+		t.Error("IsComment() = false, want true")
+	}
+	// Clone copies the new fields
+	clone := c.Clone()
+	if clone.raw != c.raw || clone.isComment != c.isComment {
+		t.Errorf("Clone did not copy format-mode fields: %+v", clone)
+	}
+}
+
+func TestLexRawCapture(t *testing.T) {
+	cases := []struct {
+		in      string
+		text    string // processed Text of the single token
+		wantRaw string // verbatim source of that token
+	}{
+		{`hello`, `hello`, `hello`},
+		{`"a \"b\" "`, `a "b" `, `"a \"b\" "`},
+		{"`raw \"x\"`", `raw "x"`, "`raw \"x\"`"},
+		{`\<<NOTHEREDOC`, `<<NOTHEREDOC`, `\<<NOTHEREDOC`},
+	}
+	for _, c := range cases {
+		toks, err := Lex([]byte(c.in), "T", LexOptions{Raw: true})
+		if err != nil {
+			t.Fatalf("%q: %v", c.in, err)
+		}
+		if len(toks) != 1 {
+			t.Fatalf("%q: got %d tokens, want 1", c.in, len(toks))
+		}
+		if toks[0].Text != c.text {
+			t.Errorf("%q: Text = %q, want %q", c.in, toks[0].Text, c.text)
+		}
+		if toks[0].Raw() != c.wantRaw {
+			t.Errorf("%q: Raw() = %q, want %q", c.in, toks[0].Raw(), c.wantRaw)
+		}
+	}
+}
+
+func TestLexRawCaptureHeredoc(t *testing.T) {
+	in := "x <<END\n\thello\n\tEND"
+	toks, err := Lex([]byte(in), "T", LexOptions{Raw: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// token 0 is "x"; token 1 is the heredoc
+	if len(toks) != 2 {
+		t.Fatalf("got %d tokens, want 2", len(toks))
+	}
+	// heredoc Text is the de-indented body; Raw is the full framing verbatim.
+	if toks[1].Raw() != "<<END\n\thello\n\tEND" {
+		t.Errorf("heredoc Raw() = %q, want %q", toks[1].Raw(), "<<END\n\thello\n\tEND")
+	}
+}
+
 func lexerCompare(t *testing.T, n int, expected, actual []Token) {
 	if len(expected) != len(actual) {
 		t.Fatalf("Test case %d: expected %d token(s) but got %d", n, len(expected), len(actual))
@@ -537,5 +602,123 @@ func lexerCompare(t *testing.T, n int, expected, actual []Token) {
 				n, i, expected[i].Text, actual[i].Text)
 			break
 		}
+	}
+}
+
+func TestLexComments(t *testing.T) {
+	toks, err := Lex([]byte("foo # hi there\nbar"), "T", LexOptions{Comments: true, Raw: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// foo | # hi there | bar
+	if len(toks) != 3 {
+		t.Fatalf("got %d tokens, want 3: %+v", len(toks), toks)
+	}
+	if !toks[1].IsComment() || toks[1].Text != "# hi there" {
+		t.Errorf("token 1 = %q (comment=%v), want comment %q", toks[1].Text, toks[1].IsComment(), "# hi there")
+	}
+	if toks[2].Text != "bar" {
+		t.Errorf("token 2 = %q, want bar", toks[2].Text)
+	}
+}
+
+func TestLexHashMidTokenIsLiteral(t *testing.T) {
+	toks, err := Lex([]byte("e#f redir /a/#/b"), "T", LexOptions{Comments: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	texts := []string{}
+	for _, tk := range toks {
+		texts = append(texts, tk.Text)
+	}
+	want := []string{"e#f", "redir", "/a/#/b"}
+	if !reflect.DeepEqual(texts, want) {
+		t.Errorf("texts = %v, want %v", texts, want)
+	}
+	for _, tk := range toks {
+		if tk.IsComment() {
+			t.Errorf("unexpected comment token %q", tk.Text)
+		}
+	}
+}
+
+func TestLexCommentsDisabledDiscards(t *testing.T) {
+	toks, _ := Lex([]byte("foo # hi\nbar"), "T", LexOptions{})
+	if len(toks) != 2 {
+		t.Fatalf("got %d tokens, want 2 (comment discarded)", len(toks))
+	}
+}
+
+func TestLexSeparatorKind(t *testing.T) {
+	// glued comment after a closing quote: "x"#c -> [ "x", "#c" ] glued
+	toks, _ := Lex([]byte(`"x"#c`), "T", LexOptions{Comments: true, Raw: true})
+	if len(toks) != 2 || !toks[1].IsComment() {
+		t.Fatalf("got %+v, want string + comment", toks)
+	}
+	if toks[1].precededBySpace {
+		t.Error(`"x"#c: comment should be glued (precededBySpace=false)`)
+	}
+
+	toks2, _ := Lex([]byte(`"x" #c`), "T", LexOptions{Comments: true, Raw: true})
+	if !toks2[1].precededBySpace {
+		t.Error(`"x" #c: comment should be space-separated (precededBySpace=true)`)
+	}
+
+	// line continuation: `foo bar \<nl>baz` -> baz has continuation=true
+	toks3, _ := Lex([]byte("foo bar \\\nbaz"), "T", LexOptions{Raw: true})
+	last := toks3[len(toks3)-1]
+	if last.Text != "baz" || !last.continuation {
+		t.Errorf("continuation token = %q continuation=%v, want baz/true", last.Text, last.continuation)
+	}
+}
+
+func lexTexts(t *testing.T, in string, opts LexOptions) []string {
+	t.Helper()
+	toks, err := Lex([]byte(in), "T", opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := []string{}
+	for _, tk := range toks {
+		out = append(out, tk.Text)
+	}
+	return out
+}
+
+func TestLexOptionsPreserveTokenBoundaries(t *testing.T) {
+	cases := []struct {
+		in   string
+		want []string
+	}{
+		{"example.com{", []string{"example.com{"}},
+		{"{$A}{", []string{"{$A}{"}},       // placeholder tail: not split
+		{"foo{bar}", []string{"foo{bar}"}}, // placeholder: not split
+		{"route {}", []string{"route", "{}"}},
+		{"route { }", []string{"route", "{", "}"}},
+		{"a { b {} }", []string{"a", "{", "b", "{}", "}"}},
+		{"site {\n\troot\n}", []string{"site", "{", "root", "}"}},
+	}
+	for _, c := range cases {
+		for _, opts := range []LexOptions{{Raw: true}, {Comments: true}, {Raw: true, Comments: true}} {
+			got := lexTexts(t, c.in, opts)
+			if !reflect.DeepEqual(got, c.want) {
+				t.Errorf("%q with %+v: got %v, want %v", c.in, opts, got, c.want)
+			}
+		}
+	}
+}
+
+func TestLexEqualsTokenizeWithZeroOptions(t *testing.T) {
+	in := []byte("site {\n\troot * /srv\n\tfile_server\n}\n")
+	a, err := Tokenize(in, "Caddyfile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := Lex(in, "Caddyfile", LexOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(a, b) {
+		t.Errorf("Lex(zero opts) != Tokenize\n a=%+v\n b=%+v", a, b)
 	}
 }
