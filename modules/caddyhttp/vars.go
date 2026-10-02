@@ -187,8 +187,10 @@ func (m VarsMatcher) MatchWithError(r *http.Request) (bool, error) {
 	for key, vals := range m {
 		if strings.HasPrefix(key, "{") &&
 			strings.HasSuffix(key, "}") &&
-			strings.Count(key, "{") == 1 {
-			varValue, _ = repl.Get(strings.Trim(key, "{}"))
+			strings.Count(key, "{") == 1 &&
+			strings.Count(key, "}") == 1 &&
+			len(key) > 2 {
+			varValue, _ = repl.Get(key[1 : len(key)-1])
 		} else {
 			varValue = vars[key]
 		}
@@ -333,8 +335,10 @@ func (m MatchVarsRE) MatchWithError(r *http.Request) (bool, error) {
 	for key, val := range m {
 		if strings.HasPrefix(key, "{") &&
 			strings.HasSuffix(key, "}") &&
-			strings.Count(key, "{") == 1 {
-			varValue, _ = repl.Get(strings.Trim(key, "{}"))
+			strings.Count(key, "{") == 1 &&
+			strings.Count(key, "}") == 1 &&
+			len(key) > 2 {
+			varValue, _ = repl.Get(key[1 : len(key)-1])
 		} else {
 			varValue = vars[key]
 		}

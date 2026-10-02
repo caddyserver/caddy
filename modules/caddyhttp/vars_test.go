@@ -224,3 +224,43 @@ func TestVarsMatchersTreatErrorsByType(t *testing.T) {
 		}
 	})
 }
+
+func TestVarsMatchersOnlyExpandExactPlaceholders(t *testing.T) {
+	// a key that is not exactly one placeholder must be looked up as a
+	// literal variable name, not trimmed down to a different one
+	for _, tc := range []struct {
+		name string
+		key  string
+	}{
+		{name: "extra closing brace", key: "{http.request.host}}"},
+		{name: "extra opening brace", key: "{{http.request.host}"},
+		{name: "empty braces", key: "{}"},
+		{name: "trailing text", key: "{http.request.host}x"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			req, _ := newVarsTestRequest(t, "", nil, map[string]any{tc.key: "literal"})
+
+			matched, err := VarsMatcher{tc.key: []string{"literal"}}.MatchWithError(req)
+			if err != nil {
+				t.Fatalf("MatchWithError() error = %v", err)
+			}
+			if !matched {
+				t.Errorf("VarsMatcher did not match the literal variable named %q", tc.key)
+			}
+
+			re := MatchVarsRE{tc.key: &MatchRegexp{Pattern: "^literal$"}}
+			if err := re.Provision(caddy.Context{}); err != nil {
+				t.Fatalf("provisioning the regexp: %v", err)
+			}
+			matched, err = re.MatchWithError(req)
+			if err != nil {
+				t.Fatalf("MatchWithError() error = %v", err)
+			}
+			if !matched {
+				t.Errorf("MatchVarsRE did not match the literal variable named %q", tc.key)
+			}
+		})
+	}
+}
