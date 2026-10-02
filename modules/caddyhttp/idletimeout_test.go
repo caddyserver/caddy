@@ -19,6 +19,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -372,4 +373,67 @@ func TestIdleTimeoutWriter_MaxChunkOverride(t *testing.T) {
 	assert.LessOrEqual(t, counter.maxWriteCall, maxChunk,
 		"a configured MaxChunk should override DefaultMaxWriteChunk")
 	assert.Equal(t, size/maxChunk, counter.writeCalls)
+}
+
+// TestIdleTimeoutReader_DeadlineClearedAfterBodyEOF is a regression test
+// for #8103. On HTTP/1.x, once the request body hits EOF, net/http starts
+// a background read on the connection to detect client disconnects, and
+// Go's transport performs one more drain read through the body after EOF
+// (to verify Content-Length). If the reader leaves its deadline armed
+// after EOF, that leftover deadline later fires against the background
+// read and cancels the request context, aborting any response that
+// outlives the idle timeout (e.g. a streamed SSE response).
+//
+// Note this must go through a real http.Transport: a plain io.Copy of the
+// body stops at the first EOF and never triggers the drain read, so a
+// simpler test would not reproduce the bug.
+func TestIdleTimeoutReader_DeadlineClearedAfterBodyEOF(t *testing.T) {
+	const idle = 150 * time.Millisecond
+
+	// upstream the handler proxies the wrapped body to; proxying is what
+	// makes Go's transport perform the extra drain read after EOF
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+	}))
+	defer upstream.Close()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wrapped := &IdleTimeoutReader{
+			ReadCloser: r.Body,
+			Ctrl:       http.NewResponseController(w),
+			Deadline:   IdleDeadline{Timeout: idle},
+			Logger:     zap.NewNop(),
+		}
+
+		upReq, err := http.NewRequestWithContext(r.Context(), r.Method, upstream.URL, wrapped)
+		if err != nil {
+			t.Errorf("making upstream request: %v", err)
+			return
+		}
+		upReq.ContentLength = r.ContentLength // like reverse_proxy copying Content-Length
+		resp, err := http.DefaultClient.Do(upReq)
+		if err != nil {
+			t.Errorf("proxying request: %v", err)
+			return
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+
+		// keep the response running well past the idle timeout; with the
+		// bug, the leftover read deadline fires on net/http's background
+		// read and cancels the request context
+		select {
+		case <-r.Context().Done():
+			w.WriteHeader(http.StatusTeapot)
+		case <-time.After(3 * idle):
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer srv.Close()
+
+	resp, err := http.Post(srv.URL, "application/octet-stream", strings.NewReader(`{}`))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode,
+		"response must not be canceled by a read deadline left over after the body was exhausted (#8103)")
 }

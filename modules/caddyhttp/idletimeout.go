@@ -73,6 +73,17 @@ func (d *IdleDeadline) next() (deadline time.Time) {
 // IdleTimeoutReader wraps a request body with IdleDeadline, resetting
 // the read deadline before every Read call instead of bounding the
 // whole body transfer with a single hard deadline.
+//
+// The deadline is cleared as soon as Read returns a non-nil error
+// (including io.EOF): at that point the body will not be read again,
+// but a leftover deadline on an HTTP/1.x connection would later fire
+// against net/http's background read — which the server starts once
+// the body is exhausted to detect client disconnects — and cancel the
+// request context, aborting a still-running response (e.g. streaming
+// or SSE) long after the body was received. Note that Go's transport
+// performs one more drain read through the body after EOF (to verify
+// Content-Length), so clearing must happen on every error return, not
+// just the first (see #8103).
 type IdleTimeoutReader struct {
 	io.ReadCloser
 	Ctrl     *http.ResponseController
@@ -95,7 +106,30 @@ func (r *IdleTimeoutReader) Read(p []byte) (int, error) {
 	n, err := r.ReadCloser.Read(p)
 	r.Deadline.transferred += int64(n)
 
+	if err != nil {
+		r.clearDeadline()
+	}
+
 	return n, err
+}
+
+// clearDeadline disarms the read deadline previously set on the
+// connection. The zero time is used instead of restoring the hard
+// deadline: once the body is exhausted, nothing but net/http's own
+// disconnect-detection read remains on the connection, and that read
+// is meant to block indefinitely. An explicitly configured read
+// timeout should keep bounding only the upload, the same way net/http
+// clears its own ReadTimeout deadline once the body is fully read.
+func (r *IdleTimeoutReader) clearDeadline() {
+	if r.unsupported {
+		return
+	}
+	if err := r.Ctrl.SetReadDeadline(time.Time{}); err != nil {
+		r.unsupported = true
+		if c := r.Logger.Check(zapcore.DebugLevel, "could not clear read deadline"); c != nil {
+			c.Write(zap.Error(err))
+		}
+	}
 }
 
 // IdleTimeoutWriter wraps a ResponseWriter with IdleDeadline, resetting
