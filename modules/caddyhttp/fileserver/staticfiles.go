@@ -29,6 +29,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 	"unicode/utf8"
 
@@ -687,6 +688,11 @@ func (fsrv *FileServer) openFile(fileSystem fs.FS, filename string, w http.Respo
 func (fsrv *FileServer) mapDirOpenError(fileSystem fs.FS, originalErr error, name string) error {
 	if errors.Is(originalErr, fs.ErrNotExist) || errors.Is(originalErr, fs.ErrPermission) {
 		return originalErr
+	}
+
+	// a regular file used as a directory, e.g. /index.php/foo
+	if errors.Is(originalErr, syscall.ENOTDIR) {
+		return fs.ErrNotExist
 	}
 
 	if _, ok := errors.AsType[*fs.PathError](originalErr); ok {
