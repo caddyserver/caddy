@@ -468,6 +468,104 @@ func TestInterceptTrailers(t *testing.T) {
 	}
 }
 
+type headerMutationHandler struct {
+	mutate func(h http.Header)
+}
+
+func (h headerMutationHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, _ caddyhttp.Handler) error {
+	h.mutate(w.Header())
+	return nil
+}
+
+var representationOrigin caddyhttp.Handler = caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+	w.Header().Set("Content-Length", strconv.Itoa(len(originBody)))
+	w.Header().Set("Etag", `"abc"`)
+	_, err := io.WriteString(w, originBody)
+	return err
+})
+
+// A header-only route never wrote the intercepted body, so the fields that
+// describe it stay the intercepted ones. Only a deletion is honored.
+func TestInterceptFallbackKeepsInterceptedRepresentation(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		mutate   func(h http.Header)
+		wantEtag string
+	}{
+		{
+			name: "route changes representation fields",
+			mutate: func(h http.Header) {
+				h.Set("Content-Length", "5")
+				h.Set("Etag", `"new"`)
+			},
+			wantEtag: `"abc"`,
+		},
+		{
+			name: "route deletes a representation field",
+			mutate: func(h http.Header) {
+				h.Del("Etag")
+			},
+			wantEtag: "",
+		},
+		{
+			name: "route adds a representation field",
+			mutate: func(h http.Header) {
+				h.Set("Last-Modified", "Mon, 02 Jan 2006 15:04:05 GMT")
+			},
+			wantEtag: `"abc"`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+			defer cancel()
+
+			route := caddyhttp.Route{
+				Handlers: []caddyhttp.MiddlewareHandler{headerMutationHandler{mutate: tc.mutate}},
+			}
+			if err := route.ProvisionHandlers(ctx, nil); err != nil {
+				t.Fatalf("provisioning the response handler: %v", err)
+			}
+
+			ir := Intercept{
+				HandleResponse: []caddyhttp.ResponseHandler{{Routes: caddyhttp.RouteList{route}}},
+			}
+			ir.logger = zap.NewNop()
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				r = r.WithContext(context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
+				if err := ir.ServeHTTP(w, r, representationOrigin); err != nil {
+					t.Errorf("serving: %v", err)
+				}
+			}))
+			defer srv.Close()
+
+			resp, err := srv.Client().Get(srv.URL)
+			if err != nil {
+				t.Fatalf("request failed: %v", err)
+			}
+			defer resp.Body.Close()
+
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				t.Fatalf("reading the body: %v", err)
+			}
+			if string(body) != originBody {
+				t.Errorf("expected body %q, got %q", originBody, string(body))
+			}
+			if got := resp.Header.Get("Content-Length"); got != strconv.Itoa(len(originBody)) {
+				t.Errorf("%s: expected the intercepted Content-Length %d, got %q",
+					tc.name, len(originBody), got)
+			}
+			if got := resp.Header.Get("Etag"); got != tc.wantEtag {
+				t.Errorf("%s: expected Etag %q, got %q", tc.name, tc.wantEtag, got)
+			}
+			if got := resp.Header.Get("Last-Modified"); got != "" {
+				t.Errorf("%s: expected no Last-Modified, got %q", tc.name, got)
+			}
+		})
+	}
+}
+
 type earlyHintsHandler struct{}
 
 func (earlyHintsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, _ caddyhttp.Handler) error {

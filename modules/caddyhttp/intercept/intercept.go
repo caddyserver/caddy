@@ -19,8 +19,10 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -66,7 +68,8 @@ type Intercept struct {
 	// over explicitly. A field set to exactly the intercepted value is
 	// indistinguishable from an untouched one and is dropped. If no route
 	// produces output, the intercepted response is sent with the routes'
-	// header changes applied.
+	// header changes applied, and its representation fields stay the
+	// intercepted ones because the intercepted body is what is sent.
 	HandleResponse []caddyhttp.ResponseHandler `json:"handle_response,omitempty"`
 
 	// Holds the named response matchers from the Caddyfile while adapting
@@ -200,7 +203,7 @@ func (ir Intercept) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 
 	// routes own a copy of the intercepted headers; the intercepted
 	// map stays untouched so the fallback can replay it
-	snapshot := rec.Header().Clone()
+	snapshot := canonicalHeader(rec.Header().Clone())
 	routeHeaders := snapshot.Clone()
 	recorded := make(map[string]struct{})
 	interceptStatus := rec.Status()
@@ -242,9 +245,7 @@ func (ir Intercept) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 	if routeErr != nil {
 		if !dw.committed {
 			clear(w.Header())
-			for k, vv := range initialHeaders {
-				w.Header()[k] = vv
-			}
+			maps.Copy(w.Header(), initialHeaders)
 		}
 		return routeErr
 	}
@@ -259,8 +260,8 @@ func (ir Intercept) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 	return nil
 }
 
-// representationHeaders are dropped from a replacement response when
-// the route left them untouched, so framing follows the new body.
+// representationHeaders describe the response body, so each commit path
+// resolves them from whichever side owns the body it is about to send.
 var representationHeaders = map[string]struct{}{
 	"Content-Length":   {},
 	"Content-Type":     {},
@@ -272,6 +273,17 @@ var representationHeaders = map[string]struct{}{
 	"Etag":             {},
 	"Last-Modified":    {},
 	"Digest":           {},
+}
+
+// canonicalHeader folds keys to their canonical form so a lookup does not
+// depend on how the recorder happened to store the field.
+func canonicalHeader(header http.Header) http.Header {
+	canonical := make(http.Header, len(header))
+	for k, vv := range header {
+		ck := http.CanonicalHeaderKey(k)
+		canonical[ck] = append(canonical[ck], vv...)
+	}
+	return canonical
 }
 
 func equalHeaderValues(a, b []string) bool {
@@ -421,6 +433,8 @@ func (dw *ownershipWriter) Unwrap() http.ResponseWriter {
 	return dw.rw
 }
 
+// commitReplacement sends the route's body, so the route owns the
+// representation fields unless it left them exactly as intercepted.
 func (dw *ownershipWriter) commitReplacement(status int) {
 	if dw.committed || dw.hijacked {
 		return
@@ -442,11 +456,27 @@ func (dw *ownershipWriter) commitReplacement(status int) {
 	dw.committed = true
 }
 
+// commitFallback sends the intercepted body, so a representation field
+// the route changed or added takes the intercepted value. A deletion
+// still stands, but an empty value is not a no-sniff marker here.
 func (dw *ownershipWriter) commitFallback(status int) {
 	if dw.committed || dw.hijacked {
 		return
 	}
-	dw.installRouteHeaders()
+	header := make(http.Header, len(dw.header))
+	for k, vv := range dw.header {
+		ck := http.CanonicalHeaderKey(k)
+		if _, ok := representationHeaders[ck]; ok {
+			snap, ok := dw.snapshot[ck]
+			if !ok {
+				continue
+			}
+			header[ck] = append([]string(nil), snap...)
+			continue
+		}
+		header[k] = append([]string(nil), vv...)
+	}
+	dw.installHeaders(header)
 	dw.rw.WriteHeader(status)
 	dw.committed = true
 }
@@ -485,14 +515,7 @@ func (c *interceptCopier) CopyResponseHeaders(w http.ResponseWriter, include, ex
 		// the route map starts as a clone, so only add missing values
 		existing := w.Header()[field]
 		for _, value := range values {
-			duplicate := false
-			for _, v := range existing {
-				if v == value {
-					duplicate = true
-					break
-				}
-			}
-			if !duplicate {
+			if !slices.Contains(existing, value) {
 				w.Header().Add(field, value)
 			}
 		}

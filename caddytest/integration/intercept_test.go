@@ -149,6 +149,103 @@ func TestInterceptHeaderOnlyMutationKeepsInterceptedResponse(t *testing.T) {
 	}
 }
 
+func TestInterceptHeaderOnlyMutationKeepsInterceptedRepresentation(t *testing.T) {
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`{
+		skip_install_trust
+		admin localhost:2999
+		http_port     9080
+		https_port    9443
+		grace_period  1ns
+	}
+
+	localhost:9080 {
+		intercept {
+			handle_response {
+				header Content-Length 5
+				header Etag "\"new\""
+			}
+		}
+		reverse_proxy localhost:9082
+	}
+
+	http://localhost:9082 {
+		header Etag "\"abc\""
+		respond "I'm a teapot"
+	}
+	`, "caddyfile")
+
+	// the routes did not write this body, so its representation stays
+	r, _ := tester.AssertGetResponse("http://localhost:9080/", 200, "I'm a teapot")
+	if r.Header.Get("Content-Length") != "12" {
+		t.Fatalf(`header "Content-Length" should stay 12 for the intercepted body: %s`, r.Header.Get("Content-Length"))
+	}
+	if r.Header.Get("Etag") != `"abc"` {
+		t.Fatalf(`header "Etag" should stay the intercepted one: %s`, r.Header.Get("Etag"))
+	}
+}
+
+func TestInterceptHeaderOnlyMutationKeepsDeletedRepresentation(t *testing.T) {
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`{
+		skip_install_trust
+		admin localhost:2999
+		http_port     9080
+		https_port    9443
+		grace_period  1ns
+	}
+
+	localhost:9080 {
+		intercept {
+			handle_response {
+				header -Etag
+			}
+		}
+		reverse_proxy localhost:9082
+	}
+
+	http://localhost:9082 {
+		header Etag "\"abc\""
+		respond "I'm a teapot"
+	}
+	`, "caddyfile")
+
+	r, _ := tester.AssertGetResponse("http://localhost:9080/", 200, "I'm a teapot")
+	if r.Header.Get("Etag") != "" {
+		t.Fatalf(`header "Etag" should stay deleted: %s`, r.Header.Get("Etag"))
+	}
+}
+
+func TestInterceptHeaderOnlyMutationDropsAddedRepresentation(t *testing.T) {
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`{
+		skip_install_trust
+		admin localhost:2999
+		http_port     9080
+		https_port    9443
+		grace_period  1ns
+	}
+
+	localhost:9080 {
+		intercept {
+			handle_response {
+				header Etag "\"new\""
+			}
+		}
+		reverse_proxy localhost:9082
+	}
+
+	http://localhost:9082 {
+		respond "I'm a teapot"
+	}
+	`, "caddyfile")
+
+	r, _ := tester.AssertGetResponse("http://localhost:9080/", 200, "I'm a teapot")
+	if r.Header.Get("Etag") != "" {
+		t.Fatalf(`header "Etag" should not describe the intercepted body: %s`, r.Header.Get("Etag"))
+	}
+}
+
 func TestInterceptReplacementDropsUntouchedRepresentationHeaders(t *testing.T) {
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`{
