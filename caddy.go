@@ -816,6 +816,9 @@ func exitProcess(ctx context.Context, logger *zap.Logger) {
 			} else {
 				logger.Error("unclean shutdown")
 			}
+			// the lines above are lost unless the buffer is written out,
+			// which nothing else will do for us once we call os.Exit
+			FlushLogs()
 			os.Exit(exitCode)
 		}()
 

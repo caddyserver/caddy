@@ -792,9 +792,29 @@ func BufferedLog() (*zap.Logger, *zap.Logger, *internal.LogBufferCore) {
 	defaultLoggerMu.Lock()
 	defer defaultLoggerMu.Unlock()
 	origLogger := defaultLogger.logger
-	bufferCore := internal.NewLogBufferCore(zap.InfoLevel)
+	// the buffer remembers origLogger so that FlushLogs can still write the
+	// entries out even if they are never flushed to a loaded config's logger
+	bufferCore := internal.NewLogBufferCore(zap.InfoLevel, origLogger)
 	defaultLogger.logger = zap.New(bufferCore)
 	return defaultLogger.logger, origLogger, bufferCore
+}
+
+// FlushLogs writes out any log entries that are still held in the startup
+// buffer, sending them to the logger that was in use when the buffer was
+// created. It is a no-op if the default logger is not currently buffered,
+// and safe to call more than once.
+//
+// Call this before terminating the process while the buffer may still hold
+// entries. Entries logged before a config is loaded are held back so they can
+// be written to the configured output in order, but if the config fails to
+// load, or the process is interrupted, the buffer is never handed off and
+// those entries would be discarded unread.
+func FlushLogs() {
+	defaultLoggerMu.RLock()
+	defer defaultLoggerMu.RUnlock()
+	if bufferCore, ok := defaultLogger.logger.Core().(internal.LogBufferCoreInterface); ok {
+		bufferCore.Flush()
+	}
 }
 
 var (

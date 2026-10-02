@@ -27,16 +27,24 @@ type LogBufferCore struct {
 	entries []zapcore.Entry
 	fields  [][]zapcore.Field
 	level   zapcore.LevelEnabler
+	// dest is where entries are written by Flush. It is the logger that was
+	// in use when this buffer was created, so that buffered entries reach
+	// their original output even if they are never handed off to a new
+	// logger, for example because loading a config failed. It may be nil,
+	// in which case Flush discards the buffer.
+	dest *zap.Logger
 }
 
 type LogBufferCoreInterface interface {
 	zapcore.Core
 	FlushTo(*zap.Logger)
+	Flush()
 }
 
-func NewLogBufferCore(level zapcore.LevelEnabler) *LogBufferCore {
+func NewLogBufferCore(level zapcore.LevelEnabler, dest *zap.Logger) *LogBufferCore {
 	return &LogBufferCore{
 		level: level,
+		dest:  dest,
 	}
 }
 
@@ -69,6 +77,29 @@ func (c *LogBufferCore) Sync() error { return nil }
 func (c *LogBufferCore) FlushTo(logger *zap.Logger) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.flushTo(logger)
+}
+
+// Flush flushes buffered logs to the logger that was in use when this
+// buffer was created, then empties the buffer. It is a no-op if that
+// logger is gone, and it is safe to call more than once: the buffer is
+// drained, so repeated calls do not duplicate entries.
+func (c *LogBufferCore) Flush() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.flushTo(c.dest)
+}
+
+// flushTo writes the buffer to logger and empties it. The caller must hold
+// c.mu. Writing into c itself would deadlock, because FlushTo and Flush both
+// hold this non-reentrant mutex while they write, so that case is skipped.
+func (c *LogBufferCore) flushTo(logger *zap.Logger) {
+	if logger == nil {
+		return
+	}
+	if destCore, ok := logger.Core().(*LogBufferCore); ok && destCore == c {
+		return
+	}
 	for idx, entry := range c.entries {
 		logger.WithOptions().Check(entry.Level, entry.Message).Write(c.fields[idx]...)
 	}

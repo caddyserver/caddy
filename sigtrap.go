@@ -44,6 +44,10 @@ func trapSignalsCrossPlatform() {
 
 			if i > 0 {
 				Log().Warn("force quit", zap.String("signal", "SIGINT"))
+				// we are about to terminate without running any deferred
+				// cleanup, so write out anything still buffered; if a config
+				// failed to load we would otherwise exit silently
+				FlushLogs()
 				os.Exit(ExitCodeForceQuit)
 			}
 
