@@ -459,7 +459,7 @@ func trimPathPrefix(escapedPath, prefix string) string {
 
 		// prefix comparisons are case-insensitive to consistency with
 		// path matcher, which is case-insensitive for good reasons
-		if !strings.EqualFold(ch, string(prefixCh)) {
+		if len(ch) != 1 || !equalFoldByte(ch[0], prefixCh) { 	return escapedPath }
 			return escapedPath
 		}
 
@@ -513,7 +513,7 @@ func trimPathSuffix(escapedPath, suffix string) string {
 
 		// suffix comparisons are case-insensitive for consistency with
 		// trimPathPrefix, which is case-insensitive for good reasons
-		if !strings.EqualFold(ch, string(suffixCh)) {
+		if len(ch) != 1 || !equalFoldByte(ch[0], suffixCh) { 	return escapedPath }
 			return escapedPath
 		}
 
@@ -529,7 +529,15 @@ func trimPathSuffix(escapedPath, suffix string) string {
 	// otherwise we did not find the suffix
 	return escapedPath
 }
-
+func equalFoldByte(a, b byte) bool {
+	if a >= 'A' && a <= 'Z' {
+		a += 'a' - 'A'
+	}
+	if b >= 'A' && b <= 'Z' {
+		b += 'a' - 'A'
+	}
+	return a == b
+}
 // substrReplacer describes either a simple and fast substring replacement.
 type substrReplacer struct {
 	// A substring to find. Supports placeholders.
