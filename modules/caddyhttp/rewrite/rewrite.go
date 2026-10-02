@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -466,8 +467,7 @@ func trimPathPrefix(escapedPath, prefix string) string {
 func trimPathSuffix(escapedPath, suffix string) string {
 	iPath := len(escapedPath)
 	tokens := pathPatternTokens(suffix)
-	for i := len(tokens) - 1; i >= 0; i-- {
-		token := tokens[i]
+	for _, token := range slices.Backward(tokens) {
 		if token.escaped {
 			if iPath < len(token.value) ||
 				!strings.EqualFold(escapedPath[iPath-len(token.value):iPath], token.value) {
