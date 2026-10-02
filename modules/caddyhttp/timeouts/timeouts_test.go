@@ -18,6 +18,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,6 +28,16 @@ import (
 
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
+
+type readDeadlineRecorder struct {
+	*httptest.ResponseRecorder
+	deadlines []time.Time
+}
+
+func (w *readDeadlineRecorder) SetReadDeadline(deadline time.Time) error {
+	w.deadlines = append(w.deadlines, deadline)
+	return nil
+}
 
 // pacedReader emits chunkCount chunks of chunkSize bytes, sleeping delay
 // before each one, simulating a client that trickles a request body.
@@ -81,6 +92,25 @@ func TestTimeouts_ReadTimeoutIsIdleReset(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+func TestTimeoutsStopsReadDeadlineBeforeReturning(t *testing.T) {
+	tm := Timeouts{ReadTimeout: time.Second, logger: zap.NewNop()}
+	w := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("body"))
+	var body io.Reader
+
+	err := tm.ServeHTTP(w, req, caddyhttp.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) error {
+		body = r.Body
+		_, _ = body.Read(make([]byte, 1))
+		return nil
+	}))
+	require.NoError(t, err)
+	require.Len(t, w.deadlines, 1)
+	assert.False(t, w.deadlines[0].IsZero())
+
+	_, _ = io.Copy(io.Discard, body)
+	assert.Len(t, w.deadlines, 1)
 }
 
 func TestTimeouts_WriteMaxChunkOverride(t *testing.T) {
