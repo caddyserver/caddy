@@ -28,6 +28,7 @@ import (
 	"github.com/caddyserver/certmagic"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"golang.org/x/net/idna"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -69,13 +70,60 @@ func (m MatchServerName) Match(hello *tls.ClientHelloInfo) bool {
 		repl = caddy.NewReplacer()
 	}
 
+	serverName := asciiServerNameForMatch(hello.ServerName)
 	for _, name := range m {
-		rs := repl.ReplaceAll(name, "")
-		if certmagic.MatchWildcard(hello.ServerName, rs) {
+		rs := asciiServerNameForMatch(repl.ReplaceAll(name, ""))
+		if certmagic.MatchWildcard(serverName, rs) {
 			return true
 		}
 	}
 	return false
+}
+
+func asciiServerNameForMatch(name string) string {
+	if name == "" {
+		return name
+	}
+
+	// Fast path: if the name is pure ASCII, skip idna.ToASCII.
+	// SNI values on the wire are always ASCII (RFC 6066), and most
+	// config patterns are also ASCII. For pure ASCII input, idna.ToASCII
+	// only validates and lowercases, which is equivalent to our fallback.
+	if isPureASCII(name) {
+		return strings.ToLower(name)
+	}
+
+	// Config can use Unicode IDNs.
+	ascii, err := idna.ToASCII(name)
+	if err == nil {
+		return strings.ToLower(ascii)
+	}
+
+	if !strings.Contains(name, "*") {
+		return strings.ToLower(name)
+	}
+
+	labels := strings.Split(name, ".")
+	for i, label := range labels {
+		if label == "" || label == "*" {
+			continue
+		}
+		ascii, err := idna.ToASCII(label)
+		if err != nil {
+			return strings.ToLower(name)
+		}
+		labels[i] = strings.ToLower(ascii)
+	}
+	return strings.Join(labels, ".")
+}
+
+func isPureASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
+			return false
+		}
+	}
+	return true
 }
 
 // UnmarshalCaddyfile sets up the MatchServerName from Caddyfile tokens. Syntax:

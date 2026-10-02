@@ -149,8 +149,14 @@ func caddyCmdToCobra(caddyCmd Command) *cobra.Command {
 func WrapCommandFuncForCobra(f CommandFunc) func(cmd *cobra.Command, _ []string) error {
 	return func(cmd *cobra.Command, _ []string) error {
 		status, err := f(Flags{cmd.Flags()})
-		if status > 1 {
+		if err != nil {
+			// Route the error through Caddy's logger so it receives the same
+			// colored, structured formatting as INFO/WARN output, rather than
+			// cobra's plain "Error: ..." line which lacks any highlighting.
+			caddy.Log().Error(err.Error())
 			cmd.SilenceErrors = true
+		}
+		if status > 1 {
 			return &exitError{ExitCode: status, Err: err}
 		}
 		return err

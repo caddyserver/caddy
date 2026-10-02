@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
@@ -241,8 +242,8 @@ func (routes RouteList) Compile(next Handler) Handler {
 		mid = append(mid, wrapRoute(route))
 	}
 	stack := next
-	for i := len(mid) - 1; i >= 0; i-- {
-		stack = mid[i](stack)
+	for _, middleware := range slices.Backward(mid) {
+		stack = middleware(stack)
 	}
 	return stack
 }
@@ -305,8 +306,8 @@ func wrapRoute(route Route) Middleware {
 			}
 
 			// compile this route's handler stack
-			for i := len(route.middleware) - 1; i >= 0; i-- {
-				nextCopy = route.middleware[i](nextCopy)
+			for _, middleware := range slices.Backward(route.middleware) {
+				nextCopy = middleware(nextCopy)
 			}
 
 			// Apply metrics instrumentation once for the entire route,

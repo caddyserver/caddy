@@ -1,0 +1,11 @@
+localhost:8884 {
+	intercept {
+		handle_response header Foo {
+			respond "handled"
+		}
+	}
+	respond "hello"
+}
+
+----------
+parsing caddyfile tokens for 'intercept': too many arguments for 'handle_response': only a single response matcher name is allowed, but got: [header Foo]

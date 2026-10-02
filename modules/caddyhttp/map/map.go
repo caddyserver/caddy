@@ -64,10 +64,12 @@ func (Handler) CaddyModule() caddy.ModuleInfo {
 // Provision sets up h.
 func (h *Handler) Provision(_ caddy.Context) error {
 	for j, dest := range h.Destinations {
-		if strings.Count(dest, "{") != 1 || !strings.HasPrefix(dest, "{") {
-			return fmt.Errorf("destination must be a placeholder and only a placeholder")
+		if !strings.HasPrefix(dest, "{") || !strings.HasSuffix(dest, "}") ||
+			strings.Count(dest, "{") != 1 || strings.Count(dest, "}") != 1 ||
+			len(dest) < 3 {
+			return fmt.Errorf("destination %d must be a placeholder and only a placeholder, but got '%s'", j, dest)
 		}
-		h.Destinations[j] = strings.Trim(dest, "{}")
+		h.Destinations[j] = dest[1 : len(dest)-1]
 	}
 
 	for i, m := range h.Mappings {
@@ -94,7 +96,8 @@ func (h *Handler) Validate() error {
 		return fmt.Errorf("%d destinations != %d defaults", nDest, nDef)
 	}
 
-	seen := make(map[string]int)
+	seenLiterals := make(map[string]int)
+	seenRegexps := make(map[string]int)
 	for i, m := range h.Mappings {
 		// prevent confusing/ambiguous mappings
 		if m.Input != "" && m.InputRegexp != "" {
@@ -102,9 +105,9 @@ func (h *Handler) Validate() error {
 		}
 
 		// prevent duplicate mappings
-		input := m.Input
+		input, seen := m.Input, seenLiterals
 		if m.InputRegexp != "" {
-			input = m.InputRegexp
+			input, seen = m.InputRegexp, seenRegexps
 		}
 		if prev, ok := seen[input]; ok {
 			return fmt.Errorf("mapping %d has a duplicate input '%s' previously used with mapping %d", i, input, prev)

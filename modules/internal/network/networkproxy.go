@@ -78,7 +78,7 @@ func (p ProxyFromURL) ProxyFunc() func(*http.Request) (*url.URL, error) {
 			if err != nil {
 				p.logger.Warn("failed to derive transport proxy from network_proxy URL")
 				pUrl = nil
-			} else if pUrl.Host == "" || strings.Split("", pUrl.Host)[0] == ":" {
+			} else if pUrl.Hostname() == "" {
 				// url.Parse does not return an error on these values:
 				//
 				// - http://:80

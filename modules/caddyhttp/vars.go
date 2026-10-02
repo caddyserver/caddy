@@ -16,13 +16,14 @@ package caddyhttp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
 	"strings"
 
-	"github.com/google/cel-go/cel"
-	"github.com/google/cel-go/common/types/ref"
+	"cel.dev/cel-go/cel"
+	"cel.dev/cel-go/common/types/ref"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -181,18 +182,15 @@ func (m VarsMatcher) MatchWithError(r *http.Request) (bool, error) {
 	vars := r.Context().Value(VarsCtxKey).(map[string]any)
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
-	var fromPlaceholder bool
-	var matcherValExpanded, valExpanded, varStr, v string
+	var matcherValExpanded, varStr string
 	var varValue any
 	for key, vals := range m {
 		if strings.HasPrefix(key, "{") &&
 			strings.HasSuffix(key, "}") &&
 			strings.Count(key, "{") == 1 {
 			varValue, _ = repl.Get(strings.Trim(key, "{}"))
-			fromPlaceholder = true
 		} else {
 			varValue = vars[key]
-			fromPlaceholder = false
 		}
 
 		switch vv := varValue.(type) {
@@ -201,6 +199,15 @@ func (m VarsMatcher) MatchWithError(r *http.Request) (bool, error) {
 		case fmt.Stringer:
 			varStr = vv.String()
 		case error:
+			// propagate the request-body limit marker (a 413 from the
+			// request_body max_size limit when {http.request.body} is
+			// truncated) instead of matching on its error text; unrelated
+			// errors are matched on their text as before
+			if bodyLimit, ok := errors.AsType[RequestBodyLimitError](vv); ok {
+				// wrap in a status-carrying handler error so the server
+				// renders the 413
+				return false, HandlerError{Err: bodyLimit, StatusCode: bodyLimit.StatusCode()}
+			}
 			varStr = vv.Error()
 		case nil:
 			varStr = ""
@@ -208,19 +215,15 @@ func (m VarsMatcher) MatchWithError(r *http.Request) (bool, error) {
 			varStr = fmt.Sprintf("%v", vv)
 		}
 
-		// Only expand placeholders in values from literal variable names
-		// (e.g. map outputs). Values resolved from placeholder keys are
+		// Don't expand placeholders in values from literal variable names
+		// (e.g. map outputs) or other placeholders. These values are
 		// already final and must not be re-expanded, as that would allow
 		// user input like {env.SECRET} to be evaluated.
-		valExpanded = varStr
-		if !fromPlaceholder {
-			valExpanded = repl.ReplaceAll(varStr, "")
-		}
 
 		// see if any of the values given in the matcher match the actual value
-		for _, v = range vals {
+		for _, v := range vals {
 			matcherValExpanded = repl.ReplaceAll(v, "")
-			if valExpanded == matcherValExpanded {
+			if varStr == matcherValExpanded {
 				return true, nil
 			}
 		}
@@ -324,18 +327,16 @@ func (m MatchVarsRE) MatchWithError(r *http.Request) (bool, error) {
 	vars := r.Context().Value(VarsCtxKey).(map[string]any)
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
-	var fromPlaceholder, match bool
-	var valExpanded, varStr string
+	var match bool
+	var varStr string
 	var varValue any
 	for key, val := range m {
 		if strings.HasPrefix(key, "{") &&
 			strings.HasSuffix(key, "}") &&
 			strings.Count(key, "{") == 1 {
 			varValue, _ = repl.Get(strings.Trim(key, "{}"))
-			fromPlaceholder = true
 		} else {
 			varValue = vars[key]
-			fromPlaceholder = false
 		}
 
 		switch vv := varValue.(type) {
@@ -344,6 +345,15 @@ func (m MatchVarsRE) MatchWithError(r *http.Request) (bool, error) {
 		case fmt.Stringer:
 			varStr = vv.String()
 		case error:
+			// propagate the request-body limit marker (a 413 from the
+			// request_body max_size limit when {http.request.body} is
+			// truncated) instead of matching on its error text; unrelated
+			// errors are matched on their text as before
+			if bodyLimit, ok := errors.AsType[RequestBodyLimitError](vv); ok {
+				// wrap in a status-carrying handler error so the server
+				// renders the 413
+				return false, HandlerError{Err: bodyLimit, StatusCode: bodyLimit.StatusCode()}
+			}
 			varStr = vv.Error()
 		case nil:
 			varStr = ""
@@ -351,15 +361,12 @@ func (m MatchVarsRE) MatchWithError(r *http.Request) (bool, error) {
 			varStr = fmt.Sprintf("%v", vv)
 		}
 
-		// Only expand placeholders in values from literal variable names
-		// (e.g. map outputs). Values resolved from placeholder keys are
+		// Don't expand placeholders in values from literal variable names
+		// (e.g. map outputs) or other placeholders. These values are
 		// already final and must not be re-expanded, as that would allow
 		// user input like {env.SECRET} to be evaluated.
-		valExpanded = varStr
-		if !fromPlaceholder {
-			valExpanded = repl.ReplaceAll(varStr, "")
-		}
-		if match = val.Match(valExpanded, repl); match {
+
+		if match = val.Match(varStr, repl); match {
 			return match, nil
 		}
 	}

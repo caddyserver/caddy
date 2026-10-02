@@ -1,0 +1,10 @@
+&(outer) {
+	invoke missing
+	respond "outer"
+}
+
+example.com {
+	invoke outer
+}
+----------
+cannot invoke named route 'missing', which was not defined

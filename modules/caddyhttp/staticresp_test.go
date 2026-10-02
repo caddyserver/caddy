@@ -64,3 +64,53 @@ func fakeRequest() *http.Request {
 	r = r.WithContext(ctx)
 	return r
 }
+
+func TestStaticResponseHeadersKeepUnknownPlaceholders(t *testing.T) {
+	r := fakeRequest()
+	w := httptest.NewRecorder()
+
+	s := StaticResponse{
+		StatusCode: WeakString(strconv.Itoa(http.StatusOK)),
+		Headers: http.Header{
+			"X-Json": []string{`{"key":"value"}`},
+			"X-Lit":  []string{"value-{not-a-real-placeholder}-kept"},
+		},
+	}
+
+	err := s.ServeHTTP(w, r, nil)
+	if err != nil {
+		t.Errorf("did not expect an error, but got: %v", err)
+	}
+
+	resp := w.Result()
+
+	if got, want := resp.Header.Get("X-Json"), `{"key":"value"}`; got != want {
+		t.Errorf("X-Json header = %q, want %q (unknown placeholders in header values must not be blanked)", got, want)
+	}
+	if got, want := resp.Header.Get("X-Lit"), "value-{not-a-real-placeholder}-kept"; got != want {
+		t.Errorf("X-Lit header = %q, want %q", got, want)
+	}
+}
+
+func TestStaticResponseHeadersStillReplaceKnownPlaceholders(t *testing.T) {
+	r := fakeRequest()
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	repl.Set("testvar", "replaced")
+	w := httptest.NewRecorder()
+
+	s := StaticResponse{
+		StatusCode: WeakString(strconv.Itoa(http.StatusOK)),
+		Headers: http.Header{
+			"X-Var": []string{"value-{testvar}-end"},
+		},
+	}
+
+	err := s.ServeHTTP(w, r, nil)
+	if err != nil {
+		t.Errorf("did not expect an error, but got: %v", err)
+	}
+
+	if got, want := w.Result().Header.Get("X-Var"), "value-replaced-end"; got != want {
+		t.Errorf("X-Var header = %q, want %q (real placeholders must still expand)", got, want)
+	}
+}

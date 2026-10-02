@@ -1,0 +1,15 @@
+{
+  admin off
+  auto_https off
+}
+
+import testdata/issue_7557_invalid_subdirective_snippet.conf
+
+:8080 {
+  import test {
+  	this_is_nonsense
+  }
+}
+
+----------
+parsing caddyfile tokens for 'reverse_proxy': unrecognized subdirective this_is_nonsense

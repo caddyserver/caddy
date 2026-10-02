@@ -3,12 +3,19 @@ package reverseproxy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net"
+	"net/netip"
+	"net/url"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
 func TestHTTPTransportUnmarshalCaddyFileWithCaPools(t *testing.T) {
@@ -129,11 +136,11 @@ func TestHTTPTransport_DialTLSContext_ProxyProtocol(t *testing.T) {
 	defer cancel()
 
 	tests := []struct {
-		name                    string
-		tls                     *TLSConfig
-		proxyProtocol           string
+		name                     string
+		tls                      *TLSConfig
+		proxyProtocol            string
 		serverNameHasPlaceholder bool
-		expectDialTLSContext    bool
+		expectDialTLSContext     bool
 	}{
 		{
 			name:                 "no TLS, no proxy protocol",
@@ -195,3 +202,207 @@ func TestHTTPTransport_DialTLSContext_ProxyProtocol(t *testing.T) {
 	}
 }
 
+func TestHTTPTransport_DialContext_ProxyProtocolClosesConnectionOnError(t *testing.T) {
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+
+	validAddrPort := netip.MustParseAddrPort("192.0.2.1:1234")
+	tests := []struct {
+		name      string
+		version   string
+		proxyInfo *ProxyProtocolInfo
+	}{
+		{
+			name:    "missing proxy protocol info",
+			version: "v1",
+		},
+		{
+			name:      "unexpected proxy protocol version",
+			version:   "v3",
+			proxyInfo: &ProxyProtocolInfo{AddrPort: validAddrPort},
+		},
+		{
+			name:      "unexpected remote address type",
+			version:   "v1",
+			proxyInfo: &ProxyProtocolInfo{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatalf("listen: %v", err)
+			}
+			t.Cleanup(func() { listener.Close() })
+
+			readResult := make(chan error, 1)
+			go func() {
+				conn, err := listener.Accept()
+				if err != nil {
+					readResult <- err
+					return
+				}
+				defer conn.Close()
+				_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+				var buf [1]byte
+				_, err = conn.Read(buf[:])
+				readResult <- err
+			}()
+
+			dialCtx := context.WithValue(context.Background(), caddyhttp.VarsCtxKey, make(map[string]any))
+			if tt.proxyInfo != nil {
+				caddyhttp.SetVar(dialCtx, proxyProtocolInfoVarKey, *tt.proxyInfo)
+			}
+
+			rt, err := (&HTTPTransport{ProxyProtocol: tt.version}).NewTransport(ctx)
+			if err != nil {
+				t.Fatalf("NewTransport: %v", err)
+			}
+			conn, err := rt.DialContext(dialCtx, "tcp", listener.Addr().String())
+			if err == nil {
+				conn.Close()
+				t.Fatal("DialContext succeeded, want error")
+			}
+
+			if readErr := <-readResult; !errors.Is(readErr, io.EOF) {
+				t.Fatalf("server read error = %v, want EOF after client connection close", readErr)
+			}
+		})
+	}
+}
+
+// TestHTTPTransport_DialContext_DialInfoOverride is a regression test for
+// issue #6447: a `tcp4/`-prefixed upstream silently fell back to plain `tcp`
+// because dialContext only honored DialInfo for unix networks. PR #7300 widened
+// the condition so DialInfo is honored when no upstream HTTP proxy is in use,
+// and skipped (for non-unix networks) when one is. Both halves are pinned here.
+func TestHTTPTransport_DialContext_DialInfoOverride(t *testing.T) {
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			c.Close()
+		}
+	}()
+
+	ht := &HTTPTransport{}
+	rt, err := ht.NewTransport(ctx)
+	if err != nil {
+		t.Fatalf("NewTransport: %v", err)
+	}
+
+	proxyURL, err := url.Parse("http://proxy.example:8080")
+	if err != nil {
+		t.Fatalf("parse proxy URL: %v", err)
+	}
+
+	tests := []struct {
+		name        string
+		proxy       bool
+		dialInfo    string
+		defaultAddr string
+	}{
+		{
+			// no proxy: DialInfo should be applied, so the dial lands on
+			// the live listener despite the bogus default address.
+			name:        "honors DialInfo when no proxy",
+			proxy:       false,
+			dialInfo:    ln.Addr().String(),
+			defaultAddr: "127.0.0.1:1",
+		},
+		{
+			// proxy active: DialInfo must NOT be applied for non-unix
+			// networks; the default address (the live listener) is used.
+			name:        "skips DialInfo when proxy active",
+			proxy:       true,
+			dialInfo:    "127.0.0.1:1",
+			defaultAddr: ln.Addr().String(),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dialCtx := context.WithValue(context.Background(), caddyhttp.VarsCtxKey, make(map[string]any))
+			dialCtx = context.WithValue(dialCtx, dialInfoCtxKey, DialInfo{
+				Network: "tcp4",
+				Address: tt.dialInfo,
+			})
+			if tt.proxy {
+				caddyhttp.SetVar(dialCtx, proxyVarKey, proxyURL)
+			}
+
+			conn, err := rt.DialContext(dialCtx, "tcp", tt.defaultAddr)
+			if err != nil {
+				t.Fatalf("DialContext: %v", err)
+			}
+			t.Cleanup(func() { conn.Close() })
+			if got := conn.RemoteAddr().String(); got != ln.Addr().String() {
+				t.Fatalf("conn.RemoteAddr() = %s, want %s", got, ln.Addr().String())
+			}
+		})
+	}
+}
+
+// TestHTTPTransportH3UsesConfiguredTrustPool ensures that when the transport
+// is configured for HTTP/3, the h3 transport's TLS client config carries the
+// trust pool configured via the CA module (tls_trust_pool), not nil root CAs
+// which would fall back to the system trust store.
+//
+// Regression test: NewTransport used to call MakeTLSClientConfig twice, once for
+// the HTTP/1.1+2 transport and once for the HTTP/3 transport. The first call
+// loads the CA module through ctx.LoadModule, which zeroes the raw module bytes
+// afterwards, so the second call built a config with RootCAs == nil.
+func TestHTTPTransportH3UsesConfiguredTrustPool(t *testing.T) {
+	const testDER = `MIIDSzCCAjOgAwIBAgIUfIRObjWNUA4jxQ/0x8BOCvE2Vw4wDQYJKoZIhvcNAQELBQAwFjEUMBIGA1UEAwwLRWFzeS1SU0EgQ0EwHhcNMTkwODI4MTYyNTU5WhcNMjkwODI1MTYyNTU5WjAWMRQwEgYDVQQDDAtFYXN5LVJTQSBDQTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAK5m5elxhQfMp/3aVJ4JnpN9PUSz6LlP6LePAPFU7gqohVVFVtDkChJAG3FNkNQNlieVTja/bgH9IcC6oKbROwdY1h0MvNV8AHHigvl03WuJD8g2ReVFXXwsnrPmKXCFzQyMI6TYk3m2gYrXsZOU1GLnfMRC3KAMRgE2F45twOs9hqG169YJ6mM2eQjzjCHWI6S2/iUYvYxRkCOlYUbLsMD/AhgAf1plzg6LPqNxtdlwxZnA0ytgkmhK67HtzJu0+ovUCsMv0RwcMhsEo9T8nyFAGt9XLZ63X5WpBCTUApaAUhnG0XnerjmUWb6eUWw4zev54sEfY5F3x002iQaW6cECAwEAAaOBkDCBjTAdBgNVHQ4EFgQU4CBUbZsS2GaNIkGRz/cBsD5ivjswUQYDVR0jBEowSIAU4CBUbZsS2GaNIkGRz/cBsD5ivjuhGqQYMBYxFDASBgNVBAMMC0Vhc3ktUlNBIENBghR8hE5uNY1QDiPFD/THwE4K8TZXDjAMBgNVHRMEBTADAQH/MAsGA1UdDwQEAwIBBjANBgkqhkiG9w0BAQsFAAOCAQEAKB3V4HIzoiO/Ch6WMj9bLJ2FGbpkMrcb/Eq01hT5zcfKD66lVS1MlK+cRL446Z2b2KDP1oFyVs+qmrmtdwrWgD+nfe2sBmmIHo9m9KygMkEOfG3MghGTEcS+0cTKEcoHYWYyOqQh6jnedXY8Cdm4GM1hAc9MiL3/sqV8YCVSLNnkoNysmr06/rZ0MCUZPGUtRmfd0heWhrfzAKw2HLgX+RAmpOE2MZqWcjvqKGyaRiaZks4nJkP6521aC2Lgp0HhCz1j8/uQ5ldoDszCnu/iro0NAsNtudTMD+YoLQxLqdleIh6CW+illc2VdXwj7mn6J04yns9jfE2jRjW/yTLFuQ==`
+
+	caddyCtx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+
+	h := &HTTPTransport{
+		Versions: []string{"3"},
+		TLS: &TLSConfig{
+			ServerName: "backend",
+			CARaw:      json.RawMessage(fmt.Sprintf(`{"provider":"inline","trusted_ca_certs":[%q]}`, testDER)),
+		},
+	}
+
+	rt, err := h.NewTransport(caddyCtx)
+	if err != nil {
+		t.Fatalf("NewTransport() error = %v", err)
+	}
+	if rt.TLSClientConfig == nil || rt.TLSClientConfig.RootCAs == nil {
+		t.Fatal("HTTP/1.1+2 transport: expected RootCAs to be set from the configured trust pool")
+	}
+	if h.h3Transport == nil {
+		t.Fatal("expected h3Transport to be configured when versions is [\"3\"]")
+	}
+	h3cfg := h.h3Transport.TLSClientConfig
+	if h3cfg == nil {
+		t.Fatal("HTTP/3 transport: expected non-nil TLS client config")
+	}
+	if h3cfg.RootCAs == nil {
+		t.Fatal("HTTP/3 transport: RootCAs is nil; the configured trust pool was lost and the system roots would be used instead")
+	}
+	if !h3cfg.RootCAs.Equal(rt.TLSClientConfig.RootCAs) {
+		t.Fatal("HTTP/3 transport: RootCAs differs from the HTTP/1.1+2 transport's RootCAs")
+	}
+	if h3cfg.ServerName != "backend" {
+		t.Errorf("HTTP/3 transport: ServerName = %q, want %q", h3cfg.ServerName, "backend")
+	}
+	// the h3 transport must own its own copy of the config, since both
+	// transports mutate their TLS config independently
+	if h3cfg == rt.TLSClientConfig {
+		t.Fatal("HTTP/3 transport: TLS client config must be a clone, not the same pointer as the HTTP/1.1+2 transport's")
+	}
+}

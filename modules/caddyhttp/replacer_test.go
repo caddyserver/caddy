@@ -19,6 +19,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -264,5 +265,144 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			t.Errorf("Test %d: Expected %s to be '%s' but got '%s'",
 				i, tc.get, tc.expect, actual)
 		}
+	}
+}
+
+func TestHTTPProtoNameNormalization(t *testing.T) {
+	for _, tc := range []struct {
+		proto      string
+		major      int
+		expectRaw  string
+		expectName string
+	}{
+		{proto: "HTTP/1.0", major: 1, expectRaw: "HTTP/1.0", expectName: "HTTP/1.0"},
+		{proto: "HTTP/1.1", major: 1, expectRaw: "HTTP/1.1", expectName: "HTTP/1.1"},
+		{proto: "HTTP/2.0", major: 2, expectRaw: "HTTP/2.0", expectName: "HTTP/2"},
+		{proto: "HTTP/3.0", major: 3, expectRaw: "HTTP/3.0", expectName: "HTTP/3"},
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Proto = tc.proto
+		req.ProtoMajor = tc.major
+		repl := caddy.NewReplacer()
+		addHTTPVarsToReplacer(repl, req, nil)
+
+		gotRaw, okRaw := repl.GetString("http.request.proto")
+		if !okRaw || gotRaw != tc.expectRaw {
+			t.Errorf("proto=%s: expected http.request.proto to be %q, got %q (ok=%t)", tc.proto, tc.expectRaw, gotRaw, okRaw)
+		}
+
+		gotName, okName := repl.GetString("http.request.proto_name")
+		if !okName || gotName != tc.expectName {
+			t.Errorf("proto=%s: expected http.request.proto_name to be %q, got %q (ok=%t)", tc.proto, tc.expectName, gotName, okName)
+		}
+	}
+}
+
+// BenchmarkAddHTTPVarsToReplacer measures the per-request replacer setup, which
+// is the common path where the request UUID is never referenced.
+func BenchmarkAddHTTPVarsToReplacer(b *testing.B) {
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/foo?a=b", nil)
+	req.Header.Set("User-Agent", "test-agent")
+	ctx := context.WithValue(req.Context(), VarsCtxKey, make(map[string]any))
+	ctx = context.WithValue(ctx, ExtraLogFieldsCtxKey, new(ExtraLogFields))
+	req = req.WithContext(ctx)
+
+	b.ReportAllocs()
+	for b.Loop() {
+		repl := caddy.NewReplacer()
+		addHTTPVarsToReplacer(repl, req, nil)
+	}
+}
+
+// TestHTTPVarReplacementUUID verifies the lazily-allocated request UUID is
+// generated on first access and stays stable across references.
+func TestHTTPVarReplacementUUID(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	repl := caddy.NewReplacer()
+	ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+	ctx = context.WithValue(ctx, VarsCtxKey, make(map[string]any))
+	ctx = context.WithValue(ctx, ExtraLogFieldsCtxKey, new(ExtraLogFields))
+	req = req.WithContext(ctx)
+	addHTTPVarsToReplacer(repl, req, nil)
+
+	first, ok := repl.GetString("http.request.uuid")
+	if !ok || first == "" {
+		t.Fatalf("expected a non-empty uuid, got %q (ok=%t)", first, ok)
+	}
+
+	second, _ := repl.GetString("http.request.uuid")
+	if first != second {
+		t.Errorf("expected stable uuid across references: %q != %q", first, second)
+	}
+}
+
+// failingBodyReader serves some bytes and then returns a fixed error, to
+// exercise the read failure path of the request body placeholders.
+type failingBodyReader struct {
+	data []byte
+	pos  int
+	err  error
+}
+
+func (b *failingBodyReader) Read(p []byte) (int, error) {
+	if b.pos < len(b.data) {
+		n := copy(p, b.data[b.pos:])
+		b.pos += n
+		return n, nil
+	}
+	return 0, b.err
+}
+
+func (b *failingBodyReader) Close() error { return nil }
+
+// TestRequestBodyPlaceholderErrorScoping verifies that only a max_size-driven
+// handler error from the request body read becomes a RequestBodyLimitError,
+// while every other error keeps the placeholder's old ignore-and-truncate
+// behavior.
+func TestRequestBodyPlaceholderErrorScoping(t *testing.T) {
+	maxBytes := &http.MaxBytesError{Limit: 10}
+	for _, tc := range []struct {
+		name       string
+		readErr    error
+		wantMarker bool
+	}{
+		{name: "max_size handler error becomes the marker", readErr: HandlerError{Err: maxBytes, StatusCode: http.StatusRequestEntityTooLarge}, wantMarker: true},
+		{name: "unrelated handler error keeps old behavior", readErr: HandlerError{Err: errors.New("boom"), StatusCode: http.StatusInternalServerError}},
+		{name: "raw max bytes error keeps old behavior", readErr: maxBytes},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/", nil)
+			req.Body = &failingBodyReader{data: []byte("abc"), err: tc.readErr}
+
+			body, err := readRequestBodyForPlaceholder(req)
+
+			if !tc.wantMarker {
+				if err != nil {
+					t.Fatalf("unrelated errors must be ignored like before but got %v", err)
+				}
+				if string(body) != "abc" {
+					t.Errorf("expected the truncated prefix %q but got %q", "abc", body)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("expected the body limit marker but got none")
+			}
+			var marker RequestBodyLimitError
+			if !errors.As(err, &marker) {
+				t.Fatalf("expected RequestBodyLimitError but got %T", err)
+			}
+			var handlerErr HandlerError
+			if errors.As(err, &handlerErr) {
+				t.Error("the marker must not be detectable as a HandlerError")
+			}
+			if marker.StatusCode() != http.StatusRequestEntityTooLarge {
+				t.Errorf("expected status 413 but got %d", marker.StatusCode())
+			}
+			var maxErr *http.MaxBytesError
+			if !errors.As(err, &maxErr) {
+				t.Error("the marker must unwrap to the MaxBytesError")
+			}
+		})
 	}
 }

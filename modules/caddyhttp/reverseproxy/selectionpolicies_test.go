@@ -131,6 +131,48 @@ func TestWeightedRoundRobinPolicy(t *testing.T) {
 	}
 }
 
+func TestWeightedRoundRobinSelection_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		weights []int
+		wantErr bool
+	}{
+		{
+			name:    "Valid 0 2 1 case",
+			weights: []int{0, 2, 1},
+			wantErr: false,
+		},
+		{
+			name:    "Invalid 0 case (single)",
+			weights: []int{0},
+			wantErr: true,
+		},
+		{
+			name:    "Invalid 0 0 case (multiple)",
+			weights: []int{0, 0},
+			wantErr: true,
+		},
+		{
+			name:    "Valid weights",
+			weights: []int{1, 1, 1},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &WeightedRoundRobinSelection{
+				Weights: tt.weights,
+			}
+			_ = s.Provision(caddy.Context{})
+			err := s.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestWeightedRoundRobinPolicyWithZeroWeight(t *testing.T) {
 	pool := testPool()
 	wrrPolicy := WeightedRoundRobinSelection{
@@ -568,7 +610,7 @@ func TestQueryHashPolicy(t *testing.T) {
 	pool[1].setHealthy(false)
 	h = queryPolicy.Select(pool, request, nil)
 	if h != nil {
-		t.Error("Expected query policy policy host to be nil.")
+		t.Error("Expected query policy host to be nil.")
 	}
 
 	request = httptest.NewRequest(http.MethodGet, "/?foo=aa11&foo=bb22", nil)
@@ -630,7 +672,7 @@ func TestURIHashPolicy(t *testing.T) {
 	pool[1].setHealthy(false)
 	h = uriPolicy.Select(pool, request, nil)
 	if h != nil {
-		t.Error("Expected uri policy policy host to be nil.")
+		t.Error("Expected uri policy host to be nil.")
 	}
 }
 
@@ -680,6 +722,33 @@ func TestRandomChoicePolicy(t *testing.T) {
 
 	if h == pool[0] {
 		t.Error("RandomChoicePolicy should not choose pool[0]")
+	}
+}
+
+func TestRandomChoicePolicyLeastLoaded(t *testing.T) {
+	// when the number of available upstreams does not exceed the choose
+	// count, all of them must be candidates, so the least-loaded one
+	// must always be selected; the pool intentionally starts with an
+	// unavailable upstream to verify that reservoir sampling counts
+	// available upstreams rather than pool indices
+	pool := testPool()
+	pool[0].Dial = "localhost:8080"
+	pool[1].Dial = "localhost:8081"
+	pool[2].Dial = "localhost:8082"
+	pool[0].setHealthy(false)
+	pool[1].setHealthy(true)
+	pool[2].setHealthy(true)
+	pool[1].countRequest(30)
+	// pool[2] has no active requests
+
+	request := httptest.NewRequest(http.MethodGet, "/test", nil)
+	randomChoicePolicy := RandomChoiceSelection{Choose: 2}
+
+	for i := 0; i < 100; i++ {
+		h := randomChoicePolicy.Select(pool, request, nil)
+		if h != pool[2] {
+			t.Fatalf("with 2 available upstreams and choose=2, the least-loaded upstream (pool[2]) must always be selected; got %v on iteration %d", h, i)
+		}
 	}
 }
 
@@ -846,5 +915,48 @@ func TestCookieHashPolicyWithFirstFallback(t *testing.T) {
 	}
 	if w.Result().Cookies() == nil {
 		t.Error("Expected cookieHashPolicy to set a new cookie.")
+	}
+}
+
+func TestCookieHashPolicyWithSecret(t *testing.T) {
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+	cookieHashPolicy := CookieHashSelection{Secret: "hunter2"}
+	if err := cookieHashPolicy.Provision(ctx); err != nil {
+		t.Errorf("Provision error: %v", err)
+		t.FailNow()
+	}
+
+	pool := testPool()
+	pool[0].Dial = "localhost:8080"
+	pool[1].Dial = "localhost:8081"
+	pool[2].Dial = "localhost:8082"
+	pool[0].setHealthy(true)
+	pool[1].setHealthy(true)
+	pool[2].setHealthy(true)
+
+	request := httptest.NewRequest(http.MethodGet, "/test", nil)
+	w := httptest.NewRecorder()
+	h := cookieHashPolicy.Select(pool, request, w)
+	cookie := w.Result().Cookies()[0]
+
+	// a matching cookie sticks to the same host
+	request = httptest.NewRequest(http.MethodGet, "/test", nil)
+	w = httptest.NewRecorder()
+	request.AddCookie(cookie)
+	if got := cookieHashPolicy.Select(pool, request, w); got != h {
+		t.Errorf("Expected to stick to host %s, got %s", h, got)
+	}
+	if len(w.Result().Cookies()) != 0 {
+		t.Error("Expected no new cookie for a matching value")
+	}
+
+	// a tampered cookie value must not match any host and gets a fresh cookie
+	request = httptest.NewRequest(http.MethodGet, "/test", nil)
+	w = httptest.NewRecorder()
+	request.AddCookie(&http.Cookie{Name: cookie.Name, Value: cookie.Value[:len(cookie.Value)-1] + "0"})
+	cookieHashPolicy.Select(pool, request, w)
+	if len(w.Result().Cookies()) == 0 {
+		t.Error("Expected a new cookie to be set for a non-matching value")
 	}
 }

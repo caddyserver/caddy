@@ -16,6 +16,7 @@ package templates
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -250,7 +251,7 @@ func (c *TemplateContext) executeTemplateInBuffer(tplName string, buf *bytes.Buf
 	return c.tpl.Execute(buf, c)
 }
 
-func (c TemplateContext) funcPlaceholder(name string) string {
+func (c TemplateContext) funcPlaceholder(name string) (string, error) {
 	repl := c.Req.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	// For safety, we don't want to allow the file placeholder in
@@ -258,8 +259,20 @@ func (c TemplateContext) funcPlaceholder(name string) string {
 	// if the template contents were not trusted.
 	repl = repl.WithoutFile()
 
-	value, _ := repl.GetString(name)
-	return value
+	value, _ := repl.Get(name)
+
+	// propagate the request-body limit marker (a 413 from the request_body
+	// max_size limit when {http.request.body} is truncated) so the template
+	// aborts with that status rather than rendering a silently-truncated
+	// body; the marker is wrapped in a status-carrying handler error so the
+	// server renders the 413, and any other value, including unrelated
+	// errors, is converted to a string as before
+	if err, ok := value.(error); ok {
+		if bodyLimit, ok := errors.AsType[caddyhttp.RequestBodyLimitError](err); ok {
+			return "", caddyhttp.HandlerError{Err: bodyLimit, StatusCode: bodyLimit.StatusCode()}
+		}
+	}
+	return caddy.ToString(value), nil
 }
 
 func (TemplateContext) funcEnv(varName string) string {
@@ -312,35 +325,32 @@ func (c TemplateContext) Host() (string, error) {
 	return host, nil
 }
 
-// funcStripHTML returns s without HTML tags. It is fairly naive
-// but works with most valid HTML inputs.
+// funcStripHTML returns s without HTML tags. Similar to PHP's strip_tags()
 func (TemplateContext) funcStripHTML(s string) string {
 	var buf bytes.Buffer
-	var inTag, inQuotes bool
-	var tagStart int
-	for i, ch := range s {
-		if inTag {
-			if ch == '>' && !inQuotes {
-				inTag = false
-			} else if ch == '<' && !inQuotes {
-				// false start
-				buf.WriteString(s[tagStart:i])
-				tagStart = i
-			} else if ch == '"' {
-				inQuotes = !inQuotes
+	depth := 0
+	var quoteChar rune
+	for _, ch := range s {
+		switch {
+		case depth > 0 && quoteChar == 0 && (ch == '"' || ch == '\''):
+			// entering a quoted attribute value
+			quoteChar = ch
+		case depth > 0 && ch == quoteChar:
+			// leaving a quoted attribute value
+			quoteChar = 0
+		case ch == '<' && quoteChar == 0:
+			depth++
+		case ch == '>' && quoteChar == 0:
+			if depth > 0 {
+				depth--
+			} else {
+				buf.WriteRune(ch) // stray '>' with no opening '<', keep it
 			}
-			continue
+		default:
+			if depth == 0 {
+				buf.WriteRune(ch)
+			}
 		}
-		if ch == '<' {
-			inTag = true
-			tagStart = i
-			continue
-		}
-		buf.WriteRune(ch)
-	}
-	if inTag {
-		// false start
-		buf.WriteString(s[tagStart:])
 	}
 	return buf.String()
 }

@@ -1,0 +1,16 @@
+&(api) {
+	header X-Version v1
+	respond "API v1"
+}
+
+&(api) {
+	header X-Version v2
+	respond "API v2"
+}
+
+localhost {
+	invoke api
+}
+
+----------
+cannot have duplicate named_routes: api

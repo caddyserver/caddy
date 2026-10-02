@@ -21,7 +21,6 @@ import (
 )
 
 const (
-	webEngineName                = "Caddy"
 	defaultSpanName              = "handler"
 	nextCallCtxKey  caddy.CtxKey = "nextCall"
 )
@@ -58,22 +57,32 @@ func newOpenTelemetryWrapper(
 	}
 
 	version, _ := caddy.Version()
-	res, err := ot.newResource(webEngineName, version)
+	res, err := ot.newResource(caddyhttp.ServerHeader, version)
 	if err != nil {
 		return ot, fmt.Errorf("creating resource error: %w", err)
 	}
 
-	traceExporter, err := autoexport.NewSpanExporter(ctx)
-	if err != nil {
-		return ot, fmt.Errorf("creating trace exporter error: %w", err)
-	}
-
 	ot.propagators = autoprop.NewTextMapPropagator()
 
-	tracerProvider := globalTracerProvider.getTracerProvider(
-		sdktrace.WithBatcher(traceExporter),
-		sdktrace.WithResource(res),
-	)
+	// Defer creation of the exporter (and its batch span processor goroutine)
+	// until we know a new provider is actually needed. When the global provider
+	// already exists it is reused and these options are discarded; building them
+	// here unconditionally would leak the exporter and a BatchSpanProcessor
+	// goroutine on every config reload.
+	tracerProvider, err := globalTracerProvider.getTracerProvider(func() ([]sdktrace.TracerProviderOption, error) {
+		traceExporter, err := autoexport.NewSpanExporter(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("creating trace exporter error: %w", err)
+		}
+
+		return []sdktrace.TracerProviderOption{
+			sdktrace.WithBatcher(traceExporter),
+			sdktrace.WithResource(res),
+		}, nil
+	})
+	if err != nil {
+		return ot, err
+	}
 
 	ot.handler = otelhttp.NewHandler(http.HandlerFunc(ot.serveHTTP),
 		ot.spanName,

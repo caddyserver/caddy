@@ -91,10 +91,14 @@ func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			fsrv.FileSystem = d.Val()
 
 		case "hide":
-			fsrv.Hide = d.RemainingArgs()
-			if len(fsrv.Hide) == 0 {
+			hide := d.RemainingArgs()
+			if len(hide) == 0 {
 				return d.ArgErr()
 			}
+			// Append so that repeated "hide" subdirectives accumulate
+			// instead of overwriting, which also lets imported snippets
+			// compose with site-specific hides.
+			fsrv.Hide = append(fsrv.Hide, hide...)
 
 		case "index":
 			fsrv.IndexNames = d.RemainingArgs()
@@ -135,7 +139,10 @@ func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					if len(fileLimit) != 1 {
 						return d.Err("file_limit should have an integer value")
 					}
-					val, _ := strconv.Atoi(fileLimit[0])
+					val, err := strconv.Atoi(fileLimit[0])
+					if err != nil {
+						return d.Err("file_limit should have an integer value")
+					}
 					if fsrv.Browse.FileLimit != 0 {
 						return d.Err("file_limit is already enabled")
 					}

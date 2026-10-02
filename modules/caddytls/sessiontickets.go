@@ -137,11 +137,10 @@ func (s *SessionTicketService) stayUpdated() {
 		case newKeys := <-keysChan:
 			s.mu.Lock()
 			s.currentKeys = newKeys
-			configs := s.configs
-			s.mu.Unlock()
-			for cfg := range configs {
+			for cfg := range s.configs {
 				cfg.SetSessionTicketKeys(newKeys)
 			}
+			s.mu.Unlock()
 		case <-s.stopChan:
 			return
 		}

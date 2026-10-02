@@ -1,0 +1,114 @@
+&(a) {
+	invoke b
+	respond "a"
+}
+
+&(b) {
+	invoke c
+	respond "b"
+}
+
+&(c) {
+	respond "c"
+}
+
+&(loop1) {
+	invoke loop2
+	respond "loop1"
+}
+
+&(loop2) {
+	invoke loop1
+	respond "loop2"
+}
+
+:8080 {
+	invoke a
+}
+
+:8081 {
+	invoke loop1
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8080"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "invoke",
+									"name": "a"
+								}
+							]
+						}
+					],
+					"named_routes": {
+						"a": {
+							"handle": [
+								{
+									"handler": "invoke",
+									"name": "b"
+								}
+							]
+						},
+						"b": {
+							"handle": [
+								{
+									"handler": "invoke",
+									"name": "c"
+								}
+							]
+						},
+						"c": {
+							"handle": [
+								{
+									"body": "c",
+									"handler": "static_response"
+								}
+							]
+						}
+					}
+				},
+				"srv1": {
+					"listen": [
+						":8081"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "invoke",
+									"name": "loop1"
+								}
+							]
+						}
+					],
+					"named_routes": {
+						"loop1": {
+							"handle": [
+								{
+									"handler": "invoke",
+									"name": "loop2"
+								}
+							]
+						},
+						"loop2": {
+							"handle": [
+								{
+									"handler": "invoke",
+									"name": "loop1"
+								}
+							]
+						}
+					}
+				}
+			}
+		}
+	}
+}

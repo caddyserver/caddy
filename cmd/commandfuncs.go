@@ -58,7 +58,7 @@ func cmdStart(fl Flags) (int, error) {
 
 	// open a listener to which the child process will connect when
 	// it is ready to confirm that it has successfully started
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := listenTCPForPingback(net.Listen)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup,
 			fmt.Errorf("opening listener for success confirmation: %v", err)
@@ -167,6 +167,22 @@ func cmdStart(fl Flags) (int, error) {
 	}
 
 	return caddy.ExitCodeSuccess, nil
+}
+
+type tcpListenFunc func(network, address string) (net.Listener, error)
+
+func listenTCPForPingback(listen tcpListenFunc) (net.Listener, error) {
+	ln, ipv4Err := listen("tcp4", "127.0.0.1:0")
+	if ipv4Err == nil {
+		return ln, nil
+	}
+
+	ln, ipv6Err := listen("tcp6", "[::1]:0")
+	if ipv6Err == nil {
+		return ln, nil
+	}
+
+	return nil, fmt.Errorf("listen on 127.0.0.1:0: %v; listen on [::1]:0: %v", ipv4Err, ipv6Err)
 }
 
 func cmdRun(fl Flags) (int, error) {
@@ -820,7 +836,7 @@ func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io
 		},
 	}
 
-	resp, err := client.Do(req) //nolint:gosec // the only SSRF here would be self-sabatoge I think
+	resp, err := client.Do(req) //nolint:gosec // the only SSRF here would be self-sabotage I think
 	if err != nil {
 		return nil, fmt.Errorf("performing request: %v", err)
 	}

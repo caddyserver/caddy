@@ -2,6 +2,7 @@ package httpcaddyfile
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -10,8 +11,9 @@ import (
 
 func TestMatcherSyntax(t *testing.T) {
 	for i, tc := range []struct {
-		input       string
-		expectError bool
+		input          string
+		expectError    bool
+		expectContains string
 	}{
 		{
 			input: `http://localhost
@@ -54,6 +56,34 @@ func TestMatcherSyntax(t *testing.T) {
 			expectError: false,
 		},
 		{
+			input: `http://localhost {
+				@test {
+					path /test
+				}
+				@test {
+					path /other
+				}
+				respond @test "hello"
+			}
+			`,
+			expectError:    true,
+			expectContains: "is defined more than once",
+		},
+		{
+			input: `(snippet) {
+				@{args[0]} {
+					path /{args[0]}
+				}
+				respond @{args[0]} "hello"
+			}
+			http://localhost {
+				import snippet foo
+				import snippet bar
+			}
+			`,
+			expectError: false,
+		},
+		{
 			input: `@matcher {
 				path /matcher-not-allowed/outside-of-site-block/*
 			}
@@ -72,6 +102,13 @@ func TestMatcherSyntax(t *testing.T) {
 		if err != nil != tc.expectError {
 			t.Errorf("Test %d error expectation failed Expected: %v, got %s", i, tc.expectError, err)
 			continue
+		}
+
+		if err != nil && tc.expectContains != "" {
+			if !strings.Contains(err.Error(), tc.expectContains) {
+				t.Errorf("Test %d error message mismatch: expected to contain %q, got %q",
+					i, tc.expectContains, err.Error())
+			}
 		}
 	}
 }
