@@ -367,6 +367,16 @@ func Format(input []byte) []byte {
 		beginningOfLine = false
 	}
 
+	// If the input ended on an open brace that was seen but not yet written
+	// (it is written lazily, once the following token is known), flush it now
+	// so a trailing "{" is not silently dropped. See issue #8046.
+	if openBrace && !openBraceWritten {
+		if openBraceSpace && !unicode.IsSpace(last) {
+			write(' ')
+		}
+		write('{')
+	}
+
 	// the Caddyfile does not need any leading or trailing spaces, but...
 	trimmedResult := bytes.TrimSpace(out.Bytes())
 
