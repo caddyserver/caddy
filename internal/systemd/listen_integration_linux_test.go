@@ -14,7 +14,7 @@
 
 //go:build linux
 
-package caddy
+package systemd_test
 
 import (
 	"context"
@@ -28,6 +28,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/caddyserver/caddy/v2"
 )
 
 const systemdListenHelper = "CADDY_SYSTEMD_LISTEN_HELPER"
@@ -88,7 +90,7 @@ func TestSystemdListenFDIntegration(t *testing.T) {
 
 func runSystemdListenFDHelper(t *testing.T) {
 	t.Setenv("LISTEN_PID", strconv.Itoa(os.Getpid()))
-	repl := NewReplacer()
+	repl := caddy.NewReplacer()
 
 	stream := resolveSystemdListenAddress(t, repl, "fd/{systemd.listen.web}", "fd/3")
 	lnAny, err := stream.Listen(context.Background(), 0, net.ListenConfig{})
@@ -140,7 +142,7 @@ func runSystemdListenFDHelper(t *testing.T) {
 	}
 }
 
-func resolveSystemdListenAddress(t *testing.T, repl *Replacer, input, want string) NetworkAddress {
+func resolveSystemdListenAddress(t *testing.T, repl *caddy.Replacer, input, want string) caddy.NetworkAddress {
 	t.Helper()
 	resolved, err := repl.ReplaceOrErr(input, true, true)
 	if err != nil {
@@ -149,7 +151,7 @@ func resolveSystemdListenAddress(t *testing.T, repl *Replacer, input, want strin
 	if resolved != want {
 		t.Fatalf("resolved address = %q; want %q", resolved, want)
 	}
-	address, err := ParseNetworkAddress(resolved)
+	address, err := caddy.ParseNetworkAddress(resolved)
 	if err != nil {
 		t.Fatal(err)
 	}
