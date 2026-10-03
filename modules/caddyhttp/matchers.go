@@ -406,7 +406,7 @@ func (MatchPath) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-// Provision lower-cases the paths in m to ensure case-insensitive matching.
+// Provision lower-cases static paths in m to ensure case-insensitive matching.
 func (m MatchPath) Provision(_ caddy.Context) error {
 	for i := range m {
 		if m[i] == "*" && i > 0 {
@@ -414,7 +414,11 @@ func (m MatchPath) Provision(_ caddy.Context) error {
 			m[0] = m[i]
 			break
 		}
-		m[i] = strings.ToLower(m[i])
+		// Placeholder names are case-sensitive; defer lowercasing patterns
+		// containing placeholders until their values have been expanded.
+		if !strings.Contains(m[i], "{") {
+			m[i] = strings.ToLower(m[i])
+		}
 	}
 	return nil
 }
@@ -438,7 +442,11 @@ func (m MatchPath) MatchWithError(r *http.Request) (bool, error) {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	for _, matchPattern := range m {
+		hasPlaceholder := strings.Contains(matchPattern, "{")
 		matchPattern = repl.ReplaceAll(matchPattern, "")
+		if hasPlaceholder {
+			matchPattern = strings.ToLower(matchPattern)
+		}
 
 		// special case: whole path is wildcard; this is unnecessary
 		// as it matches all requests, which is the same as no matcher
@@ -564,8 +572,8 @@ func (MatchPath) matchPatternWithEscapeSequence(escapedPath, matchPath string) b
 			// hold onto this in case we find out the intent is to match in escaped space here;
 			// we lowercase it even though technically the spec says: "For consistency, URI
 			// producers and normalizers should use uppercase hexadecimal digits for all percent-
-			// encodings" (RFC 3986 section 2.1) - we lowercased the matcher pattern earlier in
-			// provisioning so we do the same here to gain case-insensitivity in equivalence;
+			// encodings" (RFC 3986 section 2.1) - we lowercased the matcher pattern before
+			// matching so we do the same here to gain case-insensitivity in equivalence;
 			// besides, this string is never shown visibly
 			escapedPathCh = strings.ToLower(escapedPath[iPath : iPath+3])
 

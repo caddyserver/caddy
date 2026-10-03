@@ -58,6 +58,28 @@ func TestRedirect(t *testing.T) {
 	tester.AssertGetResponse("http://localhost:9080/", 200, "hello from localhost")
 }
 
+func TestPathMatcherPlaceholderRedirect(t *testing.T) {
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`
+  {
+    admin localhost:2999
+    http_port 9080
+    grace_period 1ns
+  }
+
+  http://localhost:9080 {
+    vars Cycle "2024-MAR-21"
+    @old not path /charts/DAPS-{vars.Cycle}/
+    redir @old /charts/DAPS-{vars.Cycle}/ permanent
+    respond "current cycle"
+  }
+  `, "caddyfile")
+
+	tester.AssertRedirect("http://localhost:9080/charts/DAPS-2020-DEC-22/", "http://localhost:9080/charts/DAPS-2024-MAR-21/", 301)
+	tester.AssertGetResponse("http://localhost:9080/charts/DAPS-2020-DEC-22/", 200, "current cycle")
+	tester.AssertGetResponse("http://localhost:9080/charts/daps-2024-mar-21/", 200, "current cycle")
+}
+
 func TestDuplicateHosts(t *testing.T) {
 	// act and assert
 	caddytest.AssertLoadError(t,
