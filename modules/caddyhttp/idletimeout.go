@@ -239,12 +239,12 @@ func (r *IdleTimeoutReader) setDeadlineLocked(logMessage string) {
 	}
 }
 
-// setReadDeadlineLocked sets the read deadline, unless it is the one
-// already armed (as when the idle deadline is capped to HardDeadline),
-// which on HTTP/2 would cost a message to the connection's serve loop
-// for nothing. It reports whether the deadline is armed.
+// setReadDeadlineLocked sets the read deadline, unless it is
+// HardDeadline and already armed (as when the idle deadline is capped to
+// it), which on HTTP/2 would cost a message to the connection's serve
+// loop for nothing. It reports whether the deadline is armed.
 func (r *IdleTimeoutReader) setReadDeadlineLocked(deadline time.Time, logMessage string) bool {
-	if !r.armedAt.IsZero() && deadline.Equal(r.armedAt) {
+	if r.isArmedHardDeadline(deadline) {
 		return true
 	}
 	if err := r.Ctrl.SetReadDeadline(deadline); err != nil {
@@ -256,6 +256,14 @@ func (r *IdleTimeoutReader) setReadDeadlineLocked(deadline time.Time, logMessage
 	}
 	r.armedAt = deadline
 	return true
+}
+
+// isArmedHardDeadline reports whether deadline is a non-zero
+// HardDeadline that is already armed. Other deadlines are always set:
+// an idle deadline computed in the same tick of a coarse clock (as on
+// Windows) can equal the previous one, but is still meant as a reset.
+func (r *IdleTimeoutReader) isArmedHardDeadline(deadline time.Time) bool {
+	return !deadline.IsZero() && deadline.Equal(r.Deadline.HardDeadline) && deadline.Equal(r.armedAt)
 }
 
 // releaseDeadlineLocked replaces the idle deadline with HardDeadline.
@@ -348,12 +356,15 @@ func (w *IdleTimeoutWriter) resetDeadline() {
 	}
 }
 
-// setWriteDeadline sets the write deadline, unless it is the one already
-// armed (as when the idle deadline is capped to HardDeadline), which on
-// HTTP/2 would cost a message to the connection's serve loop for
-// nothing. It reports whether the deadline is armed.
+// setWriteDeadline sets the write deadline, unless it is HardDeadline
+// and already armed (as when the idle deadline is capped to it), which
+// on HTTP/2 would cost a message to the connection's serve loop for
+// nothing. Other deadlines are always set: an idle deadline computed in
+// the same tick of a coarse clock (as on Windows) can equal the
+// previous one, but is still meant as a reset. It reports whether the
+// deadline is armed.
 func (w *IdleTimeoutWriter) setWriteDeadline(deadline time.Time, logMessage string) bool {
-	if !w.armedAt.IsZero() && deadline.Equal(w.armedAt) {
+	if !deadline.IsZero() && deadline.Equal(w.Deadline.HardDeadline) && deadline.Equal(w.armedAt) {
 		return true
 	}
 	if err := w.Ctrl.SetWriteDeadline(deadline); err != nil {
