@@ -572,8 +572,8 @@ func (MatchPath) matchPatternWithEscapeSequence(escapedPath, matchPath string) b
 			// hold onto this in case we find out the intent is to match in escaped space here;
 			// we lowercase it even though technically the spec says: "For consistency, URI
 			// producers and normalizers should use uppercase hexadecimal digits for all percent-
-			// encodings" (RFC 3986 section 2.1) - we lowercased the matcher pattern earlier in
-			// provisioning so we do the same here to gain case-insensitivity in equivalence;
+			// encodings" (RFC 3986 section 2.1) - we lowercased the matcher pattern before
+			// matching so we do the same here to gain case-insensitivity in equivalence;
 			// besides, this string is never shown visibly
 			escapedPathCh = strings.ToLower(escapedPath[iPath : iPath+3])
 

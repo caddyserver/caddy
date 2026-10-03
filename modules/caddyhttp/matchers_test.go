@@ -567,6 +567,40 @@ func TestPathMatcherPlaceholders(t *testing.T) {
 			input:   "/api/%7Dfile",
 			want:    true,
 		},
+		{
+			name:         "escaped literal placeholder",
+			pattern:      `/API/\{Cycle\}*`,
+			placeholders: map[string]string{"Cycle": "WRONG"},
+			input:        "/api/%7Bcycle%7Dfile",
+			want:         true,
+		},
+		{
+			name:    "unclosed placeholder",
+			pattern: "/API/{Cycle*",
+			input:   "/api/%7Bcycle-file",
+			want:    true,
+		},
+		{
+			name:         "clean request path after expansion",
+			pattern:      "/{http.vars.Directory}/*",
+			placeholders: map[string]string{"http.vars.Directory": "PRIVATE"},
+			input:        "/public/../private//file",
+			want:         true,
+		},
+		{
+			name:         "preserve double slashes after expansion",
+			pattern:      "/{http.vars.Directory}//FILE",
+			placeholders: map[string]string{"http.vars.Directory": "PRIVATE"},
+			input:        "/private//file",
+			want:         true,
+		},
+		{
+			name:         "double slashes differ from single separator",
+			pattern:      "/{http.vars.Directory}//FILE",
+			placeholders: map[string]string{"http.vars.Directory": "PRIVATE"},
+			input:        "/private/file",
+			want:         false,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			matcher := MatchPath{tc.pattern}
@@ -590,6 +624,34 @@ func TestPathMatcherPlaceholders(t *testing.T) {
 	}
 }
 
+func TestPathMatcherPlaceholderPerRequest(t *testing.T) {
+	matcher := MatchPath{"/API/{http.vars.Cycle}/"}
+	if err := matcher.Provision(caddy.Context{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		value string
+		input string
+		want  bool
+	}{
+		{value: "FIRST", input: "/api/first/", want: true},
+		{value: "SECOND", input: "/api/second/", want: true},
+		{value: "SECOND", input: "/api/first/", want: false},
+	} {
+		repl := caddy.NewReplacer()
+		repl.Set("http.vars.Cycle", tc.value)
+		req := httptest.NewRequest(http.MethodGet, tc.input, nil)
+		req = req.WithContext(context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl))
+		matched, err := matcher.MatchWithError(req)
+		if err != nil || matched != tc.want {
+			t.Errorf("value %q: matching %q = %t, error = %v, want %t", tc.value, tc.input, matched, err, tc.want)
+		}
+		if value, _ := repl.Get("http.vars.Cycle"); value != tc.value {
+			t.Errorf("matching changed placeholder value from %q to %v", tc.value, value)
+		}
+	}
+}
+
 func BenchmarkPathMatcherPlaceholders(b *testing.B) {
 	for _, tc := range []struct {
 		name    string
@@ -599,6 +661,8 @@ func BenchmarkPathMatcherPlaceholders(b *testing.B) {
 		{name: "static", pattern: "/API/CURRENT/", input: "/api/current/"},
 		{name: "static_prefix", pattern: "/API/*", input: "/api/current/file.txt"},
 		{name: "dynamic", pattern: "/API/{cycle}/", input: "/api/current/"},
+		{name: "dynamic_lowercase_literal", pattern: "/api/{cycle}/", input: "/api/current/"},
+		{name: "dynamic_without_literal", pattern: "/{cycle}", input: "/current"},
 	} {
 		b.Run(tc.name, func(b *testing.B) {
 			matcher := MatchPath{tc.pattern}
