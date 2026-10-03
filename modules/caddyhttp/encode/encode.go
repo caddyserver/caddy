@@ -252,6 +252,7 @@ type responseWriter struct {
 	config       *Encode
 	statusCode   int
 	wroteHeader  bool
+	incremental  bool
 	isConnect    bool
 	disabled     bool // disable encoding for this response
 }
@@ -265,6 +266,10 @@ func (rw *responseWriter) WriteHeader(status int) {
 	}
 
 	h := rw.Header()
+	finalStatus := status < 100 || status > 199
+	if !rw.wroteHeader && finalStatus {
+		rw.incremental = caddyhttp.IsIncremental(h)
+	}
 
 	// See #5849 and RFC 9110 section 15.4.5 (https://www.rfc-editor.org/rfc/rfc9110.html#section-15.4.5) - 304
 	// Not Modified must have certain headers set as if it was a 200 response, and according to the issue
@@ -288,13 +293,20 @@ func (rw *responseWriter) WriteHeader(status int) {
 		rw.ResponseWriter.WriteHeader(status)
 	}
 
-	// write header immediately for server-sent events responses, since the
+	// write header immediately for server-sent events responses and for
+	// responses that ask for incremental forwarding (RFC 10036), since the
 	// body may not be written for a while and the client needs the headers
-	// to establish the event stream; see #6293
-	if !rw.wroteHeader && (status < 100 || status > 199) && isSSE(h.Get("Content-Type")) {
+	// to establish the stream; see #6293
+	if !rw.wroteHeader && finalStatus &&
+		(rw.incremental || isSSE(h.Get("Content-Type"))) {
 		rw.init()
 		rw.ResponseWriter.WriteHeader(status)
 		rw.wroteHeader = true
+	}
+	if rw.incremental && rw.wroteHeader {
+		// WriteHeader alone may remain buffered by net/http. Incremental
+		// forwarding requires the header section to be sent downstream now.
+		_ = http.NewResponseController(rw.ResponseWriter).Flush()
 	}
 }
 
@@ -320,6 +332,10 @@ func (enc *Encode) Match(rw *responseWriter) bool {
 // FlushError is an alternative Flush returning an error. It delays the actual Flush of the underlying
 // ResponseWriterWrapper until headers were written.
 func (rw *responseWriter) FlushError() error {
+	if !rw.wroteHeader && rw.statusCode == 0 && caddyhttp.IsIncremental(rw.Header()) {
+		rw.WriteHeader(http.StatusOK)
+	}
+
 	// WriteHeader wasn't called and is a CONNECT request, treat it as a success.
 	// otherwise, wait until header is written.
 	if rw.isConnect && !rw.wroteHeader && rw.statusCode == 0 {
@@ -359,6 +375,12 @@ func (rw *responseWriter) Write(p []byte) (int, error) {
 	if rw.isConnect && !rw.wroteHeader && rw.statusCode == 0 {
 		rw.WriteHeader(http.StatusOK)
 	}
+	if !rw.wroteHeader && rw.statusCode == 0 && caddyhttp.IsIncremental(rw.Header()) {
+		if rw.Header().Get("Content-Type") == "" {
+			rw.Header().Set("Content-Type", http.DetectContentType(p))
+		}
+		rw.WriteHeader(http.StatusOK)
+	}
 
 	// sniff content-type and determine content-length
 	if !rw.wroteHeader && rw.config.MinLength > 0 {
@@ -390,11 +412,17 @@ func (rw *responseWriter) Write(p []byte) (int, error) {
 		rw.wroteHeader = true
 	}
 
+	var n int
+	var err error
 	if rw.w != nil {
-		return rw.w.Write(p)
+		n, err = rw.w.Write(p)
 	} else {
-		return rw.ResponseWriter.Write(p)
+		n, err = rw.ResponseWriter.Write(p)
 	}
+	if err != nil || !rw.incremental {
+		return n, err
+	}
+	return n, rw.FlushError()
 }
 
 // used to mask ReadFrom method
@@ -410,6 +438,10 @@ const sniffLen = 512
 // It's based on the standard library HTTP/1.1 response writer implementation.
 // https://github.com/golang/go/blob/f4e3ec3dbe3b8e04a058d266adf8e048bab563f2/src/net/http/server.go#L586
 func (rw *responseWriter) ReadFrom(r io.Reader) (int64, error) {
+	if rw.incremental || !rw.wroteHeader && caddyhttp.IsIncremental(rw.Header()) {
+		return io.Copy(writerOnly{rw}, r)
+	}
+
 	rf, ok := rw.ResponseWriter.(io.ReaderFrom)
 	// sendfile can't be used anyway
 	if !ok {
