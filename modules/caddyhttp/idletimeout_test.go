@@ -856,3 +856,20 @@ func TestIdleTimeoutWriter_MaxChunkOverride(t *testing.T) {
 		"a configured MaxChunk should override DefaultMaxWriteChunk")
 	assert.Equal(t, size/maxChunk, counter.writeCalls)
 }
+
+func TestIdleDeadlineOverrideRestore(t *testing.T) {
+	start := time.Now().Add(-time.Minute)
+	hard := time.Now().Add(time.Hour)
+	d := IdleDeadline{Start: start, Timeout: time.Second, MinRate: 10, HardDeadline: hard, transferred: 100}
+
+	prev := d.override(time.Minute, 0)
+	assert.Equal(t, time.Minute, d.Timeout)
+	assert.Zero(t, d.MinRate)
+	assert.Zero(t, d.transferred)
+	assert.Equal(t, hard, d.HardDeadline)
+	assert.True(t, d.Start.After(start))
+
+	d.transferred += 50
+	d.restore(prev)
+	assert.Equal(t, IdleDeadline{Start: start, Timeout: time.Second, MinRate: 10, HardDeadline: hard, transferred: 150}, d)
+}

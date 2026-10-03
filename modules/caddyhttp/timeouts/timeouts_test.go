@@ -148,3 +148,143 @@ func TestTimeouts_WriteMaxChunkOverride(t *testing.T) {
 	require.NoError(t, err)
 	assert.EqualValues(t, size, n)
 }
+
+// TestTimeoutsTakePrecedence checks that the read timeout of the most
+// specific scope applies: a timeouts handler over the server-wide idle
+// timeout, and an inner timeouts handler over an outer one.
+func TestTimeoutsTakePrecedence(t *testing.T) {
+	const short = 100 * time.Millisecond
+	const long = 2 * time.Second
+	const pause = 300 * time.Millisecond
+
+	for i, tc := range []struct {
+		name     string
+		server   time.Duration
+		outer    time.Duration
+		inner    time.Duration
+		expected int
+	}{
+		{name: "route extends server-wide", server: short, inner: long, expected: http.StatusOK},
+		{name: "route shortens server-wide", server: long, inner: short, expected: http.StatusRequestTimeout},
+		{name: "inner route extends outer", outer: short, inner: long, expected: http.StatusOK},
+		{name: "inner route shortens outer", outer: long, inner: short, expected: http.StatusRequestTimeout},
+		{name: "inner route extends outer and server-wide", server: short, outer: short, inner: long, expected: http.StatusOK},
+	} {
+		var handler caddyhttp.Handler = caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			if _, err := io.Copy(io.Discard, r.Body); err != nil {
+				w.WriteHeader(http.StatusRequestTimeout)
+				return nil
+			}
+			w.WriteHeader(http.StatusOK)
+			return nil
+		})
+		for _, timeout := range []time.Duration{tc.inner, tc.outer} {
+			if timeout == 0 {
+				continue
+			}
+			tm := Timeouts{ReadTimeout: timeout, logger: zap.NewNop()}
+			next := handler
+			handler = caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+				return tm.ServeHTTP(w, r, next)
+			})
+		}
+
+		srv := httptest.NewServer(noError(caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			// stand in for the server-wide idle timeout
+			if tc.server > 0 {
+				reader := &caddyhttp.IdleTimeoutReader{
+					ReadCloser: r.Body,
+					Ctrl:       http.NewResponseController(w),
+					Deadline:   caddyhttp.IdleDeadline{Start: time.Now(), Timeout: tc.server},
+					Logger:     zap.NewNop(),
+				}
+				defer reader.HandlerDone()
+				r.Body = reader
+				r = r.WithContext(caddyhttp.ContextWithIdleTimeouts(r.Context(), reader, nil))
+			}
+			return handler.ServeHTTP(w, r)
+		})))
+
+		body := &pacedReader{delay: pause, chunkSize: 8, chunkCount: 2}
+		resp, err := http.Post(srv.URL, "application/octet-stream", body)
+		if err != nil {
+			// a timed out read may close the connection before a response
+			if tc.expected != http.StatusRequestTimeout {
+				t.Errorf("Test %d (%s): unexpected error: %v", i, tc.name, err)
+			}
+		} else {
+			resp.Body.Close()
+			assert.Equal(t, tc.expected, resp.StatusCode, "Test %d (%s)", i, tc.name)
+		}
+		srv.Close()
+	}
+}
+
+func TestTimeoutsOverrideServerWide(t *testing.T) {
+	const serverTimeout = time.Hour
+	const routeTimeout = time.Minute
+
+	rec := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("body"))
+	reader := &caddyhttp.IdleTimeoutReader{
+		ReadCloser: req.Body,
+		Ctrl:       http.NewResponseController(rec),
+		Deadline:   caddyhttp.IdleDeadline{Start: time.Now(), Timeout: serverTimeout},
+		Logger:     zap.NewNop(),
+	}
+	req.Body = reader
+	writer := &caddyhttp.IdleTimeoutWriter{
+		ResponseWriterWrapper: &caddyhttp.ResponseWriterWrapper{ResponseWriter: rec},
+		Ctrl:                  http.NewResponseController(rec),
+		Deadline:              caddyhttp.IdleDeadline{Start: time.Now(), Timeout: serverTimeout},
+		MaxChunk:              1000,
+		Logger:                zap.NewNop(),
+	}
+	req = req.WithContext(caddyhttp.ContextWithIdleTimeouts(req.Context(), reader, writer))
+
+	tm := Timeouts{ReadTimeout: routeTimeout, WriteTimeout: routeTimeout, MaxWriteChunk: 100, logger: zap.NewNop()}
+	err := tm.ServeHTTP(writer, req, caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+		// overridden in place rather than wrapped again
+		assert.Same(t, writer, w)
+		assert.Same(t, reader, r.Body)
+		assert.Equal(t, routeTimeout, writer.Deadline.Timeout)
+		assert.Equal(t, 100, writer.MaxChunk)
+
+		before := time.Now()
+		_, err := r.Body.Read(make([]byte, 1))
+		require.NoError(t, err)
+		require.Len(t, rec.deadlines, 1)
+		assert.WithinRange(t, rec.deadlines[0], before.Add(routeTimeout), time.Now().Add(routeTimeout))
+		return nil
+	}))
+	require.NoError(t, err)
+
+	// the server-wide settings are back once the handler returns
+	assert.Equal(t, serverTimeout, writer.Deadline.Timeout)
+	assert.Equal(t, 1000, writer.MaxChunk)
+	before := time.Now()
+	_, err = reader.Read(make([]byte, 1))
+	require.NoError(t, err)
+	require.Len(t, rec.deadlines, 2)
+	assert.WithinRange(t, rec.deadlines[1], before.Add(serverTimeout), time.Now().Add(serverTimeout))
+}
+
+func TestTimeoutsKeepServerWideMaxWriteChunk(t *testing.T) {
+	rec := httptest.NewRecorder()
+	writer := &caddyhttp.IdleTimeoutWriter{
+		ResponseWriterWrapper: &caddyhttp.ResponseWriterWrapper{ResponseWriter: rec},
+		Ctrl:                  http.NewResponseController(rec),
+		Deadline:              caddyhttp.IdleDeadline{Timeout: time.Hour},
+		MaxChunk:              1000,
+		Logger:                zap.NewNop(),
+	}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req = req.WithContext(caddyhttp.ContextWithIdleTimeouts(req.Context(), nil, writer))
+
+	tm := Timeouts{WriteTimeout: time.Minute, logger: zap.NewNop()}
+	err := tm.ServeHTTP(writer, req, caddyhttp.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
+		assert.Equal(t, 1000, writer.MaxChunk)
+		return nil
+	}))
+	require.NoError(t, err)
+}

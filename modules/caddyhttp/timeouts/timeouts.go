@@ -30,12 +30,15 @@ func init() {
 
 // Timeouts is a middleware that applies read/write idle timeouts, minimum
 // transfer rates, and a write chunk size cap to routes matching this
-// handler, independent of the server-wide equivalents.
+// handler. They take precedence over the server-wide equivalents, and
+// over those of any enclosing timeouts handler, for as long as this
+// handler is running. The server-wide read_timeout and write_timeout
+// still cap the whole transfer.
 type Timeouts struct {
 	// How long to allow a read from the request body to stall before
 	// aborting the connection, reset on every successful read (like the
 	// server-wide read_idle_timeout, but scoped to routes matching this
-	// handler). If zero, no idle timeout is applied here.
+	// handler). If zero, the server-wide setting applies.
 	// EXPERIMENTAL. Subject to change/removal.
 	ReadTimeout time.Duration `json:"read_timeout,omitempty"`
 
@@ -49,7 +52,7 @@ type Timeouts struct {
 	// How long to allow a write to the client to stall before aborting
 	// the connection, reset on every successful write (like the
 	// server-wide write_idle_timeout, but scoped to routes matching this
-	// handler). If zero, no idle timeout is applied here.
+	// handler). If zero, the server-wide setting applies.
 	// EXPERIMENTAL. Subject to change/removal.
 	WriteTimeout time.Duration `json:"write_timeout,omitempty"`
 
@@ -61,8 +64,9 @@ type Timeouts struct {
 	// MaxWriteChunk bounds how many bytes a single underlying write
 	// operation is allowed to cover, so WriteTimeout/WriteMinRate can
 	// actually apply between chunks of a large response instead of
-	// being bounded by one deadline for the whole thing. If zero,
-	// caddyhttp.DefaultMaxWriteChunk is used.
+	// being bounded by one deadline for the whole thing. If zero, the
+	// server-wide setting is used, or caddyhttp.DefaultMaxWriteChunk if
+	// there is none.
 	// EXPERIMENTAL. Subject to change/removal.
 	MaxWriteChunk int `json:"max_write_chunk,omitempty"`
 
@@ -87,40 +91,66 @@ func (t Timeouts) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		return next.ServeHTTP(w, r)
 	}
 
-	//nolint:bodyclose
-	rc := http.NewResponseController(w)
+	// if the request already has idle timeouts, from the server or an
+	// enclosing route, override them instead of wrapping again: the
+	// wrapper closest to the connection sets the deadline last, so it
+	// would take precedence over ours
+	idleReader, idleWriter := caddyhttp.IdleTimeoutsFromContext(r.Context())
+	var wrapped bool
+	var rc *http.ResponseController
 	start := time.Now()
 
 	if t.ReadTimeout > 0 && r.Body != nil {
-		idleReader := &caddyhttp.IdleTimeoutReader{
-			ReadCloser: r.Body,
-			Ctrl:       rc,
-			Deadline: caddyhttp.IdleDeadline{
-				Start:   start,
-				Timeout: t.ReadTimeout,
-				MinRate: t.ReadMinRate,
-			},
-			Logger:        t.logger,
-			DrainDeadline: r.ProtoMajor == 1 && r.ContentLength != 0,
+		if idleReader != nil {
+			defer idleReader.Override(t.ReadTimeout, t.ReadMinRate)()
+		} else {
+			//nolint:bodyclose
+			rc = http.NewResponseController(w)
+			idleReader = &caddyhttp.IdleTimeoutReader{
+				ReadCloser: r.Body,
+				Ctrl:       rc,
+				Deadline: caddyhttp.IdleDeadline{
+					Start:   start,
+					Timeout: t.ReadTimeout,
+					MinRate: t.ReadMinRate,
+				},
+				Logger:        t.logger,
+				DrainDeadline: r.ProtoMajor == 1 && r.ContentLength != 0,
+			}
+			defer idleReader.HandlerDone()
+			r.Body = idleReader
+			wrapped = true
 		}
-		defer idleReader.HandlerDone()
-		r.Body = idleReader
 	}
 	if t.WriteTimeout > 0 {
-		idleWriter := &caddyhttp.IdleTimeoutWriter{
-			ResponseWriterWrapper: &caddyhttp.ResponseWriterWrapper{ResponseWriter: w},
-			Ctrl:                  rc,
-			Deadline: caddyhttp.IdleDeadline{
-				Start:   start,
-				Timeout: t.WriteTimeout,
-				MinRate: t.WriteMinRate,
-			},
-			MaxChunk:           t.MaxWriteChunk,
-			Logger:             t.logger,
-			ClearBetweenWrites: r.ProtoMajor == 2,
+		if idleWriter != nil {
+			defer idleWriter.Override(t.WriteTimeout, t.WriteMinRate, t.MaxWriteChunk)()
+		} else {
+			if rc == nil {
+				//nolint:bodyclose
+				rc = http.NewResponseController(w)
+			}
+			idleWriter = &caddyhttp.IdleTimeoutWriter{
+				ResponseWriterWrapper: &caddyhttp.ResponseWriterWrapper{ResponseWriter: w},
+				Ctrl:                  rc,
+				Deadline: caddyhttp.IdleDeadline{
+					Start:   start,
+					Timeout: t.WriteTimeout,
+					MinRate: t.WriteMinRate,
+				},
+				MaxChunk:           t.MaxWriteChunk,
+				Logger:             t.logger,
+				ClearBetweenWrites: r.ProtoMajor == 2,
+			}
+			defer idleWriter.HandlerDone()
+			w = idleWriter
+			wrapped = true
 		}
-		defer idleWriter.HandlerDone()
-		w = idleWriter
+	}
+
+	// let nested timeouts handlers override the wrappers added here
+	if wrapped {
+		r = r.WithContext(caddyhttp.ContextWithIdleTimeouts(r.Context(), idleReader, idleWriter))
 	}
 
 	return next.ServeHTTP(w, r)
