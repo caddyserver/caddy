@@ -16,8 +16,10 @@ package caddy
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -383,6 +385,17 @@ func (f globalDefaultReplacementProvider) replace(key string) (any, bool) {
 	if strings.HasPrefix(key, envPrefix) {
 		return os.Getenv(key[len(envPrefix):]), true
 	}
+	if name, ok := strings.CutPrefix(key, systemdListenPrefix); ok {
+		descriptors, err := cachedSystemdListenFDs()
+		if err != nil {
+			return nil, false
+		}
+		descriptor, err := systemdListenFDByName(descriptors, name)
+		if err != nil {
+			return nil, false
+		}
+		return descriptor, true
+	}
 
 	switch key {
 	case "system.hostname":
@@ -451,3 +464,88 @@ const ReplacerCtxKey CtxKey = "replacer"
 const phOpen, phClose, phEscape = '{', '}', '\\'
 
 const filePrefix = "file."
+
+const (
+	systemdListenPrefix  = "systemd.listen."
+	systemdListenFDStart = 3 // stdin, stdout and stderr occupy descriptors 0 to 2
+)
+
+// cachedSystemdListenFDs resolves the inherited descriptor mapping only when
+// a configuration uses it.
+var cachedSystemdListenFDs = sync.OnceValues(func() (map[string][]int, error) {
+	return parseSystemdListenFDs(os.Getpid(), os.LookupEnv)
+})
+
+func parseSystemdListenFDs(pid int, lookupEnv func(string) (string, bool)) (map[string][]int, error) {
+	listenPID, ok := lookupEnv("LISTEN_PID")
+	if !ok {
+		return nil, errors.New("systemd socket activation: LISTEN_PID is unset")
+	}
+	parsedPID, err := strconv.Atoi(listenPID)
+	if err != nil {
+		return nil, fmt.Errorf("systemd socket activation: parsing LISTEN_PID: %w", err)
+	}
+	if parsedPID != pid {
+		return nil, fmt.Errorf("systemd socket activation: LISTEN_PID does not match process: %d != %d", parsedPID, pid)
+	}
+
+	listenFDs, ok := lookupEnv("LISTEN_FDS")
+	if !ok {
+		return nil, errors.New("systemd socket activation: LISTEN_FDS is unset")
+	}
+	fdCount, err := strconv.Atoi(listenFDs)
+	if err != nil {
+		return nil, fmt.Errorf("systemd socket activation: parsing LISTEN_FDS: %w", err)
+	}
+	if fdCount <= 0 || fdCount > math.MaxInt-systemdListenFDStart {
+		return nil, fmt.Errorf("systemd socket activation: invalid LISTEN_FDS count: %d", fdCount)
+	}
+
+	listenFDNames, ok := lookupEnv("LISTEN_FDNAMES")
+	if !ok {
+		return nil, errors.New("systemd socket activation: LISTEN_FDNAMES is unset")
+	}
+	names := strings.Split(listenFDNames, ":")
+	if len(names) != fdCount {
+		return nil, fmt.Errorf("systemd socket activation: LISTEN_FDS does not match LISTEN_FDNAMES count: %d != %d", fdCount, len(names))
+	}
+
+	descriptors := make(map[string][]int, len(names))
+	for index, name := range names {
+		descriptors[name] = append(descriptors[name], systemdListenFDStart+index)
+	}
+	return descriptors, nil
+}
+
+func systemdListenFDByName(descriptors map[string][]int, nameWithIndex string) (int, error) {
+	name, indexText, hasIndex := strings.Cut(nameWithIndex, ":")
+	if name == "" {
+		return 0, errors.New("systemd listen descriptor name is empty")
+	}
+
+	index := 0
+	if hasIndex {
+		if indexText == "" {
+			return 0, errors.New("systemd listen descriptor index is empty")
+		}
+		for _, ch := range indexText {
+			if ch < '0' || ch > '9' {
+				return 0, fmt.Errorf("invalid systemd listen descriptor index: %q", indexText)
+			}
+		}
+		parsedIndex, err := strconv.ParseUint(indexText, 10, strconv.IntSize)
+		if err != nil {
+			return 0, fmt.Errorf("parsing systemd listen descriptor index: %w", err)
+		}
+		index = int(parsedIndex)
+	}
+
+	matches, ok := descriptors[name]
+	if !ok {
+		return 0, fmt.Errorf("systemd listen descriptor name not found: %q", name)
+	}
+	if index >= len(matches) {
+		return 0, fmt.Errorf("systemd listen descriptor index out of range: %d", index)
+	}
+	return matches[index], nil
+}
