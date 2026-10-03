@@ -74,6 +74,9 @@ func (d *IdleDeadline) next() (deadline time.Time) {
 // IdleTimeoutReader wraps a request body with IdleDeadline, resetting
 // the read deadline before every Read call instead of bounding the
 // whole body transfer with a single hard deadline.
+// The deadline is cleared after an error (most likely io.EOF) is encountered when reading the body
+// to prevent context canceled error for h1 requests.
+// see: https://github.com/caddyserver/caddy/issues/8103
 type IdleTimeoutReader struct {
 	io.ReadCloser
 	Ctrl     *http.ResponseController
@@ -166,10 +169,13 @@ func (r *IdleTimeoutReader) clearDeadlineLocked() {
 }
 
 // IdleTimeoutWriter wraps a ResponseWriter with IdleDeadline, resetting
-// the write deadline before every Write call, the same way
-// IdleTimeoutReader does for reads. A handler that pauses between
-// writes (e.g. streaming or SSE) is unaffected, since with MinRate == 0
-// the deadline only bounds the duration of the write actually in flight.
+// the write deadline before every Write call. The deadline is cleared after
+// the corresponding write operation (which may consist of several Write calls)
+// succeeds. It's to solve the problem that a handler that pauses between
+// writes (e.g. streaming or SSE) for h2 is affected, since with MinRate == 0
+// the deadlines for h1 and h3 bound the duration of the write actually in flight
+// and can be extended without consequences.
+// see: https://github.com/caddyserver/caddy/issues/8118
 //
 // MaxChunk bounds how much a single underlying Write/ReadFrom call is
 // allowed to cover; zero uses DefaultMaxWriteChunk. SetWriteDeadline
