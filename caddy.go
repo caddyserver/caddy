@@ -100,6 +100,15 @@ type App interface {
 	Stop() error
 }
 
+// StatusReporter can be implemented by Apps or Modules that wish
+// to expose runtime status information via the /status admin endpoint.
+type StatusReporter interface {
+	Status() (any, error)
+}
+
+// ProcessStartTime records when the Caddy process started.
+var ProcessStartTime = time.Now()
+
 // Run runs the given config, replacing any existing config.
 func Run(cfg *Config) error {
 	cfgJSON, err := json.Marshal(cfg)
