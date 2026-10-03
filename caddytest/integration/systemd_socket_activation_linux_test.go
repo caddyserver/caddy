@@ -14,7 +14,7 @@
 
 //go:build linux
 
-package systemd_test
+package integration
 
 import (
 	"context"
