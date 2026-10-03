@@ -5,13 +5,71 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/encode"
 )
 
 const conformanceContentType = "text/plain"
+
+func TestEncodeIfNoneMatch(t *testing.T) {
+	for _, encCase := range standardEncoderCases(t) {
+		t.Run(encCase.name, func(t *testing.T) {
+			enc := newEncodeHandler(t, encCase, 1)
+			for _, tc := range []struct {
+				name   string
+				values []string
+				want   []string
+				etag   string
+				status int
+			}{
+				{"single", []string{`"response-%s"`}, []string{`"response"`}, `"response"`, 304},
+				{"matching first", []string{`"response-%s", "stale-%s"`}, []string{`"response", "stale"`}, `"response"`, 304},
+				{"matching last", []string{`"stale-%s", "response-%s"`}, []string{`"stale", "response"`}, `"response"`, 304},
+				{"weak", []string{`W/"response-%s"`}, []string{`W/"response"`}, `"response"`, 304},
+				{"mixed", []string{`W/"stale-%s", "response-%s"`}, []string{`W/"stale", "response"`}, `"response"`, 304},
+				{"quoted comma", []string{`"response,part-%s", "stale-%s"`}, []string{`"response,part", "stale"`}, `"response,part"`, 304},
+				{"multiple lines", []string{`"stale-%s"`, `W/"response-%s"`}, []string{`"stale", W/"response"`}, `"response"`, 304},
+				{"wildcard", []string{`*`}, []string{`*`}, `"response"`, 304},
+				{"unencoded", []string{`"response"`}, []string{`"response"`}, `"response"`, 304},
+				{"other suffix", []string{`"response-other"`}, []string{`"response-other"`}, `"response"`, 200},
+				{"suffix inside tag", []string{`"response-%s-extra"`}, []string{`"response-%s-extra"`}, `"response"`, 200},
+				{"unterminated", []string{`"response-%s`}, []string{`"response-%s`}, `"response"`, 200},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					r := httptest.NewRequest(http.MethodGet, "/", nil)
+					r.Header.Set("Accept-Encoding", encCase.encoding.AcceptEncoding())
+					values, want := slices.Clone(tc.values), slices.Clone(tc.want)
+					for _, list := range [][]string{values, want} {
+						for i := range list {
+							list[i] = strings.ReplaceAll(list[i], "%s", encCase.encoding.AcceptEncoding())
+						}
+					}
+					r.Header["If-None-Match"] = values
+					w := httptest.NewRecorder()
+					next := caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+						if got := r.Header.Values("If-None-Match"); !slices.Equal(got, want) {
+							t.Errorf("If-None-Match = %q, want %q", got, want)
+						}
+						w.Header().Set("Etag", tc.etag)
+						http.ServeContent(w, r, "asset.txt", time.Time{}, strings.NewReader("response body"))
+						return nil
+					})
+					if err := enc.ServeHTTP(w, r, next); err != nil {
+						t.Fatal(err)
+					}
+					if w.Code != tc.status {
+						t.Errorf("status = %d, want %d", w.Code, tc.status)
+					}
+				})
+			}
+		})
+	}
+}
 
 // TestStandardEncoderContract verifies Reset, Flush, Close, and Reset-after-Close
 // reuse for each encoder using the same HTML/JSON/JS/CSS payloads as the benchmark suite.
