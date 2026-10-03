@@ -3,6 +3,7 @@ package reverseproxy
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"net"
@@ -265,9 +266,9 @@ func TestHandlerUpgradedStreamHalfClose(t *testing.T) {
 		},
 		"backend close write": func(t *testing.T, cli, srv *net.TCPConn) {
 			mustCloseWrite(t, srv)
+			mustReadEOF(t, cli)
 			mustWrite(t, cli, "client sends")
 			mustRead(t, srv, "client sends")
-			mustReadEOF(t, cli)
 		},
 		"client close read": func(t *testing.T, cli, srv *net.TCPConn) {
 			mustCloseRead(t, cli)
@@ -276,9 +277,9 @@ func TestHandlerUpgradedStreamHalfClose(t *testing.T) {
 		},
 		"client close write": func(t *testing.T, cli, srv *net.TCPConn) {
 			mustCloseWrite(t, cli)
+			mustReadEOF(t, srv)
 			mustWrite(t, srv, "backend sends")
 			mustRead(t, cli, "backend sends")
-			mustReadEOF(t, srv)
 		},
 	}
 
@@ -315,6 +316,9 @@ func TestHandlerUpgradedStreamHalfClose(t *testing.T) {
 			h.connectionsMu = new(sync.Mutex)
 
 			frontend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// Isolate half-close propagation from request cancellation which has
+				// its own backend-close path.
+				r = r.WithContext(context.WithoutCancel(r.Context()))
 				_ = h.ServeHTTP(w, prepareTestRequest(r), caddyhttp.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
 					return nil
 				}))
