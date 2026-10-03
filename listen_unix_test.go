@@ -18,13 +18,141 @@ package caddy
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"os"
+	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
 )
+
+func TestAbstractUnixSocketsDoNotUnlinkFilesystemPaths(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("abstract Unix sockets are Linux-specific")
+	}
+
+	for _, network := range []string{"unix", "unixgram"} {
+		t.Run(network, func(t *testing.T) {
+			sentinel, err := os.CreateTemp(".", "@caddy-abstract-*")
+			if err != nil {
+				t.Fatal(err)
+			}
+			name := filepath.Base(sentinel.Name())
+			if err := sentinel.Close(); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.Remove(name) })
+
+			ln, err := (NetworkAddress{Network: network, Host: name}).Listen(
+				context.Background(), 0, net.ListenConfig{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			closed := false
+			t.Cleanup(func() {
+				if !closed {
+					_ = ln.(io.Closer).Close()
+				}
+			})
+			if _, err := os.Stat(name); err != nil {
+				t.Fatalf("abstract listen removed sentinel: %v", err)
+			}
+			err = ln.(io.Closer).Close()
+			closed = true
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(name); err != nil {
+				t.Fatalf("abstract close removed sentinel: %v", err)
+			}
+		})
+	}
+}
+
+func TestUnixListenerDoubleCloseDoesNotReleaseAnotherReference(t *testing.T) {
+	socketPath := shortTempSocket(t)
+	na := NetworkAddress{Network: "unix", Host: socketPath}
+
+	firstAny, err := na.Listen(context.Background(), 0, net.ListenConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstOuter := firstAny.(deleteListener)
+	first := firstOuter.Listener.(*unixListener)
+	var second *unixListener
+	t.Cleanup(func() {
+		_ = firstOuter.Close()
+		if second != nil {
+			_ = second.Close()
+		}
+	})
+	secondAny, err := na.Listen(context.Background(), 0, net.ListenConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second = secondAny.(*unixListener)
+
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Close(); !errors.Is(err, net.ErrClosed) {
+		t.Fatalf("second Close() error = %v; want net.ErrClosed", err)
+	}
+	if got := first.count.Load(); got != 1 {
+		t.Fatalf("reference count = %d; want 1", got)
+	}
+	if _, err := os.Stat(socketPath); err != nil {
+		t.Fatalf("socket used by second reference was removed: %v", err)
+	}
+
+	if err := second.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUnixConnDoubleCloseDoesNotReleaseAnotherReference(t *testing.T) {
+	socketPath := shortTempSocket(t)
+	na := NetworkAddress{Network: "unixgram", Host: socketPath}
+
+	firstAny, err := na.Listen(context.Background(), 0, net.ListenConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstOuter := firstAny.(deletePacketConn)
+	first := firstOuter.PacketConn.(*unixConn)
+	var second *unixConn
+	t.Cleanup(func() {
+		_ = firstOuter.Close()
+		if second != nil {
+			_ = second.Close()
+		}
+	})
+	secondAny, err := na.Listen(context.Background(), 0, net.ListenConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second = secondAny.(*unixConn)
+
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Close(); !errors.Is(err, net.ErrClosed) {
+		t.Fatalf("second Close() error = %v; want net.ErrClosed", err)
+	}
+	if got := first.count.Load(); got != 1 {
+		t.Fatalf("reference count = %d; want 1", got)
+	}
+	if _, err := os.Stat(socketPath); err != nil {
+		t.Fatalf("socket used by second reference was removed: %v", err)
+	}
+
+	if err := second.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
 
 // shortTempSocket returns a short unix socket path to avoid sockaddr_un
 // path length limits (104 bytes on Darwin/BSD, 108 bytes on Linux),
@@ -278,4 +406,3 @@ func TestUnixConnConcurrentCloseAndRelisten(t *testing.T) {
 		_ = newPc.Close()
 	}
 }
-

@@ -27,8 +27,10 @@ import (
 	"io/fs"
 	"net"
 	"os"
+	"runtime"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -65,7 +67,11 @@ func reuseUnixSocket(network, addr string) (any, error) {
 				return nil, err
 			}
 			unixSocket.count.Add(1)
-			unixSockets[socketKey] = &unixListener{ln.(*net.UnixListener), socketKey, unixSocket.count}
+			unixSockets[socketKey] = &unixListener{
+				UnixListener: ln.(*net.UnixListener),
+				mapKey:       socketKey,
+				count:        unixSocket.count,
+			}
 
 		case *unixConn:
 			pc, err := net.FilePacketConn(socketFile)
@@ -73,10 +79,17 @@ func reuseUnixSocket(network, addr string) (any, error) {
 				return nil, err
 			}
 			unixSocket.count.Add(1)
-			unixSockets[socketKey] = &unixConn{pc.(*net.UnixConn), socketKey, unixSocket.count}
+			unixSockets[socketKey] = &unixConn{
+				UnixConn: pc.(*net.UnixConn),
+				mapKey:   socketKey,
+				count:    unixSocket.count,
+			}
 		}
 
 		return unixSockets[socketKey], nil
+	}
+	if isAbstractUnixSocket(addr) {
+		return nil, nil
 	}
 
 	// from what I can tell after some quick research, it's quite common for programs to
@@ -168,7 +181,7 @@ func listenReusable(ctx context.Context, lnKey string, network, address string, 
 			if unix, ok := ln.(*net.UnixConn); ok {
 				cnt := new(atomic.Int32)
 				cnt.Store(1)
-				ln = &unixConn{unix, lnKey, cnt}
+				ln = &unixConn{UnixConn: unix, mapKey: lnKey, count: cnt}
 				unixSockets[lnKey] = ln.(*unixConn)
 			}
 		}
@@ -185,7 +198,7 @@ func listenReusable(ctx context.Context, lnKey string, network, address string, 
 				unix.SetUnlinkOnClose(false)
 				cnt := new(atomic.Int32)
 				cnt.Store(1)
-				ln = &unixListener{unix, lnKey, cnt}
+				ln = &unixListener{UnixListener: unix, mapKey: lnKey, count: cnt}
 				unixSockets[lnKey] = ln.(*unixListener)
 			}
 		}
@@ -220,9 +233,13 @@ type unixListener struct {
 	*net.UnixListener
 	mapKey string
 	count  *atomic.Int32
+	closed atomic.Bool
 }
 
 func (uln *unixListener) Close() error {
+	if !uln.closed.CompareAndSwap(false, true) {
+		return net.ErrClosed
+	}
 	unixSocketsMu.Lock()
 	defer unixSocketsMu.Unlock()
 
@@ -234,7 +251,7 @@ func (uln *unixListener) Close() error {
 	err := uln.UnixListener.Close()
 	if newCount == 0 {
 		delete(unixSockets, uln.mapKey)
-		if name != "" {
+		if name != "" && !isAbstractUnixSocket(name) {
 			_ = syscall.Unlink(name)
 		}
 	}
@@ -245,9 +262,13 @@ type unixConn struct {
 	*net.UnixConn
 	mapKey string
 	count  *atomic.Int32
+	closed atomic.Bool
 }
 
 func (uc *unixConn) Close() error {
+	if !uc.closed.CompareAndSwap(false, true) {
+		return net.ErrClosed
+	}
 	unixSocketsMu.Lock()
 	defer unixSocketsMu.Unlock()
 
@@ -259,11 +280,15 @@ func (uc *unixConn) Close() error {
 	err := uc.UnixConn.Close()
 	if newCount == 0 {
 		delete(unixSockets, uc.mapKey)
-		if name != "" {
+		if name != "" && !isAbstractUnixSocket(name) {
 			_ = syscall.Unlink(name)
 		}
 	}
 	return err
+}
+
+func isAbstractUnixSocket(name string) bool {
+	return (runtime.GOOS == "linux" || runtime.GOOS == "android") && strings.HasPrefix(name, "@")
 }
 
 func (uc *unixConn) Unwrap() net.PacketConn {
