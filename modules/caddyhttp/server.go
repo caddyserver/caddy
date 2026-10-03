@@ -602,7 +602,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r.Body = idleReader
 	}
 	if s.WriteIdleTimeout > 0 {
-		w = &IdleTimeoutWriter{
+		idleWriter := &IdleTimeoutWriter{
 			ResponseWriterWrapper: &ResponseWriterWrapper{ResponseWriter: w},
 			Ctrl:                  rc,
 			Deadline: IdleDeadline{
@@ -611,9 +611,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				MinRate:      s.WriteMinRate,
 				HardDeadline: writeHardDeadline,
 			},
-			MaxChunk: s.MaxWriteChunk,
-			Logger:   s.logger,
+			MaxChunk:           s.MaxWriteChunk,
+			Logger:             s.logger,
+			ClearBetweenWrites: r.ProtoMajor == 2,
 		}
+		defer idleWriter.HandlerDone()
+		w = idleWriter
 	}
 
 	// set the Server header

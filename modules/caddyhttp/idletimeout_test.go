@@ -15,6 +15,7 @@
 package caddyhttp
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
@@ -568,6 +569,196 @@ func TestIdleTimeoutWriter_HardDeadlineCapsIdleReset(t *testing.T) {
 	n, err := io.Copy(io.Discard, resp.Body)
 	if err == nil {
 		assert.Less(t, n, int64(64))
+	}
+}
+
+// TestIdleTimeoutWriter_Streaming covers #8118: on HTTP/2 the write
+// deadline is a timer that resets the stream when it fires, so a
+// deadline left armed between writes kills a stream that merely pauses.
+func TestIdleTimeoutWriter_Streaming(t *testing.T) {
+	const idle = 100 * time.Millisecond
+	const interval = 250 * time.Millisecond
+	const count = 3
+
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wrapped := &IdleTimeoutWriter{
+			ResponseWriterWrapper: &ResponseWriterWrapper{ResponseWriter: w},
+			Ctrl:                  http.NewResponseController(w),
+			Deadline:              IdleDeadline{Timeout: idle},
+			Logger:                zap.NewNop(),
+			ClearBetweenWrites:    r.ProtoMajor == 2,
+		}
+		defer wrapped.HandlerDone()
+		wrapped.Header().Set("Content-Type", "text/event-stream")
+		rc := http.NewResponseController(wrapped)
+
+		for i := range count {
+			time.Sleep(interval)
+			if _, err := fmt.Fprintf(wrapped, "data: %d\n\n", i); err != nil {
+				t.Logf("write error: %v", err)
+				return
+			}
+			if err := rc.Flush(); err != nil {
+				t.Logf("flush error: %v", err)
+				return
+			}
+		}
+	}))
+	srv.EnableHTTP2 = true
+	srv.StartTLS()
+	defer srv.Close()
+
+	resp, err := srv.Client().Get(srv.URL)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, 2, resp.ProtoMajor)
+
+	scanner := bufio.NewScanner(resp.Body)
+	var linesRead int
+	for scanner.Scan() {
+		linesRead++
+	}
+	require.NoError(t, scanner.Err())
+	require.Equal(t, 2*count, linesRead)
+}
+
+// writeDeadlineRecorder records every write deadline set on it.
+type writeDeadlineRecorder struct {
+	*httptest.ResponseRecorder
+	deadlines []time.Time
+}
+
+func (w *writeDeadlineRecorder) SetWriteDeadline(deadline time.Time) error {
+	w.deadlines = append(w.deadlines, deadline)
+	return nil
+}
+
+func TestIdleTimeoutWriter_ClearBetweenWrites(t *testing.T) {
+	const idle = time.Hour
+	hard := time.Now().Add(2 * time.Hour)
+
+	// the values recorded for each SetWriteDeadline call
+	const (
+		idleSet  = "idle"
+		zeroSet  = "zero"
+		hardSet  = "hard"
+		otherSet = "other"
+	)
+
+	for i, tc := range []struct {
+		name     string
+		clear    bool
+		hard     bool
+		ops      func(w *IdleTimeoutWriter) error
+		expected []string
+	}{
+		{
+			name:     "write keeps the deadline when not clearing",
+			ops:      func(w *IdleTimeoutWriter) error { _, err := w.Write([]byte("x")); return err },
+			expected: []string{idleSet},
+		},
+		{
+			name:     "write clears the deadline",
+			clear:    true,
+			ops:      func(w *IdleTimeoutWriter) error { _, err := w.Write([]byte("x")); return err },
+			expected: []string{idleSet, zeroSet},
+		},
+		{
+			name:     "write puts back the hard deadline",
+			clear:    true,
+			hard:     true,
+			ops:      func(w *IdleTimeoutWriter) error { _, err := w.Write([]byte("x")); return err },
+			expected: []string{idleSet, hardSet},
+		},
+		{
+			name:     "empty write leaves the deadline alone",
+			clear:    true,
+			hard:     true,
+			ops:      func(w *IdleTimeoutWriter) error { _, err := w.Write(nil); return err },
+			expected: nil,
+		},
+		{
+			name:     "read from clears the deadline",
+			clear:    true,
+			ops:      func(w *IdleTimeoutWriter) error { _, err := w.ReadFrom(bytes.NewReader([]byte("x"))); return err },
+			expected: []string{idleSet, zeroSet},
+		},
+		{
+			name:     "flush is bounded by the idle deadline",
+			ops:      func(w *IdleTimeoutWriter) error { return w.FlushError() },
+			expected: []string{idleSet},
+		},
+		{
+			name:     "flush clears the deadline",
+			clear:    true,
+			ops:      func(w *IdleTimeoutWriter) error { return w.FlushError() },
+			expected: []string{idleSet, zeroSet},
+		},
+		{
+			name:  "handler done arms a deadline for unflushed writes",
+			clear: true,
+			ops: func(w *IdleTimeoutWriter) error {
+				_, err := w.Write([]byte("x"))
+				w.HandlerDone()
+				return err
+			},
+			expected: []string{idleSet, zeroSet, idleSet},
+		},
+		{
+			name:  "handler done does nothing after a flush",
+			clear: true,
+			ops: func(w *IdleTimeoutWriter) error {
+				if _, err := w.Write([]byte("x")); err != nil {
+					return err
+				}
+				err := w.FlushError()
+				w.HandlerDone()
+				return err
+			},
+			expected: []string{idleSet, zeroSet, idleSet, zeroSet},
+		},
+		{
+			name: "handler done does nothing when not clearing",
+			ops: func(w *IdleTimeoutWriter) error {
+				_, err := w.Write([]byte("x"))
+				w.HandlerDone()
+				return err
+			},
+			expected: []string{idleSet},
+		},
+	} {
+		rec := &writeDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+		w := &IdleTimeoutWriter{
+			ResponseWriterWrapper: &ResponseWriterWrapper{ResponseWriter: rec},
+			Ctrl:                  http.NewResponseController(rec),
+			Deadline:              IdleDeadline{Timeout: idle},
+			Logger:                zap.NewNop(),
+			ClearBetweenWrites:    tc.clear,
+		}
+		if tc.hard {
+			w.Deadline.HardDeadline = hard
+		}
+
+		before := time.Now()
+		if err := tc.ops(w); err != nil {
+			t.Errorf("Test %d (%s): unexpected error: %v", i, tc.name, err)
+		}
+		after := time.Now()
+
+		var actual []string
+		for _, d := range rec.deadlines {
+			switch {
+			case d.IsZero():
+				actual = append(actual, zeroSet)
+			case d.Equal(hard):
+				actual = append(actual, hardSet)
+			case !d.Before(before.Add(idle)) && !d.After(after.Add(idle)):
+				actual = append(actual, idleSet)
+			default:
+				actual = append(actual, otherSet)
+			}
+		}
+		assert.Equal(t, tc.expected, actual, "Test %d (%s)", i, tc.name)
 	}
 }
 
