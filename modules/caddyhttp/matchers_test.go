@@ -469,6 +469,156 @@ func TestPathMatcher(t *testing.T) {
 	}
 }
 
+// Path matching is case-insensitive, but placeholder names are case-sensitive.
+func TestPathMatcherPlaceholders(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		pattern      string
+		placeholders map[string]string
+		input        string
+		want         bool
+	}{
+		{
+			name:         "uppercase value",
+			pattern:      "/charts/DAPS-{http.vars.cycle}/",
+			placeholders: map[string]string{"http.vars.cycle": "2024-MAR-21"},
+			input:        "/charts/DAPS-2024-MAR-21/",
+			want:         true,
+		},
+		{
+			name:         "case-sensitive name",
+			pattern:      "/{http.vars.Cycle}",
+			placeholders: map[string]string{"http.vars.Cycle": "good", "http.vars.cycle": "wrong"},
+			input:        "/good",
+			want:         true,
+		},
+		{
+			name:         "different placeholder",
+			pattern:      "/{http.vars.Cycle}",
+			placeholders: map[string]string{"http.vars.Cycle": "good", "http.vars.cycle": "wrong"},
+			input:        "/wrong",
+			want:         false,
+		},
+		{
+			name:         "prefix",
+			pattern:      "/API/{http.vars.Cycle}/*",
+			placeholders: map[string]string{"http.vars.Cycle": "CURRENT"},
+			input:        "/api/current/file.txt",
+			want:         true,
+		},
+		{
+			name:         "suffix",
+			pattern:      "*{http.vars.extension}",
+			placeholders: map[string]string{"http.vars.extension": ".TXT"},
+			input:        "/file.txt",
+			want:         true,
+		},
+		{
+			name:         "substring",
+			pattern:      "*{http.vars.part}*",
+			placeholders: map[string]string{"http.vars.part": "MIDDLE"},
+			input:        "/start-middle-end",
+			want:         true,
+		},
+		{
+			name:         "glob",
+			pattern:      "/{http.vars.kind}/*/END",
+			placeholders: map[string]string{"http.vars.kind": "DAPS"},
+			input:        "/daps/file/end",
+			want:         true,
+		},
+		{
+			name:         "multiple placeholders",
+			pattern:      "/{http.vars.Kind}/{http.vars.Cycle}/",
+			placeholders: map[string]string{"http.vars.Kind": "DAPS", "http.vars.Cycle": "2024-MAR-21"},
+			input:        "/daps/2024-mar-21/",
+			want:         true,
+		},
+		{
+			name:         "escaped slash",
+			pattern:      "/{http.vars.path}",
+			placeholders: map[string]string{"http.vars.path": "FOO%2FBAR"},
+			input:        "/foo%2fbar",
+			want:         true,
+		},
+		{
+			name:         "escaped slash differs from separator",
+			pattern:      "/{http.vars.path}",
+			placeholders: map[string]string{"http.vars.path": "FOO%2FBAR"},
+			input:        "/foo/bar",
+			want:         false,
+		},
+		{
+			name:         "unicode value",
+			pattern:      "/{http.vars.name}",
+			placeholders: map[string]string{"http.vars.name": "CAFÉ"},
+			input:        "/caf%C3%A9",
+			want:         true,
+		},
+		{
+			name:    "missing placeholder",
+			pattern: "/API/{http.vars.missing}Foo",
+			input:   "/api/foo",
+			want:    true,
+		},
+		{
+			name:    "escaped closing brace prefix",
+			pattern: `/API/\}*`,
+			input:   "/api/%7Dfile",
+			want:    true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			matcher := MatchPath{tc.pattern}
+			if err := matcher.Provision(caddy.Context{}); err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest(http.MethodGet, tc.input, nil)
+			repl := caddy.NewReplacer()
+			for key, value := range tc.placeholders {
+				repl.Set(key, value)
+			}
+			req = req.WithContext(context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl))
+			got, err := matcher.MatchWithError(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tc.want {
+				t.Errorf("pattern %q with placeholders %v: matching %q = %t, want %t", tc.pattern, tc.placeholders, tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func BenchmarkPathMatcherPlaceholders(b *testing.B) {
+	for _, tc := range []struct {
+		name    string
+		pattern string
+		input   string
+	}{
+		{name: "static", pattern: "/API/CURRENT/", input: "/api/current/"},
+		{name: "static_prefix", pattern: "/API/*", input: "/api/current/file.txt"},
+		{name: "dynamic", pattern: "/API/{cycle}/", input: "/api/current/"},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			matcher := MatchPath{tc.pattern}
+			if err := matcher.Provision(caddy.Context{}); err != nil {
+				b.Fatal(err)
+			}
+			req := httptest.NewRequest(http.MethodGet, tc.input, nil)
+			repl := caddy.NewReplacer()
+			repl.Set("cycle", "current")
+			req = req.WithContext(context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl))
+			b.ReportAllocs()
+			for b.Loop() {
+				if matched, err := matcher.MatchWithError(req); err != nil || !matched {
+					b.Fatalf("match = %t, error = %v", matched, err)
+				}
+			}
+		})
+	}
+}
+
 func TestPathMatcherWindows(t *testing.T) {
 	// only Windows has this bug where it will ignore
 	// trailing dots and spaces in a filename
