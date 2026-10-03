@@ -218,6 +218,10 @@ func (w *IdleTimeoutWriter) clearDeadline() {
 		return
 	}
 
+	if !w.Deadline.HardDeadline.IsZero() && time.Now().After(w.Deadline.HardDeadline) {
+		return
+	}
+
 	if err := w.Ctrl.SetWriteDeadline(time.Time{}); err != nil {
 		w.unsupported = true
 		if c := w.Logger.Check(zapcore.DebugLevel, "could not clear write deadline"); c != nil {
