@@ -585,8 +585,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.WriteTimeout > 0 {
 		writeHardDeadline = start.Add(time.Duration(s.WriteTimeout))
 	}
+	var idleReader *IdleTimeoutReader
+	var idleWriter *IdleTimeoutWriter
 	if s.ReadIdleTimeout > 0 && r.Body != nil {
-		idleReader := &IdleTimeoutReader{
+		idleReader = &IdleTimeoutReader{
 			ReadCloser: r.Body,
 			Ctrl:       rc,
 			Deadline: IdleDeadline{
@@ -602,7 +604,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r.Body = idleReader
 	}
 	if s.WriteIdleTimeout > 0 {
-		idleWriter := &IdleTimeoutWriter{
+		idleWriter = &IdleTimeoutWriter{
 			ResponseWriterWrapper: &ResponseWriterWrapper{ResponseWriter: w},
 			Ctrl:                  rc,
 			Deadline: IdleDeadline{
@@ -638,7 +640,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// prepare internals of the request for the handler pipeline
 	repl := caddy.NewReplacer()
-	r = PrepareRequest(r, repl, w, s)
+	r = prepareRequest(r, repl, w, s, idleTimeouts{reader: idleReader, writer: idleWriter})
 
 	// clone the request for logging purposes before it enters any handler chain;
 	// this is necessary to capture the original request in case it gets modified
@@ -1370,8 +1372,17 @@ func (s *Server) Name() string { return s.name }
 // PrepareRequest fills the request r for use in a Caddy HTTP handler chain. w and s can
 // be nil, but the handlers will lose response placeholders and access to the server.
 func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter, s *Server) *http.Request {
+	return prepareRequest(r, repl, w, s, idleTimeouts{})
+}
+
+// prepareRequest is PrepareRequest, also making the wrappers applying
+// the server's idle timeouts, if any, available to handlers.
+func prepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter, s *Server, idle idleTimeouts) *http.Request {
 	// set up the context for the request
 	ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl)
+	if idle.reader != nil || idle.writer != nil {
+		ctx = context.WithValue(ctx, idleTimeoutsCtxKey, idle)
+	}
 	ctx = context.WithValue(ctx, ServerCtxKey, s)
 
 	trusted, clientIP := determineTrustedProxy(r, s)
