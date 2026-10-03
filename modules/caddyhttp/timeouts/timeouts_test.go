@@ -113,6 +113,18 @@ func TestTimeoutsStopsReadDeadlineBeforeReturning(t *testing.T) {
 	assert.Len(t, w.deadlines, 1)
 }
 
+func TestTimeoutsSkipsDrainDeadlineWithoutBody(t *testing.T) {
+	tm := Timeouts{ReadTimeout: time.Second, logger: zap.NewNop()}
+	w := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+
+	err := tm.ServeHTTP(w, req, caddyhttp.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
+		return nil
+	}))
+	require.NoError(t, err)
+	assert.Empty(t, w.deadlines)
+}
+
 func TestTimeouts_WriteMaxChunkOverride(t *testing.T) {
 	const size = 10000
 	const maxChunk = 100

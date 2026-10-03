@@ -225,6 +225,22 @@ func TestIdleTimeoutReaderHandlerDoneRetriesTerminalClear(t *testing.T) {
 func TestIdleTimeoutReaderHandlerDoneArmsDrain(t *testing.T) {
 	w := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
 	r := &IdleTimeoutReader{
+		ReadCloser:    io.NopCloser(strings.NewReader("body")),
+		Ctrl:          http.NewResponseController(w),
+		Deadline:      IdleDeadline{Timeout: time.Second},
+		Logger:        zap.NewNop(),
+		DrainDeadline: true,
+	}
+
+	r.HandlerDone()
+	deadlines := w.snapshot()
+	require.Len(t, deadlines, 1)
+	assert.False(t, deadlines[0].IsZero())
+}
+
+func TestIdleTimeoutReaderHandlerDoneWithoutDrainDeadline(t *testing.T) {
+	w := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	r := &IdleTimeoutReader{
 		ReadCloser: io.NopCloser(strings.NewReader("body")),
 		Ctrl:       http.NewResponseController(w),
 		Deadline:   IdleDeadline{Timeout: time.Second},
@@ -232,9 +248,7 @@ func TestIdleTimeoutReaderHandlerDoneArmsDrain(t *testing.T) {
 	}
 
 	r.HandlerDone()
-	deadlines := w.snapshot()
-	require.Len(t, deadlines, 1)
-	assert.False(t, deadlines[0].IsZero())
+	assert.Empty(t, w.snapshot())
 }
 
 func TestIdleTimeoutReaderAfterHandlerReturnsHTTP2(t *testing.T) {
@@ -287,10 +301,11 @@ func TestIdleTimeoutReaderHandlerDonePreservesHTTP1Connection(t *testing.T) {
 	remoteAddresses := make(chan string, 2)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		wrapped := &IdleTimeoutReader{
-			ReadCloser: r.Body,
-			Ctrl:       http.NewResponseController(w),
-			Deadline:   IdleDeadline{Timeout: idle},
-			Logger:     zap.NewNop(),
+			ReadCloser:    r.Body,
+			Ctrl:          http.NewResponseController(w),
+			Deadline:      IdleDeadline{Timeout: idle},
+			Logger:        zap.NewNop(),
+			DrainDeadline: r.ProtoMajor == 1 && r.ContentLength != 0,
 		}
 		defer wrapped.HandlerDone()
 		remoteAddresses <- r.RemoteAddr

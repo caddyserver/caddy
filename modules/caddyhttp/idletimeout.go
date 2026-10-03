@@ -80,6 +80,13 @@ type IdleTimeoutReader struct {
 	Deadline IdleDeadline
 	Logger   *zap.Logger
 
+	// DrainDeadline makes HandlerDone arm a final idle deadline if
+	// the body is unfinished, bounding net/http's post-handler drain.
+	// Only HTTP/1 drains a request body on the connection after the
+	// handler returns, so it is pointless (and costs a timer on
+	// HTTP/2) for other protocols or requests without a body.
+	DrainDeadline bool
+
 	mu          sync.Mutex
 	unsupported bool
 	deadlineSet bool
@@ -115,8 +122,9 @@ func (r *IdleTimeoutReader) Read(p []byte) (int, error) {
 }
 
 // HandlerDone prevents later body reads from using the response controller.
-// If the body is not finished, it leaves an idle deadline armed for net/http's
-// post-handler drain. It must be called before the installing handler returns.
+// If the body is not finished and DrainDeadline is set, it leaves an idle
+// deadline armed for net/http's post-handler drain. It must be called before
+// the installing handler returns.
 func (r *IdleTimeoutReader) HandlerDone() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -126,7 +134,7 @@ func (r *IdleTimeoutReader) HandlerDone() {
 	}
 	if r.terminalErr != nil {
 		r.clearDeadlineLocked()
-	} else if !r.deadlineSet && !r.unsupported {
+	} else if r.DrainDeadline && !r.deadlineSet && !r.unsupported {
 		r.setDeadlineLocked("could not set final read deadline")
 	}
 	r.finished = true
