@@ -114,8 +114,9 @@ func (t Timeouts) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 					Timeout: t.ReadTimeout,
 					MinRate: t.ReadMinRate,
 				},
-				Logger:        t.logger,
-				DrainDeadline: r.ProtoMajor == 1 && r.ContentLength != 0,
+				Logger:            t.logger,
+				DrainDeadline:     r.ProtoMajor == 1 && r.ContentLength != 0,
+				ClearBetweenReads: r.ProtoMajor == 2,
 			}
 			defer idleReader.HandlerDone()
 			r.Body = idleReader

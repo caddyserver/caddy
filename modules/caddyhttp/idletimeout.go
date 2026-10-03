@@ -122,6 +122,17 @@ type IdleTimeoutReader struct {
 	// HTTP/2) for other protocols or requests without a body.
 	DrainDeadline bool
 
+	// ClearBetweenReads makes the reader put back HardDeadline (no
+	// deadline unless a hard ceiling is configured) after every
+	// successful read, so the idle deadline only bounds reads in
+	// flight. It is required for HTTP/2, where the read deadline is a
+	// timer that fails the body when it fires, even with no read in
+	// flight: otherwise a handler that stops reading for longer than the
+	// timeout (e.g. while an upstream is slow to accept the body) loses
+	// the body, although the client is only held back by flow control.
+	// Other protocols only check the deadline during a read.
+	ClearBetweenReads bool
+
 	mu          sync.Mutex
 	unsupported bool
 	deadlineSet bool
@@ -150,6 +161,8 @@ func (r *IdleTimeoutReader) Read(p []byte) (int, error) {
 		if !r.finished {
 			r.clearDeadlineLocked()
 		}
+	} else if r.ClearBetweenReads && !r.finished {
+		r.releaseDeadlineLocked()
 	}
 	r.mu.Unlock()
 
@@ -213,6 +226,28 @@ func (r *IdleTimeoutReader) setDeadlineLocked(logMessage string) {
 		return
 	}
 	r.deadlineSet = true
+}
+
+// releaseDeadlineLocked replaces the idle deadline with HardDeadline.
+func (r *IdleTimeoutReader) releaseDeadlineLocked() {
+	if !r.deadlineSet || r.unsupported {
+		return
+	}
+
+	// once the hard deadline has passed, the deadline set before the
+	// read (capped to it) has already expired; keep it
+	if !r.Deadline.HardDeadline.IsZero() && !time.Now().Before(r.Deadline.HardDeadline) {
+		return
+	}
+
+	if err := r.Ctrl.SetReadDeadline(r.Deadline.HardDeadline); err != nil {
+		r.unsupported = true
+		if c := r.Logger.Check(zapcore.DebugLevel, "could not release read deadline"); c != nil {
+			c.Write(zap.Error(err))
+		}
+		return
+	}
+	r.deadlineSet = false
 }
 
 func (r *IdleTimeoutReader) clearDeadlineLocked() {
