@@ -15,12 +15,16 @@
 package caddyhttp
 
 import (
+	"context"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+
+	"github.com/caddyserver/caddy/v2"
 )
 
 // DefaultMaxWriteChunk is used by IdleTimeoutWriter when MaxChunk is zero.
@@ -70,39 +74,173 @@ func (d *IdleDeadline) next() (deadline time.Time) {
 	return
 }
 
+// idleOverride holds what restore needs to undo an override.
+type idleOverride struct {
+	prev IdleDeadline
+	at   time.Time
+}
+
+// override replaces the timeout and minimum rate, counting the MinRate
+// allowance from now, and returns what restore needs to put the
+// previous settings back. HardDeadline is kept.
+func (d *IdleDeadline) override(timeout time.Duration, minRate int64) idleOverride {
+	o := idleOverride{prev: *d, at: time.Now()}
+	d.Start = o.at
+	d.Timeout = timeout
+	d.MinRate = minRate
+	d.transferred = 0
+	return o
+}
+
+// restore puts back the settings replaced by override. The previous
+// MinRate window is suspended while overridden: its start moves forward
+// by the time spent overridden, and bytes transferred in the meantime
+// don't count towards it, so the restored deadline can't already have
+// expired because of time the override allowed.
+func (d *IdleDeadline) restore(o idleOverride) {
+	prev := o.prev
+	prev.Start = prev.Start.Add(time.Since(o.at))
+	*d = prev
+}
+
 // IdleTimeoutReader wraps a request body with IdleDeadline, resetting
 // the read deadline before every Read call instead of bounding the
 // whole body transfer with a single hard deadline.
+// The deadline is cleared after an error (most likely io.EOF) is encountered when reading the body
+// to prevent context canceled error for h1 requests.
+// see: https://github.com/caddyserver/caddy/issues/8103
 type IdleTimeoutReader struct {
 	io.ReadCloser
 	Ctrl     *http.ResponseController
 	Deadline IdleDeadline
 	Logger   *zap.Logger
 
+	// DrainDeadline makes HandlerDone arm a final idle deadline if
+	// the body is unfinished, bounding net/http's post-handler drain.
+	// Only HTTP/1 drains a request body on the connection after the
+	// handler returns, so it is pointless (and costs a timer on
+	// HTTP/2) for other protocols or requests without a body.
+	DrainDeadline bool
+
+	mu          sync.Mutex
 	unsupported bool
+	deadlineSet bool
+	finished    bool
+	terminalErr error
 }
 
 func (r *IdleTimeoutReader) Read(p []byte) (int, error) {
-	if !r.unsupported {
-		if err := r.Ctrl.SetReadDeadline(r.Deadline.next()); err != nil {
-			r.unsupported = true
-			if c := r.Logger.Check(zapcore.DebugLevel, "could not set read deadline"); c != nil {
-				c.Write(zap.Error(err))
-			}
-		}
+	r.mu.Lock()
+	if r.terminalErr != nil {
+		err := r.terminalErr
+		r.mu.Unlock()
+		return 0, err
 	}
+	if !r.finished && !r.unsupported {
+		r.setDeadlineLocked("could not set read deadline")
+	}
+	r.mu.Unlock()
 
 	n, err := r.ReadCloser.Read(p)
+
+	r.mu.Lock()
 	r.Deadline.transferred += int64(n)
+	if err != nil {
+		r.terminalErr = err
+		if !r.finished {
+			r.clearDeadlineLocked()
+		}
+	}
+	r.mu.Unlock()
 
 	return n, err
 }
 
+// HandlerDone prevents later body reads from using the response controller.
+// If the body is not finished and DrainDeadline is set, it leaves an idle
+// deadline armed for net/http's post-handler drain. It must be called before
+// the installing handler returns.
+func (r *IdleTimeoutReader) HandlerDone() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.finished {
+		return
+	}
+	if r.terminalErr != nil {
+		r.clearDeadlineLocked()
+	} else if r.DrainDeadline && !r.deadlineSet && !r.unsupported {
+		r.setDeadlineLocked("could not set final read deadline")
+	}
+	r.finished = true
+}
+
+// Override makes the reader use timeout and minRate instead of its own
+// settings until the returned function is called, which puts them back.
+// The MinRate allowance is counted from the call, and HardDeadline still
+// applies. This lets a more specific scope, like the timeouts handler,
+// take precedence over the settings the reader was created with. A
+// deadline already armed is moved to the new settings both times, since
+// on HTTP/2 it is a timer that fails the body when it fires, even with
+// no read in flight.
+func (r *IdleTimeoutReader) Override(timeout time.Duration, minRate int64) (restore func()) {
+	r.mu.Lock()
+	o := r.Deadline.override(timeout, minRate)
+	r.rearmLocked()
+	r.mu.Unlock()
+
+	return func() {
+		r.mu.Lock()
+		r.Deadline.restore(o)
+		r.rearmLocked()
+		r.mu.Unlock()
+	}
+}
+
+// rearmLocked moves an armed deadline to what the current settings give.
+func (r *IdleTimeoutReader) rearmLocked() {
+	if r.deadlineSet && !r.finished && !r.unsupported {
+		r.setDeadlineLocked("could not set read deadline")
+	}
+}
+
+func (r *IdleTimeoutReader) setDeadlineLocked(logMessage string) {
+	if err := r.Ctrl.SetReadDeadline(r.Deadline.next()); err != nil {
+		r.unsupported = true
+		if c := r.Logger.Check(zapcore.DebugLevel, logMessage); c != nil {
+			c.Write(zap.Error(err))
+		}
+		return
+	}
+	r.deadlineSet = true
+}
+
+func (r *IdleTimeoutReader) clearDeadlineLocked() {
+	if !r.deadlineSet {
+		return
+	}
+	if err := r.Ctrl.SetReadDeadline(time.Time{}); err != nil {
+		r.unsupported = true
+		if c := r.Logger.Check(zapcore.DebugLevel, "could not clear read deadline"); c != nil {
+			c.Write(zap.Error(err))
+		}
+		return
+	}
+	r.deadlineSet = false
+}
+
 // IdleTimeoutWriter wraps a ResponseWriter with IdleDeadline, resetting
-// the write deadline before every Write call, the same way
-// IdleTimeoutReader does for reads. A handler that pauses between
-// writes (e.g. streaming or SSE) is unaffected, since with MinRate == 0
-// the deadline only bounds the duration of the write actually in flight.
+// the write deadline before every Write, ReadFrom and Flush call, the same
+// way IdleTimeoutReader does for reads. With MinRate == 0, the deadline
+// only bounds the write or flush actually in flight, so a handler that
+// pauses between writes (e.g. streaming or SSE) is unaffected.
+//
+// That relies on a deadline left armed between writes being harmless,
+// which holds for HTTP/1 and HTTP/3, where it is only checked by the
+// next write on the connection or stream. On HTTP/2 the write deadline
+// is a timer that resets the stream when it fires, even with no write
+// in flight, so ClearBetweenWrites must be set for HTTP/2 requests
+// (see #8118).
 //
 // MaxChunk bounds how much a single underlying Write/ReadFrom call is
 // allowed to cover; zero uses DefaultMaxWriteChunk. SetWriteDeadline
@@ -124,7 +262,16 @@ type IdleTimeoutWriter struct {
 	MaxChunk int
 	Logger   *zap.Logger
 
+	// ClearBetweenWrites makes the writer clear its idle deadline after
+	// every successful write or flush, putting back HardDeadline if any,
+	// and arm a final one in HandlerDone if written data may still be
+	// buffered. It is required for HTTP/2 and unnecessary (and costs a
+	// deadline update per write) for other protocols.
+	ClearBetweenWrites bool
+
 	unsupported bool
+	deadlineSet bool
+	unflushed   bool
 }
 
 func (w *IdleTimeoutWriter) resetDeadline() {
@@ -137,6 +284,73 @@ func (w *IdleTimeoutWriter) resetDeadline() {
 		if c := w.Logger.Check(zapcore.DebugLevel, "could not set write deadline"); c != nil {
 			c.Write(zap.Error(err))
 		}
+		return
+	}
+	w.deadlineSet = true
+}
+
+// clearDeadline replaces the idle deadline set by resetDeadline with
+// HardDeadline, which is zero (no deadline) unless a hard ceiling is
+// configured. It does nothing unless ClearBetweenWrites is set.
+func (w *IdleTimeoutWriter) clearDeadline() {
+	if !w.ClearBetweenWrites || !w.deadlineSet || w.unsupported {
+		return
+	}
+
+	// once the hard deadline has passed, the deadline set by
+	// resetDeadline (capped to it) has already expired; keep it
+	if !w.Deadline.HardDeadline.IsZero() && !time.Now().Before(w.Deadline.HardDeadline) {
+		return
+	}
+
+	if err := w.Ctrl.SetWriteDeadline(w.Deadline.HardDeadline); err != nil {
+		w.unsupported = true
+		if c := w.Logger.Check(zapcore.DebugLevel, "could not clear write deadline"); c != nil {
+			c.Write(zap.Error(err))
+		}
+		return
+	}
+	w.deadlineSet = false
+}
+
+// HandlerDone arms a final idle deadline if ClearBetweenWrites is set
+// and data written since the last flush may still be buffered, so that
+// the flush net/http does after the handler returns is bounded too. It
+// must be called before the installing handler returns, since the
+// response controller can't be used after that.
+func (w *IdleTimeoutWriter) HandlerDone() {
+	if w.ClearBetweenWrites && w.unflushed && !w.deadlineSet {
+		w.resetDeadline()
+	}
+}
+
+// Override makes the writer use timeout, minRate and, if positive,
+// maxChunk instead of its own settings until the returned function is
+// called, which puts them back. The MinRate allowance is counted from
+// the call, and HardDeadline still applies. This lets a more specific
+// scope, like the timeouts handler, take precedence over the settings
+// the writer was created with. A deadline already armed is moved to the
+// new settings both times, since on HTTP/2 it is a timer that resets
+// the stream when it fires.
+func (w *IdleTimeoutWriter) Override(timeout time.Duration, minRate int64, maxChunk int) (restore func()) {
+	o := w.Deadline.override(timeout, minRate)
+	prevMaxChunk := w.MaxChunk
+	if maxChunk > 0 {
+		w.MaxChunk = maxChunk
+	}
+	w.rearm()
+
+	return func() {
+		w.Deadline.restore(o)
+		w.MaxChunk = prevMaxChunk
+		w.rearm()
+	}
+}
+
+// rearm moves an armed deadline to what the current settings give.
+func (w *IdleTimeoutWriter) rearm() {
+	if w.deadlineSet {
+		w.resetDeadline()
 	}
 }
 
@@ -160,10 +374,14 @@ func (w *IdleTimeoutWriter) Write(p []byte) (int, error) {
 		total += n
 		w.Deadline.transferred += int64(n)
 		p = p[n:]
+		if n > 0 {
+			w.unflushed = true
+		}
 		if err != nil {
 			return total, err
 		}
 	}
+	w.clearDeadline()
 	return total, nil
 }
 
@@ -175,18 +393,66 @@ func (w *IdleTimeoutWriter) ReadFrom(r io.Reader) (int64, error) {
 		n, err := w.ResponseWriterWrapper.ReadFrom(io.LimitReader(r, int64(maxChunk)))
 		total += n
 		w.Deadline.transferred += n
+		if n > 0 {
+			w.unflushed = true
+		}
 		if err != nil {
+			// the error may come from r rather than the client, in
+			// which case the response can still be written to
+			w.clearDeadline()
 			return total, err
 		}
 		if n < int64(maxChunk) {
+			w.clearDeadline()
 			return total, nil
 		}
 	}
 }
 
+// FlushError flushes the underlying writer under the idle deadline. A
+// small write may only fill a buffer, leaving the flush as the call
+// that actually blocks on a client that stopped reading.
+func (w *IdleTimeoutWriter) FlushError() error {
+	w.resetDeadline()
+	err := http.NewResponseController(w.ResponseWriter).Flush()
+	if err != nil {
+		return err
+	}
+	w.unflushed = false
+	w.clearDeadline()
+	return nil
+}
+
+// idleTimeouts holds the wrappers applying a request's idle timeouts.
+type idleTimeouts struct {
+	reader *IdleTimeoutReader
+	writer *IdleTimeoutWriter
+}
+
+// idleTimeoutsCtxKey is the context key for idleTimeouts.
+const idleTimeoutsCtxKey caddy.CtxKey = "idle_timeouts"
+
+// IdleTimeoutsFromContext returns the IdleTimeoutReader and
+// IdleTimeoutWriter that apply the idle timeouts of the request with
+// context ctx. Either is nil if no idle timeout is applied that way. A
+// handler with its own idle timeouts should Override these instead of
+// wrapping the body or response writer again, since the wrapper closest
+// to the connection sets the deadline last, and so would win.
+func IdleTimeoutsFromContext(ctx context.Context) (*IdleTimeoutReader, *IdleTimeoutWriter) {
+	it, _ := ctx.Value(idleTimeoutsCtxKey).(idleTimeouts)
+	return it.reader, it.writer
+}
+
+// ContextWithIdleTimeouts returns a copy of ctx in which
+// IdleTimeoutsFromContext returns reader and writer.
+func ContextWithIdleTimeouts(ctx context.Context, reader *IdleTimeoutReader, writer *IdleTimeoutWriter) context.Context {
+	return context.WithValue(ctx, idleTimeoutsCtxKey, idleTimeouts{reader: reader, writer: writer})
+}
+
 // Interface guards
 var (
-	_ io.ReadCloser       = (*IdleTimeoutReader)(nil)
-	_ http.ResponseWriter = (*IdleTimeoutWriter)(nil)
-	_ io.ReaderFrom       = (*IdleTimeoutWriter)(nil)
+	_ io.ReadCloser                   = (*IdleTimeoutReader)(nil)
+	_ http.ResponseWriter             = (*IdleTimeoutWriter)(nil)
+	_ io.ReaderFrom                   = (*IdleTimeoutWriter)(nil)
+	_ interface{ FlushError() error } = (*IdleTimeoutWriter)(nil)
 )
