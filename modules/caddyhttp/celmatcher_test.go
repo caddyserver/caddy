@@ -42,14 +42,15 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 -----END CERTIFICATE-----`)
 
 	matcherTests = []struct {
-		name              string
-		expression        *MatchExpression
-		urlTarget         string
-		httpMethod        string
-		httpHeader        *http.Header
-		wantErr           bool
-		wantResult        bool
-		clientCertificate []byte
+		name                 string
+		expression           *MatchExpression
+		urlTarget            string
+		httpMethod           string
+		httpHeader           *http.Header
+		wantErr              bool
+		wantResult           bool
+		clientCertificate    []byte
+		tlsHandshakeComplete *bool
 	}{
 		{
 			name: "boolean matches succeed for placeholder http.request.tls.client.subject",
@@ -333,6 +334,63 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			wantErr: true,
 		},
 		{
+			name: "tls(true) matches when handshake is complete (MatchTLS)",
+			expression: &MatchExpression{
+				Expr: `tls(true)`,
+			},
+			urlTarget:            "https://example.com",
+			tlsHandshakeComplete: boolPtr(true),
+			wantResult:           true,
+		},
+		{
+			name: "tls(true) does not match when handshake is incomplete (MatchTLS)",
+			expression: &MatchExpression{
+				Expr: `tls(true)`,
+			},
+			urlTarget:            "https://example.com",
+			tlsHandshakeComplete: boolPtr(false),
+			wantResult:           false,
+		},
+		{
+			name: "tls(false) matches an incomplete handshake (MatchTLS)",
+			expression: &MatchExpression{
+				Expr: `tls(false)`,
+			},
+			urlTarget:            "https://example.com",
+			tlsHandshakeComplete: boolPtr(false),
+			wantResult:           true,
+		},
+		{
+			name: "tls invocation error no args (MatchTLS)",
+			expression: &MatchExpression{
+				Expr: `tls()`,
+			},
+			wantErr: true,
+		},
+		{
+			name: "tls invocation error wrong arg type (MatchTLS)",
+			expression: &MatchExpression{
+				Expr: `tls('true')`,
+			},
+			wantErr: true,
+		},
+		{
+			name: "tls(false) does not match a plain non-TLS request (MatchTLS)",
+			expression: &MatchExpression{
+				Expr: `tls(false)`,
+			},
+			urlTarget:  "http://example.com",
+			wantResult: false,
+		},
+		{
+			name: "tls(true) does not match a plain non-TLS request (MatchTLS)",
+			expression: &MatchExpression{
+				Expr: `tls(true)`,
+			},
+			urlTarget:  "http://example.com",
+			wantResult: false,
+		},
+		{
 			name: "query does not match against a specific value (MatchQuery)",
 			expression: &MatchExpression{
 				Expr: `query({"debug": "1"})`,
@@ -521,6 +579,13 @@ func TestMatchExpressionMatch(t *testing.T) {
 				}
 			}
 
+			if tc.tlsHandshakeComplete != nil {
+				if req.TLS == nil {
+					req.TLS = &tls.ConnectionState{}
+				}
+				req.TLS.HandshakeComplete = *tc.tlsHandshakeComplete
+			}
+
 			matches, err := tc.expression.MatchWithError(req)
 			if err != nil {
 				t.Errorf("MatchExpression.Match() error = %v", err)
@@ -566,6 +631,12 @@ func BenchmarkMatchExpressionMatch(b *testing.B) {
 					PeerCertificates: []*x509.Certificate{cert},
 				}
 			}
+			if tc.tlsHandshakeComplete != nil {
+				if req.TLS == nil {
+					req.TLS = &tls.ConnectionState{}
+				}
+				req.TLS.HandshakeComplete = *tc.tlsHandshakeComplete
+			}
 			b.ResetTimer()
 			for b.Loop() {
 				tc.expression.MatchWithError(req)
@@ -605,3 +676,5 @@ func TestMatchExpressionProvision(t *testing.T) {
 		})
 	}
 }
+
+func boolPtr(b bool) *bool { return &b }
