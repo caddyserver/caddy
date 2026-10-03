@@ -1,0 +1,74 @@
+{
+	tls_automate_names localhost 192.168.1.5 real.example.com
+	tls_automate_names second.example.com
+}
+
+example.org {
+	respond "hi"
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.org"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "hi",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		},
+		"tls": {
+			"certificates": {
+				"automate": [
+					"192.168.1.5",
+					"localhost",
+					"real.example.com",
+					"second.example.com"
+				]
+			},
+			"automation": {
+				"policies": [
+					{
+						"subjects": [
+							"localhost",
+							"192.168.1.5"
+						],
+						"issuers": [
+							{
+								"module": "internal"
+							}
+						]
+					}
+				]
+			}
+		}
+	}
+}

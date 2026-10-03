@@ -250,7 +250,7 @@ func TestRewrite(t *testing.T) {
 		{
 			rule:   Rewrite{StripPathPrefix: "/prefix"},
 			input:  newRequest(t, "GET", "/prefix"),
-			expect: newRequest(t, "GET", ""),
+			expect: newRequest(t, "GET", "/"),
 		},
 		{
 			rule:   Rewrite{StripPathPrefix: "/prefix"},
@@ -314,6 +314,11 @@ func TestRewrite(t *testing.T) {
 			rule:   Rewrite{StripPathSuffix: "/suffix"},
 			input:  newRequest(t, "GET", "/foo/bar"),
 			expect: newRequest(t, "GET", "/foo/bar"),
+		},
+		{
+			rule:   Rewrite{StripPathSuffix: "/suffix"},
+			input:  newRequest(t, "GET", "/suffix"),
+			expect: newRequest(t, "GET", "/"),
 		},
 		{
 			rule:   Rewrite{StripPathSuffix: "suffix"},
@@ -670,6 +675,40 @@ func TestQueryOpsReplaceScopedToKey(t *testing.T) {
 		if actual := tc.input.URL.Query(); !reflect.DeepEqual(tc.expect, map[string][]string(actual)) {
 			t.Errorf("Test %d: Expected query=%v but got %v", i, tc.expect, actual)
 		}
+	}
+}
+
+func TestStripPathPrefixCanonicalizesRemainder(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		target  string
+		prefix  string
+		path    string
+		rawPath string
+	}{
+		{name: "empty remainder", target: "/mount", prefix: "/mount", path: "/"},
+		{name: "mid-segment remainder", target: "/mountain", prefix: "/mount", path: "/ain"},
+		{name: "parent segment", target: "/mount../document", prefix: "/mount", path: "/document"},
+		{name: "current segment", target: "/mount./document/", prefix: "/mount", path: "/document/"},
+		{name: "encoded parent segment", target: "/mount%2e%2e/document", prefix: "/mount", path: "/document"},
+		{name: "encoded leading separator", target: "/mount%2Fdocument", prefix: "/mount", path: "/document"},
+		{name: "alternate separator encoding", target: "/mount/a%2Fb", prefix: "/mount", path: "/a/b", rawPath: "/a%2Fb"},
+		{name: "double-encoded parent segment", target: "/mount/%252e%252e/document", prefix: "/mount", path: "/%2e%2e/document"},
+		{name: "non-UTF-8 byte", target: "/mount/%ff", prefix: "/mount", path: "/\xff", rawPath: "/%ff"},
+		{name: "repeated separators", target: "/mount//a//b/", prefix: "/mount//", path: "/a//b/"},
+		{name: "ordinary remainder", target: "/mount/document", prefix: "/mount", path: "/document"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRequest(t, http.MethodGet, tc.target+"?keep=yes")
+			Rewrite{StripPathPrefix: tc.prefix}.Rewrite(r, caddy.NewReplacer())
+
+			if r.URL.Path != tc.path || r.URL.RawPath != tc.rawPath {
+				t.Errorf("Path/RawPath = %q/%q; want %q/%q", r.URL.Path, r.URL.RawPath, tc.path, tc.rawPath)
+			}
+			if r.URL.RawQuery != "keep=yes" || r.RequestURI != r.URL.EscapedPath()+"?keep=yes" {
+				t.Errorf("query or request target changed inconsistently: %q", r.RequestURI)
+			}
+		})
 	}
 }
 

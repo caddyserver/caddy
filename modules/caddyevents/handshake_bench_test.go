@@ -57,7 +57,7 @@ func benchCert(tb testing.TB) tls.Certificate {
 // benchmarkCertLookup measures CertMagic's GetCertificate, which Caddy calls
 // once per TLS handshake. CertMagic emits "tls_get_certificate" there, so this
 // shows what the events app costs a handshake when nothing is subscribed.
-func benchmarkCertLookup(b *testing.B, onEvent func(context.Context, string, map[string]any) error) {
+func benchmarkCertLookup(b *testing.B, onEvent func(context.Context, string, map[string]any) error, shouldEmit func(string) bool) {
 	b.Helper()
 
 	var cfg *certmagic.Config
@@ -68,9 +68,10 @@ func benchmarkCertLookup(b *testing.B, onEvent func(context.Context, string, map
 	b.Cleanup(cache.Stop)
 
 	cfg = certmagic.New(cache, certmagic.Config{
-		Storage: &certmagic.FileStorage{Path: b.TempDir()},
-		Logger:  zap.NewNop(),
-		OnEvent: onEvent,
+		Storage:        &certmagic.FileStorage{Path: b.TempDir()},
+		Logger:         zap.NewNop(),
+		OnEvent:        onEvent,
+		ShouldEmitFunc: shouldEmit,
 	})
 	if _, err := cfg.CacheUnmanagedTLSCertificate(context.Background(), benchCert(b), nil); err != nil {
 		b.Fatal(err)
@@ -107,5 +108,5 @@ func BenchmarkCertLookupWithEventsApp(b *testing.B) {
 
 	benchmarkCertLookup(b, func(_ context.Context, name string, data map[string]any) error {
 		return app.Emit(ctx, name, data).Aborted
-	})
+	}, app.ShouldEmit)
 }

@@ -286,18 +286,30 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 			prefix = "/" + prefix
 		}
 		mergeSlashes := !strings.Contains(prefix, "//")
+		stripped := false
 		changePath(r, func(escapedPath string) string {
 			escapedPath = caddyhttp.CleanPath(escapedPath, mergeSlashes)
-			return trimPathPrefix(escapedPath, prefix)
+			trimmed := trimPathPrefix(escapedPath, prefix)
+			stripped = stripped || trimmed != escapedPath
+			return trimmed
 		})
+		if stripped {
+			canonicalizePath(r)
+		}
 	}
 	if rewr.StripPathSuffix != "" {
 		suffix := repl.ReplaceAll(rewr.StripPathSuffix, "")
 		mergeSlashes := !strings.Contains(suffix, "//")
+		stripped := false
 		changePath(r, func(escapedPath string) string {
 			escapedPath = caddyhttp.CleanPath(escapedPath, mergeSlashes)
-			return trimPathSuffix(escapedPath, suffix)
+			trimmed := trimPathSuffix(escapedPath, suffix)
+			stripped = stripped || trimmed != escapedPath
+			return trimmed
 		})
+		if stripped {
+			canonicalizePath(r)
+		}
 	}
 
 	// substring replacements in URI
@@ -589,6 +601,34 @@ func changePath(req *http.Request, newVal func(pathOrRawPath string) string) {
 	if req.URL.RawPath == defaultEscapedPath(req.URL.Path) {
 		req.URL.RawPath = ""
 	}
+}
+
+// canonicalizePath anchors and cleans a stripped origin-form path while
+// preserving an alternate RawPath encoding when it still represents the
+// canonical Path. It is applied after prefix or suffix removal because stripping can
+// expose a relative path or dot segments that downstream handlers interpret
+// differently.
+func canonicalizePath(req *http.Request) {
+	p := req.URL.Path
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	cleaned := caddyhttp.CleanPath(defaultEscapedPath(p), false)
+	p, _ = url.PathUnescape(cleaned) // defaultEscapedPath always returns valid escapes
+
+	rawPath := req.URL.RawPath
+	if rawPath != "" {
+		if !strings.HasPrefix(rawPath, "/") {
+			rawPath = "/" + rawPath
+		}
+		decoded, err := url.PathUnescape(rawPath)
+		if err != nil || decoded != p || rawPath == defaultEscapedPath(p) {
+			rawPath = ""
+		}
+	}
+
+	req.URL.Path = p
+	req.URL.RawPath = rawPath
 }
 
 // defaultEscapedPath returns the canonical percent-encoding of p, matching

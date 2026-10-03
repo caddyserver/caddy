@@ -92,6 +92,54 @@ func TestEmitDispatchesToCatchAllSubscriber(t *testing.T) {
 	}
 }
 
+// Emit writes a debug line for every event, so with debug logging on an event
+// is observable even when nothing is subscribed. A predicate that answered
+// only about subscribers would silence that line.
+func TestShouldEmit(t *testing.T) {
+	app, _, cancel := testApp(t)
+	defer cancel()
+
+	if app.ShouldEmit("cert_obtained") {
+		t.Error("nothing is subscribed and debug is off; should not emit")
+	}
+
+	if err := app.On("cert_obtained", new(countingHandler)); err != nil {
+		t.Fatal(err)
+	}
+	if !app.ShouldEmit("cert_obtained") {
+		t.Error("a handler is bound by name; should emit")
+	}
+	if app.ShouldEmit("tls_get_certificate") {
+		t.Error("nothing is bound to this event; should not emit")
+	}
+}
+
+func TestShouldEmitWithCatchAllSubscriber(t *testing.T) {
+	app, _, cancel := testApp(t)
+	defer cancel()
+
+	if err := app.Subscribe(&Subscription{Handlers: []Handler{new(countingHandler)}}); err != nil {
+		t.Fatal(err)
+	}
+	if !app.ShouldEmit("tls_get_certificate") {
+		t.Error("a catch-all subscription observes every event; should emit")
+	}
+}
+
+func TestShouldEmitWithDebugLogging(t *testing.T) {
+	app, _, cancel := testApp(t)
+	defer cancel()
+	app.logger = zap.New(zapcore.NewCore(
+		zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()),
+		zapcore.AddSync(io.Discard),
+		zapcore.DebugLevel,
+	))
+
+	if !app.ShouldEmit("tls_get_certificate") {
+		t.Error("debug logging observes every event; should emit")
+	}
+}
+
 // Some events, such as tls_get_certificate, are emitted on every TLS
 // handshake, whether or not anything is subscribed to them.
 func BenchmarkEmitNoSubscribers(b *testing.B) {

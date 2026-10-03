@@ -151,7 +151,8 @@ Caddy's documentation is available at [https://caddyserver.com/docs](https://cad
 
 Note that third-party module documentation is not hosted by the Caddy website, other than basic usage examples. They are managed by the individual module authors, and you will have to contact them to change their documentation.
 
-Our documentation is scoped to the Caddy project only: it is not for describing how other software or systems work, even if they relate to Caddy or web servers. That kind of content [can be found in our community wiki](https://caddy.community/c/wiki/13), however.
+Our documentation is scoped to the Caddy project only: it is not for describing how other software or systems work, even if they relate to Caddy or web servers. That kind of content [can be found in our community wiki](https://caddy.community/c/wiki/13), however
+
 
 ## Collaborator Instructions
 
@@ -184,6 +185,13 @@ Collaborators have push rights to the repository. We grant this permission after
 	- [Best Practices for Maintainers](https://opensource.guide/best-practices/)
 	- [Shrinking Code Review](https://alexgaynor.net/2015/dec/29/shrinking-code-review/)
 
+## Proposing a release
+
+Our release flow is unique to avoid new releases from relying on any one maintainer, and from new releases being tagged prematurely. Authorized maintainers can propose a release by using the [Release Proposal](https://github.com/caddyserver/caddy/actions/workflows/release-proposal.yml) CI workflow. This has manual triggers only, and requires typing the desired tag and the commit SHA at which to tag the release.
+
+The workflow then automatically does some checks and submits an empty PR. When the PR is approved by sufficient authorized maintainers to form a quorum, the PR is automatically closed, and the release workflow begins.
+
+Maintainers must not push tags to trigger releases. Note that only certain maintainers may participate in the release proposal process.
 
 
 ## Values (WIP)
