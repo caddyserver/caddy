@@ -280,6 +280,25 @@ type Hasher interface {
 	FakeHash() []byte
 }
 
+// hashesNamespace is the module namespace of password hashing modules.
+const hashesNamespace = "http.authentication.hashes"
+
+// hashModuleInfo returns the module info of the installed password
+// hashing module with the given name (e.g. "bcrypt"). If no such module
+// is installed, the returned error lists the available algorithms.
+func hashModuleInfo(name string) (caddy.ModuleInfo, error) {
+	mods := caddy.GetModules(hashesNamespace)
+	names := make([]string, 0, len(mods))
+	for _, mod := range mods {
+		if mod.ID.Name() == name {
+			return mod, nil
+		}
+		names = append(names, mod.ID.Name())
+	}
+	return caddy.ModuleInfo{}, fmt.Errorf("unrecognized hash algorithm: %s (available: %s)",
+		name, strings.Join(names, ", "))
+}
+
 // Account contains a username and password.
 type Account struct {
 	// A user's username.
