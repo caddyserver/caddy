@@ -794,7 +794,39 @@ func BufferedLog() (*zap.Logger, *zap.Logger, *internal.LogBufferCore) {
 	origLogger := defaultLogger.logger
 	bufferCore := internal.NewLogBufferCore(zap.InfoLevel)
 	defaultLogger.logger = zap.New(bufferCore)
+	bufferedLogOrig = origLogger
 	return defaultLogger.logger, origLogger, bufferCore
+}
+
+// bufferedLogOrig is the default logger that was replaced by a startup log
+// buffer, if one is currently installed. Guarded by defaultLoggerMu.
+var bufferedLogOrig *zap.Logger
+
+// FlushLogs writes out any log entries still held in the startup log buffer,
+// and restores the default logger that the buffer replaced. It is a no-op if
+// no buffer is installed.
+//
+// Call this before terminating the process while the buffer may still hold
+// entries. Entries logged before a config is loaded are held back so they can
+// be written to the configured output in order, but if the config fails to
+// load the buffer is never handed off, so those entries -- including the error
+// explaining why the config failed -- would be dropped unread. Restoring the
+// original logger matters as much as the flush: leaving the emptied buffer
+// installed would send anything logged afterwards into a buffer that nobody is
+// left to drain.
+func FlushLogs() {
+	defaultLoggerMu.Lock()
+	defer defaultLoggerMu.Unlock()
+	if bufferedLogOrig == nil {
+		return
+	}
+	origLogger := bufferedLogOrig
+	bufferedLogOrig = nil
+	bufferCore, _ := defaultLogger.logger.Core().(internal.LogBufferCoreInterface)
+	defaultLogger.logger = origLogger
+	if bufferCore != nil {
+		bufferCore.FlushTo(origLogger)
+	}
 }
 
 var (

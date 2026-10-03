@@ -155,6 +155,12 @@ func WrapCommandFuncForCobra(f CommandFunc) func(cmd *cobra.Command, _ []string)
 			// cobra's plain "Error: ..." line which lacks any highlighting.
 			caddy.Log().Error(err.Error())
 			cmd.SilenceErrors = true
+
+			// That went into the startup log buffer, because a config that
+			// failed to load never installed the configured logger to drain
+			// it. Write it out and restore the original logger, or it is lost
+			// when Main exits the process.
+			caddy.FlushLogs()
 		}
 		if status > 1 {
 			return &exitError{ExitCode: status, Err: err}
