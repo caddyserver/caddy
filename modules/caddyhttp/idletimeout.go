@@ -135,10 +135,24 @@ type IdleTimeoutReader struct {
 
 	mu          sync.Mutex
 	unsupported bool
-	deadlineSet bool
+	armed       armedDeadline
 	finished    bool
 	terminalErr error
 }
+
+// armedDeadline is which read deadline IdleTimeoutReader has armed.
+type armedDeadline uint8
+
+const (
+	// deadlineNone means no deadline is armed.
+	deadlineNone armedDeadline = iota
+	// deadlineIdle means the idle deadline from IdleDeadline.next is
+	// armed.
+	deadlineIdle
+	// deadlineHard means only HardDeadline is armed, as put back
+	// between reads with ClearBetweenReads.
+	deadlineHard
+)
 
 func (r *IdleTimeoutReader) Read(p []byte) (int, error) {
 	r.mu.Lock()
@@ -182,7 +196,7 @@ func (r *IdleTimeoutReader) HandlerDone() {
 	}
 	if r.terminalErr != nil {
 		r.clearDeadlineLocked()
-	} else if r.DrainDeadline && !r.deadlineSet && !r.unsupported {
+	} else if r.DrainDeadline && r.armed != deadlineIdle && !r.unsupported {
 		r.setDeadlineLocked("could not set final read deadline")
 	}
 	r.finished = true
@@ -212,7 +226,7 @@ func (r *IdleTimeoutReader) Override(timeout time.Duration, minRate int64) (rest
 
 // rearmLocked moves an armed deadline to what the current settings give.
 func (r *IdleTimeoutReader) rearmLocked() {
-	if r.deadlineSet && !r.finished && !r.unsupported {
+	if r.armed == deadlineIdle && !r.finished && !r.unsupported {
 		r.setDeadlineLocked("could not set read deadline")
 	}
 }
@@ -225,12 +239,12 @@ func (r *IdleTimeoutReader) setDeadlineLocked(logMessage string) {
 		}
 		return
 	}
-	r.deadlineSet = true
+	r.armed = deadlineIdle
 }
 
 // releaseDeadlineLocked replaces the idle deadline with HardDeadline.
 func (r *IdleTimeoutReader) releaseDeadlineLocked() {
-	if !r.deadlineSet || r.unsupported {
+	if r.armed != deadlineIdle || r.unsupported {
 		return
 	}
 
@@ -247,11 +261,15 @@ func (r *IdleTimeoutReader) releaseDeadlineLocked() {
 		}
 		return
 	}
-	r.deadlineSet = false
+	if r.Deadline.HardDeadline.IsZero() {
+		r.armed = deadlineNone
+	} else {
+		r.armed = deadlineHard
+	}
 }
 
 func (r *IdleTimeoutReader) clearDeadlineLocked() {
-	if !r.deadlineSet {
+	if r.armed == deadlineNone {
 		return
 	}
 	if err := r.Ctrl.SetReadDeadline(time.Time{}); err != nil {
@@ -261,7 +279,7 @@ func (r *IdleTimeoutReader) clearDeadlineLocked() {
 		}
 		return
 	}
-	r.deadlineSet = false
+	r.armed = deadlineNone
 }
 
 // IdleTimeoutWriter wraps a ResponseWriter with IdleDeadline, resetting
@@ -305,6 +323,8 @@ type IdleTimeoutWriter struct {
 	ClearBetweenWrites bool
 
 	unsupported bool
+	// deadlineSet is whether the idle deadline is armed. clearDeadline
+	// leaves HardDeadline armed, if any, which nothing needs to undo.
 	deadlineSet bool
 	unflushed   bool
 }

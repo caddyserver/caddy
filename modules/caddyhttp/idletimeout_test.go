@@ -1058,3 +1058,34 @@ func TestIdleTimeoutReaderClearBetweenReads(t *testing.T) {
 		assert.Equal(t, tc.expected, actual, "Test %d", i)
 	}
 }
+
+// TestIdleTimeoutReaderReleasedHardDeadlineIsCleared checks that the
+// hard deadline put back between reads is tracked as armed, so it is
+// cleared like any other deadline once the body is done.
+func TestIdleTimeoutReaderReleasedHardDeadlineIsCleared(t *testing.T) {
+	hard := time.Now().Add(time.Hour)
+	w := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	r := &IdleTimeoutReader{
+		ReadCloser:        io.NopCloser(strings.NewReader("ab")),
+		Ctrl:              http.NewResponseController(w),
+		Deadline:          IdleDeadline{Timeout: time.Minute, HardDeadline: hard},
+		Logger:            zap.NewNop(),
+		ClearBetweenReads: true,
+	}
+
+	_, err := r.Read(make([]byte, 2))
+	require.NoError(t, err)
+	deadlines := w.snapshot()
+	require.Len(t, deadlines, 2)
+	assert.Equal(t, hard, deadlines[1], "the idle deadline should be released to the hard one")
+
+	// the body ends with an error without another deadline being set
+	r.mu.Lock()
+	r.terminalErr = io.ErrUnexpectedEOF
+	r.mu.Unlock()
+	r.HandlerDone()
+
+	deadlines = w.snapshot()
+	require.Len(t, deadlines, 3)
+	assert.True(t, deadlines[2].IsZero(), "the released hard deadline should be cleared")
+}
