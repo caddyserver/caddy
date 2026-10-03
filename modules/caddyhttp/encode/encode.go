@@ -176,11 +176,11 @@ func (enc *Encode) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 			// the Etag in the first place don't know that we appended to their Etag! so here
 			// we have to strip our addition so the upstream handlers can still honor client
 			// caches without knowing about our changes...
-			if etag := r.Header.Get("If-None-Match"); etag != "" && !strings.HasPrefix(etag, "W/") {
-				ourSuffix := "-" + encName + `"`
-				if before, ok := strings.CutSuffix(etag, ourSuffix); ok {
-					etag = before + `"`
-					r.Header.Set("If-None-Match", etag)
+			if etags := r.Header.Values("If-None-Match"); len(etags) > 0 {
+				etag := strings.Join(etags, ", ")
+				stripped := strings.ReplaceAll(etag, "-"+encName+`"`, `"`)
+				if stripped != etag || len(etags) > 1 {
+					r.Header.Set("If-None-Match", stripped)
 				}
 			}
 
