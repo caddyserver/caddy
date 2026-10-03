@@ -121,7 +121,7 @@ func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w ht
 	case errors.Is(err, fs.ErrPermission):
 		return caddyhttp.Error(http.StatusForbidden, err)
 	case errors.Is(err, fs.ErrNotExist):
-		return fsrv.notFound(w, r, next)
+		return fsrv.notFound(w, r, next, err)
 	case err != nil:
 		return caddyhttp.Error(http.StatusInternalServerError, err)
 	}
