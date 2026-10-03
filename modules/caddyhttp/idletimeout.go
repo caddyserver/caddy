@@ -17,6 +17,7 @@ package caddyhttp
 import (
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -79,23 +80,89 @@ type IdleTimeoutReader struct {
 	Deadline IdleDeadline
 	Logger   *zap.Logger
 
+	// DrainDeadline makes HandlerDone arm a final idle deadline if
+	// the body is unfinished, bounding net/http's post-handler drain.
+	// Only HTTP/1 drains a request body on the connection after the
+	// handler returns, so it is pointless (and costs a timer on
+	// HTTP/2) for other protocols or requests without a body.
+	DrainDeadline bool
+
+	mu          sync.Mutex
 	unsupported bool
+	deadlineSet bool
+	finished    bool
+	terminalErr error
 }
 
 func (r *IdleTimeoutReader) Read(p []byte) (int, error) {
-	if !r.unsupported {
-		if err := r.Ctrl.SetReadDeadline(r.Deadline.next()); err != nil {
-			r.unsupported = true
-			if c := r.Logger.Check(zapcore.DebugLevel, "could not set read deadline"); c != nil {
-				c.Write(zap.Error(err))
-			}
-		}
+	r.mu.Lock()
+	if r.terminalErr != nil {
+		err := r.terminalErr
+		r.mu.Unlock()
+		return 0, err
 	}
+	if !r.finished && !r.unsupported {
+		r.setDeadlineLocked("could not set read deadline")
+	}
+	r.mu.Unlock()
 
 	n, err := r.ReadCloser.Read(p)
+
+	r.mu.Lock()
 	r.Deadline.transferred += int64(n)
+	if err != nil {
+		r.terminalErr = err
+		if !r.finished {
+			r.clearDeadlineLocked()
+		}
+	}
+	r.mu.Unlock()
 
 	return n, err
+}
+
+// HandlerDone prevents later body reads from using the response controller.
+// If the body is not finished and DrainDeadline is set, it leaves an idle
+// deadline armed for net/http's post-handler drain. It must be called before
+// the installing handler returns.
+func (r *IdleTimeoutReader) HandlerDone() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.finished {
+		return
+	}
+	if r.terminalErr != nil {
+		r.clearDeadlineLocked()
+	} else if r.DrainDeadline && !r.deadlineSet && !r.unsupported {
+		r.setDeadlineLocked("could not set final read deadline")
+	}
+	r.finished = true
+}
+
+func (r *IdleTimeoutReader) setDeadlineLocked(logMessage string) {
+	if err := r.Ctrl.SetReadDeadline(r.Deadline.next()); err != nil {
+		r.unsupported = true
+		if c := r.Logger.Check(zapcore.DebugLevel, logMessage); c != nil {
+			c.Write(zap.Error(err))
+		}
+		return
+	}
+	r.deadlineSet = true
+}
+
+func (r *IdleTimeoutReader) clearDeadlineLocked() {
+	if !r.deadlineSet {
+		return
+	}
+	if err := r.Ctrl.SetReadDeadline(time.Time{}); err != nil {
+		r.unsupported = true
+		if c := r.Logger.Check(zapcore.DebugLevel, "could not clear read deadline"); c != nil {
+			c.Write(zap.Error(err))
+		}
+		return
+	}
+	r.deadlineSet = false
 }
 
 // IdleTimeoutWriter wraps a ResponseWriter with IdleDeadline, resetting

@@ -16,9 +16,13 @@ package caddyhttp
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -26,6 +30,43 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
+
+type readDeadlineRecorder struct {
+	*httptest.ResponseRecorder
+	mu        sync.Mutex
+	deadlines []time.Time
+	failAt    int
+}
+
+func (w *readDeadlineRecorder) SetReadDeadline(deadline time.Time) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.deadlines = append(w.deadlines, deadline)
+	if len(w.deadlines) == w.failAt {
+		return errors.New("deadline failure")
+	}
+	return nil
+}
+
+func (w *readDeadlineRecorder) snapshot() []time.Time {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return append([]time.Time(nil), w.deadlines...)
+}
+
+type blockingReadCloser struct {
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (r *blockingReadCloser) Read([]byte) (int, error) {
+	r.once.Do(func() { close(r.started) })
+	<-r.release
+	return 0, io.EOF
+}
+
+func (*blockingReadCloser) Close() error { return nil }
 
 // pacedReader emits chunkCount chunks of chunkSize bytes, sleeping delay
 // before each one, simulating a client that trickles a request body.
@@ -85,6 +126,257 @@ func TestIdleTimeoutReader(t *testing.T) {
 		defer resp.Body.Close()
 		assert.NotEqual(t, http.StatusOK, resp.StatusCode)
 	})
+}
+
+func TestIdleTimeoutReaderClearsDeadlineAtEOF(t *testing.T) {
+	w := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	r := &IdleTimeoutReader{
+		ReadCloser: io.NopCloser(strings.NewReader("body")),
+		Ctrl:       http.NewResponseController(w),
+		Deadline:   IdleDeadline{Timeout: time.Second},
+		Logger:     zap.NewNop(),
+	}
+
+	_, err := io.Copy(io.Discard, r)
+	require.NoError(t, err)
+	deadlines := w.snapshot()
+	require.NotEmpty(t, deadlines)
+	assert.True(t, deadlines[len(deadlines)-1].IsZero())
+}
+
+func TestIdleTimeoutReaderHandlerDone(t *testing.T) {
+	body := &blockingReadCloser{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	w := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	r := &IdleTimeoutReader{
+		ReadCloser: body,
+		Ctrl:       http.NewResponseController(w),
+		Deadline:   IdleDeadline{Timeout: time.Second},
+		Logger:     zap.NewNop(),
+	}
+
+	readDone := make(chan struct{})
+	go func() {
+		defer close(readDone)
+		_, _ = r.Read(make([]byte, 1))
+	}()
+	<-body.started
+
+	r.HandlerDone()
+	deadlines := w.snapshot()
+	require.Len(t, deadlines, 1)
+	assert.False(t, deadlines[0].IsZero())
+
+	close(body.release)
+	<-readDone
+	_, _ = r.Read(make([]byte, 1))
+	r.HandlerDone()
+	assert.Len(t, w.snapshot(), len(deadlines))
+}
+
+func TestIdleTimeoutReaderHandlerDoneAfterResetFailure(t *testing.T) {
+	w := &readDeadlineRecorder{
+		ResponseRecorder: httptest.NewRecorder(),
+		failAt:           2,
+	}
+	r := &IdleTimeoutReader{
+		ReadCloser: io.NopCloser(strings.NewReader("body")),
+		Ctrl:       http.NewResponseController(w),
+		Deadline:   IdleDeadline{Timeout: time.Second},
+		Logger:     zap.NewNop(),
+	}
+
+	_, _ = r.Read(make([]byte, 1))
+	_, _ = r.Read(make([]byte, 1))
+	r.HandlerDone()
+
+	deadlines := w.snapshot()
+	require.Len(t, deadlines, 2)
+	assert.False(t, deadlines[0].IsZero())
+	assert.False(t, deadlines[1].IsZero())
+}
+
+func TestIdleTimeoutReaderHandlerDoneRetriesTerminalClear(t *testing.T) {
+	w := &readDeadlineRecorder{
+		ResponseRecorder: httptest.NewRecorder(),
+		failAt:           3,
+	}
+	r := &IdleTimeoutReader{
+		ReadCloser: io.NopCloser(strings.NewReader("body")),
+		Ctrl:       http.NewResponseController(w),
+		Deadline:   IdleDeadline{Timeout: time.Second},
+		Logger:     zap.NewNop(),
+	}
+
+	_, err := io.Copy(io.Discard, r)
+	require.NoError(t, err)
+	r.HandlerDone()
+
+	deadlines := w.snapshot()
+	require.Len(t, deadlines, 4)
+	assert.False(t, deadlines[0].IsZero())
+	assert.False(t, deadlines[1].IsZero())
+	assert.True(t, deadlines[2].IsZero())
+	assert.True(t, deadlines[3].IsZero())
+}
+
+func TestIdleTimeoutReaderHandlerDoneArmsDrain(t *testing.T) {
+	w := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	r := &IdleTimeoutReader{
+		ReadCloser:    io.NopCloser(strings.NewReader("body")),
+		Ctrl:          http.NewResponseController(w),
+		Deadline:      IdleDeadline{Timeout: time.Second},
+		Logger:        zap.NewNop(),
+		DrainDeadline: true,
+	}
+
+	r.HandlerDone()
+	deadlines := w.snapshot()
+	require.Len(t, deadlines, 1)
+	assert.False(t, deadlines[0].IsZero())
+}
+
+func TestIdleTimeoutReaderHandlerDoneWithoutDrainDeadline(t *testing.T) {
+	w := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	r := &IdleTimeoutReader{
+		ReadCloser: io.NopCloser(strings.NewReader("body")),
+		Ctrl:       http.NewResponseController(w),
+		Deadline:   IdleDeadline{Timeout: time.Second},
+		Logger:     zap.NewNop(),
+	}
+
+	r.HandlerDone()
+	assert.Empty(t, w.snapshot())
+}
+
+func TestIdleTimeoutReaderAfterHandlerReturnsHTTP2(t *testing.T) {
+	lateBody := make(chan io.ReadCloser, 1)
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wrapped := &IdleTimeoutReader{
+			ReadCloser: r.Body,
+			Ctrl:       http.NewResponseController(w),
+			Deadline:   IdleDeadline{Timeout: time.Second},
+			Logger:     zap.NewNop(),
+		}
+		defer wrapped.HandlerDone()
+		lateBody <- wrapped
+		_, _ = io.WriteString(w, "ok")
+	}))
+	srv.EnableHTTP2 = true
+	srv.StartTLS()
+	defer srv.Close()
+
+	resp, err := srv.Client().Post(srv.URL, "text/plain", strings.NewReader("body"))
+	require.NoError(t, err)
+	responseBody, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	require.Equal(t, 2, resp.ProtoMajor)
+	require.Equal(t, "ok", string(responseBody))
+
+	readResult := make(chan error, 1)
+	go func() {
+		var result error
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				result = fmt.Errorf("late request-body read panicked: %v", recovered)
+			}
+			readResult <- result
+		}()
+		_, _ = io.Copy(io.Discard, <-lateBody)
+	}()
+	select {
+	case err := <-readResult:
+		assert.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("late request-body read did not return")
+	}
+}
+
+func TestIdleTimeoutReaderHandlerDonePreservesHTTP1Connection(t *testing.T) {
+	const idle = 100 * time.Millisecond
+
+	remoteAddresses := make(chan string, 2)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wrapped := &IdleTimeoutReader{
+			ReadCloser:    r.Body,
+			Ctrl:          http.NewResponseController(w),
+			Deadline:      IdleDeadline{Timeout: idle},
+			Logger:        zap.NewNop(),
+			DrainDeadline: r.ProtoMajor == 1 && r.ContentLength != 0,
+		}
+		defer wrapped.HandlerDone()
+		remoteAddresses <- r.RemoteAddr
+		if r.Method == http.MethodPost {
+			_, _ = wrapped.Read(make([]byte, 1))
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	transport := &http.Transport{MaxConnsPerHost: 1}
+	client := &http.Client{Transport: transport}
+	defer transport.CloseIdleConnections()
+
+	resp, err := client.Post(srv.URL, "text/plain", strings.NewReader("body"))
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+	firstAddress := <-remoteAddresses
+
+	time.Sleep(3 * idle)
+	resp, err = client.Get(srv.URL)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+	assert.Equal(t, firstAddress, <-remoteAddresses)
+}
+
+func TestIdleTimeoutReaderDeadlineClearedAfterBodyEOF(t *testing.T) {
+	const idle = 150 * time.Millisecond
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+	}))
+	defer upstream.Close()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wrapped := &IdleTimeoutReader{
+			ReadCloser: r.Body,
+			Ctrl:       http.NewResponseController(w),
+			Deadline:   IdleDeadline{Timeout: idle},
+			Logger:     zap.NewNop(),
+		}
+		defer wrapped.HandlerDone()
+
+		upReq, err := http.NewRequestWithContext(r.Context(), r.Method, upstream.URL, wrapped)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		upReq.ContentLength = r.ContentLength
+		resp, err := http.DefaultClient.Do(upReq)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		_ = resp.Body.Close()
+
+		select {
+		case <-r.Context().Done():
+			w.WriteHeader(http.StatusTeapot)
+		case <-time.After(3 * idle):
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer srv.Close()
+
+	resp, err := http.Post(srv.URL, "application/octet-stream", strings.NewReader("{}"))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
 func TestIdleTimeoutReader_HardDeadlineCapsIdleReset(t *testing.T) {
