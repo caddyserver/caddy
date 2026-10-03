@@ -650,6 +650,7 @@ func TestIdleTimeoutWriter_ClearBetweenWrites(t *testing.T) {
 		name     string
 		clear    bool
 		hard     bool
+		idle     time.Duration
 		ops      func(w *IdleTimeoutWriter) error
 		expected []string
 	}{
@@ -719,6 +720,23 @@ func TestIdleTimeoutWriter_ClearBetweenWrites(t *testing.T) {
 			expected: []string{idleSet, zeroSet, idleSet, zeroSet},
 		},
 		{
+			name:  "nothing is set again when capped to the hard deadline",
+			clear: true,
+			hard:  true,
+			idle:  3 * time.Hour,
+			ops: func(w *IdleTimeoutWriter) error {
+				if _, err := w.Write([]byte("x")); err != nil {
+					return err
+				}
+				if _, err := w.Write([]byte("x")); err != nil {
+					return err
+				}
+				w.HandlerDone()
+				return nil
+			},
+			expected: []string{hardSet},
+		},
+		{
 			name: "handler done does nothing when not clearing",
 			ops: func(w *IdleTimeoutWriter) error {
 				_, err := w.Write([]byte("x"))
@@ -728,11 +746,15 @@ func TestIdleTimeoutWriter_ClearBetweenWrites(t *testing.T) {
 			expected: []string{idleSet},
 		},
 	} {
+		timeout := idle
+		if tc.idle > 0 {
+			timeout = tc.idle
+		}
 		rec := &writeDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
 		w := &IdleTimeoutWriter{
 			ResponseWriterWrapper: &ResponseWriterWrapper{ResponseWriter: rec},
 			Ctrl:                  http.NewResponseController(rec),
-			Deadline:              IdleDeadline{Timeout: idle},
+			Deadline:              IdleDeadline{Timeout: timeout},
 			Logger:                zap.NewNop(),
 			ClearBetweenWrites:    tc.clear,
 		}
@@ -1059,14 +1081,14 @@ func TestIdleTimeoutReaderClearBetweenReads(t *testing.T) {
 	}
 }
 
-// TestIdleTimeoutReaderReleasedHardDeadlineIsCleared checks that the
-// hard deadline put back between reads is tracked as armed, so it is
-// cleared like any other deadline once the body is done.
-func TestIdleTimeoutReaderReleasedHardDeadlineIsCleared(t *testing.T) {
+// TestIdleTimeoutReaderHandlerDoneClearsReleasedHardDeadline checks
+// that the hard deadline put back after a partial read doesn't outlive
+// the handler when it returns without reading the rest of the body.
+func TestIdleTimeoutReaderHandlerDoneClearsReleasedHardDeadline(t *testing.T) {
 	hard := time.Now().Add(time.Hour)
 	w := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
 	r := &IdleTimeoutReader{
-		ReadCloser:        io.NopCloser(strings.NewReader("ab")),
+		ReadCloser:        io.NopCloser(strings.NewReader("abcd")),
 		Ctrl:              http.NewResponseController(w),
 		Deadline:          IdleDeadline{Timeout: time.Minute, HardDeadline: hard},
 		Logger:            zap.NewNop(),
@@ -1079,13 +1101,29 @@ func TestIdleTimeoutReaderReleasedHardDeadlineIsCleared(t *testing.T) {
 	require.Len(t, deadlines, 2)
 	assert.Equal(t, hard, deadlines[1], "the idle deadline should be released to the hard one")
 
-	// the body ends with an error without another deadline being set
-	r.mu.Lock()
-	r.terminalErr = io.ErrUnexpectedEOF
-	r.mu.Unlock()
 	r.HandlerDone()
-
 	deadlines = w.snapshot()
 	require.Len(t, deadlines, 3)
 	assert.True(t, deadlines[2].IsZero(), "the released hard deadline should be cleared")
+}
+
+// TestIdleTimeoutReaderSkipsSettingArmedDeadline checks that releasing
+// an idle deadline already capped to the hard deadline doesn't set the
+// same deadline again.
+func TestIdleTimeoutReaderSkipsSettingArmedDeadline(t *testing.T) {
+	hard := time.Now().Add(time.Minute)
+	w := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	r := &IdleTimeoutReader{
+		ReadCloser:        io.NopCloser(strings.NewReader("abcd")),
+		Ctrl:              http.NewResponseController(w),
+		Deadline:          IdleDeadline{Timeout: time.Hour, HardDeadline: hard},
+		Logger:            zap.NewNop(),
+		ClearBetweenReads: true,
+	}
+
+	for range 2 {
+		_, err := r.Read(make([]byte, 2))
+		require.NoError(t, err)
+	}
+	assert.Equal(t, []time.Time{hard}, w.snapshot())
 }

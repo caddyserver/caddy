@@ -136,6 +136,7 @@ type IdleTimeoutReader struct {
 	mu          sync.Mutex
 	unsupported bool
 	armed       armedDeadline
+	armedAt     time.Time // the deadline armed, if any
 	finished    bool
 	terminalErr error
 }
@@ -185,8 +186,9 @@ func (r *IdleTimeoutReader) Read(p []byte) (int, error) {
 
 // HandlerDone prevents later body reads from using the response controller.
 // If the body is not finished and DrainDeadline is set, it leaves an idle
-// deadline armed for net/http's post-handler drain. It must be called before
-// the installing handler returns.
+// deadline armed for net/http's post-handler drain. Otherwise, it clears a
+// deadline left from a finished body or put back between reads. It must be
+// called before the installing handler returns.
 func (r *IdleTimeoutReader) HandlerDone() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -194,7 +196,7 @@ func (r *IdleTimeoutReader) HandlerDone() {
 	if r.finished {
 		return
 	}
-	if r.terminalErr != nil {
+	if r.terminalErr != nil || r.armed == deadlineHard {
 		r.clearDeadlineLocked()
 	} else if r.DrainDeadline && r.armed != deadlineIdle && !r.unsupported {
 		r.setDeadlineLocked("could not set final read deadline")
@@ -232,14 +234,28 @@ func (r *IdleTimeoutReader) rearmLocked() {
 }
 
 func (r *IdleTimeoutReader) setDeadlineLocked(logMessage string) {
-	if err := r.Ctrl.SetReadDeadline(r.Deadline.next()); err != nil {
+	if r.setReadDeadlineLocked(r.Deadline.next(), logMessage) {
+		r.armed = deadlineIdle
+	}
+}
+
+// setReadDeadlineLocked sets the read deadline, unless it is the one
+// already armed (as when the idle deadline is capped to HardDeadline),
+// which on HTTP/2 would cost a message to the connection's serve loop
+// for nothing. It reports whether the deadline is armed.
+func (r *IdleTimeoutReader) setReadDeadlineLocked(deadline time.Time, logMessage string) bool {
+	if !r.armedAt.IsZero() && deadline.Equal(r.armedAt) {
+		return true
+	}
+	if err := r.Ctrl.SetReadDeadline(deadline); err != nil {
 		r.unsupported = true
 		if c := r.Logger.Check(zapcore.DebugLevel, logMessage); c != nil {
 			c.Write(zap.Error(err))
 		}
-		return
+		return false
 	}
-	r.armed = deadlineIdle
+	r.armedAt = deadline
+	return true
 }
 
 // releaseDeadlineLocked replaces the idle deadline with HardDeadline.
@@ -254,11 +270,7 @@ func (r *IdleTimeoutReader) releaseDeadlineLocked() {
 		return
 	}
 
-	if err := r.Ctrl.SetReadDeadline(r.Deadline.HardDeadline); err != nil {
-		r.unsupported = true
-		if c := r.Logger.Check(zapcore.DebugLevel, "could not release read deadline"); c != nil {
-			c.Write(zap.Error(err))
-		}
+	if !r.setReadDeadlineLocked(r.Deadline.HardDeadline, "could not release read deadline") {
 		return
 	}
 	if r.Deadline.HardDeadline.IsZero() {
@@ -272,11 +284,7 @@ func (r *IdleTimeoutReader) clearDeadlineLocked() {
 	if r.armed == deadlineNone {
 		return
 	}
-	if err := r.Ctrl.SetReadDeadline(time.Time{}); err != nil {
-		r.unsupported = true
-		if c := r.Logger.Check(zapcore.DebugLevel, "could not clear read deadline"); c != nil {
-			c.Write(zap.Error(err))
-		}
+	if !r.setReadDeadlineLocked(time.Time{}, "could not clear read deadline") {
 		return
 	}
 	r.armed = deadlineNone
@@ -326,6 +334,7 @@ type IdleTimeoutWriter struct {
 	// deadlineSet is whether the idle deadline is armed. clearDeadline
 	// leaves HardDeadline armed, if any, which nothing needs to undo.
 	deadlineSet bool
+	armedAt     time.Time // the deadline armed, if any
 	unflushed   bool
 }
 
@@ -334,14 +343,28 @@ func (w *IdleTimeoutWriter) resetDeadline() {
 		return
 	}
 
-	if err := w.Ctrl.SetWriteDeadline(w.Deadline.next()); err != nil {
+	if w.setWriteDeadline(w.Deadline.next(), "could not set write deadline") {
+		w.deadlineSet = true
+	}
+}
+
+// setWriteDeadline sets the write deadline, unless it is the one already
+// armed (as when the idle deadline is capped to HardDeadline), which on
+// HTTP/2 would cost a message to the connection's serve loop for
+// nothing. It reports whether the deadline is armed.
+func (w *IdleTimeoutWriter) setWriteDeadline(deadline time.Time, logMessage string) bool {
+	if !w.armedAt.IsZero() && deadline.Equal(w.armedAt) {
+		return true
+	}
+	if err := w.Ctrl.SetWriteDeadline(deadline); err != nil {
 		w.unsupported = true
-		if c := w.Logger.Check(zapcore.DebugLevel, "could not set write deadline"); c != nil {
+		if c := w.Logger.Check(zapcore.DebugLevel, logMessage); c != nil {
 			c.Write(zap.Error(err))
 		}
-		return
+		return false
 	}
-	w.deadlineSet = true
+	w.armedAt = deadline
+	return true
 }
 
 // clearDeadline replaces the idle deadline set by resetDeadline with
@@ -358,11 +381,7 @@ func (w *IdleTimeoutWriter) clearDeadline() {
 		return
 	}
 
-	if err := w.Ctrl.SetWriteDeadline(w.Deadline.HardDeadline); err != nil {
-		w.unsupported = true
-		if c := w.Logger.Check(zapcore.DebugLevel, "could not clear write deadline"); c != nil {
-			c.Write(zap.Error(err))
-		}
+	if !w.setWriteDeadline(w.Deadline.HardDeadline, "could not clear write deadline") {
 		return
 	}
 	w.deadlineSet = false
