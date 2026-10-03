@@ -1,0 +1,9 @@
+:80
+
+file_server {
+	browse {
+		plain_time_format
+	}
+}
+----------
+plain_time_format is missing a time layout argument
