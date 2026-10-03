@@ -862,14 +862,63 @@ func TestIdleDeadlineOverrideRestore(t *testing.T) {
 	hard := time.Now().Add(time.Hour)
 	d := IdleDeadline{Start: start, Timeout: time.Second, MinRate: 10, HardDeadline: hard, transferred: 100}
 
-	prev := d.override(time.Minute, 0)
+	o := d.override(time.Minute, 0)
 	assert.Equal(t, time.Minute, d.Timeout)
 	assert.Zero(t, d.MinRate)
 	assert.Zero(t, d.transferred)
 	assert.Equal(t, hard, d.HardDeadline)
 	assert.True(t, d.Start.After(start))
 
+	// pretend the override lasted 10s and transferred some bytes; the
+	// previous window is suspended for that long and ignores them
+	o.at = o.at.Add(-10 * time.Second)
 	d.transferred += 50
-	d.restore(prev)
-	assert.Equal(t, IdleDeadline{Start: start, Timeout: time.Second, MinRate: 10, HardDeadline: hard, transferred: 150}, d)
+	before := time.Now()
+	d.restore(o)
+	after := time.Now()
+
+	assert.Equal(t, time.Second, d.Timeout)
+	assert.EqualValues(t, 10, d.MinRate)
+	assert.EqualValues(t, 100, d.transferred)
+	assert.Equal(t, hard, d.HardDeadline)
+	assert.WithinRange(t, d.Start,
+		start.Add(10*time.Second).Add(before.Sub(o.at.Add(10*time.Second))),
+		start.Add(10*time.Second).Add(after.Sub(o.at.Add(10*time.Second))))
+}
+
+// TestIdleTimeoutReaderOverrideSuspendsMinRate checks that time spent
+// under nested overrides doesn't count against the minimum-rate windows
+// that are restored afterwards.
+func TestIdleTimeoutReaderOverrideSuspendsMinRate(t *testing.T) {
+	const timeout = 200 * time.Millisecond
+	const overridden = 150 * time.Millisecond
+
+	w := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	r := &IdleTimeoutReader{
+		ReadCloser: io.NopCloser(strings.NewReader("body")),
+		Ctrl:       http.NewResponseController(w),
+		Deadline:   IdleDeadline{Start: time.Now(), Timeout: timeout, MinRate: 1 << 30},
+		Logger:     zap.NewNop(),
+	}
+
+	// an outer scope with its own minimum rate, then an inner one; each
+	// is overridden for longer than the outer timeout in total
+	restoreOuter := r.Override(timeout, 1<<30)
+	time.Sleep(overridden)
+	restoreInner := r.Override(time.Hour, 0)
+	time.Sleep(2 * overridden)
+	restoreInner()
+	_, err := r.Read(make([]byte, 1))
+	require.NoError(t, err)
+	deadlines := w.snapshot()
+	require.NotEmpty(t, deadlines)
+	assert.True(t, deadlines[len(deadlines)-1].After(time.Now()),
+		"the restored outer scope's deadline should not have expired while overridden")
+	restoreOuter()
+
+	_, err = r.Read(make([]byte, 1))
+	require.NoError(t, err)
+	deadlines = w.snapshot()
+	assert.True(t, deadlines[len(deadlines)-1].After(time.Now()),
+		"the restored server-wide deadline should not have expired while overridden")
 }

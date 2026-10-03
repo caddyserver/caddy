@@ -259,14 +259,18 @@ func TestTimeoutsOverrideServerWide(t *testing.T) {
 	}))
 	require.NoError(t, err)
 
-	// the server-wide settings are back once the handler returns
+	// the server-wide settings are back once the handler returns, and
+	// the armed read deadline was moved to them
 	assert.Equal(t, serverTimeout, writer.Deadline.Timeout)
 	assert.Equal(t, 1000, writer.MaxChunk)
+	require.Len(t, rec.deadlines, 2)
+	assert.WithinRange(t, rec.deadlines[1], time.Now().Add(serverTimeout-time.Second), time.Now().Add(serverTimeout))
+
 	before := time.Now()
 	_, err = reader.Read(make([]byte, 1))
 	require.NoError(t, err)
-	require.Len(t, rec.deadlines, 2)
-	assert.WithinRange(t, rec.deadlines[1], before.Add(serverTimeout), time.Now().Add(serverTimeout))
+	require.Len(t, rec.deadlines, 3)
+	assert.WithinRange(t, rec.deadlines[2], before.Add(serverTimeout), time.Now().Add(serverTimeout))
 }
 
 func TestTimeoutsKeepServerWideMaxWriteChunk(t *testing.T) {
@@ -287,4 +291,60 @@ func TestTimeoutsKeepServerWideMaxWriteChunk(t *testing.T) {
 		return nil
 	}))
 	require.NoError(t, err)
+}
+
+// TestTimeoutsRearmReadDeadlineHTTP2 checks that a read deadline armed
+// before a timeouts handler starts is moved to its timeout. On HTTP/2
+// the deadline is a timer that fails the body when it fires, even with
+// no read in flight, so it can't wait for the next read to be reset.
+func TestTimeoutsRearmReadDeadlineHTTP2(t *testing.T) {
+	const serverTimeout = 100 * time.Millisecond
+	const routeTimeout = 2 * time.Second
+	const pause = 300 * time.Millisecond
+
+	tm := Timeouts{ReadTimeout: routeTimeout, logger: zap.NewNop()}
+	srv := httptest.NewUnstartedServer(noError(caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+		// stand in for the server-wide idle timeout
+		reader := &caddyhttp.IdleTimeoutReader{
+			ReadCloser: r.Body,
+			Ctrl:       http.NewResponseController(w),
+			Deadline:   caddyhttp.IdleDeadline{Start: time.Now(), Timeout: serverTimeout},
+			Logger:     zap.NewNop(),
+		}
+		defer reader.HandlerDone()
+		r.Body = reader
+		r = r.WithContext(caddyhttp.ContextWithIdleTimeouts(r.Context(), reader, nil))
+
+		// read before the timeouts handler, arming the server-wide deadline
+		if _, err := io.ReadFull(r.Body, make([]byte, 8)); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return nil
+		}
+		return tm.ServeHTTP(w, r, caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			// pause longer than the server-wide timeout, but not the route's
+			time.Sleep(pause)
+			if _, err := io.Copy(io.Discard, r.Body); err != nil {
+				w.WriteHeader(http.StatusRequestTimeout)
+				return nil
+			}
+			w.WriteHeader(http.StatusOK)
+			return nil
+		}))
+	})))
+	srv.EnableHTTP2 = true
+	srv.StartTLS()
+	defer srv.Close()
+
+	pr, pw := io.Pipe()
+	go func() {
+		_, _ = pw.Write(make([]byte, 8))
+		time.Sleep(pause + 100*time.Millisecond)
+		_, _ = pw.Write(make([]byte, 8))
+		_ = pw.Close()
+	}()
+	resp, err := srv.Client().Post(srv.URL, "application/octet-stream", pr)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, 2, resp.ProtoMajor)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
