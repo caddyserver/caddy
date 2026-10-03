@@ -140,6 +140,51 @@ func TestFileHidden(t *testing.T) {
 	}
 }
 
+func TestRedirectEscapesPath(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		toPath   string
+		rawQuery string
+		want     string
+	}{
+		{
+			name:   "decoded delimiters",
+			toPath: `/../\github.com/?/../../`,
+			want:   "/",
+		},
+		{
+			name:   "leading slashes",
+			toPath: "///github.com/path",
+			want:   "/github.com/path",
+		},
+		{
+			name:   "literal percent encoding",
+			toPath: "/%2F/",
+			want:   "/%252F/",
+		},
+		{
+			name:     "query preserved",
+			toPath:   "/dir/",
+			rawQuery: "sort=name",
+			want:     "/dir/?sort=name",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+			r.URL.RawQuery = tc.rawQuery
+			w := httptest.NewRecorder()
+
+			if err := redirect(w, r, tc.toPath); err != nil {
+				t.Fatal(err)
+			}
+			got := w.Header().Get("Location")
+			if got != tc.want {
+				t.Fatalf("Location = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestHasWindowsShortName(t *testing.T) {
 	for _, tc := range []struct {
 		name string
