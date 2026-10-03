@@ -90,15 +90,11 @@ type (
 	// the literal percent sign (%) in normalized space can be done using the
 	// escaped form, `%25`.
 	//
-	// Even though wildcards (`*`) operate in the normalized space, the special
-	// escaped wildcard (`%*`), which is not a valid escape sequence, may be
-	// used in place of a span that should NOT be decoded; that is, `/bands/%*`
-	// will match `/bands/AC%2fDC` whereas `/bands/*` will not.
-	//
-	// Even though path matching is done in normalized space, the special
-	// wildcard `%*` may be used in place of a span that should NOT be decoded;
-	// that is, `/bands/%*/` will match `/bands/AC%2fDC/` whereas `/bands/*/`
-	// will not.
+	// Even though path matching (and wildcards `*`) operate in normalized space,
+	// the special escaped wildcard (`%*`), which is not a valid escape sequence,
+	// may be used in place of a span that should NOT be decoded; that is,
+	// `/bands/%*` will match `/bands/AC%2fDC` whereas `/bands/*` will not, and
+	// `/bands/%*/` will match `/bands/AC%2fDC/` whereas `/bands/*/` will not.
 	//
 	// This matcher is fast, so it does not support regular expressions or
 	// capture groups. For slower but more powerful matching, use the
