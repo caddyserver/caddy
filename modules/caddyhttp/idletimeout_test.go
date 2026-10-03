@@ -15,6 +15,7 @@
 package caddyhttp
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
@@ -569,6 +570,70 @@ func TestIdleTimeoutWriter_HardDeadlineCapsIdleReset(t *testing.T) {
 	if err == nil {
 		assert.Less(t, n, int64(64))
 	}
+}
+
+func TestIdleTimeoutWriter_Streaming(t *testing.T) {
+	const idle = 1 * time.Second
+	const interval = 2 * time.Second
+	const count = 3
+
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wrapped := &IdleTimeoutWriter{
+			ResponseWriterWrapper: &ResponseWriterWrapper{ResponseWriter: w},
+			Ctrl:                  http.NewResponseController(w),
+			Deadline: IdleDeadline{
+				Timeout: idle,
+			},
+			Logger: zap.NewNop(),
+		}
+
+		// 1. Set SSE response headers
+		wrapped.Header().Set("Content-Type", "text/event-stream")
+		wrapped.Header().Set("Cache-Control", "no-cache")
+		wrapped.Header().Set("Connection", "keep-alive")
+		wrapped.Header().Set("Access-Control-Allow-Origin", "*")
+
+		// 2. Initialize ResponseController for explicit flushing
+		rc := http.NewResponseController(w)
+
+		// 3. Stream data periodically until client disconnects
+		ctx := r.Context()
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for range count {
+			select {
+			case <-ctx.Done():
+				fmt.Println("Client disconnected")
+				return
+			case ts := <-ticker.C:
+				fmt.Fprintf(w, "data: Server time is %s\n\n", ts.Format(time.RFC3339))
+
+				if err := rc.Flush(); err != nil {
+					fmt.Println("Error flushing data:", err)
+					return
+				}
+			}
+		}
+	}))
+
+	srv.EnableHTTP2 = true
+	srv.StartTLS()
+
+	defer srv.Close()
+
+	resp, err := srv.Client().Get(srv.URL)
+	require.NoError(t, err)
+	require.Equal(t, resp.ProtoMajor, 2)
+
+	scanner := bufio.NewScanner(resp.Body)
+	var linesRead int
+	for scanner.Scan() {
+		linesRead++
+	}
+	require.NoError(t, scanner.Err())
+	require.Equal(t, linesRead, 2*count)
+	_ = resp.Body.Close()
 }
 
 // readFromCounter is a fake http.ResponseWriter that records how many

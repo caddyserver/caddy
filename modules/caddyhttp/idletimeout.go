@@ -207,6 +207,19 @@ func (w *IdleTimeoutWriter) resetDeadline() {
 	}
 }
 
+func (w *IdleTimeoutWriter) clearDeadline() {
+	if w.unsupported {
+		return
+	}
+
+	if err := w.Ctrl.SetWriteDeadline(time.Time{}); err != nil {
+		w.unsupported = true
+		if c := w.Logger.Check(zapcore.DebugLevel, "could not clear write deadline"); c != nil {
+			c.Write(zap.Error(err))
+		}
+	}
+}
+
 func (w *IdleTimeoutWriter) maxChunk() int {
 	if w.MaxChunk > 0 {
 		return w.MaxChunk
@@ -231,6 +244,7 @@ func (w *IdleTimeoutWriter) Write(p []byte) (int, error) {
 			return total, err
 		}
 	}
+	w.clearDeadline()
 	return total, nil
 }
 
@@ -246,6 +260,7 @@ func (w *IdleTimeoutWriter) ReadFrom(r io.Reader) (int64, error) {
 			return total, err
 		}
 		if n < int64(maxChunk) {
+			w.clearDeadline()
 			return total, nil
 		}
 	}
