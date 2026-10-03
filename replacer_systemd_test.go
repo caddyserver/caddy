@@ -16,7 +16,9 @@ package caddy
 
 import (
 	"maps"
+	"math"
 	"slices"
+	"strconv"
 	"testing"
 )
 
@@ -78,6 +80,7 @@ func TestSystemdListenFDByName(t *testing.T) {
 		"web": {3, 5},
 		"dns": {4},
 	}
+	tooLargeIndex := "web:" + strconv.FormatUint(uint64(math.MaxInt)+1, 10)
 
 	for _, tc := range []struct {
 		input   string
@@ -94,6 +97,7 @@ func TestSystemdListenFDByName(t *testing.T) {
 		{input: "web:-1", wantErr: true},
 		{input: "web:+1", wantErr: true},
 		{input: "web:0:extra", wantErr: true},
+		{input: tooLargeIndex, wantErr: true},
 	} {
 		t.Run(tc.input, func(t *testing.T) {
 			got, err := systemdListenFDByName(descriptors, tc.input)

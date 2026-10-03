@@ -533,11 +533,11 @@ func systemdListenFDByName(descriptors map[string][]int, nameWithIndex string) (
 				return 0, fmt.Errorf("invalid systemd listen descriptor index: %q", indexText)
 			}
 		}
-		parsedIndex, err := strconv.ParseUint(indexText, 10, strconv.IntSize)
+		parsedIndex, err := strconv.Atoi(indexText)
 		if err != nil {
 			return 0, fmt.Errorf("parsing systemd listen descriptor index: %w", err)
 		}
-		index = int(parsedIndex)
+		index = parsedIndex
 	}
 
 	matches, ok := descriptors[name]
