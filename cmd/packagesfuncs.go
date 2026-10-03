@@ -129,6 +129,41 @@ func cmdRemovePackage(fl Flags) (int, error) {
 	return upgradeBuild(pluginPkgs, fl)
 }
 
+// resolveExecutable returns the path of the file to replace for the executable
+// at execPath, following symlinks, together with the FileInfo whose permission
+// bits the replacement file should be created with.
+//
+// Package managers typically install the binary as a symlink they own
+// (Homebrew: /opt/homebrew/bin/caddy -> ../Cellar/caddy/<version>/bin/caddy),
+// so the target is the file to replace, not the link: replacing the link would
+// leave a regular file where the manager expects its symlink, which then makes
+// the manager's own linking step fail on the next upgrade.
+func resolveExecutable(execPath string) (string, os.FileInfo, error) {
+	// os.Lstat, not os.Stat: os.Stat follows symlinks, so its mode never has
+	// ModeSymlink set and the resolution below would never run.
+	execStat, err := os.Lstat(execPath)
+	if err != nil {
+		return "", nil, fmt.Errorf("retrieving current executable permission bits: %v", err)
+	}
+	if execStat.Mode()&os.ModeSymlink != os.ModeSymlink {
+		return execPath, execStat, nil
+	}
+
+	target, err := filepath.EvalSymlinks(execPath)
+	if err != nil {
+		return "", nil, fmt.Errorf("resolving current executable symlink: %v", err)
+	}
+	// The link's own mode says nothing about the permissions the replacement
+	// file should carry, so stat the target.
+	execStat, err = os.Stat(target)
+	if err != nil {
+		return "", nil, fmt.Errorf("retrieving current executable permission bits: %v", err)
+	}
+	caddy.Log().Info("this executable is a symlink", zap.String("source", execPath), zap.String("target", target))
+
+	return target, execStat, nil
+}
+
 func upgradeBuild(pluginPkgs map[string]pluginPackage, fl Flags) (int, error) {
 	l := caddy.Log()
 
@@ -136,18 +171,9 @@ func upgradeBuild(pluginPkgs map[string]pluginPackage, fl Flags) (int, error) {
 	if err != nil {
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("determining current executable path: %v", err)
 	}
-	thisExecStat, err := os.Stat(thisExecPath)
+	thisExecPath, thisExecStat, err := resolveExecutable(thisExecPath)
 	if err != nil {
-		return caddy.ExitCodeFailedStartup, fmt.Errorf("retrieving current executable permission bits: %v", err)
-	}
-	if thisExecStat.Mode()&os.ModeSymlink == os.ModeSymlink {
-		symSource := thisExecPath
-		// we are a symlink; resolve it
-		thisExecPath, err = filepath.EvalSymlinks(thisExecPath)
-		if err != nil {
-			return caddy.ExitCodeFailedStartup, fmt.Errorf("resolving current executable symlink: %v", err)
-		}
-		l.Info("this executable is a symlink", zap.String("source", symSource), zap.String("target", thisExecPath))
+		return caddy.ExitCodeFailedStartup, err
 	}
 	l.Info("this executable will be replaced", zap.String("path", thisExecPath))
 
