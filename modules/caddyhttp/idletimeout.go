@@ -169,13 +169,17 @@ func (r *IdleTimeoutReader) clearDeadlineLocked() {
 }
 
 // IdleTimeoutWriter wraps a ResponseWriter with IdleDeadline, resetting
-// the write deadline before every Write call. The deadline is cleared after
-// the corresponding write operation (which may consist of several Write calls)
-// succeeds. It's to solve the problem that a handler that pauses between
-// writes (e.g. streaming or SSE) for h2 is affected, since with MinRate == 0
-// the deadlines for h1 and h3 bound the duration of the write actually in flight
-// and can be extended without consequences.
-// see: https://github.com/caddyserver/caddy/issues/8118
+// the write deadline before every Write, ReadFrom and Flush call, the same
+// way IdleTimeoutReader does for reads. With MinRate == 0, the deadline
+// only bounds the write or flush actually in flight, so a handler that
+// pauses between writes (e.g. streaming or SSE) is unaffected.
+//
+// That relies on a deadline left armed between writes being harmless,
+// which holds for HTTP/1 and HTTP/3, where it is only checked by the
+// next write on the connection or stream. On HTTP/2 the write deadline
+// is a timer that resets the stream when it fires, even with no write
+// in flight, so ClearBetweenWrites must be set for HTTP/2 requests
+// (see #8118).
 //
 // MaxChunk bounds how much a single underlying Write/ReadFrom call is
 // allowed to cover; zero uses DefaultMaxWriteChunk. SetWriteDeadline
@@ -197,7 +201,16 @@ type IdleTimeoutWriter struct {
 	MaxChunk int
 	Logger   *zap.Logger
 
+	// ClearBetweenWrites makes the writer clear its idle deadline after
+	// every successful write or flush, putting back HardDeadline if any,
+	// and arm a final one in HandlerDone if written data may still be
+	// buffered. It is required for HTTP/2 and unnecessary (and costs a
+	// deadline update per write) for other protocols.
+	ClearBetweenWrites bool
+
 	unsupported bool
+	deadlineSet bool
+	unflushed   bool
 }
 
 func (w *IdleTimeoutWriter) resetDeadline() {
@@ -210,23 +223,43 @@ func (w *IdleTimeoutWriter) resetDeadline() {
 		if c := w.Logger.Check(zapcore.DebugLevel, "could not set write deadline"); c != nil {
 			c.Write(zap.Error(err))
 		}
+		return
 	}
+	w.deadlineSet = true
 }
 
+// clearDeadline replaces the idle deadline set by resetDeadline with
+// HardDeadline, which is zero (no deadline) unless a hard ceiling is
+// configured. It does nothing unless ClearBetweenWrites is set.
 func (w *IdleTimeoutWriter) clearDeadline() {
-	if w.unsupported {
+	if !w.ClearBetweenWrites || !w.deadlineSet || w.unsupported {
 		return
 	}
 
-	if !w.Deadline.HardDeadline.IsZero() && time.Now().After(w.Deadline.HardDeadline) {
+	// once the hard deadline has passed, the deadline set by
+	// resetDeadline (capped to it) has already expired; keep it
+	if !w.Deadline.HardDeadline.IsZero() && !time.Now().Before(w.Deadline.HardDeadline) {
 		return
 	}
 
-	if err := w.Ctrl.SetWriteDeadline(time.Time{}); err != nil {
+	if err := w.Ctrl.SetWriteDeadline(w.Deadline.HardDeadline); err != nil {
 		w.unsupported = true
 		if c := w.Logger.Check(zapcore.DebugLevel, "could not clear write deadline"); c != nil {
 			c.Write(zap.Error(err))
 		}
+		return
+	}
+	w.deadlineSet = false
+}
+
+// HandlerDone arms a final idle deadline if ClearBetweenWrites is set
+// and data written since the last flush may still be buffered, so that
+// the flush net/http does after the handler returns is bounded too. It
+// must be called before the installing handler returns, since the
+// response controller can't be used after that.
+func (w *IdleTimeoutWriter) HandlerDone() {
+	if w.ClearBetweenWrites && w.unflushed && !w.deadlineSet {
+		w.resetDeadline()
 	}
 }
 
@@ -250,6 +283,9 @@ func (w *IdleTimeoutWriter) Write(p []byte) (int, error) {
 		total += n
 		w.Deadline.transferred += int64(n)
 		p = p[n:]
+		if n > 0 {
+			w.unflushed = true
+		}
 		if err != nil {
 			return total, err
 		}
@@ -266,7 +302,13 @@ func (w *IdleTimeoutWriter) ReadFrom(r io.Reader) (int64, error) {
 		n, err := w.ResponseWriterWrapper.ReadFrom(io.LimitReader(r, int64(maxChunk)))
 		total += n
 		w.Deadline.transferred += n
+		if n > 0 {
+			w.unflushed = true
+		}
 		if err != nil {
+			// the error may come from r rather than the client, in
+			// which case the response can still be written to
+			w.clearDeadline()
 			return total, err
 		}
 		if n < int64(maxChunk) {
@@ -276,9 +318,24 @@ func (w *IdleTimeoutWriter) ReadFrom(r io.Reader) (int64, error) {
 	}
 }
 
+// FlushError flushes the underlying writer under the idle deadline. A
+// small write may only fill a buffer, leaving the flush as the call
+// that actually blocks on a client that stopped reading.
+func (w *IdleTimeoutWriter) FlushError() error {
+	w.resetDeadline()
+	err := http.NewResponseController(w.ResponseWriter).Flush()
+	if err != nil {
+		return err
+	}
+	w.unflushed = false
+	w.clearDeadline()
+	return nil
+}
+
 // Interface guards
 var (
-	_ io.ReadCloser       = (*IdleTimeoutReader)(nil)
-	_ http.ResponseWriter = (*IdleTimeoutWriter)(nil)
-	_ io.ReaderFrom       = (*IdleTimeoutWriter)(nil)
+	_ io.ReadCloser                   = (*IdleTimeoutReader)(nil)
+	_ http.ResponseWriter             = (*IdleTimeoutWriter)(nil)
+	_ io.ReaderFrom                   = (*IdleTimeoutWriter)(nil)
+	_ interface{ FlushError() error } = (*IdleTimeoutWriter)(nil)
 )

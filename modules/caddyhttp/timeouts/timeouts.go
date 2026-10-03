@@ -107,7 +107,7 @@ func (t Timeouts) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		r.Body = idleReader
 	}
 	if t.WriteTimeout > 0 {
-		w = &caddyhttp.IdleTimeoutWriter{
+		idleWriter := &caddyhttp.IdleTimeoutWriter{
 			ResponseWriterWrapper: &caddyhttp.ResponseWriterWrapper{ResponseWriter: w},
 			Ctrl:                  rc,
 			Deadline: caddyhttp.IdleDeadline{
@@ -115,9 +115,12 @@ func (t Timeouts) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 				Timeout: t.WriteTimeout,
 				MinRate: t.WriteMinRate,
 			},
-			MaxChunk: t.MaxWriteChunk,
-			Logger:   t.logger,
+			MaxChunk:           t.MaxWriteChunk,
+			Logger:             t.logger,
+			ClearBetweenWrites: r.ProtoMajor == 2,
 		}
+		defer idleWriter.HandlerDone()
+		w = idleWriter
 	}
 
 	return next.ServeHTTP(w, r)
