@@ -15,6 +15,7 @@
 package caddyhttp
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"sync"
@@ -22,6 +23,8 @@ import (
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+
+	"github.com/caddyserver/caddy/v2"
 )
 
 // DefaultMaxWriteChunk is used by IdleTimeoutWriter when MaxChunk is zero.
@@ -69,6 +72,35 @@ func (d *IdleDeadline) next() (deadline time.Time) {
 	}
 
 	return
+}
+
+// idleOverride holds what restore needs to undo an override.
+type idleOverride struct {
+	prev IdleDeadline
+	at   time.Time
+}
+
+// override replaces the timeout and minimum rate, counting the MinRate
+// allowance from now, and returns what restore needs to put the
+// previous settings back. HardDeadline is kept.
+func (d *IdleDeadline) override(timeout time.Duration, minRate int64) idleOverride {
+	o := idleOverride{prev: *d, at: time.Now()}
+	d.Start = o.at
+	d.Timeout = timeout
+	d.MinRate = minRate
+	d.transferred = 0
+	return o
+}
+
+// restore puts back the settings replaced by override. The previous
+// MinRate window is suspended while overridden: its start moves forward
+// by the time spent overridden, and bytes transferred in the meantime
+// don't count towards it, so the restored deadline can't already have
+// expired because of time the override allowed.
+func (d *IdleDeadline) restore(o idleOverride) {
+	prev := o.prev
+	prev.Start = prev.Start.Add(time.Since(o.at))
+	*d = prev
 }
 
 // IdleTimeoutReader wraps a request body with IdleDeadline, resetting
@@ -141,6 +173,35 @@ func (r *IdleTimeoutReader) HandlerDone() {
 		r.setDeadlineLocked("could not set final read deadline")
 	}
 	r.finished = true
+}
+
+// Override makes the reader use timeout and minRate instead of its own
+// settings until the returned function is called, which puts them back.
+// The MinRate allowance is counted from the call, and HardDeadline still
+// applies. This lets a more specific scope, like the timeouts handler,
+// take precedence over the settings the reader was created with. A
+// deadline already armed is moved to the new settings both times, since
+// on HTTP/2 it is a timer that fails the body when it fires, even with
+// no read in flight.
+func (r *IdleTimeoutReader) Override(timeout time.Duration, minRate int64) (restore func()) {
+	r.mu.Lock()
+	o := r.Deadline.override(timeout, minRate)
+	r.rearmLocked()
+	r.mu.Unlock()
+
+	return func() {
+		r.mu.Lock()
+		r.Deadline.restore(o)
+		r.rearmLocked()
+		r.mu.Unlock()
+	}
+}
+
+// rearmLocked moves an armed deadline to what the current settings give.
+func (r *IdleTimeoutReader) rearmLocked() {
+	if r.deadlineSet && !r.finished && !r.unsupported {
+		r.setDeadlineLocked("could not set read deadline")
+	}
 }
 
 func (r *IdleTimeoutReader) setDeadlineLocked(logMessage string) {
@@ -263,6 +324,36 @@ func (w *IdleTimeoutWriter) HandlerDone() {
 	}
 }
 
+// Override makes the writer use timeout, minRate and, if positive,
+// maxChunk instead of its own settings until the returned function is
+// called, which puts them back. The MinRate allowance is counted from
+// the call, and HardDeadline still applies. This lets a more specific
+// scope, like the timeouts handler, take precedence over the settings
+// the writer was created with. A deadline already armed is moved to the
+// new settings both times, since on HTTP/2 it is a timer that resets
+// the stream when it fires.
+func (w *IdleTimeoutWriter) Override(timeout time.Duration, minRate int64, maxChunk int) (restore func()) {
+	o := w.Deadline.override(timeout, minRate)
+	prevMaxChunk := w.MaxChunk
+	if maxChunk > 0 {
+		w.MaxChunk = maxChunk
+	}
+	w.rearm()
+
+	return func() {
+		w.Deadline.restore(o)
+		w.MaxChunk = prevMaxChunk
+		w.rearm()
+	}
+}
+
+// rearm moves an armed deadline to what the current settings give.
+func (w *IdleTimeoutWriter) rearm() {
+	if w.deadlineSet {
+		w.resetDeadline()
+	}
+}
+
 func (w *IdleTimeoutWriter) maxChunk() int {
 	if w.MaxChunk > 0 {
 		return w.MaxChunk
@@ -330,6 +421,32 @@ func (w *IdleTimeoutWriter) FlushError() error {
 	w.unflushed = false
 	w.clearDeadline()
 	return nil
+}
+
+// idleTimeouts holds the wrappers applying a request's idle timeouts.
+type idleTimeouts struct {
+	reader *IdleTimeoutReader
+	writer *IdleTimeoutWriter
+}
+
+// idleTimeoutsCtxKey is the context key for idleTimeouts.
+const idleTimeoutsCtxKey caddy.CtxKey = "idle_timeouts"
+
+// IdleTimeoutsFromContext returns the IdleTimeoutReader and
+// IdleTimeoutWriter that apply the idle timeouts of the request with
+// context ctx. Either is nil if no idle timeout is applied that way. A
+// handler with its own idle timeouts should Override these instead of
+// wrapping the body or response writer again, since the wrapper closest
+// to the connection sets the deadline last, and so would win.
+func IdleTimeoutsFromContext(ctx context.Context) (*IdleTimeoutReader, *IdleTimeoutWriter) {
+	it, _ := ctx.Value(idleTimeoutsCtxKey).(idleTimeouts)
+	return it.reader, it.writer
+}
+
+// ContextWithIdleTimeouts returns a copy of ctx in which
+// IdleTimeoutsFromContext returns reader and writer.
+func ContextWithIdleTimeouts(ctx context.Context, reader *IdleTimeoutReader, writer *IdleTimeoutWriter) context.Context {
+	return context.WithValue(ctx, idleTimeoutsCtxKey, idleTimeouts{reader: reader, writer: writer})
 }
 
 // Interface guards
