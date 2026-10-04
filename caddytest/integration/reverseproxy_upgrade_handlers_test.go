@@ -80,6 +80,51 @@ localhost:9080 {
 	}
 }
 
+func TestReverseProxyDetachedUpgradeWithAccessLogAndIntercept(t *testing.T) {
+	tester := caddytest.NewTester(t)
+	backend := newUpgradeEchoBackend(t)
+	defer backend.Close()
+	config := func(marker string) string {
+		return fmt.Sprintf(`
+{
+ admin localhost:2999
+ http_port 9080
+ https_port 9443
+ grace_period 1ns
+ skip_install_trust
+}
+localhost:9080 {
+ log {
+  output discard
+ }
+ route {
+  header X-Reload %s
+  encode gzip
+  intercept {
+   @upgrade status 101
+   handle_response @upgrade {
+    respond "should-not-run"
+   }
+  }
+  reverse_proxy %s {
+   stream_detached
+  }
+ }
+}
+`, marker, backend.addr)
+	}
+	tester.InitServer(config("before"), "caddyfile")
+	client := newUpgradedStreamClientWithHeaders(t, map[string]string{"Accept-Encoding": "gzip"})
+	defer client.Close()
+	if err := client.echo("before-reload\n"); err != nil {
+		t.Fatalf("detached stream echo before reload failed: %v", err)
+	}
+	tester.InitServer(config("after"), "caddyfile")
+	if err := client.echo("after-reload\n"); err != nil {
+		t.Fatalf("detached stream echo after reload failed: %v", err)
+	}
+}
+
 func newUpgradedStreamClientWithHeaders(t *testing.T, extraHeaders map[string]string) *upgradedStreamClient {
 	t.Helper()
 

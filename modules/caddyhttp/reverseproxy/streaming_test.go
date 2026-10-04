@@ -553,3 +553,92 @@ func TestFlushIntervalIncremental(t *testing.T) {
 		})
 	}
 }
+
+func TestHandlerCleanupDetachedRemovalWithDelay(t *testing.T) {
+	const upstream = "detached-removal-with-delay"
+	hosts.LoadOrStore(upstream, new(Host))
+	t.Cleanup(func() { _, _ = hosts.Delete(upstream) })
+	ts := newTunnelTracker(caddy.Log(), time.Hour)
+	registerDetachedTunnelTrackers(ts)
+	t.Cleanup(func() { unregisterDetachedTunnelTrackers(ts) })
+	detached := newTrackingReadWriteCloser()
+	attached := newTrackingReadWriteCloser()
+	deleteDetached := ts.registerConnection(detached, nil, true, upstream)
+	deleteAttached := ts.registerConnection(attached, nil, false, upstream)
+	t.Cleanup(deleteDetached)
+	t.Cleanup(deleteAttached)
+	h := &Handler{tunnelTracker: ts, StreamDetached: true, Upstreams: UpstreamPool{&Upstream{Dial: upstream}}}
+	if err := h.Cleanup(); err != nil {
+		t.Fatal(err)
+	}
+	if !detached.isClosed() {
+		t.Error("detached stream remains open after upstream removal")
+	}
+	if attached.isClosed() {
+		t.Error("attached stream closed before stream_close_delay elapsed")
+	}
+}
+
+func TestHandlerCleanupEmptyDetachedTracker(t *testing.T) {
+	for _, delay := range []time.Duration{0, time.Hour} {
+		t.Run(delay.String(), func(t *testing.T) {
+			ts := newTunnelTracker(caddy.Log(), delay)
+			registerDetachedTunnelTrackers(ts)
+			t.Cleanup(func() { unregisterDetachedTunnelTrackers(ts) })
+			// Cover a tracker whose last connection closed before handler cleanup.
+			conn := newTrackingReadWriteCloser()
+			ts.registerConnection(conn, nil, true, "upstream")()
+			if err := (&Handler{tunnelTracker: ts, StreamDetached: true}).Cleanup(); err != nil {
+				t.Fatal(err)
+			}
+			detachedTunnelTrackersMu.Lock()
+			_, retained := detachedTunnelTrackers[ts]
+			detachedTunnelTrackersMu.Unlock()
+			if retained {
+				t.Error("empty tracker remains globally registered after cleanup")
+			}
+		})
+	}
+}
+
+func TestDetachedTrackerRemovalAllowsConcurrentConnectionDeletion(t *testing.T) {
+	ts := newTunnelTracker(caddy.Log(), 0)
+	registerDetachedTunnelTrackers(ts)
+	t.Cleanup(func() { unregisterDetachedTunnelTrackers(ts) })
+	// An attached stream on another stopped handler can finish while an
+	// upstream-removal notification closes a detached stream. Its deletion
+	// must be able to acquire the registry lock and release its tracker lock.
+	other := newTunnelTracker(caddy.Log(), 0)
+	otherConn := newTrackingReadWriteCloser()
+	deleteOther := other.registerConnection(otherConn, nil, false, "other")
+	if err := other.cleanupAttachedConnections(); err != nil {
+		t.Fatal(err)
+	}
+	deleted := make(chan struct{})
+	conn := newTrackingReadWriteCloser()
+	del := ts.registerConnection(conn, func() error {
+		go func() {
+			deleteOther()
+			close(deleted)
+		}()
+		select {
+		case <-deleted:
+		case <-time.After(time.Second):
+			t.Error("upstream removal blocked another connection's deletion")
+		}
+		return nil
+	}, true, "upstream")
+	t.Cleanup(del)
+	if err := ts.cleanupAttachedConnections(); err != nil {
+		t.Fatal(err)
+	}
+	if err := notifyDetachedTunnelTrackersOfUpstreamRemoval("upstream", ts); err != nil {
+		t.Fatal(err)
+	}
+	// On a regression the notification must release its lock before waiting
+	// for deletion, so the failing test does not leave a blocked goroutine.
+	<-deleted
+	if !conn.isClosed() {
+		t.Error("removed upstream connection was not closed")
+	}
+}

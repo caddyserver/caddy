@@ -560,8 +560,8 @@ func (ts *tunnelTracker) registerConnection(conn io.ReadWriteCloser, gracefulClo
 	return func() {
 		ts.mu.Lock()
 		delete(ts.connections, conn)
-		if len(ts.connections) == 0 && ts.stopped {
-			unregisterDetachedTunnelTrackers(ts)
+		empty := len(ts.connections) == 0 && ts.stopped
+		if empty {
 			if ts.closeTimer != nil {
 				if ts.closeTimer.Stop() {
 					ts.logger.Debug("stopped streaming connections close timer - all connections are already closed")
@@ -570,6 +570,9 @@ func (ts *tunnelTracker) registerConnection(conn io.ReadWriteCloser, gracefulClo
 			}
 		}
 		ts.mu.Unlock()
+		if empty {
+			unregisterDetachedTunnelTrackers(ts)
+		}
 	}
 }
 
@@ -578,7 +581,6 @@ func (ts *tunnelTracker) closeAttachedConnections() error {
 	var err error
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
-	ts.stopped = true
 	for _, oc := range ts.connections {
 		// detached connections are only closed when the upstream is gone from the config
 		if oc.detached {
@@ -599,29 +601,36 @@ func (ts *tunnelTracker) closeAttachedConnections() error {
 // cleanupAttachedConnections closes upgraded attached connections.
 // Depending on closeDelay it does that either immediately or after a timer.
 func (ts *tunnelTracker) cleanupAttachedConnections() error {
+	ts.mu.Lock()
+	// Mark the tracker stopped before upstream-removal notifications, even
+	// when attached connections will be closed after a delay.
+	ts.stopped = true
+	if len(ts.connections) == 0 {
+		ts.mu.Unlock()
+		unregisterDetachedTunnelTrackers(ts)
+		return nil
+	}
 	if ts.closeDelay == 0 {
+		ts.mu.Unlock()
 		return ts.closeAttachedConnections()
 	}
 
-	ts.mu.Lock()
 	defer ts.mu.Unlock()
-	if len(ts.connections) > 0 {
-		delay := ts.closeDelay
-		ts.closeTimer = time.AfterFunc(delay, func() {
-			if c := ts.logger.Check(zapcore.DebugLevel, "closing streaming connections after delay"); c != nil {
-				c.Write(zap.Duration("delay", delay))
+	delay := ts.closeDelay
+	ts.closeTimer = time.AfterFunc(delay, func() {
+		if c := ts.logger.Check(zapcore.DebugLevel, "closing streaming connections after delay"); c != nil {
+			c.Write(zap.Duration("delay", delay))
+		}
+		err := ts.closeAttachedConnections()
+		if err != nil {
+			if c := ts.logger.Check(zapcore.ErrorLevel, "failed to close connections after delay"); c != nil {
+				c.Write(
+					zap.Error(err),
+					zap.Duration("delay", delay),
+				)
 			}
-			err := ts.closeAttachedConnections()
-			if err != nil {
-				if c := ts.logger.Check(zapcore.ErrorLevel, "failed to close connections after delay"); c != nil {
-					c.Write(
-						zap.Error(err),
-						zap.Duration("delay", delay),
-					)
-				}
-			}
-		})
-	}
+		}
+	})
 	return nil
 }
 
@@ -737,8 +746,8 @@ func isWebsocket(r *http.Request) bool {
 		httpguts.HeaderValuesContainsToken(r.Header["Upgrade"], "websocket")
 }
 
-// closeConnectionsForUpstream closes all tracked connections that were
-// established to the given upstream address.
+// closeConnectionsForUpstream closes detached connections to the given
+// upstream on stopped trackers. Attached connections keep their close delay.
 func (ts *tunnelTracker) closeConnectionsForUpstream(addr string) error {
 	var err error
 	ts.mu.Lock()
@@ -747,7 +756,7 @@ func (ts *tunnelTracker) closeConnectionsForUpstream(addr string) error {
 		return nil
 	}
 	for _, oc := range ts.connections {
-		if oc.upstream != addr {
+		if !oc.detached || oc.upstream != addr {
 			continue
 		}
 		if oc.gracefulClose != nil {

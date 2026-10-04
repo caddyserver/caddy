@@ -262,3 +262,48 @@ func TestResponseRecorderSwitchingProtocolsIsHijackAware(t *testing.T) {
 		t.Fatalf("unexpected buffered body write after hijack: %q", got)
 	}
 }
+
+func TestResponseRecorderNestedDetach(t *testing.T) {
+	for _, detached := range []bool{false, true} {
+		name := "attached"
+		if detached {
+			name = "detached"
+		}
+		t.Run(name, func(t *testing.T) {
+			inner := NewResponseRecorder(newHijackRespWriter(), nil, nil)
+			// Include an intervening middleware wrapper in the recorder chain.
+			outer := NewResponseRecorder(&ResponseWriterWrapper{ResponseWriter: inner}, nil, nil)
+			outer.WriteHeader(http.StatusSwitchingProtocols)
+			if !DetachResponseWriterAfterHijack(outer, detached) {
+				t.Fatal("detach configuration failed")
+			}
+			conn, brw, err := http.NewResponseController(outer).Hijack()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.Close()
+			const payload = "stream payload"
+			if _, err := conn.Write([]byte(payload)); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := brw.WriteString(payload); err != nil {
+				t.Fatal(err)
+			}
+			if err := brw.Flush(); err != nil {
+				t.Fatal(err)
+			}
+			want := 2 * len(payload)
+			if detached {
+				want = 0
+			}
+			for name, rr := range map[string]ResponseRecorder{"inner": inner, "outer": outer} {
+				if rr.Size() != want {
+					t.Errorf("%s recorder size = %d, want %d", name, rr.Size(), want)
+				}
+			}
+			if DetachResponseWriterAfterHijack(outer, true) {
+				t.Error("detach should fail after hijack")
+			}
+		})
+	}
+}

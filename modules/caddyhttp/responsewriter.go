@@ -341,27 +341,31 @@ func (hc *hijackedConn) ReadFrom(r io.Reader) (int64, error) {
 	return n, err
 }
 
-// DetachResponseWriterAfterHijack detaches w or one of its wrapped
-// response writers when it's hijacked. Returns true if not already
-// hijacked. When detached, bytes read or written stats will not be
-// recorded for the hijacked connection, and it's safe to use the
-// connection after http middleware returns.
+// DetachResponseWriterAfterHijack configures w and its wrapped response
+// writers to detach when hijacked. It returns true if at least one writer
+// supports detachment and all such writers accept it. When detached,
+// bytes read or written stats will not be recorded for the hijacked
+// connection, and it's safe to use the connection after HTTP middleware returns.
 func DetachResponseWriterAfterHijack(w http.ResponseWriter, detached bool) bool {
+	found := false
 	for w != nil {
 		if detacher, ok := w.(interface{ DetachAfterHijack(bool) bool }); ok {
-			return detacher.DetachAfterHijack(detached)
+			if !detacher.DetachAfterHijack(detached) {
+				return false
+			}
+			found = true
 		}
 		unwrapper, ok := w.(interface{ Unwrap() http.ResponseWriter })
 		if !ok {
-			return false
+			return found
 		}
 		next := unwrapper.Unwrap()
 		if next == w {
-			return false
+			return found
 		}
 		w = next
 	}
-	return false
+	return found
 }
 
 // ResponseRecorder is a http.ResponseWriter that records

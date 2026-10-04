@@ -537,10 +537,16 @@ func registerDetachedTunnelTrackers(ts *tunnelTracker) {
 
 func notifyDetachedTunnelTrackersOfUpstreamRemoval(upstream string, self *tunnelTracker) error {
 	detachedTunnelTrackersMu.Lock()
-	defer detachedTunnelTrackersMu.Unlock()
-
-	var err error
+	trackers := make([]*tunnelTracker, 0, len(detachedTunnelTrackers))
 	for tunnel := range detachedTunnelTrackers {
+		trackers = append(trackers, tunnel)
+	}
+	detachedTunnelTrackersMu.Unlock()
+
+	// Connection deletion unregisters empty trackers. Do not hold the
+	// registry lock while acquiring tracker locks or closing connections.
+	var err error
+	for _, tunnel := range trackers {
 		if closeErr := tunnel.closeConnectionsForUpstream(upstream); closeErr != nil && tunnel == self && err == nil {
 			err = closeErr
 		}
