@@ -1097,6 +1097,10 @@ var (
 func ParseCaddyfileNestedMatcherSet(d *caddyfile.Dispenser) (caddy.ModuleMap, error) {
 	matcherMap := make(map[string]ConnectionMatcher)
 
+	// in case there are multiple instances of the same matcher, concatenate
+	// their tokens (we expect that UnmarshalCaddyfile should be able to
+	// handle more than one segment); otherwise, we'd overwrite other
+	// instances of the matcher in this set
 	tokensByMatcherName := make(map[string][]caddyfile.Token)
 	for nesting := d.Nesting(); d.NextArg() || d.NextBlock(nesting); {
 		matcherName := d.Val()
@@ -1104,10 +1108,15 @@ func ParseCaddyfileNestedMatcherSet(d *caddyfile.Dispenser) (caddy.ModuleMap, er
 	}
 
 	for matcherName, tokens := range tokensByMatcherName {
-		dd := caddyfile.NewDispenser(tokens)
-		dd.Next() // consume wrapper name
-
-		unm, err := caddyfile.UnmarshalModule(dd, "tls.handshake_match."+matcherName)
+		mod, err := caddy.GetModule("tls.handshake_match." + matcherName)
+		if err != nil {
+			return nil, d.Errf("getting matcher module '%s': %v", matcherName, err)
+		}
+		unm, ok := mod.New().(caddyfile.Unmarshaler)
+		if !ok {
+			return nil, d.Errf("matcher module '%s' is not a Caddyfile unmarshaler", matcherName)
+		}
+		err = unm.UnmarshalCaddyfile(caddyfile.NewDispenser(tokens))
 		if err != nil {
 			return nil, err
 		}
