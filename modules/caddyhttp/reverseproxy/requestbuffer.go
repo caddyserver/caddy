@@ -31,15 +31,12 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
-// RequestBuffering configures opt-in buffering of request bodies whose length
-// is unknown. Such bodies are read to completion before an upstream is dialed.
-// Read timeouts should be configured to bound how long uploads can hold buffers.
-// Unlike request_buffers, exceeding a limit does not fall back to streaming.
-type RequestBuffering struct {
-	// The maximum bytes kept in memory per request before spilling the entire
-	// body to a temporary file. Default: 16 KiB.
-	Memory int64 `json:"memory,omitempty"`
-
+// RequestBufferOptions extends request_buffers with opt-in disk buffering for
+// unknown-length request bodies. These bodies are read to completion before
+// dialing an upstream. Known-length bodies keep their memory-only buffering
+// behavior. Read timeouts should bound how long uploads can hold buffers.
+// With these options, exceeding a limit does not fall back to streaming.
+type RequestBufferOptions struct {
 	// The maximum total size of a request body. Larger bodies produce HTTP 413.
 	// Default: 100 MiB. This does not limit requests of known length; use
 	// request_body max_size for a limit that applies to all requests.
@@ -56,17 +53,19 @@ type RequestBuffering struct {
 	// already exist. Abrupt process termination can leave files behind.
 	TempDir string `json:"temp_dir,omitempty"`
 
+	memory    int64 // the request_buffers threshold, fixed at provision time
 	mu        sync.Mutex
 	diskUsage int64
 }
 
-func (b *RequestBuffering) provision() error {
-	if b.Memory < 0 || b.MaxSize < 0 || b.MaxDisk < 0 {
+func (b *RequestBufferOptions) provision(memory int64) error {
+	if memory <= 0 {
+		return fmt.Errorf("disk buffering requires a positive, finite request_buffers value")
+	}
+	if b.MaxSize < 0 || b.MaxDisk < 0 {
 		return fmt.Errorf("buffer sizes must be positive")
 	}
-	if b.Memory == 0 {
-		b.Memory = 16 << 10
-	}
+	b.memory = memory
 	if b.MaxSize == 0 {
 		b.MaxSize = 100 << 20
 	}
@@ -76,36 +75,44 @@ func (b *RequestBuffering) provision() error {
 	return nil
 }
 
-func (b *RequestBuffering) unmarshalCaddyfile(d *caddyfile.Dispenser) error {
+// parseRequestBufferOptions returns nil when there is no optional block.
+func parseRequestBufferOptions(d *caddyfile.Dispenser) (*RequestBufferOptions, error) {
+	var options *RequestBufferOptions
 	for nesting := d.Nesting(); d.NextBlock(nesting); {
+		if options == nil {
+			options = new(RequestBufferOptions)
+		}
 		option := d.Val()
 		args := d.RemainingArgs()
 		if len(args) != 1 {
-			return d.ArgErr()
+			return nil, d.ArgErr()
 		}
 		if option == "temp_dir" {
-			b.TempDir = args[0]
+			options.TempDir = args[0]
 			continue
 		}
 		size, err := humanize.ParseBytes(args[0])
 		if err != nil || size == 0 || size > math.MaxInt64 {
-			return d.Errf("invalid positive byte size %q", args[0])
+			return nil, d.Errf("invalid positive byte size %q", args[0])
 		}
 		switch option {
-		case "memory":
-			b.Memory = int64(size)
 		case "max_size":
-			b.MaxSize = int64(size)
+			options.MaxSize = int64(size)
 		case "max_disk":
-			b.MaxDisk = int64(size)
+			options.MaxDisk = int64(size)
 		default:
-			return d.Errf("unrecognized request_buffering option %q", option)
+			return nil, d.Errf("unrecognized request_buffers option %q", option)
 		}
 	}
-	return nil
+	// NextBlock consumes both braces of an empty block without yielding an
+	// option. The explicit block still opts into disk buffering with defaults.
+	if options == nil && d.Val() == "}" {
+		options = new(RequestBufferOptions)
+	}
+	return options, nil
 }
 
-func (b *RequestBuffering) reserve(n int64) bool {
+func (b *RequestBufferOptions) reserve(n int64) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if n > b.MaxDisk-b.diskUsage {
@@ -115,7 +122,7 @@ func (b *RequestBuffering) reserve(n int64) bool {
 	return true
 }
 
-func (b *RequestBuffering) release(n int64) {
+func (b *RequestBufferOptions) release(n int64) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.diskUsage -= n
@@ -128,7 +135,7 @@ type spooledBody struct {
 	file      *os.File
 	size      int64
 	diskBytes int64
-	budget    *RequestBuffering
+	budget    *RequestBufferOptions
 	io.Reader
 	closeOnce sync.Once
 	closeErr  error
@@ -174,7 +181,7 @@ func (b *spooledBody) writeFile(p []byte) error {
 	return nil
 }
 
-func (c *RequestBuffering) buffer(ctx context.Context, original io.ReadCloser) (_ *spooledBody, err error) {
+func (c *RequestBufferOptions) buffer(ctx context.Context, original io.ReadCloser) (_ *spooledBody, err error) {
 	defer func() { _ = original.Close() }()
 	body := &spooledBody{budget: c}
 	defer func() {
@@ -199,10 +206,10 @@ func (c *RequestBuffering) buffer(ctx context.Context, original io.ReadCloser) (
 			return nil, err
 		}
 		if int64(n) > c.MaxSize-body.size {
-			return nil, caddyhttp.Error(http.StatusRequestEntityTooLarge, fmt.Errorf("request body exceeds request_buffering max_size"))
+			return nil, caddyhttp.Error(http.StatusRequestEntityTooLarge, fmt.Errorf("request body exceeds request_buffers max_size"))
 		}
 		if n > 0 {
-			if body.file == nil && int64(n) > c.Memory-body.size {
+			if body.file == nil && int64(n) > c.memory-body.size {
 				body.file, err = os.CreateTemp(c.TempDir, "caddy-request-buffer-*")
 				if err != nil {
 					return nil, fmt.Errorf("creating request buffer: %w", err)

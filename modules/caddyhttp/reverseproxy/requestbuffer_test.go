@@ -2,6 +2,7 @@ package reverseproxy
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -20,16 +21,16 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
-func testRequestBuffering(t *testing.T, memory, maxSize, maxDisk int64) *RequestBuffering {
+func testRequestBuffering(t *testing.T, memory, maxSize, maxDisk int64) *RequestBufferOptions {
 	t.Helper()
-	b := &RequestBuffering{Memory: memory, MaxSize: maxSize, MaxDisk: maxDisk, TempDir: t.TempDir()}
-	if err := b.provision(); err != nil {
+	b := &RequestBufferOptions{MaxSize: maxSize, MaxDisk: maxDisk, TempDir: t.TempDir()}
+	if err := b.provision(memory); err != nil {
 		t.Fatal(err)
 	}
 	return b
 }
 
-func assertRequestBufferEmpty(t *testing.T, b *RequestBuffering) {
+func assertRequestBufferEmpty(t *testing.T, b *RequestBufferOptions) {
 	t.Helper()
 	files, err := os.ReadDir(b.TempDir)
 	if err != nil {
@@ -220,7 +221,7 @@ func TestRequestBufferingPrepareRequest(t *testing.T) {
 			if !unknown {
 				b.TempDir = filepath.Join(b.TempDir, "missing")
 			}
-			h := Handler{RequestBuffering: b}
+			h := Handler{RequestBufferOptions: b, RequestBuffers: b.memory}
 			req := httptest.NewRequest(http.MethodPost, "http://example.com/", strings.NewReader("abcdefghij"))
 			if unknown {
 				req.ContentLength = -1
@@ -241,8 +242,8 @@ func TestRequestBufferingPrepareRequest(t *testing.T) {
 			if err != nil || string(got) != "abcdefghij" {
 				t.Fatalf("body = %q, error = %v", got, err)
 			}
-			if !unknown && prepared.Body != req.Body {
-				t.Error("known-length body was buffered")
+			if _, spooled := prepared.Body.(*spooledBody); !unknown && spooled {
+				t.Error("known-length body was disk-buffered")
 			}
 		})
 	}
@@ -251,7 +252,8 @@ func TestRequestBufferingPrepareRequest(t *testing.T) {
 func TestRequestBufferingBeforeDialAndErrorStatus(t *testing.T) {
 	b := testRequestBuffering(t, 4, 10, 64)
 	h := minimalHandler(0, &Upstream{Host: new(Host), Dial: "127.0.0.1:12345"})
-	h.RequestBuffering = b
+	h.RequestBufferOptions = b
+	h.RequestBuffers = b.memory
 	h.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
 		t.Error("upstream called for rejected upload")
 		return nil, errors.New("unexpected dial")
@@ -271,7 +273,8 @@ func TestRequestBufferingRetry(t *testing.T) {
 		t.Run(fmt.Sprint(memory), func(t *testing.T) {
 			b := testRequestBuffering(t, memory, 64, 64)
 			h := minimalHandler(1, &Upstream{Host: new(Host), Dial: "127.0.0.1:12345"})
-			h.RequestBuffering = b
+			h.RequestBufferOptions = b
+			h.RequestBuffers = b.memory
 			calls := 0
 			h.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
 				calls++
@@ -308,26 +311,45 @@ func TestRequestBufferingRetry(t *testing.T) {
 
 func TestRequestBufferingCaddyfile(t *testing.T) {
 	for _, tc := range []struct {
-		name, input string
-		wantErr     bool
+		name, input       string
+		wantErr, wantDisk bool
 	}{
-		{"defaults", "reverse_proxy localhost:9000 {\n request_buffering\n}", false},
-		{"options", "reverse_proxy localhost:9000 {\n request_buffering {\n memory 16KiB\n max_size 1MiB\n max_disk 2MiB\n temp_dir /tmp/uploads\n }\n}", false},
-		{"extra argument", "reverse_proxy localhost:9000 {\n request_buffering unexpected\n}", true},
-		{"unknown option", "reverse_proxy localhost:9000 {\n request_buffering {\n unknown 1KiB\n }\n}", true},
-		{"zero size", "reverse_proxy localhost:9000 {\n request_buffering {\n max_size 0\n }\n}", true},
-		{"overflow", "reverse_proxy localhost:9000 {\n request_buffering {\n memory 18446744073709551615\n }\n}", true},
-		{"extra option argument", "reverse_proxy localhost:9000 {\n request_buffering {\n memory 1KiB 2KiB\n }\n}", true},
-		{"duplicate block", "reverse_proxy localhost:9000 {\n request_buffering\n request_buffering\n}", true},
+		{"legacy memory", "request_buffers 16KiB", false, false},
+		{"legacy unlimited", "request_buffers unlimited", false, false},
+		{"legacy zero", "request_buffers 0", false, false},
+		{"empty block", "request_buffers 16KiB {\n}", false, true},
+		{"options", "request_buffers 16KiB {\n max_size 1MiB\n max_disk 2MiB\n temp_dir /tmp/uploads\n}", false, true},
+		{"old directive", "request_buffering", true, false},
+		{"missing size", "request_buffers {\n max_size 1MiB\n}", true, false},
+		{"unlimited with disk", "request_buffers unlimited {\n}", true, false},
+		{"zero with disk", "request_buffers 0 {\n}", true, false},
+		{"extra argument", "request_buffers 16KiB unexpected", true, false},
+		{"unknown option", "request_buffers 16KiB {\n unknown 1KiB\n}", true, false},
+		{"duplicate memory setting", "request_buffers 16KiB {\n memory 1KiB\n}", true, false},
+		{"zero size", "request_buffers 16KiB {\n max_size 0\n}", true, false},
+		{"memory overflow", "request_buffers 18446744073709551615", true, false},
+		{"option overflow", "request_buffers 16KiB {\n max_disk 18446744073709551615\n}", true, false},
+		{"extra option argument", "request_buffers 16KiB {\n max_disk 1KiB 2KiB\n}", true, false},
+		{"duplicate block", "request_buffers 16KiB {\n}\n request_buffers 16KiB {\n}", true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var h Handler
-			err := h.UnmarshalCaddyfile(caddyfile.NewTestDispenser(tc.input))
+			input := "reverse_proxy localhost:9000 {\n" + tc.input + "\n response_buffers 32KiB\n}"
+			err := h.UnmarshalCaddyfile(caddyfile.NewTestDispenser(input))
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("error = %v, wantErr = %v", err, tc.wantErr)
 			}
-			if tc.name == "options" && (h.RequestBuffering.Memory != 16384 || h.RequestBuffering.MaxSize != 1048576 || h.RequestBuffering.MaxDisk != 2097152 || h.RequestBuffering.TempDir != "/tmp/uploads") {
-				t.Errorf("wrong options: %+v", h.RequestBuffering)
+			if tc.wantErr {
+				return
+			}
+			if (h.RequestBufferOptions != nil) != tc.wantDisk {
+				t.Fatalf("disk buffering enabled = %v, want %v", h.RequestBufferOptions != nil, tc.wantDisk)
+			}
+			if h.ResponseBuffers != 32768 {
+				t.Error("optional block consumed following directive")
+			}
+			if tc.name == "options" && (h.RequestBuffers != 16384 || h.RequestBufferOptions.MaxSize != 1048576 || h.RequestBufferOptions.MaxDisk != 2097152 || h.RequestBufferOptions.TempDir != "/tmp/uploads") {
+				t.Errorf("wrong options: %+v", h.RequestBufferOptions)
 			}
 		})
 	}
@@ -356,7 +378,8 @@ func TestRequestBufferingIncremental(t *testing.T) {
 		t.Run(fmt.Sprint(known), func(t *testing.T) {
 			b := testRequestBuffering(t, 4, 64, 64)
 			h := incrementalHandler("127.0.0.1:12345")
-			h.RequestBuffering = b
+			h.RequestBufferOptions = b
+			h.RequestBuffers = b.memory
 			called := false
 			h.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
 				called = true
@@ -365,13 +388,9 @@ func TestRequestBufferingIncremental(t *testing.T) {
 			})
 			rec := httptest.NewRecorder()
 			err := h.ServeHTTP(rec, incrementalRequest("hello", known), nil)
-			if !known {
-				assertRefused(t, err, rec.Header())
-				if called {
-					t.Error("incremental unknown-length request was forwarded")
-				}
-			} else if err != nil || !called {
-				t.Fatalf("known-length incremental request: called=%v, error=%v", called, err)
+			assertRefused(t, err, rec.Header())
+			if called {
+				t.Error("incremental request was forwarded with an explicit buffer")
 			}
 			assertRequestBufferEmpty(t, b)
 		})
@@ -379,14 +398,52 @@ func TestRequestBufferingIncremental(t *testing.T) {
 }
 
 func TestRequestBufferingInvalidConfig(t *testing.T) {
-	for _, b := range []*RequestBuffering{{Memory: -1}, {MaxSize: -1}, {MaxDisk: -1}} {
-		if err := b.provision(); err == nil {
+	for _, b := range []*RequestBufferOptions{{MaxSize: -1}, {MaxDisk: -1}} {
+		if err := b.provision(4096); err == nil {
 			t.Errorf("accepted negative limit: %+v", b)
 		}
 	}
-	h := Handler{RequestBuffering: new(RequestBuffering), RequestBuffers: 4096}
-	if err := h.Provision(caddy.Context{}); err == nil || !strings.Contains(err.Error(), "cannot be combined") {
-		t.Fatalf("conflicting options: %v", err)
+	for _, size := range []int64{-1, 0} {
+		h := Handler{RequestBufferOptions: new(RequestBufferOptions), RequestBuffers: size}
+		if err := h.Provision(caddy.Context{}); err == nil || !strings.Contains(err.Error(), "positive, finite request_buffers") {
+			t.Fatalf("invalid memory threshold %d: %v", size, err)
+		}
+	}
+}
+
+func TestRequestBufferingJSONCompatibility(t *testing.T) {
+	for _, raw := range []string{
+		`{"request_buffers":16384}`,
+		`{"request_buffers":-1}`,
+		`{"request_buffers":16384,"request_buffer_options":{"max_size":1048576,"max_disk":2097152}}`,
+	} {
+		var h Handler
+		if err := json.Unmarshal([]byte(raw), &h); err != nil {
+			t.Fatal(err)
+		}
+		encoded, err := json.Marshal(h)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got map[string]json.RawMessage
+		if err := json.Unmarshal(encoded, &got); err != nil {
+			t.Fatal(err)
+		}
+		var size int64
+		if err := json.Unmarshal(got["request_buffers"], &size); err != nil {
+			t.Fatal(err)
+		}
+		if size != h.RequestBuffers {
+			t.Error("request_buffers did not retain its numeric representation")
+		}
+		if h.RequestBufferOptions != nil {
+			if err := h.RequestBufferOptions.provision(h.RequestBuffers); err != nil {
+				t.Fatal(err)
+			}
+			if h.RequestBufferOptions.memory != size {
+				t.Error("disk buffering uses a different memory threshold")
+			}
+		}
 	}
 }
 
@@ -394,7 +451,8 @@ func TestRequestBufferingDiskFailure(t *testing.T) {
 	b := testRequestBuffering(t, 4, 64, 64)
 	b.TempDir = filepath.Join(b.TempDir, "missing")
 	h := minimalHandler(0, &Upstream{Host: new(Host), Dial: "127.0.0.1:12345"})
-	h.RequestBuffering = b
+	h.RequestBufferOptions = b
+	h.RequestBuffers = b.memory
 	h.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
 		t.Error("upstream called after disk failure")
 		return nil, errors.New("unexpected dial")

@@ -16,6 +16,7 @@ package reverseproxy
 
 import (
 	"fmt"
+	"math"
 	"net"
 	"net/http"
 	"reflect"
@@ -94,13 +95,12 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //
 //	    # streaming
 //	    flush_interval     <duration>
-//	    request_buffering {
-//	        memory <size>
+//	    request_buffers <size> {
+//	        # optional disk buffering for unknown-length bodies
 //	        max_size <size>
 //	        max_disk <size>
 //	        temp_dir <path>
 //	    }
-//	    request_buffers    <size>
 //	    response_buffers   <size>
 //	    stream_buffer_size <size>
 //	    stream_timeout     <duration>
@@ -656,18 +656,6 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				h.FlushInterval = caddy.Duration(dur)
 			}
 
-		case "request_buffering":
-			if h.RequestBuffering != nil {
-				return d.Err("request_buffering is already configured")
-			}
-			if d.NextArg() {
-				return d.ArgErr()
-			}
-			h.RequestBuffering = new(RequestBuffering)
-			if err := h.RequestBuffering.unmarshalCaddyfile(d); err != nil {
-				return err
-			}
-
 		case "request_buffers", "response_buffers", "stream_buffer_size":
 			subdir := d.Val()
 			if !d.NextArg() {
@@ -682,6 +670,9 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if err != nil {
 					return d.Errf("invalid byte size '%s': %v", val, err)
 				}
+				if subdir == "request_buffers" && usize > math.MaxInt64 {
+					return d.Errf("request_buffers size is too large: %s", val)
+				}
 				size = int64(usize)
 			}
 			if d.NextArg() {
@@ -689,7 +680,18 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 			switch subdir {
 			case "request_buffers":
+				if h.RequestBufferOptions != nil {
+					return d.Err("request_buffers is already configured with disk options")
+				}
 				h.RequestBuffers = size
+				options, err := parseRequestBufferOptions(d)
+				if err != nil {
+					return err
+				}
+				if options != nil && size <= 0 {
+					return d.Err("disk buffering requires a positive, finite request_buffers value")
+				}
+				h.RequestBufferOptions = options
 			case "response_buffers":
 				h.ResponseBuffers = size
 			case "stream_buffer_size":

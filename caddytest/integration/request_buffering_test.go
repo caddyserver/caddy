@@ -57,23 +57,23 @@ func TestFastCGIRequestBuffering(t *testing.T) {
 	}{
 		{name: "disabled", size: 9000, status: 411},
 		{name: "disabled known length", size: 9000, known: true, status: 200},
-		{name: "memory", buffering: "request_buffering", size: 12, status: 200},
-		{name: "disk", buffering: "request_buffering", size: 17000, status: 200},
-		{name: "HTTP2 disk", buffering: "request_buffering", size: 17000, http2: true, status: 200},
-		{name: "exact limit", buffering: "request_buffering {\n memory 4KiB\n max_size 16KiB\n max_disk 16KiB\n}", size: 16384, status: 200},
-		{name: "over limit", buffering: "request_buffering {\n memory 4KiB\n max_size 16KiB\n}", size: 16385, status: 413},
-		{name: "known length bypass", buffering: "request_buffering {\n max_size 4KiB\n}", size: 9000, known: true, status: 200},
-		{name: "request_body limit", buffering: "request_buffering", extra: "request_body {\n max_size 8KiB\n}", size: 9000, status: 413},
-		{name: "disk budget", buffering: "request_buffering {\n memory 4KiB\n max_disk 8KiB\n}", size: 9000, status: 503},
+		{name: "legacy insufficient memory", buffering: "request_buffers 4KiB", size: 9000, status: 411},
+		{name: "legacy sufficient memory", buffering: "request_buffers 16KiB", size: 9000, status: 200},
+		{name: "memory", buffering: "request_buffers 16KiB {\n}", size: 12, status: 200},
+		{name: "disk", buffering: "request_buffers 16KiB {\n}", size: 17000, status: 200},
+		{name: "HTTP2 disk", buffering: "request_buffers 16KiB {\n}", size: 17000, http2: true, status: 200},
+		{name: "exact limit", buffering: "request_buffers 4KiB {\n max_size 16KiB\n max_disk 16KiB\n}", size: 16384, status: 200},
+		{name: "over limit", buffering: "request_buffers 4KiB {\n max_size 16KiB\n}", size: 16385, status: 413},
+		{name: "known length bypass", buffering: "request_buffers 16KiB {\n max_size 4KiB\n}", size: 9000, known: true, status: 200},
+		{name: "request_body limit", buffering: "request_buffers 16KiB {\n}", extra: "request_body {\n max_size 8KiB\n}", size: 9000, status: 413},
+		{name: "disk budget", buffering: "request_buffers 4KiB {\n max_disk 8KiB\n}", size: 9000, status: 503},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// Add a temporary directory to configured buffering, keeping defaults
 			// otherwise. php_fastcgi passes this option to the reverse_proxy handler.
 			buffering := tc.buffering
-			if buffering == "request_buffering" {
-				buffering = fmt.Sprintf("request_buffering {\n temp_dir %q\n}", dir)
-			} else if buffering != "" {
-				buffering = strings.Replace(buffering, "request_buffering {", "request_buffering {\n temp_dir "+strconv.Quote(dir), 1)
+			if strings.Contains(buffering, "{") {
+				buffering = strings.Replace(buffering, "{", "{\n temp_dir "+strconv.Quote(dir), 1)
 			}
 			tester := caddytest.NewTester(t)
 			tester.InitServer(fmt.Sprintf(`

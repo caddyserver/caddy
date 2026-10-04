@@ -164,11 +164,12 @@ type Handler struct {
 	// only when the request already meets the transport's framing requirements.
 	RequestBuffers int64 `json:"request_buffers,omitempty"`
 
-	// Fully buffers request bodies of unknown length before dialing an upstream,
-	// spilling to temporary files when the memory threshold is exceeded. Disabled
-	// by default. Known-length requests retain their existing buffering behavior.
-	// Cannot be combined with an explicitly configured request_buffers value.
-	RequestBuffering *RequestBuffering `json:"request_buffering,omitempty"`
+	// Extends request_buffers with opt-in disk buffering for unknown-length
+	// request bodies. The entire body is buffered before dialing an upstream,
+	// spilling to temporary files above the request_buffers memory threshold.
+	// Requires a positive, finite request_buffers value. If omitted, the existing
+	// memory-only buffering behavior is retained, including its streaming fallback.
+	RequestBufferOptions *RequestBufferOptions `json:"request_buffer_options,omitempty"`
 
 	// If nonzero, the entire response body up to this size will be read
 	// and buffered in memory before being proxied to the client. This
@@ -284,12 +285,9 @@ func (Handler) CaddyModule() caddy.ModuleInfo {
 
 // Provision ensures that h is set up properly before use.
 func (h *Handler) Provision(ctx caddy.Context) error {
-	if h.RequestBuffering != nil {
-		if h.RequestBuffers != 0 {
-			return fmt.Errorf("request_buffering cannot be combined with request_buffers")
-		}
-		if err := h.RequestBuffering.provision(); err != nil {
-			return fmt.Errorf("request_buffering: %w", err)
+	if h.RequestBufferOptions != nil {
+		if err := h.RequestBufferOptions.provision(h.RequestBuffers); err != nil {
+			return fmt.Errorf("request_buffer_options: %w", err)
 		}
 	}
 
@@ -745,7 +743,7 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 		}
 	}
 	if !requestWasIncremental && requestHasContent(r) && caddyhttp.IsIncremental(r.Header) &&
-		(h.RequestBuffers != 0 || r.ContentLength < 0 && (h.RequestBuffering != nil || h.transportRequiresContentLength())) {
+		(h.RequestBuffers != 0 || r.ContentLength < 0 && h.transportRequiresContentLength()) {
 		return true, h.refuseIncremental(w, nil)
 	}
 	normalizeIncrementalRequest(r)
@@ -853,8 +851,8 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	// attacks, so it is strongly recommended to only use this
 	// feature if absolutely required, if read timeouts are
 	// set, and if body size is limited
-	if h.RequestBuffering != nil && req.ContentLength < 0 && req.Body != nil {
-		body, err := h.RequestBuffering.buffer(req.Context(), req.Body)
+	if h.RequestBufferOptions != nil && req.ContentLength < 0 && req.Body != nil {
+		body, err := h.RequestBufferOptions.buffer(req.Context(), req.Body)
 		if err != nil {
 			return nil, err
 		}
@@ -1993,9 +1991,6 @@ func normalizeIncrementalRequest(req *http.Request) {
 func (h *Handler) incrementalRequestConflicts(req *http.Request) bool {
 	if !requestHasContent(req) || !caddyhttp.IsIncremental(req.Header) {
 		return false
-	}
-	if h.RequestBuffering != nil && req.ContentLength < 0 {
-		return true
 	}
 	needsLength := h.transportRequiresContentLength()
 	if h.RequestBuffers != 0 {
