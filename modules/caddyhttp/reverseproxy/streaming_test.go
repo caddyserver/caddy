@@ -642,3 +642,142 @@ func TestDetachedTrackerRemovalAllowsConcurrentConnectionDeletion(t *testing.T) 
 		t.Error("removed upstream connection was not closed")
 	}
 }
+
+// opaqueUpgradeWriter supports hijacking but hides the recorder from the
+// detachment helper, as a middleware wrapper without Unwrap would do.
+type opaqueUpgradeWriter struct {
+	http.ResponseWriter
+}
+
+func (w opaqueUpgradeWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return http.NewResponseController(w.ResponseWriter).Hijack()
+}
+
+type rejectingUpgradeWriter struct {
+	*caddyhttp.ResponseWriterWrapper
+}
+
+func (rejectingUpgradeWriter) DetachAfterHijack(detached bool) bool {
+	return !detached
+}
+
+type pipeUpgradeWriter struct {
+	*httptest.ResponseRecorder
+	conn net.Conn
+}
+
+func (w pipeUpgradeWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return w.conn, bufio.NewReadWriter(bufio.NewReader(w.conn), bufio.NewWriter(w.conn)), nil
+}
+
+func TestUpgradeDetachmentRequiresWriterSupport(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		wrap     func(http.ResponseWriter) http.ResponseWriter
+		detached bool
+	}{
+		{name: "opaque wrapper", wrap: func(w http.ResponseWriter) http.ResponseWriter { return opaqueUpgradeWriter{w} }},
+		{name: "inner writer rejects detachment", wrap: func(w http.ResponseWriter) http.ResponseWriter {
+			rejecting := rejectingUpgradeWriter{&caddyhttp.ResponseWriterWrapper{ResponseWriter: w}}
+			return caddyhttp.NewResponseRecorder(rejecting, nil, nil)
+		}},
+		{name: "supported recorder", wrap: func(w http.ResponseWriter) http.ResponseWriter { return w }, detached: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			front, client := net.Pipe()
+			back, backend := net.Pipe()
+			defer front.Close()
+			defer client.Close()
+			defer back.Close()
+			defer backend.Close()
+			if err := client.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+				t.Fatal(err)
+			}
+			echoDone := make(chan struct{})
+			go func() {
+				defer close(echoDone)
+				_, _ = io.Copy(backend, backend)
+			}()
+			h := &Handler{StreamDetached: true, logger: caddy.Log(), tunnelTracker: newTunnelTracker(caddy.Log(), 0)}
+			initReverseProxyMetrics(h, prometheus.NewRegistry())
+			recorder := caddyhttp.NewResponseRecorder(pipeUpgradeWriter{httptest.NewRecorder(), front}, nil, nil)
+			writer := tc.wrap(recorder)
+			req := prepareTestRequest(httptest.NewRequest(http.MethodGet, "/upgrade", nil))
+			req.Header.Set("Connection", "Upgrade")
+			req.Header.Set("Upgrade", "test-stream")
+			res := &http.Response{StatusCode: http.StatusSwitchingProtocols, Header: req.Header.Clone(), Body: back}
+			handlerDone := make(chan struct{})
+			go func() {
+				defer close(handlerDone)
+				h.handleUpgradeResponse(caddy.Log(), writer, req, res, "detachment-test")
+			}()
+			const payload = "echo"
+			if _, err := io.WriteString(client, payload); err != nil {
+				t.Fatal(err)
+			}
+			received := make([]byte, len(payload))
+			if _, err := io.ReadFull(client, received); err != nil {
+				t.Fatal(err)
+			}
+			if string(received) != payload {
+				t.Fatalf("echo = %q, want %q", received, payload)
+			}
+			h.tunnelTracker.mu.Lock()
+			for _, conn := range h.tunnelTracker.connections {
+				if conn.detached != tc.detached {
+					t.Errorf("tracked detached = %v, want %v", conn.detached, tc.detached)
+				}
+			}
+			h.tunnelTracker.mu.Unlock()
+			if tc.detached {
+				select {
+				case <-handlerDone:
+				case <-time.After(time.Second):
+					t.Error("supported detached tunnel kept the handler running")
+				}
+			} else {
+				select {
+				case <-handlerDone:
+					t.Error("handler returned while the writer chain remained attached")
+				case <-time.After(100 * time.Millisecond):
+				}
+			}
+			client.Close()
+			backend.Close()
+			select {
+			case <-handlerDone:
+			case <-time.After(time.Second):
+				t.Fatal("handler did not finish after stream close")
+			}
+			<-echoDone
+			// Wait for detached tunnel cleanup too, so no copy goroutine can
+			// still be updating counters after this subtest finishes.
+			deadline := time.Now().Add(time.Second)
+			for {
+				h.tunnelTracker.mu.Lock()
+				remaining := len(h.tunnelTracker.connections)
+				h.tunnelTracker.mu.Unlock()
+				if remaining == 0 {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatal("tunnel connections were not unregistered")
+				}
+				time.Sleep(time.Millisecond)
+			}
+			// Attached byte counters are safe to inspect after the handler has waited
+			// for both copying goroutines. Partial detachment must also be undone.
+			if !tc.detached {
+				recorders := []caddyhttp.ResponseRecorder{recorder}
+				if outer, ok := writer.(caddyhttp.ResponseRecorder); ok {
+					recorders = append(recorders, outer)
+				}
+				for _, rr := range recorders {
+					if rr.Size() != len(payload) {
+						t.Errorf("attached recorder size = %d, want %d", rr.Size(), len(payload))
+					}
+				}
+			}
+		})
+	}
+}
