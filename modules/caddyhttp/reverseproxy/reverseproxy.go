@@ -36,6 +36,7 @@ import (
 	"time"
 
 	"github.com/dunglas/httpsfv"
+	"github.com/quic-go/quic-go/http3"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/net/http/httpguts"
@@ -1452,7 +1453,13 @@ func (h *Handler) finalizeResponse(
 		// we'll just log the error and abort the stream here and panic just as
 		// the standard lib's proxy to propagate the stream error.
 		// see issue https://github.com/caddyserver/caddy/issues/5951
-		if c := logger.Check(zapcore.WarnLevel, "aborting with incomplete response"); c != nil {
+		lvl := zapcore.WarnLevel
+		if isClientCanceledH3(err) {
+			// the client canceled the request; expected and not actionable
+			// see issue https://github.com/caddyserver/caddy/issues/5766
+			lvl = zapcore.DebugLevel
+		}
+		if c := logger.Check(lvl, "aborting with incomplete response"); c != nil {
 			c.Write(zap.Error(err))
 		}
 		// flush the buffer to ensure the client sees the partial response
@@ -1492,6 +1499,17 @@ func (h *Handler) finalizeResponse(
 	}
 
 	return nil
+}
+
+// isClientCanceledH3 returns true if err is an HTTP/3 client canceling
+// its request (H3_REQUEST_CANCELLED) while the response was being written.
+// The same error read from an HTTP/3 backend is the backend's doing.
+func isClientCanceledH3(err error) bool {
+	if !errors.Is(err, errWritingDownstream) {
+		return false
+	}
+	h3Err, ok := errors.AsType[*http3.Error](err)
+	return ok && h3Err.Remote && h3Err.ErrorCode == http3.ErrCodeRequestCanceled
 }
 
 // tryAgain takes the time that the handler was initially invoked,
