@@ -17,6 +17,7 @@ package caddytls
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/netip"
@@ -40,6 +41,7 @@ func init() {
 	caddy.RegisterModule(MatchServerNameRE{})
 	caddy.RegisterModule(MatchRemoteIP{})
 	caddy.RegisterModule(MatchLocalIP{})
+	caddy.RegisterModule(MatchNot{})
 }
 
 // MatchServerName matches based on SNI. Names in
@@ -538,21 +540,132 @@ func (m *MatchLocalIP) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
+// MatchNot matches a TLS handshake by negating the results of its
+// matcher sets. A single "not" matcher takes one or more matcher sets.
+// Each matcher set is OR'ed; in other words, if any matcher set returns
+// true, the final result of the "not" matcher is false. Individual
+// matchers within a set work the same (i.e. different matchers in
+// the same set are AND'ed).
+//
+// NOTE: The generated docs which describe the structure of this
+// module are wrong because of how this type unmarshals JSON in a
+// custom way. The correct structure is:
+//
+// ```json
+// [{}, {}]
+// ```
+//
+// where each of the array elements is a matcher set, i.e. an
+// object keyed by matcher name.
+type MatchNot struct {
+	MatcherSetsRaw []caddy.ModuleMap `json:"-" caddy:"namespace=tls.handshake_match"`
+
+	matcherSets [][]ConnectionMatcher
+}
+
+// CaddyModule returns the Caddy module information.
+func (MatchNot) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "tls.handshake_match.not",
+		New: func() caddy.Module { return new(MatchNot) },
+	}
+}
+
+// UnmarshalJSON satisfies json.Unmarshaler. It puts the JSON
+// bytes directly into m's MatcherSetsRaw field.
+func (m *MatchNot) UnmarshalJSON(data []byte) error {
+	return json.Unmarshal(data, &m.MatcherSetsRaw)
+}
+
+// MarshalJSON satisfies json.Marshaler by marshaling
+// m's raw matcher sets.
+func (m MatchNot) MarshalJSON() ([]byte, error) {
+	return json.Marshal(m.MatcherSetsRaw)
+}
+
+// Provision loads the matcher modules to be negated.
+func (m *MatchNot) Provision(ctx caddy.Context) error {
+	matcherSets, err := ctx.LoadModule(m, "MatcherSetsRaw")
+	if err != nil {
+		return fmt.Errorf("loading matcher sets: %v", err)
+	}
+	for _, modMap := range matcherSets.([]map[string]any) {
+		var ms []ConnectionMatcher
+		for _, modIface := range modMap {
+			cm, ok := modIface.(ConnectionMatcher)
+			if !ok {
+				return fmt.Errorf("module is not a TLS handshake matcher: %T", modIface)
+			}
+			ms = append(ms, cm)
+		}
+		m.matcherSets = append(m.matcherSets, ms)
+	}
+	return nil
+}
+
+// Match returns true if hello does not match any of m's
+// matcher sets.
+func (m MatchNot) Match(hello *tls.ClientHelloInfo) bool {
+setLoop:
+	for _, ms := range m.matcherSets {
+		for _, matcher := range ms {
+			if !matcher.Match(hello) {
+				continue setLoop
+			}
+		}
+		return false
+	}
+	return true
+}
+
+// UnmarshalCaddyfile sets up the MatchNot from Caddyfile tokens. Syntax:
+//
+//	not <matcher> [<args...>]
+//	not {
+//		<matcher> [<args...>]
+//	}
+func (m *MatchNot) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	// iterate to merge multiple matchers into one
+	for d.Next() {
+		wrapper := d.Val()
+
+		matcherSet, err := ParseCaddyfileNestedMatcherSet(d)
+		if err != nil {
+			return err
+		}
+
+		// At least one matcher must be provided
+		if len(matcherSet) == 0 {
+			return d.Errf("malformed TLS handshake matcher '%s': no matchers to negate", wrapper)
+		}
+
+		m.MatcherSetsRaw = append(m.MatcherSetsRaw, matcherSet)
+	}
+
+	return nil
+}
+
 // Interface guards
 var (
 	_ ConnectionMatcher = (*MatchLocalIP)(nil)
+	_ ConnectionMatcher = (*MatchNot)(nil)
 	_ ConnectionMatcher = (*MatchRemoteIP)(nil)
 	_ ConnectionMatcher = (*MatchServerName)(nil)
 	_ ConnectionMatcher = (*MatchServerNameRE)(nil)
 
 	_ caddy.Provisioner = (*MatchLocalIP)(nil)
+	_ caddy.Provisioner = (*MatchNot)(nil)
 	_ caddy.Provisioner = (*MatchRemoteIP)(nil)
 	_ caddy.Provisioner = (*MatchServerNameRE)(nil)
 
 	_ caddyfile.Unmarshaler = (*MatchLocalIP)(nil)
+	_ caddyfile.Unmarshaler = (*MatchNot)(nil)
 	_ caddyfile.Unmarshaler = (*MatchRemoteIP)(nil)
 	_ caddyfile.Unmarshaler = (*MatchServerName)(nil)
 	_ caddyfile.Unmarshaler = (*MatchServerNameRE)(nil)
+
+	_ json.Marshaler   = (*MatchNot)(nil)
+	_ json.Unmarshaler = (*MatchNot)(nil)
 )
 
 var wordRE = regexp.MustCompile(`\w+`)
