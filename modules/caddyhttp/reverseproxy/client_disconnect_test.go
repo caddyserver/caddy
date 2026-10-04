@@ -135,7 +135,7 @@ func TestClientCancelAbortLogLevel(t *testing.T) {
 						t.Fatalf("expected panic with http.ErrAbortHandler, got %v", r)
 					}
 				}()
-				_ = h.finalizeResponse(rw, req, res, caddy.NewReplacer(), fakeStart, h.logger)
+				_ = h.finalizeResponse(rw, req, res, caddy.NewReplacer(), fakeStart, h.logger, "example.test:443")
 			}()
 
 			entries := logs.FilterMessage("aborting with incomplete response").All()
