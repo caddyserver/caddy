@@ -720,7 +720,7 @@ func TestIdleTimeoutWriter_ClearBetweenWrites(t *testing.T) {
 			expected: []string{idleSet, zeroSet, idleSet, zeroSet},
 		},
 		{
-			name:  "nothing is set again when capped to the hard deadline",
+			name:  "hard deadline is restored for each operation",
 			clear: true,
 			hard:  true,
 			idle:  3 * time.Hour,
@@ -734,7 +734,7 @@ func TestIdleTimeoutWriter_ClearBetweenWrites(t *testing.T) {
 				w.HandlerDone()
 				return nil
 			},
-			expected: []string{hardSet},
+			expected: []string{hardSet, hardSet, hardSet, hardSet, hardSet},
 		},
 		{
 			name: "handler done does nothing when not clearing",
@@ -1107,23 +1107,63 @@ func TestIdleTimeoutReaderHandlerDoneClearsReleasedHardDeadline(t *testing.T) {
 	assert.True(t, deadlines[2].IsZero(), "the released hard deadline should be cleared")
 }
 
-// TestIdleTimeoutReaderSkipsSettingArmedDeadline checks that releasing
-// an idle deadline already capped to the hard deadline doesn't set the
-// same deadline again.
-func TestIdleTimeoutReaderSkipsSettingArmedDeadline(t *testing.T) {
-	hard := time.Now().Add(time.Minute)
-	w := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
-	r := &IdleTimeoutReader{
-		ReadCloser:        io.NopCloser(strings.NewReader("abcd")),
-		Ctrl:              http.NewResponseController(w),
-		Deadline:          IdleDeadline{Timeout: time.Hour, HardDeadline: hard},
-		Logger:            zap.NewNop(),
-		ClearBetweenReads: true,
+// TestIdleTimeoutReaderRestoresHardDeadline checks that another handler's
+// deadline update between reads cannot bypass the wrapper's hard ceiling.
+func TestIdleTimeoutReaderRestoresHardDeadline(t *testing.T) {
+	for _, clear := range []bool{false, true} {
+		t.Run(fmt.Sprintf("clear=%t", clear), func(t *testing.T) {
+			hard := time.Now().Add(time.Minute)
+			rec := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+			ctrl := http.NewResponseController(rec)
+			r := &IdleTimeoutReader{
+				ReadCloser:        io.NopCloser(strings.NewReader("abcd")),
+				Ctrl:              ctrl,
+				Deadline:          IdleDeadline{Timeout: time.Hour, HardDeadline: hard},
+				Logger:            zap.NewNop(),
+				ClearBetweenReads: clear,
+			}
+			_, err := r.Read(make([]byte, 2))
+			require.NoError(t, err)
+			// A handler can use its own response controller to change the deadline.
+			require.NoError(t, ctrl.SetReadDeadline(time.Time{}))
+			_, err = r.Read(make([]byte, 2))
+			require.NoError(t, err)
+			deadlines := rec.snapshot()
+			assert.Equal(t, hard, deadlines[len(deadlines)-1])
+		})
 	}
+}
 
-	for range 2 {
-		_, err := r.Read(make([]byte, 2))
-		require.NoError(t, err)
+// TestIdleTimeoutWriterRestoresHardDeadline checks that another handler's
+// deadline update cannot bypass the hard ceiling on writes or the final flush.
+func TestIdleTimeoutWriterRestoresHardDeadline(t *testing.T) {
+	for _, op := range []string{"write", "read from", "flush", "handler done"} {
+		t.Run(op, func(t *testing.T) {
+			hard := time.Now().Add(time.Minute)
+			rec := &writeDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+			ctrl := http.NewResponseController(rec)
+			w := &IdleTimeoutWriter{
+				ResponseWriterWrapper: &ResponseWriterWrapper{ResponseWriter: rec},
+				Ctrl:                  ctrl,
+				Deadline:              IdleDeadline{Timeout: time.Hour, HardDeadline: hard},
+				Logger:                zap.NewNop(),
+				ClearBetweenWrites:    true,
+			}
+			_, err := w.Write([]byte("x"))
+			require.NoError(t, err)
+			require.NoError(t, ctrl.SetWriteDeadline(time.Time{}))
+			switch op {
+			case "write":
+				_, err = w.Write([]byte("x"))
+			case "read from":
+				_, err = w.ReadFrom(strings.NewReader("x"))
+			case "flush":
+				err = w.FlushError()
+			case "handler done":
+				w.HandlerDone()
+			}
+			require.NoError(t, err)
+			assert.Equal(t, hard, rec.deadlines[len(rec.deadlines)-1])
+		})
 	}
-	assert.Equal(t, []time.Time{hard}, w.snapshot())
 }
