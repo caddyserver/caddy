@@ -361,3 +361,60 @@ func TestClientAuthenticationProvision(t *testing.T) {
 		})
 	}
 }
+
+func TestParseCaddyfileNestedMatcherSet(t *testing.T) {
+	for i, tc := range []struct {
+		input   string
+		expect  string
+		wantErr bool
+	}{
+		{
+			input:  `match sni example.com`,
+			expect: `{"sni":["example.com"]}`,
+		},
+		{
+			input: `match {
+				sni example.com
+				sni example.net
+			}`,
+			expect: `{"sni":["example.com","example.net"]}`,
+		},
+		{
+			input: `match {
+				remote_ip 10.0.0.0/8
+				sni example.com
+				remote_ip !10.1.2.3
+			}`,
+			expect: `{"remote_ip":{"ranges":["10.0.0.0/8"],"not_ranges":["10.1.2.3"]},"sni":["example.com"]}`,
+		},
+		{
+			input: `match {
+				sni_regexp ^a
+				sni_regexp ^b
+			}`,
+			wantErr: true,
+		},
+	} {
+		d := caddyfile.NewTestDispenser(tc.input)
+		d.Next() // consume "match"
+		matcherSet, err := ParseCaddyfileNestedMatcherSet(d)
+		if tc.wantErr {
+			if err == nil {
+				t.Errorf("Test %d: expected error but got none", i)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("Test %d: unexpected error: %v", i, err)
+			continue
+		}
+
+		actual, err := json.Marshal(matcherSet)
+		if err != nil {
+			t.Fatalf("Test %d: marshaling matcher set: %v", i, err)
+		}
+		if string(actual) != tc.expect {
+			t.Errorf("Test %d: expected %s, got %s", i, tc.expect, actual)
+		}
+	}
+}
