@@ -1,25 +1,26 @@
 package reverseproxy
 
 import (
- "bufio"
- "context"
- "errors"
- "net"
- "net/http"
- "net/http/httptest"
- "net/url"
- "runtime"
- "github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"bufio"
 	"bytes"
+	"context"
+	"errors"
 	"io"
+	"net"
+	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
 func TestHandlerCopyResponse(t *testing.T) {
@@ -72,11 +73,94 @@ func TestSwitchProtocolCopierBufferSize(t *testing.T) {
 	go copier.copyToBackend(errc)
 	wg.Wait()
 
-	if err := <-errc; err != nil {
+	// The destination cannot be half-closed, so a clean copy reports errCopyDone.
+	if err := <-errc; !errors.Is(err, errCopyDone) {
 		t.Fatalf("copyToBackend() error = %v", err)
 	}
 	if got := dst.String(); got != "hello" {
 		t.Fatalf("copied data = %q, want %q", got, "hello")
+	}
+}
+
+// A clean EOF in one direction must be propagated to the destination as a
+// write-half close instead of tearing the whole tunnel down.
+// See https://github.com/caddyserver/caddy/issues/8026.
+func TestSwitchProtocolCopierHalfClose(t *testing.T) {
+	closeWriteErr := errors.New("no half-close")
+
+	for _, tc := range []struct {
+		name    string
+		dst     io.ReadWriteCloser
+		wantErr error // nil means the half-close was propagated
+	}{
+		{
+			name:    "destination supports CloseWrite",
+			dst:     &closeWriteRecorder{},
+			wantErr: nil,
+		},
+		{
+			name:    "destination does not support CloseWrite",
+			dst:     nopReadWriteCloser{Writer: io.Discard},
+			wantErr: errCopyDone,
+		},
+		{
+			name:    "CloseWrite fails",
+			dst:     &closeWriteRecorder{err: closeWriteErr},
+			wantErr: closeWriteErr,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var wg sync.WaitGroup
+			var sent, received int64
+			errc := make(chan error, 1)
+			copier := switchProtocolCopier{
+				user:     nopReadWriteCloser{Reader: strings.NewReader("hello")},
+				backend:  tc.dst,
+				wg:       &wg,
+				sent:     &sent,
+				received: &received,
+			}
+
+			wg.Add(1)
+			go copier.copyToBackend(errc)
+			wg.Wait()
+
+			if err := <-errc; !errors.Is(err, tc.wantErr) {
+				t.Fatalf("copyToBackend() error = %v, want %v", err, tc.wantErr)
+			}
+			if rec, ok := tc.dst.(*closeWriteRecorder); ok && !rec.called {
+				t.Fatal("CloseWrite() was not called on a destination that supports it")
+			}
+		})
+	}
+}
+
+// A copy error must be reported as-is and must not be mistaken for a clean
+// half-close, so the tunnel is still torn down immediately.
+func TestSwitchProtocolCopierErrorIsNotHalfClose(t *testing.T) {
+	var wg sync.WaitGroup
+	var sent, received int64
+	errc := make(chan error, 1)
+	wantErr := errors.New("write failed")
+	dst := &closeWriteRecorder{writeErr: wantErr}
+
+	copier := switchProtocolCopier{
+		user:     nopReadWriteCloser{Reader: strings.NewReader("hello")},
+		backend:  dst,
+		wg:       &wg,
+		sent:     &sent,
+		received: &received,
+	}
+
+	wg.Add(1)
+	go copier.copyToBackend(errc)
+	wg.Wait()
+
+	if err := <-errc; !errors.Is(err, wantErr) {
+		t.Fatalf("error = %v, want %v", err, wantErr)
+	}
+	if dst.called {
+		t.Fatal("CloseWrite() was called after a copy error")
 	}
 }
 
@@ -383,8 +467,8 @@ func TestHandlerUpgradedStreamHalfClose(t *testing.T) {
 				Host: new(Host),
 				Dial: backend.Listener.Addr().String(),
 			})
-			h.connections = make(map[io.ReadWriteCloser]openConnection)
-			h.connectionsMu = new(sync.Mutex)
+			h.tunnelTracker = newTunnelTracker(caddy.Log(), 0)
+			initReverseProxyMetrics(h, prometheus.NewRegistry())
 
 			frontend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				// Isolate half-close propagation from request cancellation which has
