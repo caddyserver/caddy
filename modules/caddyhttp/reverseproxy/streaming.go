@@ -99,20 +99,10 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 	bufferSize := h.StreamBufferSize
 	streamTimeout := time.Duration(h.StreamTimeout)
 
-	if h.StreamDetached {
-		// the return value should be true as it's not hijacked yet,
-		// but some middleware may wrap response writers incorrectly
-		if !caddyhttp.DetachResponseWriterAfterHijack(rw, true) {
-			if c := logger.Check(zap.DebugLevel, "detaching connection failed"); c != nil {
-				c.Write(zap.String("tip", "check if your response writers have an Unwrap method or if already hijacked"))
-			}
-		}
-	}
-
 	var (
 		conn     io.ReadWriteCloser
 		brw      *bufio.ReadWriter
-		detached = h.StreamDetached
+		detached bool
 	)
 	// websocket over http2 or http3 if extended connect is enabled,
 	// assuming backend doesn't support this, the request will be
@@ -122,7 +112,6 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 	if body, ok := caddyhttp.GetVar(req.Context(), "extended_connect_websocket_body").(io.ReadCloser); ok {
 		// websocket over extended connect can't be detached. rw and req.Body
 		// are only valid while the handler goroutine is running
-		detached = false
 		req.Body = body
 		rw.Header().Del("Upgrade")
 		rw.Header().Del("Connection")
@@ -145,6 +134,18 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 		// bufio is not needed, use minimal buffer
 		brw = bufio.NewReadWriter(bufio.NewReaderSize(conn, 1), bufio.NewWriterSize(conn, 1))
 	} else {
+		if h.StreamDetached {
+			detached = caddyhttp.DetachResponseWriterAfterHijack(rw, true)
+			if !detached {
+				// Some outer writers may have accepted detachment before an
+				// inner writer refused it. Restore attached byte accounting
+				// and keep the handler running for the lifetime of the tunnel.
+				caddyhttp.DetachResponseWriterAfterHijack(rw, false)
+				if c := logger.Check(zap.DebugLevel, "detaching connection failed; keeping stream attached"); c != nil {
+					c.Write(zap.String("tip", "check if your response writers have an Unwrap method or if already hijacked"))
+				}
+			}
+		}
 		rw.WriteHeader(res.StatusCode)
 
 		if c := logger.Check(zap.DebugLevel, "upgrading connection"); c != nil {

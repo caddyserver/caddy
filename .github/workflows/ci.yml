@@ -248,4 +248,4 @@ jobs:
           version: latest
           args: build --single-target --snapshot
         env:
-          TAG: ${{ github.head_ref || github.ref_name }}
+          TAG: ${{ github.event.pull_request.head.sha || github.sha }}
