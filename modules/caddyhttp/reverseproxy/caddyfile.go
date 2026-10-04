@@ -94,6 +94,12 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //
 //	    # streaming
 //	    flush_interval     <duration>
+//	    request_buffering {
+//	        memory <size>
+//	        max_size <size>
+//	        max_disk <size>
+//	        temp_dir <path>
+//	    }
 //	    request_buffers    <size>
 //	    response_buffers   <size>
 //	    stream_buffer_size <size>
@@ -648,6 +654,18 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Errf("bad duration value '%s': %v", d.Val(), err)
 				}
 				h.FlushInterval = caddy.Duration(dur)
+			}
+
+		case "request_buffering":
+			if h.RequestBuffering != nil {
+				return d.Err("request_buffering is already configured")
+			}
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+			h.RequestBuffering = new(RequestBuffering)
+			if err := h.RequestBuffering.unmarshalCaddyfile(d); err != nil {
+				return err
 			}
 
 		case "request_buffers", "response_buffers", "stream_buffer_size":
