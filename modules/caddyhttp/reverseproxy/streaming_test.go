@@ -16,7 +16,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
@@ -50,12 +53,15 @@ func TestSwitchProtocolCopierBufferSize(t *testing.T) {
 	var wg sync.WaitGroup
 	var errc = make(chan error, 1)
 	var dst bytes.Buffer
+	var sent, received int64
 
 	copier := switchProtocolCopier{
 		user:       nopReadWriteCloser{Reader: strings.NewReader("hello")},
 		backend:    nopReadWriteCloser{Writer: &dst},
 		wg:         &wg,
 		bufferSize: 7,
+		sent:       &sent,
+		received:   &received,
 	}
 
 	buf := copier.buffer()
@@ -67,9 +73,9 @@ func TestSwitchProtocolCopierBufferSize(t *testing.T) {
 	go copier.copyToBackend(errc)
 	wg.Wait()
 
-	// the destination cannot be half-closed, so a clean copy reports errCopyDone
+	// The destination cannot be half-closed, so a clean copy reports errCopyDone.
 	if err := <-errc; !errors.Is(err, errCopyDone) {
-		t.Fatalf("copyToBackend() error = %v, want %v", err, errCopyDone)
+		t.Fatalf("copyToBackend() error = %v", err)
 	}
 	if got := dst.String(); got != "hello" {
 		t.Fatalf("copied data = %q, want %q", got, "hello")
@@ -105,11 +111,14 @@ func TestSwitchProtocolCopierHalfClose(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var wg sync.WaitGroup
+			var sent, received int64
 			errc := make(chan error, 1)
 			copier := switchProtocolCopier{
-				user:    nopReadWriteCloser{Reader: strings.NewReader("hello")},
-				backend: tc.dst,
-				wg:      &wg,
+				user:     nopReadWriteCloser{Reader: strings.NewReader("hello")},
+				backend:  tc.dst,
+				wg:       &wg,
+				sent:     &sent,
+				received: &received,
 			}
 
 			wg.Add(1)
@@ -130,14 +139,17 @@ func TestSwitchProtocolCopierHalfClose(t *testing.T) {
 // half-close, so the tunnel is still torn down immediately.
 func TestSwitchProtocolCopierErrorIsNotHalfClose(t *testing.T) {
 	var wg sync.WaitGroup
+	var sent, received int64
 	errc := make(chan error, 1)
 	wantErr := errors.New("write failed")
 	dst := &closeWriteRecorder{writeErr: wantErr}
 
 	copier := switchProtocolCopier{
-		user:    nopReadWriteCloser{Reader: strings.NewReader("hello")},
-		backend: dst,
-		wg:      &wg,
+		user:     nopReadWriteCloser{Reader: strings.NewReader("hello")},
+		backend:  dst,
+		wg:       &wg,
+		sent:     &sent,
+		received: &received,
 	}
 
 	wg.Add(1)
@@ -166,6 +178,149 @@ type nopReadWriteCloser struct {
 }
 
 func (nopReadWriteCloser) Close() error { return nil }
+
+type trackingReadWriteCloser struct {
+	closed chan struct{}
+	one    sync.Once
+}
+
+func newTrackingReadWriteCloser() *trackingReadWriteCloser {
+	return &trackingReadWriteCloser{closed: make(chan struct{})}
+}
+
+func (c *trackingReadWriteCloser) Read(_ []byte) (int, error)  { return 0, io.EOF }
+func (c *trackingReadWriteCloser) Write(p []byte) (int, error) { return len(p), nil }
+func (c *trackingReadWriteCloser) Close() error {
+	c.one.Do(func() {
+		close(c.closed)
+	})
+	return nil
+}
+
+func (c *trackingReadWriteCloser) isClosed() bool {
+	select {
+	case <-c.closed:
+		return true
+	default:
+		return false
+	}
+}
+
+func TestHandlerCleanupLegacyModeClosesAllConnections(t *testing.T) {
+	ts := newTunnelTracker(caddy.Log(), 0)
+	connA := newTrackingReadWriteCloser()
+	connB := newTrackingReadWriteCloser()
+	ts.registerConnection(connA, nil, false, "a")
+	ts.registerConnection(connB, nil, false, "b")
+
+	h := &Handler{
+		tunnelTracker:  ts,
+		StreamDetached: false,
+	}
+
+	if err := h.Cleanup(); err != nil {
+		t.Fatalf("cleanup failed: %v", err)
+	}
+	if !connA.isClosed() || !connB.isClosed() {
+		t.Fatalf("legacy cleanup should close all upgraded connections")
+	}
+}
+
+func TestHandlerCleanupLegacyModeHonorsDelay(t *testing.T) {
+	ts := newTunnelTracker(caddy.Log(), 40*time.Millisecond)
+	conn := newTrackingReadWriteCloser()
+	ts.registerConnection(conn, nil, false, "a")
+
+	h := &Handler{
+		tunnelTracker:  ts,
+		StreamDetached: false,
+	}
+
+	if err := h.Cleanup(); err != nil {
+		t.Fatalf("cleanup failed: %v", err)
+	}
+	if conn.isClosed() {
+		t.Fatal("connection should not close immediately when stream_close_delay is set")
+	}
+
+	select {
+	case <-conn.closed:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("connection did not close after stream_close_delay elapsed")
+	}
+}
+
+func TestHandlerCleanupDetachedModeClosesOnlyRemovedUpstreams(t *testing.T) {
+	const upstreamA = "upstream-a"
+	const upstreamB = "upstream-b"
+
+	// Simulate old+new configs both referencing upstreamA (refcount 2),
+	// while upstreamB is only referenced by the old config (refcount 1).
+	hosts.LoadOrStore(upstreamA, struct{}{})
+	hosts.LoadOrStore(upstreamA, struct{}{})
+	hosts.LoadOrStore(upstreamB, struct{}{})
+	t.Cleanup(func() {
+		_, _ = hosts.Delete(upstreamA)
+		_, _ = hosts.Delete(upstreamA)
+		_, _ = hosts.Delete(upstreamB)
+	})
+
+	ts := newTunnelTracker(caddy.Log(), 0)
+	registerDetachedTunnelTrackers(ts)
+	connA := newTrackingReadWriteCloser()
+	connB := newTrackingReadWriteCloser()
+	ts.registerConnection(connA, nil, true, upstreamA)
+	ts.registerConnection(connB, nil, true, upstreamB)
+
+	h := &Handler{
+		tunnelTracker:  ts,
+		StreamDetached: true,
+		Upstreams: UpstreamPool{
+			&Upstream{Dial: upstreamA},
+			&Upstream{Dial: upstreamB},
+		},
+	}
+
+	if err := h.Cleanup(); err != nil {
+		t.Fatalf("cleanup failed: %v", err)
+	}
+
+	if connA.isClosed() {
+		t.Fatal("connection for detached upstream should remain open")
+	}
+	if !connB.isClosed() {
+		t.Fatal("connection for removed upstream should be closed")
+	}
+}
+
+func TestHandlerUnmarshalCaddyfileStreamLogsBlock(t *testing.T) {
+	d := caddyfile.NewTestDispenser(`
+	reverse_proxy localhost:9000 {
+		stream_logs {
+			level info
+			logger_name access
+			skip_handshake
+		}
+	}
+	`)
+
+	var h Handler
+	if err := h.UnmarshalCaddyfile(d); err != nil {
+		t.Fatalf("UnmarshalCaddyfile() error = %v", err)
+	}
+	if h.StreamLogs == nil {
+		t.Fatal("expected stream_logs to be configured")
+	}
+	if h.StreamLogs.Level != "info" {
+		t.Fatalf("expected stream_logs.level=info, got %q", h.StreamLogs.Level)
+	}
+	if h.StreamLogs.LoggerName != "access" {
+		t.Fatalf("expected stream_logs.logger_name=access, got %q", h.StreamLogs.LoggerName)
+	}
+	if !h.StreamLogs.SkipHandshake {
+		t.Fatal("expected stream_logs.skip_handshake=true")
+	}
+}
 
 // closeWriteRecorder is a destination that supports closing only its write
 // half, and records whether that happened.
@@ -312,8 +467,8 @@ func TestHandlerUpgradedStreamHalfClose(t *testing.T) {
 				Host: new(Host),
 				Dial: backend.Listener.Addr().String(),
 			})
-			h.connections = make(map[io.ReadWriteCloser]openConnection)
-			h.connectionsMu = new(sync.Mutex)
+			h.tunnelTracker = newTunnelTracker(caddy.Log(), 0)
+			initReverseProxyMetrics(h, prometheus.NewRegistry())
 
 			frontend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				// Isolate half-close propagation from request cancellation which has
@@ -396,5 +551,94 @@ func TestFlushIntervalIncremental(t *testing.T) {
 				t.Errorf("flushInterval() = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestHandlerCleanupDetachedRemovalWithDelay(t *testing.T) {
+	const upstream = "detached-removal-with-delay"
+	hosts.LoadOrStore(upstream, new(Host))
+	t.Cleanup(func() { _, _ = hosts.Delete(upstream) })
+	ts := newTunnelTracker(caddy.Log(), time.Hour)
+	registerDetachedTunnelTrackers(ts)
+	t.Cleanup(func() { unregisterDetachedTunnelTrackers(ts) })
+	detached := newTrackingReadWriteCloser()
+	attached := newTrackingReadWriteCloser()
+	deleteDetached := ts.registerConnection(detached, nil, true, upstream)
+	deleteAttached := ts.registerConnection(attached, nil, false, upstream)
+	t.Cleanup(deleteDetached)
+	t.Cleanup(deleteAttached)
+	h := &Handler{tunnelTracker: ts, StreamDetached: true, Upstreams: UpstreamPool{&Upstream{Dial: upstream}}}
+	if err := h.Cleanup(); err != nil {
+		t.Fatal(err)
+	}
+	if !detached.isClosed() {
+		t.Error("detached stream remains open after upstream removal")
+	}
+	if attached.isClosed() {
+		t.Error("attached stream closed before stream_close_delay elapsed")
+	}
+}
+
+func TestHandlerCleanupEmptyDetachedTracker(t *testing.T) {
+	for _, delay := range []time.Duration{0, time.Hour} {
+		t.Run(delay.String(), func(t *testing.T) {
+			ts := newTunnelTracker(caddy.Log(), delay)
+			registerDetachedTunnelTrackers(ts)
+			t.Cleanup(func() { unregisterDetachedTunnelTrackers(ts) })
+			// Cover a tracker whose last connection closed before handler cleanup.
+			conn := newTrackingReadWriteCloser()
+			ts.registerConnection(conn, nil, true, "upstream")()
+			if err := (&Handler{tunnelTracker: ts, StreamDetached: true}).Cleanup(); err != nil {
+				t.Fatal(err)
+			}
+			detachedTunnelTrackersMu.Lock()
+			_, retained := detachedTunnelTrackers[ts]
+			detachedTunnelTrackersMu.Unlock()
+			if retained {
+				t.Error("empty tracker remains globally registered after cleanup")
+			}
+		})
+	}
+}
+
+func TestDetachedTrackerRemovalAllowsConcurrentConnectionDeletion(t *testing.T) {
+	ts := newTunnelTracker(caddy.Log(), 0)
+	registerDetachedTunnelTrackers(ts)
+	t.Cleanup(func() { unregisterDetachedTunnelTrackers(ts) })
+	// An attached stream on another stopped handler can finish while an
+	// upstream-removal notification closes a detached stream. Its deletion
+	// must be able to acquire the registry lock and release its tracker lock.
+	other := newTunnelTracker(caddy.Log(), 0)
+	otherConn := newTrackingReadWriteCloser()
+	deleteOther := other.registerConnection(otherConn, nil, false, "other")
+	if err := other.cleanupAttachedConnections(); err != nil {
+		t.Fatal(err)
+	}
+	deleted := make(chan struct{})
+	conn := newTrackingReadWriteCloser()
+	del := ts.registerConnection(conn, func() error {
+		go func() {
+			deleteOther()
+			close(deleted)
+		}()
+		select {
+		case <-deleted:
+		case <-time.After(time.Second):
+			t.Error("upstream removal blocked another connection's deletion")
+		}
+		return nil
+	}, true, "upstream")
+	t.Cleanup(del)
+	if err := ts.cleanupAttachedConnections(); err != nil {
+		t.Fatal(err)
+	}
+	if err := notifyDetachedTunnelTrackersOfUpstreamRemoval("upstream", ts); err != nil {
+		t.Fatal(err)
+	}
+	// On a regression the notification must release its lock before waiting
+	// for deletion, so the failing test does not leave a blocked goroutine.
+	<-deleted
+	if !conn.isClosed() {
+		t.Error("removed upstream connection was not closed")
 	}
 }
