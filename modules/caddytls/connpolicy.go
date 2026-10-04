@@ -169,10 +169,20 @@ func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) *tls.Config {
 				}
 			}
 
-			tlsCfg.GetEncryptedClientHelloKeys = func(chi *tls.ClientHelloInfo) ([]tls.EncryptedClientHelloKey, error) {
+			getECHKeys := func(chi *tls.ClientHelloInfo) ([]tls.EncryptedClientHelloKey, error) {
 				tlsApp.EncryptedClientHello.configsMu.RLock()
 				defer tlsApp.EncryptedClientHello.configsMu.RUnlock()
 				return tlsApp.EncryptedClientHello.stdlibReady, nil
+			}
+
+			// crypto/tls decrypts the ClientHello with the keys from this config,
+			// but builds the retry configs it sends when ECH is rejected from the
+			// config returned by GetConfigForClient, so both need the keys.
+			tlsCfg.GetEncryptedClientHelloKeys = getECHKeys
+			for _, p := range cp {
+				if p.TLSConfig != nil && p.TLSConfig.GetEncryptedClientHelloKeys == nil {
+					p.TLSConfig.GetEncryptedClientHelloKeys = getECHKeys
+				}
 			}
 		}
 	}
