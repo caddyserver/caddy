@@ -354,6 +354,10 @@ func (h Handler) copyResponse(dst http.ResponseWriter, src io.Reader, flushInter
 	return err
 }
 
+// errWritingDownstream wraps errors from writing the response to the client,
+// to tell them apart from errors reading the response from the backend.
+var errWritingDownstream = errors.New("writing")
+
 // copyBuffer returns any write errors or non-EOF read errors, and the amount
 // of bytes written.
 func (h Handler) copyBuffer(dst io.Writer, src io.Reader, buf []byte, logger *zap.Logger) (int64, error) {
@@ -394,7 +398,7 @@ func (h Handler) copyBuffer(dst io.Writer, src io.Reader, buf []byte, logger *za
 				)
 			}
 			if werr != nil {
-				return written, fmt.Errorf("writing: %w", werr)
+				return written, fmt.Errorf("%w: %w", errWritingDownstream, werr)
 			}
 			if nr != nw {
 				return written, io.ErrShortWrite
