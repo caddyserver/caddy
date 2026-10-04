@@ -1409,7 +1409,7 @@ func (h *Handler) finalizeResponse(
 	if responseHasContent(req, res) && h.ResponseBuffers != 0 &&
 		(responseWasIncremental || caddyhttp.IsIncremental(res.Header)) {
 		res.Body.Close()
-		return roundtripSucceededError{h.refuseIncremental(rw, res.Header)}
+		return terminalError{h.refuseIncremental(rw, res.Header)}
 	}
 
 	copyHeader(rw.Header(), res.Header)
