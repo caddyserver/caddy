@@ -47,13 +47,13 @@ func TestStopWaitsForPreviousConfiguration(t *testing.T) {
 			t.Run(fmt.Sprintf("http2=%t/grace=%s", http2, grace), func(t *testing.T) {
 				previous, response, release := appWithPendingResponse(t, http2)
 				previous.GracePeriod = caddy.Duration(grace)
-				if err := previous.stop(false); err != nil {
+				if err := previous.stop(false, false); err != nil {
 					t.Fatal(err)
 				}
 
 				current := &App{logger: zap.NewNop()}
 				stopped := make(chan error, 1)
-				go func() { stopped <- current.stop(true) }()
+				go func() { stopped <- current.stop(true, false) }()
 				select {
 				case err := <-stopped:
 					t.Fatalf("termination returned while the previous response was active: %v", err)
@@ -83,14 +83,14 @@ func TestStopWaitsForPreviousConfiguration(t *testing.T) {
 
 func TestStopPreviousConfigurationGracePeriod(t *testing.T) {
 	previous, response, release := appWithPendingResponse(t, false)
-	if err := previous.stop(false); err != nil {
+	if err := previous.stop(false, false); err != nil {
 		t.Fatal(err)
 	}
 
 	current := &App{GracePeriod: caddy.Duration(50 * time.Millisecond), logger: zap.NewNop()}
 	stopped := make(chan error, 1)
 	start := time.Now()
-	go func() { stopped <- current.stop(true) }()
+	go func() { stopped <- current.stop(true, false) }()
 	select {
 	case err := <-stopped:
 		if err != nil {
@@ -106,6 +106,44 @@ func TestStopPreviousConfigurationGracePeriod(t *testing.T) {
 	release()
 	if _, err := io.Copy(io.Discard, response.Body); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestCleanupAfterPartialStartWaitsForServers checks that when Start fails
+// partway, Cleanup (which stops whatever did start) does not return while
+// a server is still draining, since the config is already unloading and
+// its modules would be cleaned up underneath the server.
+func TestCleanupAfterPartialStartWaitsForServers(t *testing.T) {
+	for _, http2 := range []bool{false, true} {
+		t.Run(fmt.Sprintf("http2=%t", http2), func(t *testing.T) {
+			app, response, release := appWithPendingResponse(t, http2)
+			app.GracePeriod = caddy.Duration(5 * time.Second)
+
+			cleaned := make(chan error, 1)
+			go func() { cleaned <- app.Cleanup() }()
+			select {
+			case err := <-cleaned:
+				t.Fatalf("cleanup returned while a response was active: %v", err)
+			case <-time.After(50 * time.Millisecond):
+			}
+
+			release()
+			body, err := io.ReadAll(response.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(body) != "before\nafter\n" {
+				t.Fatalf("unexpected response body: %q", body)
+			}
+			select {
+			case err := <-cleaned:
+				if err != nil {
+					t.Fatal(err)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("cleanup did not finish after the response completed")
+			}
+		})
 	}
 }
 

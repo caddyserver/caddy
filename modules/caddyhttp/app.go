@@ -716,11 +716,16 @@ func (w stdlibLogRouter) Write(p []byte) (int, error) {
 
 // Stop gracefully shuts down the HTTP server.
 func (app *App) Stop() error {
-	return app.stop(caddy.Exiting())
+	return app.stop(caddy.Exiting(), false)
 }
 
-func (app *App) stop(exiting bool) error {
+// stop shuts down the servers. If exiting or wait is true, it returns
+// only once they are done; otherwise the shutdowns may outlive it.
+func (app *App) stop(exiting, wait bool) error {
 	ctx := context.Background()
+
+	// servers may outlive this call, so keep the config loaded until the finalizer is done
+	releaseCleanup := app.ctx.HoldCleanup()
 
 	// see if any listeners in our config will be closing or if they are continuing
 	// through a reload; because if any are closing, we will enforce shutdown delay
@@ -855,6 +860,9 @@ func (app *App) stop(exiting bool) error {
 			pendingServerShutdowns.Delete(finalized)
 		}()
 
+		// runs before finalized is closed, so exit waits for the unload
+		defer releaseCleanup()
+
 		finishedShutdown.Wait()
 
 		// net/http gives up on the leftover connections but leaves them
@@ -901,14 +909,16 @@ func (app *App) stop(exiting bool) error {
 	startedShutdown.Wait()
 
 	// if the process is exiting, wait for the finalizer, or we'd terminate
-	// mid-shutdown; on a reload we don't (but note that frequent reloads
-	// with long grace periods for a sustained time may deplete resources)
-	if exiting {
+	// mid-shutdown; same if the caller asked to wait; on a reload we don't
+	// (but note that frequent reloads with long grace periods for a
+	// sustained time may deplete resources)
+	if exiting || wait {
 		if cancel != nil {
 			defer cancel()
 		}
 		<-finalized
-
+	}
+	if exiting {
 		// responses from previous configs must finish before the process
 		// exits, bounded by this config's grace period
 		pendingServerShutdowns.Range(func(done, _ any) bool {
@@ -932,12 +942,14 @@ const stopCleanupTimeout = 10 * time.Second
 
 // Cleanup will close remaining listeners if they still remain
 // because some of the servers fail to start.
-// It simply calls Stop because Stop won't be called when Start fails.
+// It stops the servers because Stop won't be called when Start fails.
+// The config is already unloading by then, so the cleanup can't be
+// held, and it waits for the servers to finish here instead.
 func (app *App) Cleanup() error {
 	if app.stopped {
 		return nil
 	}
-	return app.Stop()
+	return app.stop(caddy.Exiting(), true)
 }
 
 func (app *App) httpPort() int {
