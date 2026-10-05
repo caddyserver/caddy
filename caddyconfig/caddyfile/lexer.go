@@ -52,6 +52,8 @@ type (
 		wasQuoted     rune // enclosing quote character, if any
 		heredocMarker string
 		snippetName   string
+		// Immutable physical-file ancestry, populated only during import discovery.
+		importAncestry *importAncestor
 
 		// format mode only (populated by Lex with LexOptions; zero on the parse path)
 		raw             string // verbatim source bytes of the token
@@ -554,6 +556,7 @@ func (t Token) Clone() Token {
 		wasQuoted:       t.wasQuoted,
 		heredocMarker:   t.heredocMarker,
 		snippetName:     t.snippetName,
+		importAncestry:  t.importAncestry,
 		raw:             t.raw,
 		isComment:       t.isComment,
 		precededBySpace: t.precededBySpace,

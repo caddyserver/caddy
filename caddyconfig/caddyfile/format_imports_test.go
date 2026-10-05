@@ -179,6 +179,126 @@ func TestDiscoverRecursiveImportArgs(t *testing.T) {
 	}
 }
 
+func TestDiscoverRepeatedImportArgs(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		root string
+	}{
+		{"file", "import selector.caddy a.caddy\nimport selector.caddy b.caddy\n"},
+		{"snippet", "(select) {\nimport selector.caddy {args[0]}\n}\nimport select a.caddy\nimport select b.caddy\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			root := filepath.Join(dir, "Caddyfile")
+			selector := filepath.Join(dir, "selector.caddy")
+			a := filepath.Join(dir, "a.caddy")
+			b := filepath.Join(dir, "b.caddy")
+			writeFile(t, root, tc.root)
+			writeFile(t, selector, "import {args[0]}\n")
+			writeFile(t, a, "a.local {\nrespond    a\n}\n")
+			writeFile(t, b, "b.local {\nrespond    b\n}\n")
+
+			blocks, err := Parse(root, []byte(tc.root))
+			if err != nil || len(blocks) != 2 {
+				t.Fatalf("expected two valid server blocks, got %d: %v", len(blocks), err)
+			}
+			results, err := FormatImports(root, FormatOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := []string{root, selector, a, b}
+			if len(results) != len(want) {
+				t.Fatalf("got paths %v, want %v", resultPaths(results), want)
+			}
+			for i, path := range want {
+				if results[i].Path != mustCanonicalPath(t, path) {
+					t.Errorf("result %d path = %q, want %q", i, results[i].Path, path)
+				}
+			}
+			if want := "b.local {\n\trespond b\n}\n"; string(results[3].Content) != want {
+				t.Errorf("second descendant content = %q, want %q", results[3].Content, want)
+			}
+		})
+	}
+}
+
+func TestDiscoverRepeatedSymlinkImportsResolveRelativePaths(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, "Caddyfile")
+	selector := filepath.Join(dir, "selector.caddy")
+	writeFile(t, root, "import a/selector.caddy\nimport b/selector.caddy\n")
+	writeFile(t, selector, "import child.caddy\n")
+	for _, name := range []string{"a", "b"} {
+		subdir := filepath.Join(dir, name)
+		if err := os.Mkdir(subdir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(selector, filepath.Join(subdir, "selector.caddy")); err != nil {
+			t.Skipf("symlinks unavailable: %v", err)
+		}
+		writeFile(t, filepath.Join(subdir, "child.caddy"), name+".local {\nrespond 200\n}\n")
+	}
+	results, err := FormatImports(root, FormatOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{root, selector, filepath.Join(dir, "a", "child.caddy"), filepath.Join(dir, "b", "child.caddy")}
+	if len(results) != len(want) {
+		t.Fatalf("got paths %v, want %v", resultPaths(results), want)
+	}
+	for i, path := range want {
+		if results[i].Path != mustCanonicalPath(t, path) {
+			t.Errorf("result %d path = %q, want %q", i, results[i].Path, path)
+		}
+	}
+}
+
+func TestDiscoverRepeatedImportBlocks(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, "Caddyfile")
+	selector := filepath.Join(dir, "selector.caddy")
+	input := "import selector.caddy {\nbody {\nimport a.caddy\n}\n}\n" +
+		"import selector.caddy {\nbody {\nimport b.caddy\n}\n}\n"
+	writeFile(t, root, input)
+	writeFile(t, selector, "localhost {\n{blocks.body}\n}\n")
+	writeFile(t, filepath.Join(dir, "a.caddy"), "respond a\n")
+	writeFile(t, filepath.Join(dir, "b.caddy"), "respond b\n")
+	if blocks, err := Parse(root, []byte(input)); err != nil || len(blocks) != 2 {
+		t.Fatalf("expected two valid server blocks, got %d: %v", len(blocks), err)
+	}
+	results, err := FormatImports(root, FormatOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{root, selector, filepath.Join(dir, "a.caddy"), filepath.Join(dir, "b.caddy")}
+	if len(results) != len(want) {
+		t.Fatalf("got paths %v, want %v", resultPaths(results), want)
+	}
+	for i, path := range want {
+		if results[i].Path != mustCanonicalPath(t, path) {
+			t.Errorf("result %d path = %q, want %q", i, results[i].Path, path)
+		}
+	}
+}
+
+func TestDiscoverSkipsActiveSymlinkAncestor(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, "Caddyfile")
+	child := filepath.Join(dir, "child.caddy")
+	writeFile(t, root, "import child.caddy\n")
+	writeFile(t, child, "import dir-link/child.caddy\nlocalhost {\nrespond ok\n}\n")
+	if err := os.Symlink(dir, filepath.Join(dir, "dir-link")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	results, err := FormatImports(root, FormatOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 2 || results[1].Path != mustCanonicalPath(t, child) {
+		t.Fatalf("got paths %v, want root and one physical child", resultPaths(results))
+	}
+}
+
 func TestDiscoverDeduplicatesSymlinksAndCycles(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink creation is not generally available on Windows")

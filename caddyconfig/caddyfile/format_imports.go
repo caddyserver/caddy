@@ -38,9 +38,9 @@ type importedFile struct {
 //
 // The parser calls importObserver after opening and reading each imported file,
 // but before inserting its tokens. The observer retains those exact bytes for
-// formatting so the file is not reopened later. It returns true for a physical
-// file already seen (including the root), which both deduplicates symlink aliases
-// and prevents directory-symlink cycles from recursively inserting more tokens.
+// formatting so the file is not reopened later. Each physical file is retained
+// once, but repeated imports still expand with their own arguments. Only imports
+// of an active physical ancestor are skipped, preventing symlink cycles.
 // os.FileInfo values are retained to verify that each canonical pathname still
 // identifies the file whose contents were parsed.
 func discoverImportedFileContents(rootFile string, rootInput []byte, rootInfo os.FileInfo) ([]importedFile, error) {
@@ -56,6 +56,10 @@ func discoverImportedFileContents(rootFile string, rootInput []byte, rootInfo os
 	if err != nil {
 		return nil, err
 	}
+	rootAncestry := &importAncestor{info: rootInfo}
+	for i := range tokens {
+		tokens[i].importAncestry = rootAncestry
+	}
 	// Construct the parser exactly as parse() does. The import graph remains
 	// responsible for logical snippet/import cycles; the observer below adds
 	// physical-file identity handling for symlink aliases.
@@ -66,12 +70,17 @@ func discoverImportedFileContents(rootFile string, rootInput []byte, rootInfo os
 			edges: make(adjacency),
 		},
 	}
-	p.importObserver = func(path string, info os.FileInfo, content []byte) (bool, error) {
-		// Returning skip=true tells doSingleImport not to insert this file's tokens
-		// again. The first traversal already discovered any active descendants.
+	p.importObserver = func(path string, info os.FileInfo, content []byte, ancestry *importAncestor) (bool, error) {
+		for ancestor := ancestry; ancestor != nil; ancestor = ancestor.parent {
+			if os.SameFile(ancestor.info, info) {
+				return true, nil
+			}
+		}
+		// Deduplicate output without suppressing argument-dependent descendants
+		// or imports resolved relative to a different lexical alias.
 		for _, previous := range seen {
 			if os.SameFile(previous, info) {
-				return true, nil
+				return false, nil
 			}
 		}
 

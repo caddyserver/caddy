@@ -110,6 +110,13 @@ func replaceEnvVars(input []byte) []byte {
 	return input
 }
 
+// importAncestor tracks active physical files during formatting import discovery.
+// Nodes are immutable and shared by all tokens from one import expansion.
+type importAncestor struct {
+	info   os.FileInfo
+	parent *importAncestor
+}
+
 type parser struct {
 	*Dispenser
 	block           ServerBlock // current server block being parsed
@@ -120,8 +127,8 @@ type parser struct {
 	// importObserver, when set, runs after an imported file is opened and read but
 	// before its tokens are inserted. Returning true skips token insertion. This
 	// internal hook lets FormatImports observe the parser's actual import execution
-	// and suppress repeated physical files without duplicating parser semantics.
-	importObserver func(string, os.FileInfo, []byte) (bool, error)
+	// and suppress physical-file cycles without duplicating parser semantics.
+	importObserver func(string, os.FileInfo, []byte, *importAncestor) (bool, error)
 }
 
 func (p *parser) parseAll() ([]ServerBlock, error) {
@@ -477,6 +484,11 @@ func (p *parser) doImport(nesting int) error {
 	// golang for range slice return a copy of value
 	// similarly, append also copy value
 	for i, token := range importedTokens {
+		if p.importObserver != nil && p.definedSnippets[importPattern] != nil {
+			// A snippet executes in its caller's ancestry, not the ancestry
+			// of the file expansion where it was originally declared.
+			token.importAncestry = p.Token().importAncestry
+		}
 		// update the token's imports to refer to import directive filename, line number and snippet name if there is one
 		if token.snippetName != "" {
 			token.imports = append(token.imports, fmt.Sprintf("%s:%d (import %s)", p.File(), p.Line(), token.snippetName))
@@ -534,7 +546,13 @@ func (p *parser) doImport(nesting int) error {
 			if maybeSnippet {
 				tokensCopy = append(tokensCopy, token)
 			} else {
+				start := len(tokensCopy)
 				tokensCopy = append(tokensCopy, tokensToAdd...)
+				if p.importObserver != nil {
+					for i := range tokensToAdd {
+						tokensCopy[start+i].importAncestry = token.importAncestry
+					}
+				}
 			}
 			continue
 		}
@@ -624,10 +642,10 @@ func (p *parser) doSingleImport(importFile string) ([]Token, error) {
 		return nil, p.Errf("Could not read imported file %s: %v", importFile, err)
 	}
 	// Notify only after a successful read so observers receive bytes and metadata
-	// from the same open descriptor. A skipped import is treated as already
-	// processed and contributes no tokens at this occurrence.
+	// from the same open descriptor. A skipped cyclic import contributes no
+	// tokens at this occurrence.
 	if p.importObserver != nil {
-		skip, err := p.importObserver(importFile, info, input)
+		skip, err := p.importObserver(importFile, info, input, p.Token().importAncestry)
 		if err != nil {
 			return nil, p.Errf("Could not import %s: %v", importFile, err)
 		}
@@ -653,8 +671,13 @@ func (p *parser) doSingleImport(importFile string) ([]Token, error) {
 	if err != nil {
 		return nil, p.Errf("Failed to get absolute path of file: %s: %v", importFile, err)
 	}
+	var ancestry *importAncestor
+	if p.importObserver != nil {
+		ancestry = &importAncestor{info: info, parent: p.Token().importAncestry}
+	}
 	for i := range importedTokens {
 		importedTokens[i].File = filename
+		importedTokens[i].importAncestry = ancestry
 	}
 
 	return importedTokens, nil

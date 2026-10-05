@@ -509,8 +509,8 @@ import ./conf.d/matcher_not_my_subnet.caddy
 		{
 			description: "keep adjacent opening braces that end the input",
 			input:       `{{`,
-			expect: `{
-	{`,
+			// Glued braces are a literal token, not structural blocks.
+			expect: `{{`,
 		},
 		{
 			description: "keep spaced opening braces that end the input",
