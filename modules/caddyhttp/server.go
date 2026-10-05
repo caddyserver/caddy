@@ -74,7 +74,8 @@ type Server struct {
 	// it mitigates slowloris-style attacks without penalizing large
 	// uploads from legitimately slow clients. Combine with ReadTimeout
 	// for a hard ceiling on top.
-	// Default is 1 minute.
+	// Default is 1 minute. A negative value disables it, for instance
+	// behind a proxy that already buffers request bodies.
 	ReadIdleTimeout caddy.Duration `json:"read_idle_timeout,omitempty"`
 
 	// ReadMinRate, if set, requires the client to sustain at least this
@@ -97,7 +98,8 @@ type Server struct {
 	// response, or pauses between writes (e.g. SSE), is unaffected as
 	// long as each individual write keeps making progress. Combine
 	// with WriteTimeout for a hard ceiling on top.
-	// Default is 1 minute.
+	// Default is 1 minute. A negative value disables it, for instance
+	// behind a proxy that already times out slow clients.
 	WriteIdleTimeout caddy.Duration `json:"write_idle_timeout,omitempty"`
 
 	// WriteMinRate is like ReadMinRate, but for writes to the client.
