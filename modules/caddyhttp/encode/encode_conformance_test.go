@@ -456,3 +456,42 @@ func checkBypassesEncoding(t *testing.T, w *httptest.ResponseRecorder, encCase e
 		t.Fatalf("body len = %d, want len = %d", w.Body.Len(), len(want))
 	}
 }
+
+// TestEncodeHeadResponseContentLength verifies that a HEAD response does not
+// advertise the length of an empty encoded stream.
+func TestEncodeHeadResponseContentLength(t *testing.T) {
+	for _, encCase := range standardEncoderCases(t) {
+		t.Run(encCase.name, func(t *testing.T) {
+			enc := newEncodeHandler(t, encCase, 1)
+			next := caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+				w.Header().Set("Content-Type", conformanceContentType)
+				w.Header().Set("Content-Length", "128")
+				return nil
+			})
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if err := enc.ServeHTTP(w, r, next); err != nil {
+					t.Errorf("ServeHTTP() error = %v", err)
+				}
+			}))
+			defer srv.Close()
+
+			req, err := http.NewRequest(http.MethodHead, srv.URL, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Accept-Encoding", encCase.encoding.AcceptEncoding())
+			resp, err := srv.Client().Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp.Body.Close()
+
+			if got := resp.Header.Get("Content-Encoding"); got != encCase.encoding.AcceptEncoding() {
+				t.Fatalf("Content-Encoding = %q, want %q", got, encCase.encoding.AcceptEncoding())
+			}
+			if got := resp.Header.Get("Content-Length"); got != "" {
+				t.Fatalf("Content-Length = %q, want empty", got)
+			}
+		})
+	}
+}

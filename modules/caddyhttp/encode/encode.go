@@ -475,6 +475,8 @@ func (rw *responseWriter) ReadFrom(r io.Reader) (int64, error) {
 // Close writes any remaining buffered response and
 // deallocates any active resources.
 func (rw *responseWriter) Close() error {
+	wroteBody := rw.wroteHeader
+
 	// didn't write, probably head request
 	if !rw.wroteHeader {
 		cl, err := strconv.Atoi(rw.Header().Get("Content-Length"))
@@ -491,7 +493,10 @@ func (rw *responseWriter) Close() error {
 
 	var err error
 	if rw.w != nil {
-		err = rw.w.Close()
+		// don't write an empty encoded stream when there was no body
+		if wroteBody {
+			err = rw.w.Close()
+		}
 		rw.w.Reset(nil)
 		rw.config.writerPools[rw.encodingName].Put(rw.w)
 		rw.w = nil
