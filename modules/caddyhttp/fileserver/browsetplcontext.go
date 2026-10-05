@@ -37,10 +37,11 @@ import (
 func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, parentModTime time.Time, entries []fs.DirEntry, canGoUp bool, root, urlPath string, repl *caddy.Replacer) *browseTemplateContext {
 	filesToHide := fsrv.transformHidePaths(repl)
 
-	name, _ := url.PathUnescape(urlPath)
+	// urlPath is escaped, but filesystem lookups need the decoded path
+	reqPath, _ := url.PathUnescape(urlPath)
 
 	tplCtx := &browseTemplateContext{
-		Name:         path.Base(name),
+		Name:         path.Base(reqPath),
 		Path:         urlPath,
 		CanGoUp:      canGoUp,
 		lastModified: parentModTime,
@@ -82,7 +83,7 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, 
 		var targetInfo fs.FileInfo
 		var targetPath string
 		if fileIsSymlink {
-			targetPath = caddyhttp.SanitizedPathJoin(root, path.Join(urlPath, info.Name()))
+			targetPath = caddyhttp.SanitizedPathJoin(root, path.Join(reqPath, info.Name()))
 			// An error most likely means the symlink target doesn't exist,
 			// which isn't entirely unusual and shouldn't fail the listing.
 			// In this case, targetInfo stays nil and we fall back to
