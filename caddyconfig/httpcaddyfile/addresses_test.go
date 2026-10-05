@@ -11,10 +11,10 @@ func TestSystemdListenPlaceholderSurvivesAdaptation(t *testing.T) {
 	}
 
 	http://localhost {
-		bind fd/{systemd.listen.web:1}
+		bind fd/{systemd.listen.web}
 		respond ok
 	}`)
-	if !strings.Contains(adapted, `"listen":["fd/{systemd.listen.web:1}"]`) {
+	if !strings.Contains(adapted, `"listen":["fd/{systemd.listen.web}"]`) {
 		t.Fatalf("adapted listener lost systemd placeholder: %s", adapted)
 	}
 }

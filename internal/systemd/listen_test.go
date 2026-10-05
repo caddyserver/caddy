@@ -16,9 +16,6 @@ package systemd
 
 import (
 	"maps"
-	"math"
-	"slices"
-	"strconv"
 	"testing"
 )
 
@@ -27,7 +24,7 @@ func TestParseSystemdListenFDs(t *testing.T) {
 		name    string
 		pid     int
 		env     map[string]string
-		want    map[string][]int
+		want    map[string]int
 		wantErr bool
 	}{
 		{
@@ -35,13 +32,14 @@ func TestParseSystemdListenFDs(t *testing.T) {
 			pid:  42,
 			env: map[string]string{
 				"LISTEN_PID":     "42",
-				"LISTEN_FDS":     "4",
-				"LISTEN_FDNAMES": "web:dns:web:admin",
+				"LISTEN_FDS":     "5",
+				"LISTEN_FDNAMES": "web:dns:web:admin:web.api",
 			},
-			want: map[string][]int{
-				"web":   {3, 5},
-				"dns":   {4},
-				"admin": {6},
+			want: map[string]int{
+				"web":     3,
+				"dns":     4,
+				"admin":   6,
+				"web.api": 7,
 			},
 		},
 		{name: "missing pid", pid: 42, env: map[string]string{}, wantErr: true},
@@ -68,7 +66,7 @@ func TestParseSystemdListenFDs(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !maps.EqualFunc(got, tc.want, slices.Equal) {
+			if !maps.Equal(got, tc.want) {
 				t.Fatalf("descriptor mapping = %#v; want %#v", got, tc.want)
 			}
 		})
@@ -76,11 +74,11 @@ func TestParseSystemdListenFDs(t *testing.T) {
 }
 
 func TestSystemdListenFDByName(t *testing.T) {
-	descriptors := map[string][]int{
-		"web": {3, 5},
-		"dns": {4},
+	descriptors := map[string]int{
+		"web":     3,
+		"dns":     4,
+		"web.api": 5,
 	}
-	tooLargeIndex := "web:" + strconv.FormatUint(uint64(math.MaxInt)+1, 10)
 
 	for _, tc := range []struct {
 		input   string
@@ -88,16 +86,11 @@ func TestSystemdListenFDByName(t *testing.T) {
 		wantErr bool
 	}{
 		{input: "web", want: 3},
-		{input: "web:0", want: 3},
-		{input: "web:1", want: 5},
 		{input: "dns", want: 4},
+		{input: "web.api", want: 5},
 		{input: "", wantErr: true},
 		{input: "missing", wantErr: true},
-		{input: "web:2", wantErr: true},
-		{input: "web:-1", wantErr: true},
-		{input: "web:+1", wantErr: true},
-		{input: "web:0:extra", wantErr: true},
-		{input: tooLargeIndex, wantErr: true},
+		{input: "web:1", wantErr: true},
 	} {
 		t.Run(tc.input, func(t *testing.T) {
 			got, err := systemdListenFDByName(descriptors, tc.input)

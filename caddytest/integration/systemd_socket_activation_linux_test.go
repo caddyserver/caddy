@@ -80,7 +80,7 @@ func TestSystemdListenFDIntegration(t *testing.T) {
 	cmd.Env = append(withoutSystemdListenEnv(os.Environ()),
 		systemdListenHelper+"=1",
 		"LISTEN_FDS=3",
-		"LISTEN_FDNAMES=web:dns:dns",
+		"LISTEN_FDNAMES=web:dns:h3",
 	)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -123,7 +123,7 @@ func runSystemdListenFDHelper(t *testing.T) {
 	defer pc.Close()
 	checkInheritedDatagram(t, pc)
 
-	h3 := resolveSystemdListenAddress(t, repl, "fdgram/{systemd.listen.dns:1}", "fdgram/5")
+	h3 := resolveSystemdListenAddress(t, repl, "fdgram/{systemd.listen.h3}", "fdgram/5")
 	var tlsConfig *tls.Config
 	tlsConfig = &tls.Config{
 		GetConfigForClient: func(*tls.ClientHelloInfo) (*tls.Config, error) {

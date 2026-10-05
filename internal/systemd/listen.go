@@ -26,22 +26,20 @@ import (
 
 const systemdListenFDStart = 3 // stdin, stdout and stderr occupy descriptors 0 to 2
 
-var cachedSystemdListenFDs = sync.OnceValues(func() (map[string][]int, error) {
+var cachedSystemdListenFDs = sync.OnceValues(func() (map[string]int, error) {
 	return parseSystemdListenFDs(os.Getpid(), os.LookupEnv)
 })
 
-// ListenFD returns the inherited descriptor selected by nameWithIndex.
-// The optional index selects a later descriptor when systemd supplied the same
-// name more than once.
-func ListenFD(nameWithIndex string) (int, error) {
+// ListenFD returns the first inherited descriptor with name.
+func ListenFD(name string) (int, error) {
 	descriptors, err := cachedSystemdListenFDs()
 	if err != nil {
 		return 0, err
 	}
-	return systemdListenFDByName(descriptors, nameWithIndex)
+	return systemdListenFDByName(descriptors, name)
 }
 
-func parseSystemdListenFDs(pid int, lookupEnv func(string) (string, bool)) (map[string][]int, error) {
+func parseSystemdListenFDs(pid int, lookupEnv func(string) (string, bool)) (map[string]int, error) {
 	listenPID, ok := lookupEnv("LISTEN_PID")
 	if !ok {
 		return nil, errors.New("systemd socket activation: LISTEN_PID is unset")
@@ -75,42 +73,22 @@ func parseSystemdListenFDs(pid int, lookupEnv func(string) (string, bool)) (map[
 		return nil, fmt.Errorf("systemd socket activation: LISTEN_FDS does not match LISTEN_FDNAMES count: %d != %d", fdCount, len(names))
 	}
 
-	descriptors := make(map[string][]int, len(names))
+	descriptors := make(map[string]int, len(names))
 	for index, name := range names {
-		descriptors[name] = append(descriptors[name], systemdListenFDStart+index)
+		if _, exists := descriptors[name]; !exists {
+			descriptors[name] = systemdListenFDStart + index
+		}
 	}
 	return descriptors, nil
 }
 
-func systemdListenFDByName(descriptors map[string][]int, nameWithIndex string) (int, error) {
-	name, indexText, hasIndex := strings.Cut(nameWithIndex, ":")
+func systemdListenFDByName(descriptors map[string]int, name string) (int, error) {
 	if name == "" {
 		return 0, errors.New("systemd listen descriptor name is empty")
 	}
-
-	index := 0
-	if hasIndex {
-		if indexText == "" {
-			return 0, errors.New("systemd listen descriptor index is empty")
-		}
-		for _, ch := range indexText {
-			if ch < '0' || ch > '9' {
-				return 0, fmt.Errorf("invalid systemd listen descriptor index: %q", indexText)
-			}
-		}
-		parsedIndex, err := strconv.Atoi(indexText)
-		if err != nil {
-			return 0, fmt.Errorf("parsing systemd listen descriptor index: %w", err)
-		}
-		index = parsedIndex
-	}
-
-	matches, ok := descriptors[name]
+	descriptor, ok := descriptors[name]
 	if !ok {
 		return 0, fmt.Errorf("systemd listen descriptor name not found: %q", name)
 	}
-	if index >= len(matches) {
-		return 0, fmt.Errorf("systemd listen descriptor index out of range: %d", index)
-	}
-	return matches[index], nil
+	return descriptor, nil
 }
