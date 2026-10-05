@@ -44,53 +44,119 @@ func init() {
 	caddy.RegisterModule(AutomateLoader{})
 }
 
+// The certificate cache of the currently-committed config. A TLS app
+// instance provisions the cache it will use into its own cache field and
+// only publishes it here from Start, once provisioning has succeeded; the
+// outgoing app stops the cache it owned from Cleanup, after the new config
+// is committed. Provision therefore neither publishes nor destroys a
+// cache, so a config that fails to provision or start leaves the
+// committed config's cache untouched and still maintained.
 var (
 	certCache   *certmagic.Cache
 	certCacheMu sync.RWMutex
 
-	// the TLS app that most recently provisioned the certificate
-	// cache; the cache's GetConfigForCert callback dereferences
-	// this so that reusing the cache across config reloads does
-	// not require replacing its options just to update the callback
+	// the TLS app owning the published cache; the cache's
+	// GetConfigForCert callback dereferences this so that reusing the
+	// cache across config reloads does not require replacing its
+	// options just to update the callback
 	certCacheApp *TLS
 
-	// the options the certificate cache was created with;
-	// CacheOptions are immutable once a cache exists (its
-	// maintenance tickers are created at startup), so when a
-	// reload changes them the cache is replaced, never mutated
+	// the options the published cache was created with; CacheOptions are
+	// immutable once a cache exists (its maintenance tickers are created
+	// at startup), so when a reload changes them the cache is replaced,
+	// never mutated
 	certCacheOpts certmagic.CacheOptions
 )
 
-// provisionCertCache installs t as the cache's app and ensures the global
-// certificate cache exists with exactly cacheOpts. CacheOptions are
-// immutable once a cache is created: the maintenance goroutine's tickers
-// are created at startup, so mutating options on a live cache both races
-// with maintenance reading them and silently never applies new intervals
-// to the running tickers. When the options changed, the cache is therefore
-// replaced, never mutated — the new cache starts empty and is repopulated
-// by certificate loading during provisioning, exactly like a fresh start,
-// while handshakes from the outgoing config generation keep reading the
-// old cache until its maintenance loop is stopped. The previous cache is
-// returned for the caller to Stop() outside the lock, or nil if the
-// existing cache was kept.
-func provisionCertCache(t *TLS, cacheOpts certmagic.CacheOptions) *certmagic.Cache {
+// normalizeCacheOptions applies the same defaulting certmagic.NewCache
+// applies to the fields that determine whether a cache can be reused, so
+// that an explicitly-configured interval compares equal to an unset one
+// that certmagic would default to the same value. Without this, setting
+// e.g. renew_interval to 10m — certmagic's own default — would differ from
+// leaving it unset and force a needless cache replacement.
+func normalizeCacheOptions(opts certmagic.CacheOptions) certmagic.CacheOptions {
+	if opts.OCSPCheckInterval <= 0 {
+		opts.OCSPCheckInterval = certmagic.DefaultOCSPCheckInterval
+	}
+	if opts.RenewCheckInterval <= 0 {
+		opts.RenewCheckInterval = certmagic.DefaultRenewCheckInterval
+	}
+	if opts.Capacity < 0 {
+		opts.Capacity = 0
+	}
+	return opts
+}
+
+// cacheReusable reports whether a cache created with have can serve a
+// config wanting want. Only the fields fixed at cache creation matter;
+// both must already be normalized.
+func cacheReusable(have, want certmagic.CacheOptions) bool {
+	return have.Capacity == want.Capacity &&
+		have.OCSPCheckInterval == want.OCSPCheckInterval &&
+		have.RenewCheckInterval == want.RenewCheckInterval
+}
+
+// provisionCertCache sets t.cache to the cache t should use. The published
+// cache is reused when its options permit it; otherwise a new cache is
+// created for t alone. CacheOptions are immutable once a cache is created:
+// the maintenance goroutine's tickers are built from the options at
+// startup, so mutating options on a live cache both races with maintenance
+// reading them and silently never applies new intervals to the running
+// tickers. A cache is therefore replaced, never mutated.
+//
+// This neither publishes the result nor stops the cache it replaces — the
+// cache stays private to t until Start publishes it, so handshakes and
+// maintenance on the committed config keep using the published cache until
+// the new config is committed.
+//
+// t.cache and t.cacheOpts are written under certCacheMu because a cache's
+// GetConfigForCert callback reads them (see appForCache) from the
+// maintenance goroutine.
+func (t *TLS) provisionCertCache(cacheOpts certmagic.CacheOptions) {
+	certCacheMu.Lock()
+	reusable := certCache != nil && cacheReusable(certCacheOpts, cacheOpts)
+	if reusable {
+		t.cache, t.cacheOpts = certCache, cacheOpts
+	}
+	certCacheMu.Unlock()
+	if reusable {
+		return
+	}
+	// created outside the lock: NewCache starts a maintenance goroutine
+	// whose callback takes certCacheMu. The new cache is empty until
+	// provisioning loads into it, so that callback cannot run before the
+	// assignment below publishes the cache to t.
+	fresh := certmagic.NewCache(cacheOpts)
+	certCacheMu.Lock()
+	t.cache, t.cacheOpts = fresh, cacheOpts
+	certCacheMu.Unlock()
+}
+
+// appForCache returns the TLS app whose configuration governs certificates
+// in t.cache. A cache's GetConfigForCert callback is fixed when the cache
+// is created, so a cache reused across reloads holds the callback created
+// by the app that first built it; while that cache is the published one,
+// maintenance must consult whichever app currently owns it rather than its
+// original creator. A cache that is not (or not yet) published is only
+// populated by the app that created it, so t is the right answer there —
+// which is also what this returns once t publishes its own cache.
+func (t *TLS) appForCache() *TLS {
+	certCacheMu.RLock()
+	defer certCacheMu.RUnlock()
+	if certCacheApp != nil && certCache == t.cache {
+		return certCacheApp
+	}
+	return t
+}
+
+// publishCertCache makes t's cache the one the committed config serves
+// from. Called from Start, i.e. only after provisioning succeeded.
+func (t *TLS) publishCertCache() {
 	certCacheMu.Lock()
 	defer certCacheMu.Unlock()
+	certCache = t.cache
+	certCacheOpts = t.cacheOpts
 	certCacheApp = t
-	if certCache == nil {
-		certCache = certmagic.NewCache(cacheOpts)
-		certCacheOpts = cacheOpts
-		return nil
-	}
-	if cacheOpts.Capacity == certCacheOpts.Capacity &&
-		cacheOpts.OCSPCheckInterval == certCacheOpts.OCSPCheckInterval &&
-		cacheOpts.RenewCheckInterval == certCacheOpts.RenewCheckInterval {
-		return nil
-	}
-	oldCache := certCache
-	certCache = certmagic.NewCache(cacheOpts)
-	certCacheOpts = cacheOpts
-	return oldCache
 }
 
 // TLS provides TLS facilities including certificate
@@ -184,6 +250,17 @@ type TLS struct {
 	bgCtx              context.Context
 	bgCancel           context.CancelFunc
 	bgWg               *sync.WaitGroup
+
+	// the certificate cache this app instance provisioned: either the
+	// cache the previous config published (reused because its options
+	// permit it) or a new one this app created. Start publishes it;
+	// Cleanup stops it if it was never published or has been superseded.
+	// Everything provisioned by this app reads certificates through this
+	// field rather than the published cache, so that provisioning a
+	// config that is never committed cannot disturb the running one.
+	cache     *certmagic.Cache
+	cacheOpts certmagic.CacheOptions
+
 	storageCleanTicker *time.Ticker
 	echRotateInterval  time.Duration
 	logger             *zap.Logger
@@ -242,12 +319,10 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	}
 
 	// set up a new certificate cache; this (re)loads all certificates
+	creator := t
 	cacheOpts := certmagic.CacheOptions{
 		GetConfigForCert: func(cert certmagic.Certificate) (*certmagic.Config, error) {
-			certCacheMu.RLock()
-			tlsApp := certCacheApp
-			certCacheMu.RUnlock()
-			return tlsApp.getConfigForName(cert.Names[0]), nil
+			return creator.appForCache().getConfigForName(cert.Names[0]), nil
 		},
 		Logger: t.logger.Named("cache"),
 	}
@@ -261,13 +336,14 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	if cacheOpts.Capacity <= 0 {
 		cacheOpts.Capacity = 10000
 	}
+	cacheOpts = normalizeCacheOptions(cacheOpts)
 
-	if oldCache := provisionCertCache(t, cacheOpts); oldCache != nil {
-		// blocks until the old cache's maintenance goroutine exits;
-		// done outside the lock so handshakes are never stalled behind
-		// it (same idiom as the cleanup path below)
-		oldCache.Stop()
-	}
+	// resolve the cache this app will use, without publishing it or
+	// stopping the one it may replace: a config that fails to provision
+	// or start must leave the committed config's cache intact. Start
+	// publishes t.cache; the outgoing app's Cleanup stops the cache it
+	// owned once this config is committed.
+	t.provisionCertCache(cacheOpts)
 
 	// certificate loaders
 	val, err := ctx.LoadModule(t, "CertificatesRaw")
@@ -299,8 +375,7 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	// provision so that other apps (such as http) can know which
 	// certificates have been manually loaded, and also so that
 	// commands like validate can be a better test
-	certCacheMu.RLock()
-	magic := certmagic.New(certCache, certmagic.Config{
+	magic := certmagic.New(t.cache, certmagic.Config{
 		Storage:        ctx.Storage(),
 		Logger:         t.logger,
 		OnEvent:        t.onEvent,
@@ -310,7 +385,6 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		},
 		DisableStorageCheck: t.DisableStorageCheck,
 	})
-	certCacheMu.RUnlock()
 	for _, loader := range t.certificateLoaders {
 		certs, err := loader.LoadCertificates()
 		if err != nil {
@@ -450,6 +524,13 @@ func (t *TLS) Validate() error {
 
 // Start activates the TLS module.
 func (t *TLS) Start() error {
+	// provisioning succeeded, so this app's cache is now the one the
+	// committed config serves from; the cache it replaced (if any) is
+	// stopped by the outgoing app's Cleanup, after the config is
+	// committed, so that a failure between here and commit cannot leave
+	// the still-serving config without certificate maintenance
+	t.publishCertCache()
+
 	// warn if on-demand TLS is enabled but no restrictions are in place
 	if t.Automation.OnDemand == nil || (t.Automation.OnDemand.Ask == "" && t.Automation.OnDemand.permission == nil) {
 		for _, ap := range t.Automation.Policies {
@@ -571,11 +652,46 @@ func (t *TLS) Cleanup() error {
 		t.SessionTickets.stop()
 	}
 
-	// if a new TLS app was loaded, remove certificates from the cache that are no longer
-	// being managed or loaded by the new config; if there is no more TLS app running,
-	// then stop cert maintenance and let the cert cache be GC'ed
-	if nextTLS, err := caddy.ActiveContext().AppIfConfigured("tls"); err == nil && nextTLS != nil {
-		nextTLSApp := nextTLS.(*TLS)
+	// The app serving the currently-active config, if any. Cleanup runs both
+	// for an outgoing app once a new config is committed — where this is the
+	// incoming app — and for an app whose own config failed to provision or
+	// start, where it is the app still serving. Either way the active app's
+	// cache is the one that must survive, and this app's cache is only safe
+	// to stop if the active app is not using it.
+	var activeApp *TLS
+	if active, err := caddy.ActiveContext().AppIfConfigured("tls"); err == nil && active != nil {
+		activeApp = active.(*TLS)
+	}
+
+	// Snapshot the cache fields under the lock; they are also read by cache
+	// maintenance callbacks. ownCache is this app's, activeCache the serving
+	// app's.
+	certCacheMu.Lock()
+	ownCache := t.cache
+	var activeCache *certmagic.Cache
+	if activeApp != nil && activeApp != t {
+		activeCache = activeApp.cache
+		// Make sure the published cache is the serving app's cache. Normally
+		// it already is, but if this app published its own cache from Start
+		// and a later step of the same config load failed, the published
+		// cache is one that nothing serves from; put the serving app's cache
+		// back so this app's failure leaves no trace.
+		if certCache != activeCache {
+			certCache = activeCache
+			certCacheOpts = activeApp.cacheOpts
+			certCacheApp = activeApp
+		}
+	}
+	certCacheMu.Unlock()
+
+	// if a new TLS app was loaded and shares this app's cache, remove
+	// certificates from it that are no longer being managed or loaded by the
+	// new config; if there is no more TLS app running, then stop cert
+	// maintenance and let the cert cache be GC'ed. A new app that replaced
+	// the cache needs no eviction: its cache was populated from scratch by
+	// its own provisioning, so it holds nothing this app left behind.
+	if activeCache != nil && activeCache == ownCache {
+		nextTLSApp := activeApp
 
 		// compute which certificates were managed or loaded into the cert cache by this
 		// app instance (which is being stopped) that are not managed or loaded by the
@@ -610,11 +726,10 @@ func (t *TLS) Cleanup() error {
 			}
 		}
 
-		// remove the certs
-		certCacheMu.RLock()
-		certCache.RemoveManaged(noLongerManaged)
-		certCache.Remove(noLongerLoaded)
-		certCacheMu.RUnlock()
+		// remove the certs; this is the cache both apps share, so it is
+		// addressed directly rather than through the published pointer
+		ownCache.RemoveManaged(noLongerManaged)
+		ownCache.Remove(noLongerLoaded)
 
 		// give the new TLS app a "kick" to manage certs that it is configured for
 		// with its own configuration instead of the one we just evicted
@@ -626,16 +741,35 @@ func (t *TLS) Cleanup() error {
 				)
 			}
 		}
-	} else {
-		// no more TLS app running, so delete in-memory cert cache, if it was created yet
-		certCacheMu.RLock()
-		hasCache := certCache != nil
-		certCacheMu.RUnlock()
-		if hasCache {
-			certCache.Stop()
-			certCacheMu.Lock()
-			certCache = nil
-			certCacheMu.Unlock()
+	}
+
+	// Stop the cache this app owned if nothing serves from it any more —
+	// either a reload replaced it, or this app's config was never
+	// committed. This is the only place a cache is stopped on a reload, and
+	// it runs after the new config is committed, so the cache a live config
+	// depends on is never stopped out from under it. Stopping blocks until
+	// the maintenance goroutine exits and is done outside the lock so
+	// handshakes are not stalled behind it.
+	certCacheMu.RLock()
+	publishedCache := certCache
+	certCacheMu.RUnlock()
+	if ownCache != nil && ownCache != publishedCache {
+		ownCache.Stop()
+	}
+
+	if activeApp == nil {
+		// no more TLS app running, so delete in-memory cert cache, if it was
+		// created yet, and let it be GC'ed
+		certCacheMu.Lock()
+		stale := certCache
+		certCache = nil
+		certCacheApp = nil
+		certCacheOpts = certmagic.CacheOptions{}
+		certCacheMu.Unlock()
+		// the block above only stopped this app's cache if it was *not* the
+		// published one, so the published cache still needs stopping here
+		if stale != nil {
+			stale.Stop()
 		}
 	}
 
@@ -975,9 +1109,17 @@ func AllMatchingCertificates(san string) []certmagic.Certificate {
 }
 
 func (t *TLS) HasCertificateForSubject(subject string) bool {
+	// this app's own cache, not the published one: the question is what
+	// this config has loaded or manages, and it is asked during
+	// provisioning (by auto-HTTPS and ECH) before this app's cache is
+	// published
 	certCacheMu.RLock()
-	allMatchingCerts := certCache.AllMatchingCertificates(subject)
+	cache := t.cache
 	certCacheMu.RUnlock()
+	if cache == nil {
+		return false
+	}
+	allMatchingCerts := cache.AllMatchingCertificates(subject)
 	for _, cert := range allMatchingCerts {
 		// check if the cert is manually loaded by this config
 		if _, ok := t.loaded[cert.Hash()]; ok {
