@@ -69,10 +69,26 @@ type Browse struct {
 
 	// FileLimit limits the number of up to n DirEntry values in directory order.
 	FileLimit int `json:"file_limit,omitempty"`
+
+	// Concurrency sets how many directory entries are stat'd (and, for
+	// symlinks, have their target resolved) at once while building a
+	// listing. Gathering this per-entry info involves filesystem syscalls,
+	// so raising this can speed up listings of large directories; lowering
+	// it reduces the burst of concurrent filesystem calls a single listing
+	// request can generate. If 0 (default), a built-in default is used.
+	Concurrency int `json:"concurrency,omitempty"`
 }
 
 const (
 	defaultDirEntryLimit = 10000
+
+	// defaultDirListingConcurrency is how many directory entries are
+	// stat'd concurrently by default when Browse.Concurrency is unset.
+	// This work is syscall/IO-bound rather than CPU-bound, so it isn't
+	// tied to GOMAXPROCS; the value is kept modest because it's a
+	// per-request bound, not a global one - many simultaneous listing
+	// requests each fan out to this many concurrent filesystem calls.
+	defaultDirListingConcurrency = 16
 )
 
 func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
