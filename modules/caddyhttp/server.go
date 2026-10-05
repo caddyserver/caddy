@@ -597,8 +597,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				MinRate:      s.ReadMinRate,
 				HardDeadline: readHardDeadline,
 			},
-			Logger:        s.logger,
-			DrainDeadline: r.ProtoMajor == 1 && r.ContentLength != 0,
+			Logger:            s.logger,
+			DrainDeadline:     r.ProtoMajor == 1 && r.ContentLength != 0,
+			ClearBetweenReads: r.ProtoMajor == 2,
 		}
 		defer idleReader.HandlerDone()
 		r.Body = idleReader
