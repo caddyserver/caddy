@@ -124,7 +124,7 @@ func TestLexer(t *testing.T) {
 			},
 		},
 		{
-			input: []byte("An escaped newline\\\noutside quotes"),
+			input: []byte("An escaped newline \\\noutside quotes"),
 			expected: []Token{
 				{Line: 1, Text: "An"},
 				{Line: 1, Text: "escaped"},
@@ -134,7 +134,7 @@ func TestLexer(t *testing.T) {
 			},
 		},
 		{
-			input: []byte("line1\\\nescaped\nline2\nline3"),
+			input: []byte("line1 \\\nescaped\nline2\nline3"),
 			expected: []Token{
 				{Line: 1, Text: "line1"},
 				{Line: 1, Text: "escaped"},
@@ -143,7 +143,7 @@ func TestLexer(t *testing.T) {
 			},
 		},
 		{
-			input: []byte("line1\\\nescaped1\\\nescaped2\nline4\nline5"),
+			input: []byte("line1 \\\nescaped1 \\\nescaped2\nline4\nline5"),
 			expected: []Token{
 				{Line: 1, Text: "line1"},
 				{Line: 1, Text: "escaped1"},
@@ -602,6 +602,46 @@ func lexerCompare(t *testing.T, n int, expected, actual []Token) {
 				n, i, expected[i].Text, actual[i].Text)
 			break
 		}
+	}
+}
+
+func TestLexLineContinuationRequiresSeparateBackslash(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		input string
+		want  []Token
+	}{
+		{"space", "foo \\\nbar", []Token{{Line: 1, Text: "foo"}, {Line: 1, Text: "bar"}}},
+		{"tab and CRLF", "foo\t\\\r\nbar", []Token{{Line: 1, Text: "foo"}, {Line: 1, Text: "bar"}}},
+		{"attached", "foo\\\nbar", []Token{{Line: 1, Text: `foo\`}, {Line: 2, Text: "bar"}}},
+		{"after quoted token", "\"foo\"\\\nbar", []Token{{Line: 1, Text: "foo"}, {Line: 1, Text: `\`}, {Line: 2, Text: "bar"}}},
+		{"after backtick token", "`foo`\\\nbar", []Token{{Line: 1, Text: "foo"}, {Line: 1, Text: `\`}, {Line: 2, Text: "bar"}}},
+		{"after quoted token with space", "\"foo\" \\\nbar", []Token{{Line: 1, Text: "foo"}, {Line: 1, Text: "bar"}}},
+		{"start of file", "\\\nbar", []Token{{Line: 1, Text: `\`}, {Line: 2, Text: "bar"}}},
+		{"indented continuation", "foo\n\t\\\nbar", []Token{{Line: 1, Text: "foo"}, {Line: 2, Text: "bar"}}},
+		{"Windows CRLF", "root * C:\\site\\\r\nfile_server", []Token{{Line: 1, Text: "root"}, {Line: 1, Text: "*"}, {Line: 1, Text: `C:\site\`}, {Line: 2, Text: "file_server"}}},
+		{"path before space", "C:\\site\\ next", []Token{{Line: 1, Text: `C:\site\`}, {Line: 1, Text: "next"}}},
+		{"path at EOF", `C:\site\`, []Token{{Line: 1, Text: `C:\site\`}}},
+		{"standalone backslash at EOF", `foo \`, []Token{{Line: 1, Text: "foo"}}},
+		{"paired backslashes", "foo\\\\\nbar", []Token{{Line: 1, Text: `foo\\`}, {Line: 2, Text: "bar"}}},
+		{"backtick path", "`C:\\site\\`\nbar", []Token{{Line: 1, Text: `C:\site\`}, {Line: 2, Text: "bar"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, opts := range []LexOptions{{}, {Raw: true}, {Comments: true}, {Raw: true, Comments: true}} {
+				tokens, err := Lex([]byte(tc.input), "", opts)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(tokens) != len(tc.want) {
+					t.Fatalf("options %+v: got %d tokens, want %d", opts, len(tokens), len(tc.want))
+				}
+				for i, want := range tc.want {
+					if tokens[i].Text != want.Text || tokens[i].Line != want.Line {
+						t.Errorf("options %+v, token %d: got %q on line %d, want %q on line %d", opts, i, tokens[i].Text, tokens[i].Line, want.Text, want.Line)
+					}
+				}
+			}
+		})
 	}
 }
 

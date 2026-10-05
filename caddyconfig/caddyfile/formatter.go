@@ -17,6 +17,7 @@ package caddyfile
 import (
 	"bytes"
 	"strings"
+	"unicode"
 )
 
 const maxIndent = 10
@@ -287,14 +288,20 @@ func wrapUnbracedSite(tokens []Token) []Token {
 	return wrapped
 }
 
-// trimmedWithNewline returns input trimmed of surrounding whitespace with a
-// single trailing newline, in a freshly allocated buffer. The copy matters:
+// trimmedWithNewline trims surrounding whitespace (except significant leading
+// whitespace before a backslash) and adds a single trailing newline, in a
+// freshly allocated buffer. The copy matters:
 // bytes.TrimSpace returns a subslice that shares input's backing array, so
 // appending to it can write into the caller's buffer (os.ReadFile hands back a
 // slice with spare capacity), corrupting the input a caller still holds — for
 // example the "caddy fmt --diff" comparison of input against output.
 func trimmedWithNewline(input []byte) []byte {
 	trimmed := bytes.TrimSpace(input)
+	// Leading whitespace can make a backslash a line continuation. Removing
+	// it would change the token stream and make this fallback unstable.
+	if len(trimmed) > 0 && trimmed[0] == '\\' {
+		trimmed = bytes.TrimRightFunc(input, unicode.IsSpace)
+	}
 	out := make([]byte, 0, len(trimmed)+1)
 	out = append(out, trimmed...)
 	return append(out, '\n')
@@ -359,10 +366,6 @@ func sameTokenTexts(a, b []Token) bool {
 //     a quote or backtick but which is not marked Quoted (the closing delimiter
 //     was never seen). It swallowed the rest of the input; rendering it and
 //     appending the mandatory trailing newline changes what it lexes back to.
-//   - A dangling escape: a token whose verbatim source ends in an unpaired
-//     backslash (an odd run of trailing backslashes). Appending the mandatory
-//     trailing newline turns it into a line continuation, chaining in the next
-//     line on re-lex.
 //   - A leading line continuation: the first token carries continuation framing
 //     ("\"+newline) even though there is no preceding token to continue from.
 //     Its anchoring Line sits a line before its rendered content, so the
@@ -384,10 +387,6 @@ func hasUnformattableToken(tokens []Token) bool {
 			return true
 		}
 		raw := tk.Raw()
-		// Dangling (unpaired) trailing backslash.
-		if tk.wasQuoted == 0 && endsInDanglingBackslash(raw) {
-			return true
-		}
 		// A non-quoted token whose verbatim source ends in a newline swallowed it:
 		// an unterminated quote/backtick, or an escaped quote ("\\"") that ran to
 		// end-of-input. A newline otherwise terminates a token, so no well-formed
@@ -443,28 +442,6 @@ func hasMessyContinuationFraming(raw string) bool {
 	}
 	rest := s[1:]
 	return len(rest) > 0 && rest[0] != '\n' && rest[0] != '\r'
-}
-
-// endsInDanglingBackslash reports whether s ends in an odd (unpaired) run of
-// backslashes, i.e. a trailing escape with nothing to escape. Trailing
-// whitespace and newlines are ignored so that a backslash immediately before a
-// (possibly appended) newline still counts: such a backslash forms a line
-// continuation on re-lex, which is exactly the shape Format must not introduce.
-func endsInDanglingBackslash(s string) bool {
-	end := len(s)
-	for end > 0 {
-		c := s[end-1]
-		if c == '\n' || c == '\r' || c == ' ' || c == '\t' || c == '\v' || c == '\f' {
-			end--
-			continue
-		}
-		break
-	}
-	n := 0
-	for i := end - 1; i >= 0 && s[i] == '\\'; i-- {
-		n++
-	}
-	return n%2 == 1
 }
 
 // fmtNumLineBreaks returns how many physical line breaks a token spans, for use

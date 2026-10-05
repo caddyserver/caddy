@@ -28,6 +28,27 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+func TestFormatWindowsTrailingBackslash(t *testing.T) {
+	input := "localhost {\nroot * C:\\site\\\nfile_server\n}\n"
+	want := "localhost {\n\troot * C:\\site\\\n\tfile_server\n}\n"
+	for _, in := range []string{input, strings.ReplaceAll(input, "\n", "\r\n")} {
+		out := Format([]byte(in))
+		if strings.ReplaceAll(string(out), "\r\n", "\n") != want {
+			t.Fatalf("got %q, want %q", out, want)
+		}
+		if !bytes.Equal(Format(out), out) {
+			t.Fatal("formatting is not idempotent")
+		}
+		blocks, err := Parse("", out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(blocks) != 1 || len(blocks[0].Segments) != 2 {
+			t.Fatalf("expected separate root and file_server directives, got %+v", blocks)
+		}
+	}
+}
+
 func TestFormatter(t *testing.T) {
 	for i, tc := range []struct {
 		description string
@@ -833,7 +854,8 @@ func hasHeredocOpenerShapedToken(in []byte) bool {
 func TestFormatDoesNotMutateInput(t *testing.T) {
 	cases := []string{
 		"foo \"unterminated  \n\n", // unterminated quote + trailing whitespace
-		"a b\\   \n\n",             // dangling escape + trailing whitespace
+		"a b\\   \n\n",             // literal trailing backslash + whitespace
+		` \ \`,                     // fallback with significant leading whitespace
 		"  site {\n\tfoo\n}  \n\n", // ordinary input with surrounding whitespace
 	}
 	for _, in := range cases {
@@ -854,6 +876,7 @@ func FuzzFormatIdempotent(f *testing.F) {
 		"", "  ", "a{\nb\n}", "site {\n\tfoo # c\n}\n", "x <<E\nhi\nE\n",
 		// Tokens that swallow end-of-input, and a lone CR that does not.
 		"\"\"\"", "\"\"`", "``\\\"", "0  0\r",
+		`0 \`, ` \ \`, // dangling continuation and significant leading space
 	} {
 		f.Add([]byte(s))
 	}

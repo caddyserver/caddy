@@ -34,6 +34,7 @@ type (
 		token        Token
 		line         int
 		skippedLines int
+		lastRune     rune // preceding source character, for line continuations
 
 		// format-mode configuration and state (Tasks 4-6)
 		opts       LexOptions
@@ -168,9 +169,11 @@ func (l *lexer) load(input io.Reader) error {
 // may be escaped. The rest of the line is skipped
 // if a "#" character is read in. Returns true if
 // a token was loaded; false otherwise.
+// Outside quotes, a backslash preceded by a space or tab can escape a newline
+// to continue the logical line. A backslash attached to a token is literal.
 func (l *lexer) next() (bool, error) {
 	var val []rune
-	var comment, quoted, btQuoted, inHeredoc, heredocEscaped, escaped bool
+	var comment, quoted, btQuoted, inHeredoc, heredocEscaped, escaped, continueLine bool
 	var heredocMarker string
 	var tokenStartSet bool // whether l.tokenStart has been set for the current token
 
@@ -197,6 +200,9 @@ func (l *lexer) next() (bool, error) {
 		// If no EOF, then we had a problem.
 		ch, err := l.readRune()
 		if err != nil {
+			if escaped && !quoted && !comment && (len(val) > 0 || !continueLine) {
+				val = append(val, '\\')
+			}
 			if len(val) > 0 {
 				if inHeredoc {
 					return false, fmt.Errorf("incomplete heredoc <<%s on line #%d, expected ending marker %s", heredocMarker, l.line+l.skippedLines, heredocMarker)
@@ -216,6 +222,8 @@ func (l *lexer) next() (bool, error) {
 			}
 			return false, err
 		}
+		previous := l.lastRune
+		l.lastRune = ch
 
 		// detect whether we have the start of a heredoc
 		if (!quoted && !btQuoted) && (!inHeredoc && !heredocEscaped) &&
@@ -288,11 +296,19 @@ func (l *lexer) next() (bool, error) {
 		// iteration to be contextually aware
 		if !escaped && !btQuoted && ch == '\\' {
 			// a leading backslash starts a new token (e.g. \<<marker)
+			if len(val) == 0 {
+				l.token = Token{Line: l.line}
+				if formatMode {
+					l.token.precededBySpace = sawSpace
+					l.token.continuation = sawContinuation
+				}
+			}
 			if l.opts.Raw && len(val) == 0 && !tokenStartSet {
 				l.tokenStart = l.pos - l.lastSize
 				tokenStartSet = true
 			}
 			escaped = true
+			continueLine = previous == ' ' || previous == '\t'
 			continue
 		}
 
@@ -323,6 +339,14 @@ func (l *lexer) next() (bool, error) {
 			// ignore CR altogether, we only actually care about LF (\n)
 			if ch == '\r' {
 				continue
+			}
+			// Only a backslash preceded by a space or tab continues a line.
+			// A backslash attached to an unquoted token is literal, including
+			// the trailing separator in a Windows path. Preserve it at any
+			// token boundary.
+			if escaped && !continueLine && !comment {
+				val = append(val, '\\')
+				escaped = false
 			}
 			// end of the line
 			if ch == '\n' {
