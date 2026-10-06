@@ -489,8 +489,8 @@ func TestEncodeHeadResponseContentLength(t *testing.T) {
 			if got := resp.Header.Get("Content-Encoding"); got != encCase.encoding.AcceptEncoding() {
 				t.Fatalf("Content-Encoding = %q, want %q", got, encCase.encoding.AcceptEncoding())
 			}
-			if got := resp.Header.Get("Content-Length"); got != "" {
-				t.Fatalf("Content-Length = %q, want empty", got)
+			if resp.ContentLength != -1 {
+				t.Fatalf("ContentLength = %d, want -1", resp.ContentLength)
 			}
 		})
 	}
