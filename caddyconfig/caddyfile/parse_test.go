@@ -479,6 +479,39 @@ func TestRecursiveImport(t *testing.T) {
 	}
 }
 
+// TestParseImportInaccessibleFile ensures that an import path which exists
+// but cannot be accessed reports the underlying OS error instead of the
+// misleading "File to import not found" (issue #8161). A path through a
+// regular file fails stat with ENOTDIR on every platform and user, unlike
+// a genuinely missing file, which must keep the "not found" message.
+func TestParseImportInaccessibleFile(t *testing.T) {
+	testParseOne := func(input string) (ServerBlock, error) {
+		p := testParser(input)
+		p.Next() // parseOne doesn't call Next() to start, so we must
+		err := p.parseOne()
+		return p.block, err
+	}
+
+	_, err := testParseOne("import testdata/import_test1.txt/child.txt")
+	if err == nil {
+		t.Fatal("expected error importing through a regular file, got nil")
+	}
+	if strings.Contains(err.Error(), "not found") {
+		t.Errorf("expected OS error to be reported, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "child.txt") {
+		t.Errorf("expected error to name the import path, got: %v", err)
+	}
+
+	_, err = testParseOne("import testdata/not_found.txt")
+	if err == nil {
+		t.Fatal("expected error importing a missing file, got nil")
+	}
+	if !strings.Contains(err.Error(), "File to import not found") {
+		t.Errorf("expected 'File to import not found' for a missing file, got: %v", err)
+	}
+}
+
 func TestDirectiveImport(t *testing.T) {
 	testParseOne := func(input string) (ServerBlock, error) {
 		p := testParser(input)
