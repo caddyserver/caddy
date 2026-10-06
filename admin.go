@@ -371,7 +371,7 @@ func (admin AdminConfig) allowedOrigins(addr NetworkAddress) []*url.URL {
 // that there is always an admin server (unless it is explicitly
 // configured to be disabled).
 // Critically note that some elements and functionality of the context
-// may not be ready, e.g. storage. Tread carefully.
+// may not be ready, e.g. storage. Treat carefully.
 func replaceLocalAdminServer(cfg *Config, ctx Context) error {
 	// always* be sure to close down the old admin endpoint
 	// as gracefully as possible, even if the new one is
