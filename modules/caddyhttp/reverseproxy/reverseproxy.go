@@ -1174,12 +1174,16 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 				return nil
 			}
 			h := rw.Header()
+			ownHeaders := h.Clone()
 			copyHeader(h, http.Header(header))
 			rw.WriteHeader(code)
 
-			// Clear headers coming from the backend
+			// Clear headers coming from the backend, keeping our own
 			// (it's not automatically done by ResponseWriter.WriteHeader() for 1xx responses)
 			clear(h)
+			for k, v := range ownHeaders {
+				h[k] = v
+			}
 
 			return nil
 		},
