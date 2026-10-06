@@ -565,6 +565,55 @@ func TestRequestOnlyMatcherDoesNotRetryResponses(t *testing.T) {
 	}
 }
 
+// TestRequestOnlyExpressionDoesNotRetryResponses verifies that an expression
+// matcher that only tests the request (no response placeholders) does not
+// cause successful responses to be retried
+func TestRequestOnlyExpressionDoesNotRetryResponses(t *testing.T) {
+	var hits atomic.Int32
+
+	// Server returns 200 OK for all requests
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	}))
+	t.Cleanup(server.Close)
+
+	retryMatch := caddyhttp.MatcherSets{
+		caddyhttp.MatcherSet{
+			newExpressionMatcher(t, `{http.request.method} == "POST"`),
+		},
+	}
+
+	upstreams := []*Upstream{
+		{Host: new(Host), Dial: server.Listener.Addr().String()},
+		{Host: new(Host), Dial: server.Listener.Addr().String()},
+	}
+
+	h := minimalHandlerWithRetryMatch(2, retryMatch, upstreams...)
+
+	req := httptest.NewRequest(http.MethodPost, "http://example.com/", strings.NewReader("order=1"))
+	req = prepareTestRequest(req)
+	rec := httptest.NewRecorder()
+
+	err := h.ServeHTTP(rec, req, caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+		return nil
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if hits.Load() != 1 {
+		t.Errorf("upstream hits: got %d, want 1 (should not retry successful responses)", hits.Load())
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("status: got %d, want %d", rec.Code, http.StatusOK)
+	}
+	if rec.Body.String() != "ok" {
+		t.Errorf("body: got %q, want %q", rec.Body.String(), "ok")
+	}
+}
+
 // brokenUpstreamAddr returns the address of a TCP listener that accepts
 // connections but immediately closes them, causing a transport error (not
 // a dial error). This simulates an upstream that is reachable but broken
