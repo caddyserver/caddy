@@ -1,0 +1,85 @@
+{
+	acme_dns mock foo
+	ech example.com
+}
+
+example.com {
+	tls {
+		resolvers 1.1.1.1
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"subjects": [
+							"example.com"
+						],
+						"issuers": [
+							{
+								"challenges": {
+									"dns": {
+										"provider": {
+											"argument": "foo",
+											"name": "mock"
+										},
+										"resolvers": [
+											"1.1.1.1"
+										]
+									}
+								},
+								"module": "acme"
+							}
+						]
+					},
+					{
+						"issuers": [
+							{
+								"challenges": {
+									"dns": {
+										"provider": {
+											"argument": "foo",
+											"name": "mock"
+										}
+									}
+								},
+								"module": "acme"
+							}
+						]
+					}
+				]
+			},
+			"encrypted_client_hello": {
+				"configs": [
+					{
+						"public_name": "example.com"
+					}
+				]
+			}
+		}
+	}
+}

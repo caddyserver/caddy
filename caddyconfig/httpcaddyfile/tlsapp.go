@@ -344,20 +344,26 @@ func (st ServerType) buildTLSApp(
 		tlsApp.EncryptedClientHello = ech
 
 		// outer server names will need certificates, so make sure they're included
-		// in an automation policy for them that applies any global options
+		// in an automation policy for them that applies any global options. A name
+		// that a site block already wrote a policy for keeps that policy, because a
+		// second policy naming the same subject is ambiguous and adapting would fail.
 		ap, err := newBaseAutomationPolicy(options, warnings, true)
 		if err != nil {
 			return nil, warnings, err
 		}
 		for _, cfg := range ech.Configs {
-			if cfg.PublicName != "" {
-				ap.SubjectsRaw = append(ap.SubjectsRaw, cfg.PublicName)
+			if cfg.PublicName == "" || automationPolicyExistsForSubject(tlsApp.Automation, cfg.PublicName) {
+				continue
 			}
+			ap.SubjectsRaw = append(ap.SubjectsRaw, cfg.PublicName)
 		}
-		if tlsApp.Automation == nil {
-			tlsApp.Automation = new(caddytls.AutomationConfig)
+		// without subjects, the policy would apply to every name as a catch-all
+		if len(ap.SubjectsRaw) > 0 {
+			if tlsApp.Automation == nil {
+				tlsApp.Automation = new(caddytls.AutomationConfig)
+			}
+			tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, ap)
 		}
-		tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, ap)
 	}
 
 	// if the storage clean interval is a boolean, then it's "off" to disable cleaning
