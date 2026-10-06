@@ -504,6 +504,8 @@ func (t *Templates) executeTemplate(rr caddyhttp.ResponseRecorder, r *http.Reque
 		rr.Header().Del("Etag")
 		rr.Header().Del("Last-Modified")
 		rr.Header().Del("Accept-Ranges")
+		rr.Header().Del("Content-Encoding")
+		rr.Header().Del("Content-Range")
 
 		// templates may return a custom HTTP error to be propagated to the client,
 		// otherwise for any other error we assume the template is broken

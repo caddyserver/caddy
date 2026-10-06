@@ -39,6 +39,8 @@ func TestServeHTTPErrorDeletesFileHeaders(t *testing.T) {
 			w.Header().Set("Etag", `"abc"`)
 			w.Header().Set("Last-Modified", "Mon, 02 Jan 2006 15:04:05 GMT")
 			w.Header().Set("Accept-Ranges", "bytes")
+			w.Header().Set("Content-Encoding", "gzip")
+			w.Header().Set("Content-Range", "bytes 0-122/456")
 			_, err := w.Write([]byte(tc.body))
 			return err
 		})
@@ -54,7 +56,7 @@ func TestServeHTTPErrorDeletesFileHeaders(t *testing.T) {
 		if handlerErr.StatusCode != tc.wantStatus {
 			t.Errorf("Test %d: expected status %d, got %d", i, tc.wantStatus, handlerErr.StatusCode)
 		}
-		for _, name := range []string{"Content-Length", "Content-Type", "Etag", "Last-Modified", "Accept-Ranges"} {
+		for _, name := range []string{"Content-Length", "Content-Type", "Etag", "Last-Modified", "Accept-Ranges", "Content-Encoding", "Content-Range"} {
 			if got := w.Header().Get(name); got != "" {
 				t.Errorf("Test %d: expected %s to be deleted, got %q", i, name, got)
 			}
