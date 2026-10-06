@@ -780,6 +780,14 @@ func exitProcess(ctx context.Context, logger *zap.Logger) {
 		exitCode = ExitCodeFailedQuit
 	}
 
+	// Allow held module cleanup to finish, but do not wait indefinitely.
+	cleanupCtx, cancelCleanup := context.WithTimeout(ctx, 30*time.Second)
+	if err := waitForCleanup(cleanupCtx); err != nil {
+		logger.Error("timed out waiting for module cleanup", zap.Error(err))
+		exitCode = ExitCodeFailedQuit
+	}
+	cancelCleanup()
+
 	// clean up certmagic locks
 	certmagic.CleanUpOwnLocks(ctx, logger)
 

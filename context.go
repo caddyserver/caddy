@@ -47,6 +47,7 @@ type Context struct {
 	context.Context
 
 	moduleInstances map[string][]Module
+	cleanup         *contextCleanup
 	cfg             *Config
 	ancestry        []Module
 	cleanupFuncs    []func()                // invoked at every config unload
@@ -70,7 +71,8 @@ func NewContext(ctx Context) (Context, context.CancelFunc) {
 // NewContextWithCause is like NewContext but returns a context.CancelCauseFunc.
 // EXPERIMENTAL: This API is subject to change.
 func NewContextWithCause(ctx Context) (Context, context.CancelCauseFunc) {
-	newCtx := Context{moduleInstances: make(map[string][]Module), cfg: ctx.cfg, metricsRegistry: prometheus.NewPedanticRegistry()}
+	cleanup := &contextCleanup{modules: make(map[string][]Module), done: make(chan struct{})}
+	newCtx := Context{moduleInstances: cleanup.modules, cleanup: cleanup, cfg: ctx.cfg, metricsRegistry: prometheus.NewPedanticRegistry()}
 	c, cancel := context.WithCancelCause(ctx.Context)
 	wrappedCancel := func(cause error) {
 		cancel(cause)
@@ -79,16 +81,7 @@ func NewContextWithCause(ctx Context) (Context, context.CancelCauseFunc) {
 			f()
 		}
 
-		for modName, modInstances := range newCtx.moduleInstances {
-			for _, inst := range modInstances {
-				if cu, ok := inst.(CleanerUpper); ok {
-					err := cu.Cleanup()
-					if err != nil {
-						log.Printf("[ERROR] %s (%p): cleanup: %v", modName, inst, err)
-					}
-				}
-			}
-		}
+		cleanup.retire()
 	}
 	newCtx.Context = c
 	newCtx.initMetrics()
@@ -362,6 +355,11 @@ func (ctx Context) loadModuleMap(namespace string, val reflect.Value) (map[strin
 // dynamically loading/unloading modules in their own context,
 // like from embedded scripts, etc.
 func (ctx Context) LoadModuleByID(id string, rawMsg json.RawMessage) (any, error) {
+	release, ok := ctx.cleanup.acquire(ctx.Context)
+	if !ok {
+		return nil, fmt.Errorf("cannot load module %s: context is canceled", id)
+	}
+	defer release()
 	modulesMu.RLock()
 	modInfo, ok := modules[id]
 	modulesMu.RUnlock()
@@ -451,7 +449,13 @@ func (ctx Context) LoadModuleByID(id string, rawMsg json.RawMessage) (any, error
 		}
 	}
 
+	if ctx.cleanup != nil {
+		ctx.cleanup.mu.Lock()
+	}
 	ctx.moduleInstances[id] = append(ctx.moduleInstances[id], val)
+	if ctx.cleanup != nil {
+		ctx.cleanup.mu.Unlock()
+	}
 
 	// if the loaded module happens to be an app that can emit events, store it so the
 	// core can have access to emit events without an import cycle
@@ -672,6 +676,7 @@ func (ctx *Context) WithValue(key, value any) Context {
 	return Context{
 		Context:         context.WithValue(ctx.Context, key, value),
 		moduleInstances: ctx.moduleInstances,
+		cleanup:         ctx.cleanup,
 		cfg:             ctx.cfg,
 		ancestry:        ctx.ancestry,
 		cleanupFuncs:    ctx.cleanupFuncs,
