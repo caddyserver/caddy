@@ -477,7 +477,8 @@ func (a Address) Normalize() Address {
 // See https://github.com/caddyserver/caddy/issues/3264
 func lowerExceptPlaceholders(s string) string {
 	var sb strings.Builder
-	var escaped, inPlaceholder bool
+	var escaped bool
+	var placeholderDepth int
 	for _, ch := range s {
 		if ch == '\\' && !escaped {
 			escaped = true
@@ -485,15 +486,15 @@ func lowerExceptPlaceholders(s string) string {
 			continue
 		}
 		if ch == '{' && !escaped {
-			inPlaceholder = true
+			placeholderDepth++
 		}
-		if ch == '}' && inPlaceholder && !escaped {
-			inPlaceholder = false
-		}
-		if inPlaceholder {
+		if placeholderDepth > 0 {
 			sb.WriteRune(ch)
 		} else {
 			sb.WriteRune(unicode.ToLower(ch))
+		}
+		if ch == '}' && placeholderDepth > 0 && !escaped {
+			placeholderDepth--
 		}
 		escaped = false
 	}

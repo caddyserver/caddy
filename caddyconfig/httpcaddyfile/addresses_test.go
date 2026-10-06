@@ -171,6 +171,24 @@ func TestKeyNormalization(t *testing.T) {
 			},
 		},
 		{
+			input: "sub.{env.{HOST_A}_DOMAIN}.COM",
+			expect: Address{
+				Host: "sub.{env.{HOST_A}_DOMAIN}.com",
+			},
+		},
+		{
+			input: "{args.0.{UPSTREAM_HOST}}",
+			expect: Address{
+				Host: "{args.0.{UPSTREAM_HOST}}",
+			},
+		},
+		{
+			input: "SUB.{env.PREFIX_{env.SUFFIX}}.EXAMPLE.COM",
+			expect: Address{
+				Host: "sub.{env.PREFIX_{env.SUFFIX}}.example.com",
+			},
+		},
+		{
 			input: ":80",
 			expect: Address{
 				Port: "80",
