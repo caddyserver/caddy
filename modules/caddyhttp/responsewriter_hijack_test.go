@@ -15,10 +15,11 @@ import (
 
 // hijackableRecorder is an http.ResponseWriter that implements http.Hijacker the
 // way net/http does. This matters: after a successful Hijack the real
-// (*http.response) has released its bufio.Writer (w.w = nil) and requires
-// Write/WriteHeader to return ErrHijacked. FlushError, however, dereferences
-// that writer without checking for the hijack, so flushing afterwards is not
-// merely wrong, it is a nil pointer dereference.
+// (*http.response) has released its bufio.Writer (w.w = nil). Write returns
+// ErrHijacked from then on and WriteHeader silently does nothing, but
+// (*http.response).FlushError does neither and dereferences the released
+// writer, so flushing afterwards is not merely wrong, it is a nil pointer
+// dereference.
 type hijackableRecorder struct {
 	header http.Header
 
@@ -45,13 +46,15 @@ func (h *hijackableRecorder) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// Flush mirrors stdlib (*http.response).FlushError: it does not consult the
-// hijack state, which is exactly how the regression in #8151 becomes a panic.
-func (h *hijackableRecorder) Flush() {
+// FlushError mirrors stdlib (*http.response).FlushError: it does not consult
+// the hijack state and dereferences the released writer, which is exactly how
+// the regression in #8151 becomes a panic.
+func (h *hijackableRecorder) FlushError() error {
 	if h.hijacked {
 		panic("runtime error: invalid memory address or nil pointer dereference")
 	}
 	h.flushed++
+	return nil
 }
 
 func (h *hijackableRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
