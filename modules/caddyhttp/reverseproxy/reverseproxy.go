@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptrace"
@@ -1181,9 +1182,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 			// Clear headers coming from the backend, keeping our own
 			// (it's not automatically done by ResponseWriter.WriteHeader() for 1xx responses)
 			clear(h)
-			for k, v := range ownHeaders {
-				h[k] = v
-			}
+			maps.Copy(h, ownHeaders)
 
 			return nil
 		},
