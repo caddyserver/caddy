@@ -840,10 +840,10 @@ func leastRequests(upstreams []*Upstream) *Upstream {
 		if reqs == 0 {
 			return upstream
 		}
-		// If bestReqs was just initialized to -1
-		// we need to append upstream also
-		if reqs <= bestReqs || bestReqs == -1 {
+		if reqs < bestReqs || bestReqs == -1 {
 			bestReqs = reqs
+			best = []*Upstream{upstream}
+		} else if reqs == bestReqs {
 			best = append(best, upstream)
 		}
 	}
