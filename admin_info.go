@@ -57,6 +57,7 @@ type infoResponse struct {
 
 func (AdminInfo) handleInfo(w http.ResponseWriter, r *http.Request) error {
 	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
 		return APIError{
 			HTTPStatus: http.StatusMethodNotAllowed,
 			Message:    "method not allowed",

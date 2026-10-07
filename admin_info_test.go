@@ -90,5 +90,8 @@ func TestAdminInfoHandler(t *testing.T) {
 		if apiErr.HTTPStatus != http.StatusMethodNotAllowed {
 			t.Errorf("expected status %d, got %d", http.StatusMethodNotAllowed, apiErr.HTTPStatus)
 		}
+		if allow := rec.Header().Get("Allow"); allow != http.MethodGet {
+			t.Errorf("expected Allow header %q, got %q", http.MethodGet, allow)
+		}
 	})
 }
