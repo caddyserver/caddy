@@ -167,7 +167,7 @@ func (r *WeightedRoundRobinSelection) Select(pool UpstreamPool, _ *http.Request,
 
 	upstreams := make([]*Upstream, 0, len(weights))
 	for i, upstream := range pool {
-		if !upstream.Available() || r.Weights[i] == 0 {
+		if i >= len(r.Weights) || !upstream.Available() || r.Weights[i] == 0 {
 			continue
 		}
 		upstreams = append(upstreams, upstream)
