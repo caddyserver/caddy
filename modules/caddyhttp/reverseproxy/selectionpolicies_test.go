@@ -699,6 +699,19 @@ func TestLeastRequests(t *testing.T) {
 	}
 }
 
+func TestLeastRequestsAllBusy(t *testing.T) {
+	pool := testPool()
+	pool[0].countRequest(30)
+	pool[1].countRequest(1)
+	pool[2].countRequest(20)
+
+	for i := 0; i < 100; i++ {
+		if result := leastRequests(pool); result != pool[1] {
+			t.Fatalf("iteration %d: got %v, want the least loaded host %v", i, result, pool[1])
+		}
+	}
+}
+
 func TestRandomChoicePolicy(t *testing.T) {
 	pool := testPool()
 	pool[0].Dial = "localhost:8080"
