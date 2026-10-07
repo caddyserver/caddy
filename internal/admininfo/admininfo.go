@@ -12,17 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package caddy
+package admininfo
 
 import (
 	"encoding/json"
 	"net/http"
 	"runtime"
 	"runtime/debug"
+
+	"github.com/caddyserver/caddy/v2"
 )
 
 func init() {
-	RegisterModule(AdminInfo{})
+	caddy.RegisterModule(AdminInfo{})
 }
 
 // AdminInfo is a module that provides a GET /info endpoint on the
@@ -31,17 +33,17 @@ func init() {
 type AdminInfo struct{}
 
 // CaddyModule returns the Caddy module information.
-func (AdminInfo) CaddyModule() ModuleInfo {
-	return ModuleInfo{
+func (AdminInfo) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
 		ID:  "admin.api.info",
-		New: func() Module { return new(AdminInfo) },
+		New: func() caddy.Module { return new(AdminInfo) },
 	}
 }
 
 // Routes returns a route for the /info endpoint.
-func (ai AdminInfo) Routes() []AdminRoute {
-	return []AdminRoute{
-		{Pattern: "/info", Handler: AdminHandlerFunc(ai.handleInfo)},
+func (ai AdminInfo) Routes() []caddy.AdminRoute {
+	return []caddy.AdminRoute{
+		{Pattern: "/info", Handler: caddy.AdminHandlerFunc(ai.handleInfo)},
 	}
 }
 
@@ -58,13 +60,13 @@ type infoResponse struct {
 func (AdminInfo) handleInfo(w http.ResponseWriter, r *http.Request) error {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
-		return APIError{
+		return caddy.APIError{
 			HTTPStatus: http.StatusMethodNotAllowed,
 			Message:    "method not allowed",
 		}
 	}
 
-	simple, full := Version()
+	simple, full := caddy.Version()
 
 	resp := infoResponse{
 		Version:     simple,
@@ -89,4 +91,4 @@ func (AdminInfo) handleInfo(w http.ResponseWriter, r *http.Request) error {
 }
 
 // Interface guards
-var _ AdminRouter = (*AdminInfo)(nil)
+var _ caddy.AdminRouter = (*AdminInfo)(nil)

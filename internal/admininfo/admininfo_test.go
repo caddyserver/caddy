@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package caddy
+package admininfo
 
 import (
 	"encoding/json"
@@ -20,6 +20,8 @@ import (
 	"net/http/httptest"
 	"runtime"
 	"testing"
+
+	"github.com/caddyserver/caddy/v2"
 )
 
 func TestAdminInfoModule(t *testing.T) {
@@ -83,7 +85,7 @@ func TestAdminInfoHandler(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error for POST method")
 		}
-		apiErr, ok := err.(APIError)
+		apiErr, ok := err.(caddy.APIError)
 		if !ok {
 			t.Fatalf("expected APIError, got %T", err)
 		}
