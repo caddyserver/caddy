@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -29,6 +30,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/encode"
 )
 
@@ -439,4 +441,51 @@ func (p testPrecompressed) AcceptEncoding() string {
 
 func (p testPrecompressed) Suffix() string {
 	return p.suffix
+}
+
+// A path below a regular file does not exist, so it is a 404 that pass_thru
+// falls through, while a path containing a NUL byte is malformed and is a 400.
+func TestServeHTTPStatErrors(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "file.txt"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	fsrv := FileServer{Root: root}
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+	if err := fsrv.Provision(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	for i, tc := range []struct {
+		path       string
+		passThru   bool
+		wantStatus int
+		wantNext   bool
+	}{
+		{path: "/file.txt/child", wantStatus: http.StatusNotFound},
+		{path: "/file.txt/child", passThru: true, wantNext: true},
+		{path: "/file.txt%00", wantStatus: http.StatusBadRequest},
+	} {
+		fsrv.PassThru = tc.passThru
+		r := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		r = r.WithContext(context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
+		var calledNext bool
+		next := caddyhttp.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
+			calledNext = true
+			return nil
+		})
+
+		err := fsrv.ServeHTTP(httptest.NewRecorder(), r, next)
+		if tc.wantNext {
+			if err != nil || !calledNext {
+				t.Errorf("Test %d: expected the next handler, got called=%t err=%v", i, calledNext, err)
+			}
+			continue
+		}
+		if he, ok := errors.AsType[caddyhttp.HandlerError](err); !ok || he.StatusCode != tc.wantStatus {
+			t.Errorf("Test %d: expected status %d, got %v", i, tc.wantStatus, err)
+		}
+	}
 }

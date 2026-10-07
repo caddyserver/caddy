@@ -15,7 +15,13 @@
 package fileserver
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/caddyserver/caddy/v2"
 )
 
 func TestBreadcrumbs(t *testing.T) {
@@ -101,6 +107,38 @@ func TestBreadcrumbs(t *testing.T) {
 			if c != d.expected[i] {
 				t.Errorf("Test %d crumb %d: got %#v but expected %#v at index %d", testNum, i, c, d.expected[i], i)
 			}
+		}
+	}
+}
+
+func TestDirectoryListingSymlinkInEscapedPath(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "target")
+	if err := os.Mkdir(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	for i, tc := range []struct {
+		dir     string
+		urlPath string // escaped, as serveBrowse passes it
+	}{
+		{dir: "plain", urlPath: "/plain"},
+		{dir: "with space", urlPath: "/with%20space"},
+		{dir: "ünïcode", urlPath: "/%C3%BCn%C3%AFcode"},
+		{dir: "100%", urlPath: "/100%25"},
+	} {
+		dir := filepath.Join(root, tc.dir)
+		if err := os.Mkdir(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, filepath.Join(dir, "link")); err != nil {
+			t.Skipf("symlink not supported on this platform: %v", err)
+		}
+
+		fileSystem, entries := readBenchDirEntries(t, dir)
+		listing := benchFileServer().directoryListing(context.Background(), fileSystem, time.Time{}, entries, true, root, tc.urlPath, caddy.NewReplacer())
+		if len(listing.Items) != 1 || !listing.Items[0].IsDir {
+			t.Errorf("Test %d: expected the symlink in %q to be listed as a directory", i, tc.dir)
 		}
 	}
 }

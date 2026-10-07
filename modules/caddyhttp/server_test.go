@@ -1534,3 +1534,38 @@ func TestServer_ServeHTTP_DelayedHandlerErrorWritesErrorStatus(t *testing.T) {
 		})
 	}
 }
+
+func TestServer_ServeHTTP_IdleTimeouts(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		timeout caddy.Duration
+		applied bool
+	}{
+		{name: "positive", timeout: caddy.Duration(time.Minute), applied: true},
+		{name: "negative disables", timeout: -1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var reader *IdleTimeoutReader
+			var writer *IdleTimeoutWriter
+			s := &Server{
+				ReadIdleTimeout:  tc.timeout,
+				WriteIdleTimeout: tc.timeout,
+				logger:           zap.NewNop(),
+				errorLogger:      zap.NewNop(),
+				primaryHandlerChain: HandlerFunc(func(_ http.ResponseWriter, r *http.Request) error {
+					reader, writer = IdleTimeoutsFromContext(r.Context())
+					return nil
+				}),
+			}
+			ts := httptest.NewServer(http.HandlerFunc(s.ServeHTTP))
+			t.Cleanup(ts.Close)
+
+			resp, err := ts.Client().Post(ts.URL, "text/plain", strings.NewReader("x"))
+			require.NoError(t, err)
+			resp.Body.Close()
+
+			assert.Equal(t, tc.applied, reader != nil)
+			assert.Equal(t, tc.applied, writer != nil)
+		})
+	}
+}

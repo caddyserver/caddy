@@ -117,6 +117,12 @@ Caddy is built around a **module system** where everything is a module registere
 
 Certificate management logic is also treated carefully, and is spread across caddyserver/caddy and caddyserver/certmagic repositories.
 
+## Branch Naming and Module Queries
+
+- Use lowercase, hyphen-separated branch names without slashes, such as `fix-stream-detach-fallback`. This lets contributors use branch names directly in `go get module@branch` and `xcaddy build branch` with the default Go module proxy settings.
+- Go's module-proxy version queries reject slash-containing branch names with `disallowed version string`. Shell quoting or URL-encoding the slash does not solve this. Use the branch's commit SHA instead; Go resolves it to a canonical version or pseudo-version. See [Go's version-query reference](https://go.dev/ref/mod#version-queries) and [version escaping rules](https://go.dev/src/cmd/vendor/golang.org/x/mod/module/module.go).
+- `GOPROXY=direct` can resolve slash-containing branches through Git, but do not rely on bypassing the module proxy for normal contributor builds. CI snapshot builds should use the PR head commit SHA so they build the exact revision regardless of branch naming.
+
 ## Quality Gates
 
 
