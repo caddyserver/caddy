@@ -450,6 +450,14 @@ func (p *parser) doImport(nesting int) error {
 			if strings.ContainsAny(globPattern, "*?[]") {
 				caddy.Log().Warn("No files matching import glob pattern", zap.String("pattern", importPattern))
 			} else {
+				// filepath.Glob ignores file system errors (it only
+				// returns ErrBadPattern), so a file that exists but
+				// cannot be accessed - e.g. permission denied - looks
+				// the same as a missing file. Stat the path directly
+				// so the real error is reported instead (issue #8161).
+				if _, err := os.Stat(globPattern); err != nil && !os.IsNotExist(err) {
+					return p.Errf("Failed to import file %s: %v", importPattern, err)
+				}
 				return p.Errf("File to import not found: %s", importPattern)
 			}
 		} else {
