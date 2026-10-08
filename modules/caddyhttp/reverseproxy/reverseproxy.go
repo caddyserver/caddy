@@ -1925,6 +1925,11 @@ var hopHeaders = []string{
 // in a call to Dial or DialContext.
 type DialError struct{ error }
 
+// NewDialError wraps err as a DialError for transports outside this package.
+func NewDialError(err error) DialError {
+	return DialError{err}
+}
+
 // TLSTransport is implemented by transports
 // that are capable of using TLS.
 type TLSTransport interface {
