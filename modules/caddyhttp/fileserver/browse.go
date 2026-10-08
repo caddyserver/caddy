@@ -116,7 +116,7 @@ func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w ht
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	// TODO: not entirely sure if path.Clean() is necessary here but seems like a safe plan (i.e. /%2e%2e%2f) - someone could verify this
-	listing, err := fsrv.loadDirectoryContents(r.Context(), fileSystem, dir.(fs.ReadDirFile), root, path.Clean(r.URL.EscapedPath()), repl)
+	listing, err := fsrv.loadDirectoryContents(r.Context(), fileSystem, dir.(fs.ReadDirFile), dirPath, path.Clean(r.URL.EscapedPath()), repl)
 	switch {
 	case errors.Is(err, fs.ErrPermission):
 		return caddyhttp.Error(http.StatusForbidden, err)
@@ -213,7 +213,7 @@ func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w ht
 	return nil
 }
 
-func (fsrv *FileServer) loadDirectoryContents(ctx context.Context, fileSystem fs.FS, dir fs.ReadDirFile, root, urlPath string, repl *caddy.Replacer) (*browseTemplateContext, error) {
+func (fsrv *FileServer) loadDirectoryContents(ctx context.Context, fileSystem fs.FS, dir fs.ReadDirFile, dirPath, urlPath string, repl *caddy.Replacer) (*browseTemplateContext, error) {
 	// modTime for the directory itself
 	stat, err := dir.Stat()
 	if err != nil {
@@ -231,7 +231,7 @@ func (fsrv *FileServer) loadDirectoryContents(ctx context.Context, fileSystem fs
 	// user can presumably browse "up" to parent folder if path is longer than "/"
 	canGoUp := len(urlPath) > 1
 
-	return fsrv.directoryListing(ctx, fileSystem, stat.ModTime(), files, canGoUp, root, urlPath, repl), nil
+	return fsrv.directoryListing(ctx, fileSystem, stat.ModTime(), files, canGoUp, dirPath, urlPath, repl), nil
 }
 
 // browseApplyQueryParams applies query parameters to the listing.
