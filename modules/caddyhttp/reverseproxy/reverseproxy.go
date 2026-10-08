@@ -37,6 +37,9 @@ import (
 
 	"github.com/dunglas/httpsfv"
 	"github.com/quic-go/quic-go/http3"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/contrib/propagators/autoprop"
+	oteltrace "go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/net/http/httpguts"
@@ -279,6 +282,10 @@ type Handler struct {
 	// closed when their upstream is removed from the config.
 	tunnelTracker *tunnelTracker
 
+	// tracedTransport wraps Transport to emit OpenTelemetry client spans
+	// for upstream round trips when the request is being traced.
+	tracedTransport http.RoundTripper
+
 	ctx    caddy.Context
 	logger *zap.Logger
 	events *caddyevents.App
@@ -415,6 +422,8 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 		}
 		h.Transport = t
 	}
+
+	h.tracedTransport = newTracedTransport(h.Transport)
 
 	// If the transport can provide header ops, cache them now so we don't
 	// have to compute them per-request. Provision the HeaderOps if present
@@ -1195,7 +1204,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 
 	// do the round-trip
 	start := time.Now()
-	res, err := h.Transport.RoundTrip(req)
+	res, err := h.roundTrip(req)
 	duration := time.Since(start)
 
 	// record that the round trip is done for the 1xx response handler
@@ -1593,6 +1602,31 @@ func (lb LoadBalancing) tryAgain(ctx caddy.Context, start time.Time, retries int
 		}
 		return false
 	}
+}
+
+// newTracedTransport wraps rt so that round trips are recorded as
+// OpenTelemetry client spans. The tracer provider is taken from the span
+// in the request context (set by the tracing handler), so the wrapper does
+// not depend on any global tracer provider.
+func newTracedTransport(rt http.RoundTripper) http.RoundTripper {
+	return otelhttp.NewTransport(rt,
+		otelhttp.WithPropagators(autoprop.NewTextMapPropagator()),
+	)
+}
+
+// roundTrip sends req to the upstream. If req carries a valid span context,
+// the round trip is recorded as an OpenTelemetry client span and that span's
+// context is propagated to the upstream.
+func (h *Handler) roundTrip(req *http.Request) (*http.Response, error) {
+	if h.tracedTransport == nil || !oteltrace.SpanContextFromContext(req.Context()).IsValid() {
+		return h.Transport.RoundTrip(req)
+	}
+	// the traced transport clones req, so set the scheme beforehand
+	// to keep it visible to the span attributes and to req itself
+	if ss, ok := h.Transport.(interface{ SetScheme(*http.Request) }); ok {
+		ss.SetScheme(req)
+	}
+	return h.tracedTransport.RoundTrip(req)
 }
 
 // directRequest modifies only req.URL so that it points to the upstream
