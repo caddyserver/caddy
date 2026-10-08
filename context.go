@@ -30,6 +30,7 @@ import (
 	"go.uber.org/zap/exp/zapslog"
 	"go.uber.org/zap/zapcore"
 
+	"github.com/caddyserver/caddy/v2/internal"
 	"github.com/caddyserver/caddy/v2/internal/filesystems"
 )
 
@@ -46,13 +47,14 @@ import (
 type Context struct {
 	context.Context
 
-	moduleInstances map[string][]Module
-	cleanup         *contextCleanup
-	cfg             *Config
-	ancestry        []Module
-	cleanupFuncs    []func()                // invoked at every config unload
-	exitFuncs       []func(context.Context) // invoked at config unload ONLY IF the process is exiting (EXPERIMENTAL)
-	metricsRegistry *prometheus.Registry
+	moduleInstances   map[string][]Module
+	moduleInstancesMu *sync.Mutex
+	cleanup           *internal.Cleanup
+	cfg               *Config
+	ancestry          []Module
+	cleanupFuncs      []func()                // invoked at every config unload
+	exitFuncs         []func(context.Context) // invoked at config unload ONLY IF the process is exiting (EXPERIMENTAL)
+	metricsRegistry   *prometheus.Registry
 }
 
 // NewContext provides a new context derived from the given
@@ -71,8 +73,27 @@ func NewContext(ctx Context) (Context, context.CancelFunc) {
 // NewContextWithCause is like NewContext but returns a context.CancelCauseFunc.
 // EXPERIMENTAL: This API is subject to change.
 func NewContextWithCause(ctx Context) (Context, context.CancelCauseFunc) {
-	cleanup := &contextCleanup{modules: make(map[string][]Module), done: make(chan struct{})}
-	newCtx := Context{moduleInstances: cleanup.modules, cleanup: cleanup, cfg: ctx.cfg, metricsRegistry: prometheus.NewPedanticRegistry()}
+	moduleInstances := make(map[string][]Module)
+	cleanup := internal.NewCleanup(func() {
+		// Holds exclude in-flight module loads before cleanup can begin.
+		// Preserve module iteration order and run user code without locks.
+		for modName, instances := range moduleInstances {
+			for _, inst := range instances {
+				if cu, ok := inst.(CleanerUpper); ok {
+					if err := cu.Cleanup(); err != nil {
+						log.Printf("[ERROR] %s (%p): cleanup: %v", modName, inst, err)
+					}
+				}
+			}
+		}
+	})
+	newCtx := Context{
+		moduleInstances:   moduleInstances,
+		moduleInstancesMu: new(sync.Mutex),
+		cleanup:           cleanup,
+		cfg:               ctx.cfg,
+		metricsRegistry:   prometheus.NewPedanticRegistry(),
+	}
 	c, cancel := context.WithCancelCause(ctx.Context)
 	wrappedCancel := func(cause error) {
 		cancel(cause)
@@ -81,11 +102,29 @@ func NewContextWithCause(ctx Context) (Context, context.CancelCauseFunc) {
 			f()
 		}
 
-		cleanup.retire()
+		cleanup.Retire()
 	}
 	newCtx.Context = c
 	newCtx.initMetrics()
 	return newCtx, wrappedCancel
+}
+
+// HoldCleanup delays Cleanup of modules loaded by ctx until the returned
+// release function has been called. Acquire the hold before cancellation;
+// acquisition after cancellation does nothing. All holds must be released,
+// including on error paths. Release is safe to call more than once.
+// The final release may run module Cleanup methods synchronously, so release
+// only after the work that needs those modules has finished.
+//
+// A hold does not delay context cancellation or OnCancel callbacks. Copies
+// of ctx, including those returned by WithValue, share the same holds.
+// Module cleanup still requires calling the cancel function from NewContext
+// or NewContextWithCause; cancellation of a parent alone does not trigger it.
+//
+// EXPERIMENTAL: This API is subject to change.
+func (ctx Context) HoldCleanup() func() {
+	release, _ := ctx.cleanup.Acquire(ctx.Context)
+	return release
 }
 
 // OnCancel executes f when ctx is canceled.
@@ -355,7 +394,7 @@ func (ctx Context) loadModuleMap(namespace string, val reflect.Value) (map[strin
 // dynamically loading/unloading modules in their own context,
 // like from embedded scripts, etc.
 func (ctx Context) LoadModuleByID(id string, rawMsg json.RawMessage) (any, error) {
-	release, ok := ctx.cleanup.acquire(ctx.Context)
+	release, ok := ctx.cleanup.Acquire(ctx.Context)
 	if !ok {
 		return nil, fmt.Errorf("cannot load module %s: context is canceled", id)
 	}
@@ -449,12 +488,12 @@ func (ctx Context) LoadModuleByID(id string, rawMsg json.RawMessage) (any, error
 		}
 	}
 
-	if ctx.cleanup != nil {
-		ctx.cleanup.mu.Lock()
+	if ctx.moduleInstancesMu != nil {
+		ctx.moduleInstancesMu.Lock()
 	}
 	ctx.moduleInstances[id] = append(ctx.moduleInstances[id], val)
-	if ctx.cleanup != nil {
-		ctx.cleanup.mu.Unlock()
+	if ctx.moduleInstancesMu != nil {
+		ctx.moduleInstancesMu.Unlock()
 	}
 
 	// if the loaded module happens to be an app that can emit events, store it so the
@@ -674,14 +713,15 @@ func (ctx Context) Module() Module {
 // WithValue returns a new context with the given key-value pair.
 func (ctx *Context) WithValue(key, value any) Context {
 	return Context{
-		Context:         context.WithValue(ctx.Context, key, value),
-		moduleInstances: ctx.moduleInstances,
-		cleanup:         ctx.cleanup,
-		cfg:             ctx.cfg,
-		ancestry:        ctx.ancestry,
-		cleanupFuncs:    ctx.cleanupFuncs,
-		exitFuncs:       ctx.exitFuncs,
-		metricsRegistry: ctx.metricsRegistry,
+		Context:           context.WithValue(ctx.Context, key, value),
+		moduleInstances:   ctx.moduleInstances,
+		moduleInstancesMu: ctx.moduleInstancesMu,
+		cleanup:           ctx.cleanup,
+		cfg:               ctx.cfg,
+		ancestry:          ctx.ancestry,
+		cleanupFuncs:      ctx.cleanupFuncs,
+		exitFuncs:         ctx.exitFuncs,
+		metricsRegistry:   ctx.metricsRegistry,
 	}
 }
 

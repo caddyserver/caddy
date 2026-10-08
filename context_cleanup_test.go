@@ -23,6 +23,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/caddyserver/caddy/v2/internal"
 )
 
 type cleanupTestModule struct {
@@ -182,7 +184,7 @@ func TestContextCleanupParentCancellation(t *testing.T) {
 		t.Fatal("parent cancellation must not retire child lifecycle")
 	}
 	ctx.HoldCleanup()() // canceled but not retired: still a no-op
-	if err := waitForCleanup(context.Background()); err != nil {
+	if err := internal.WaitForCleanup(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	cancel(errors.New("child"))
@@ -194,26 +196,33 @@ func TestContextCleanupParentCancellation(t *testing.T) {
 func TestContextCleanupCapturedParentCallbacks(t *testing.T) {
 	parent := Context{Context: context.Background()}
 	var child Context
+	control := new(cleanupTestControl)
 	called := 0
 	parent.OnCancel(func() {
 		called++
 		if child.Err() == nil {
 			t.Error("callback preceded cancellation")
 		}
-		if child.cleanup.retired {
-			t.Error("callback ran after retirement")
+		if control.cleaned.Load() != 0 {
+			t.Error("callback ran after module cleanup")
 		}
 	})
 	ctx, cancel := NewContext(parent)
+	cancel = sync.OnceFunc(cancel)
 	child = ctx
+	if _, err := child.LoadModuleByID("test.cleanup_hold", cleanupTestConfig(t, control)); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(cancel)
 	parent.OnCancel(func() { t.Error("callback appended after construction was captured") })
 	ctx.OnCancel(func() { t.Error("child callback unexpectedly ran on its own cancellation") })
-	release := ctx.HoldCleanup()
 	cancel()
 	if called != 1 {
 		t.Fatal("captured parent callback was deferred")
 	}
-	release()
+	if control.cleaned.Load() != 1 {
+		t.Fatal("unheld module cleanup did not follow callback")
+	}
 }
 
 func TestContextCleanupInFlightLoad(t *testing.T) {
@@ -303,7 +312,7 @@ func TestContextCleanupWaitDeadlineAndCompletion(t *testing.T) {
 			}
 			deadline, stop := context.WithTimeout(context.Background(), 20*time.Millisecond)
 			defer stop()
-			if err := waitForCleanup(deadline); !errors.Is(err, context.DeadlineExceeded) {
+			if err := internal.WaitForCleanup(deadline); !errors.Is(err, context.DeadlineExceeded) {
 				t.Fatalf("wait failed to honor deadline: %v", err)
 			}
 			if blocked {
@@ -312,14 +321,8 @@ func TestContextCleanupWaitDeadlineAndCompletion(t *testing.T) {
 			} else {
 				release()
 			}
-			if err := waitForCleanup(context.Background()); err != nil {
+			if err := internal.WaitForCleanup(context.Background()); err != nil {
 				t.Fatal(err)
-			}
-			retiredCleanups.Lock()
-			_, pending := retiredCleanups.pending[ctx.cleanup]
-			retiredCleanups.Unlock()
-			if pending {
-				t.Fatal("completed lifecycle remained registered")
 			}
 		})
 	}
@@ -348,10 +351,64 @@ func TestContextCleanupWaitIncludesRetirementDuringCleanup(t *testing.T) {
 	defer stop()
 	waitCtx := &cleanupWaitTestContext{Context: deadline, started: make(chan struct{})}
 	result := make(chan error, 1)
-	go func() { result <- waitForCleanup(waitCtx) }()
+	go func() { result <- internal.WaitForCleanup(waitCtx) }()
 	<-waitCtx.started // waiter has snapshotted the held parent lifecycle
 	releaseParent()   // parent cleanup retires the still-held child
 	if err := <-result; !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("wait omitted lifecycle retired during cleanup: %v", err)
+	}
+}
+
+func TestContextCleanupConcurrentLoadCopies(t *testing.T) {
+	ctx, cancel, existing := cleanupTestContext(t)
+	type key struct{}
+	valued := ctx.WithValue(key{}, true)
+	copies := []Context{ctx, ctx, valued}
+	const loads = 32
+	proceed := make(chan struct{})
+	var proceedOnce sync.Once
+	resume := func() { proceedOnce.Do(func() { close(proceed) }) }
+	var wg sync.WaitGroup
+	defer func() { resume(); wg.Wait() }()
+	controls := make([]*cleanupTestControl, loads)
+	results := make(chan error, loads)
+	for i := range controls {
+		control := &cleanupTestControl{entered: make(chan struct{}), proceed: proceed}
+		controls[i] = control
+		raw := cleanupTestConfig(t, control)
+		copyCtx := copies[i%len(copies)]
+		wg.Go(func() {
+			_, err := copyCtx.LoadModuleByID("test.cleanup_hold", raw)
+			results <- err
+		})
+	}
+	deadline, stop := context.WithTimeout(context.Background(), 5*time.Second)
+	defer stop()
+	for _, control := range controls {
+		select {
+		case <-control.entered:
+		case <-deadline.Done():
+			t.Fatal("concurrent module loads did not enter provisioning")
+		}
+	}
+	cancel(nil)
+	if existing.cleaned.Load() != 0 {
+		t.Fatal("cleanup ran while context copies were loading modules")
+	}
+	resume()
+	wg.Wait()
+	close(results)
+	for err := range results {
+		if err != nil {
+			t.Error(err)
+		}
+	}
+	if existing.cleaned.Load() != 1 {
+		t.Fatal("existing module was not cleaned exactly once")
+	}
+	for _, control := range controls {
+		if control.cleaned.Load() != 1 {
+			t.Fatal("concurrently registered module was not cleaned exactly once")
+		}
 	}
 }
