@@ -16,8 +16,11 @@ package caddyhttp
 
 import (
 	"context"
+	"errors"
 	"io"
+	"net"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -106,9 +109,9 @@ func (d *IdleDeadline) restore(o idleOverride) {
 // IdleTimeoutReader wraps a request body with IdleDeadline, resetting
 // the read deadline before every Read call instead of bounding the
 // whole body transfer with a single hard deadline.
-// The deadline is cleared after an error (most likely io.EOF) is encountered when reading the body
-// to prevent context canceled error for h1 requests.
-// see: https://github.com/caddyserver/caddy/issues/8103
+// Terminal EOF and non-timeout errors clear the deadline to avoid
+// canceled HTTP/1 requests (#8103). Expired terminal read deadlines
+// remain armed so net/http's post-handler drain fails promptly (#8165).
 type IdleTimeoutReader struct {
 	io.ReadCloser
 	Ctrl     *http.ResponseController
@@ -154,6 +157,15 @@ const (
 	deadlineHard
 )
 
+// terminalReadTimedOut also recognizes wrapped timeout errors.
+func terminalReadTimedOut(err error) bool {
+	if errors.Is(err, os.ErrDeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
+}
+
 func (r *IdleTimeoutReader) Read(p []byte) (int, error) {
 	r.mu.Lock()
 	if r.terminalErr != nil {
@@ -172,7 +184,9 @@ func (r *IdleTimeoutReader) Read(p []byte) (int, error) {
 	r.Deadline.transferred += int64(n)
 	if err != nil {
 		r.terminalErr = err
-		if !r.finished {
+		// Keep an expired deadline for HTTP/1's post-handler drain,
+		// so it cannot wait for the rest of a timed-out request body.
+		if !r.finished && !(r.DrainDeadline && terminalReadTimedOut(err)) {
 			r.clearDeadlineLocked()
 		}
 	} else if r.ClearBetweenReads && !r.finished {
@@ -195,7 +209,11 @@ func (r *IdleTimeoutReader) HandlerDone() {
 	if r.finished {
 		return
 	}
-	if r.terminalErr != nil || r.armed == deadlineHard {
+	if r.terminalErr != nil {
+		if !(r.DrainDeadline && terminalReadTimedOut(r.terminalErr)) {
+			r.clearDeadlineLocked()
+		}
+	} else if r.armed == deadlineHard {
 		r.clearDeadlineLocked()
 	} else if r.DrainDeadline && r.armed != deadlineIdle && !r.unsupported {
 		r.setDeadlineLocked("could not set final read deadline")
