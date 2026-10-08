@@ -1,0 +1,65 @@
+:80 {
+	@public {
+		expression {method} == 'GET'
+		expression {path}.startsWith('/public/')
+	}
+	respond @public "public"
+
+	@blocked {
+		not {
+			expression {header.X-Api-Key} == 'secret'
+			expression {remote_host} == '127.0.0.1'
+		}
+	}
+	respond @blocked "blocked" 403
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"expression": {
+										"expr": "({http.request.method} == 'GET') \u0026\u0026 ({http.request.uri.path}.startsWith('/public/'))",
+										"name": "public"
+									}
+								}
+							],
+							"handle": [
+								{
+									"body": "public",
+									"handler": "static_response"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"not": [
+										{
+											"expression": "({http.request.header.X-Api-Key} == 'secret') \u0026\u0026 ({http.request.remote.host} == '127.0.0.1')"
+										}
+									]
+								}
+							],
+							"handle": [
+								{
+									"body": "blocked",
+									"handler": "static_response",
+									"status_code": 403
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

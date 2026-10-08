@@ -225,31 +225,39 @@ func (m MatchExpression) MatchWithError(r *http.Request) (bool, error) {
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (m *MatchExpression) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	d.Next() // consume matcher name
+	var exprs []string
+	for d.Next() { // consume matcher name
+		// if there's multiple args, then we need to keep the raw
+		// tokens because the user may have used quotes within their
+		// CEL expression (e.g. strings) and we should retain that
+		if d.CountRemainingArgs() > 1 {
+			exprs = append(exprs, strings.Join(d.RemainingArgsRaw(), " "))
+			continue
+		}
 
-	// if there's multiple args, then we need to keep the raw
-	// tokens because the user may have used quotes within their
-	// CEL expression (e.g. strings) and we should retain that
-	if d.CountRemainingArgs() > 1 {
-		m.Expr = strings.Join(d.RemainingArgsRaw(), " ")
-		return nil
+		// there should at least be one arg
+		if !d.NextArg() {
+			return d.ArgErr()
+		}
+
+		// if there's only one token, then we can safely grab the
+		// cleaned token (no quotes) and use that as the expression
+		// because there's no valid CEL expression that is only a
+		// quoted string; commonly quotes are used in Caddyfile to
+		// define the expression
+		exprs = append(exprs, d.Val())
+
+		// use the named matcher's name, to fill regexp
+		// matchers names by default
+		m.Name = d.GetContextString(caddyfile.MatcherNameCtxKey)
 	}
 
-	// there should at least be one arg
-	if !d.NextArg() {
-		return d.ArgErr()
+	// matchers in the same set are AND'ed, so join repeated expressions
+	if len(exprs) == 1 {
+		m.Expr = exprs[0]
+	} else {
+		m.Expr = "(" + strings.Join(exprs, ") && (") + ")"
 	}
-
-	// if there's only one token, then we can safely grab the
-	// cleaned token (no quotes) and use that as the expression
-	// because there's no valid CEL expression that is only a
-	// quoted string; commonly quotes are used in Caddyfile to
-	// define the expression
-	m.Expr = d.Val()
-
-	// use the named matcher's name, to fill regexp
-	// matchers names by default
-	m.Name = d.GetContextString(caddyfile.MatcherNameCtxKey)
 
 	return nil
 }
