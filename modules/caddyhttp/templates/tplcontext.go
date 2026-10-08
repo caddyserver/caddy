@@ -473,6 +473,8 @@ func (c TemplateContext) funcHTTPError(statusCode int) (bool, error) {
 	c.RespHeader.Header.Del("Etag")
 	c.RespHeader.Header.Del("Last-Modified")
 	c.RespHeader.Header.Del("Accept-Ranges")
+	c.RespHeader.Header.Del("Content-Encoding")
+	c.RespHeader.Header.Del("Content-Range")
 
 	return false, caddyhttp.Error(statusCode, nil)
 }
