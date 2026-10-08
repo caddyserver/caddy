@@ -26,6 +26,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -144,6 +145,73 @@ func TestIdleTimeoutReaderClearsDeadlineAtEOF(t *testing.T) {
 	deadlines := w.snapshot()
 	require.NotEmpty(t, deadlines)
 	assert.True(t, deadlines[len(deadlines)-1].IsZero())
+}
+
+func TestIdleTimeoutReaderTerminalError(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		err          error
+		keepDeadline bool
+	}{
+		{"timeout", os.ErrDeadlineExceeded, true},
+		{"wrapped timeout", fmt.Errorf("read body: %w", os.ErrDeadlineExceeded), true},
+		{"EOF", io.EOF, false},
+		{"other error", errors.New("read failed"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			deadline := time.Now().Add(-time.Second)
+			w := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+			r := &IdleTimeoutReader{
+				ReadCloser:    io.NopCloser(iotest.ErrReader(tc.err)),
+				Ctrl:          http.NewResponseController(w),
+				Deadline:      IdleDeadline{Timeout: time.Hour, HardDeadline: deadline},
+				Logger:        zap.NewNop(),
+				DrainDeadline: true,
+			}
+			_, err := r.Read(make([]byte, 1))
+			require.ErrorIs(t, err, tc.err)
+			want := time.Time{}
+			if tc.keepDeadline {
+				want = deadline
+			}
+			deadlines := w.snapshot()
+			require.NotEmpty(t, deadlines)
+			assert.Equal(t, want, deadlines[len(deadlines)-1], "after Read")
+			r.HandlerDone()
+			deadlines = w.snapshot()
+			assert.Equal(t, want, deadlines[len(deadlines)-1], "after HandlerDone")
+
+			_, err = r.Read(make([]byte, 1))
+			require.ErrorIs(t, err, tc.err)
+			r.HandlerDone()
+			assert.Equal(t, deadlines, w.snapshot(), "late reads and repeated completion must not change deadlines")
+		})
+	}
+}
+
+func TestIdleTimeoutReaderTimeoutAfterOverride(t *testing.T) {
+	w := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	r := &IdleTimeoutReader{
+		ReadCloser:    io.NopCloser(iotest.ErrReader(os.ErrDeadlineExceeded)),
+		Ctrl:          http.NewResponseController(w),
+		Deadline:      IdleDeadline{Timeout: time.Hour},
+		Logger:        zap.NewNop(),
+		DrainDeadline: true,
+	}
+	restore := r.Override(-time.Second, 0)
+	_, err := r.Read(make([]byte, 1))
+	require.ErrorIs(t, err, os.ErrDeadlineExceeded)
+	deadlines := w.snapshot()
+	require.NotEmpty(t, deadlines)
+	expired := deadlines[0]
+	require.True(t, expired.Before(time.Now()))
+	assert.Equal(t, expired, deadlines[len(deadlines)-1])
+
+	// Unwinding a route-level timeout must not rearm the longer server timeout.
+	restore()
+	r.HandlerDone()
+	deadlines = w.snapshot()
+	assert.Equal(t, expired, deadlines[len(deadlines)-1])
 }
 
 func TestIdleTimeoutReaderHandlerDone(t *testing.T) {
