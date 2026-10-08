@@ -566,51 +566,58 @@ func TestRequestOnlyMatcherDoesNotRetryResponses(t *testing.T) {
 }
 
 // TestRequestOnlyExpressionDoesNotRetryResponses verifies that an expression
-// matcher that only tests the request (no response placeholders) does not
-// cause successful responses to be retried
+// matcher that only tests the request or the selected upstream (no response
+// placeholders) does not cause successful responses to be retried
 func TestRequestOnlyExpressionDoesNotRetryResponses(t *testing.T) {
-	var hits atomic.Int32
+	for _, expr := range []string{
+		`{http.request.method} == "POST"`,
+		`{http.reverse_proxy.upstream.host} == "127.0.0.1"`,
+	} {
+		t.Run(expr, func(t *testing.T) {
+			var hits atomic.Int32
 
-	// Server returns 200 OK for all requests
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hits.Add(1)
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok"))
-	}))
-	t.Cleanup(server.Close)
+			// Server returns 200 OK for all requests
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				hits.Add(1)
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte("ok"))
+			}))
+			t.Cleanup(server.Close)
 
-	retryMatch := caddyhttp.MatcherSets{
-		caddyhttp.MatcherSet{
-			newExpressionMatcher(t, `{http.request.method} == "POST"`),
-		},
-	}
+			retryMatch := caddyhttp.MatcherSets{
+				caddyhttp.MatcherSet{
+					newExpressionMatcher(t, expr),
+				},
+			}
 
-	upstreams := []*Upstream{
-		{Host: new(Host), Dial: server.Listener.Addr().String()},
-		{Host: new(Host), Dial: server.Listener.Addr().String()},
-	}
+			upstreams := []*Upstream{
+				{Host: new(Host), Dial: server.Listener.Addr().String()},
+				{Host: new(Host), Dial: server.Listener.Addr().String()},
+			}
 
-	h := minimalHandlerWithRetryMatch(2, retryMatch, upstreams...)
+			h := minimalHandlerWithRetryMatch(2, retryMatch, upstreams...)
 
-	req := httptest.NewRequest(http.MethodPost, "http://example.com/", strings.NewReader("order=1"))
-	req = prepareTestRequest(req)
-	rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "http://example.com/", strings.NewReader("order=1"))
+			req = prepareTestRequest(req)
+			rec := httptest.NewRecorder()
 
-	err := h.ServeHTTP(rec, req, caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
-		return nil
-	}))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+			err := h.ServeHTTP(rec, req, caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+				return nil
+			}))
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 
-	if hits.Load() != 1 {
-		t.Errorf("upstream hits: got %d, want 1 (should not retry successful responses)", hits.Load())
-	}
-	if rec.Code != http.StatusOK {
-		t.Errorf("status: got %d, want %d", rec.Code, http.StatusOK)
-	}
-	if rec.Body.String() != "ok" {
-		t.Errorf("body: got %q, want %q", rec.Body.String(), "ok")
+			if hits.Load() != 1 {
+				t.Errorf("upstream hits: got %d, want 1 (should not retry successful responses)", hits.Load())
+			}
+			if rec.Code != http.StatusOK {
+				t.Errorf("status: got %d, want %d", rec.Code, http.StatusOK)
+			}
+			if rec.Body.String() != "ok" {
+				t.Errorf("body: got %q, want %q", rec.Body.String(), "ok")
+			}
+		})
 	}
 }
 
