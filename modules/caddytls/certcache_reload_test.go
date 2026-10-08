@@ -55,20 +55,46 @@ func activeTLSApp(t *testing.T) *TLS {
 	return app.(*TLS)
 }
 
-// stopCaddyAndCertCache tears the running config down and returns the
-// package-level cache state to zero, so the next test does not inherit a
-// published cache. consumed names a cache the test stopped itself, which must
-// not be stopped twice.
-func stopCaddyAndCertCache(consumed **certmagic.Cache) func() {
+// stopCaddyAndCertCache tears the running config down. Shutdown runs Cleanup
+// for the serving TLS app, which stops the published cache and zeroes the
+// package-level state; this zeroes it unconditionally as well, so a config that
+// never got a TLS app running cannot leave state behind for the next test.
+func stopCaddyAndCertCache() func() {
 	return func() {
 		caddy.Stop()
 		certCacheMu.Lock()
 		published := certCache
 		certCache, certCacheOpts, certCacheApp = nil, certmagic.CacheOptions{}, nil
 		certCacheMu.Unlock()
-		if published != nil && published != *consumed {
+		if published != nil {
 			published.Stop()
 		}
+	}
+}
+
+// detachCache removes c from the app that provisioned it and from the
+// package-level publication, so that nothing stops it afterwards. A test that
+// stops a cache itself must detach it first: caddy.Stop clears the active
+// context before running Cleanup (see #8038), so Cleanup finds no serving TLS
+// app, takes its shutdown path, and stops both the cache this app owned and the
+// published one. Stopping a cache twice panics on a closed channel.
+//
+// The cache fields are written under certCacheMu for the same reason
+// provisionCertCache writes them there: a cache's GetConfigForCert callback
+// reads them from the maintenance goroutine.
+func detachCache(t *testing.T, c *certmagic.Cache) {
+	t.Helper()
+	var owner *TLS
+	if active, err := caddy.ActiveContext().AppIfConfigured("tls"); err == nil && active != nil {
+		owner = active.(*TLS)
+	}
+	certCacheMu.Lock()
+	defer certCacheMu.Unlock()
+	if owner != nil && owner.cache == c {
+		owner.cache, owner.cacheOpts = nil, certmagic.CacheOptions{}
+	}
+	if certCache == c {
+		certCache, certCacheOpts, certCacheApp = nil, certmagic.CacheOptions{}, nil
 	}
 }
 
@@ -76,9 +102,11 @@ func stopCaddyAndCertCache(consumed **certmagic.Cache) func() {
 // been stopped. Cache.Stop closes a channel and waits for the goroutine to
 // exit, so stopping an already-stopped cache panics on a closed channel;
 // completing without a panic is therefore proof the cache was still being
-// maintained. This consumes c: it is stopped either way.
+// maintained. This consumes c: it is stopped either way, so c is detached
+// first, leaving nothing for shutdown to stop a second time.
 func assertCacheRunning(t *testing.T, c *certmagic.Cache) {
 	t.Helper()
+	detachCache(t, c)
 	defer func() {
 		if r := recover(); r != nil {
 			t.Fatalf("certificate cache was no longer being maintained: %v", r)
@@ -97,8 +125,7 @@ func TestFailedReloadLeavesRunningCacheIntact(t *testing.T) {
 	if err := caddy.Load(tlsConfigJSON(storage, 100, false), true); err != nil {
 		t.Fatalf("loading initial config: %v", err)
 	}
-	var consumed *certmagic.Cache
-	t.Cleanup(stopCaddyAndCertCache(&consumed))
+	t.Cleanup(stopCaddyAndCertCache())
 
 	running := activeTLSApp(t)
 	certCacheMu.RLock()
@@ -137,7 +164,6 @@ func TestFailedReloadLeavesRunningCacheIntact(t *testing.T) {
 	// certificates renewed and its OCSP staples refreshed. Every other symptom
 	// of the old behaviour is repaired by the failed app's Cleanup; a cache
 	// whose maintenance was stopped mid-reload is not.
-	consumed = cacheBefore
 	assertCacheRunning(t, cacheBefore)
 }
 
@@ -148,8 +174,7 @@ func TestSuccessfulReloadReplacesCache(t *testing.T) {
 	if err := caddy.Load(tlsConfigJSON(storage, 100, false), true); err != nil {
 		t.Fatalf("loading initial config: %v", err)
 	}
-	var consumed *certmagic.Cache
-	t.Cleanup(stopCaddyAndCertCache(&consumed))
+	t.Cleanup(stopCaddyAndCertCache())
 
 	first := activeTLSApp(t)
 	firstCache := first.cache
@@ -183,8 +208,7 @@ func TestReloadWithUnchangedOptionsKeepsCache(t *testing.T) {
 	if err := caddy.Load(tlsConfigJSON(storage, 100, false), true); err != nil {
 		t.Fatalf("loading initial config: %v", err)
 	}
-	var consumed *certmagic.Cache
-	t.Cleanup(stopCaddyAndCertCache(&consumed))
+	t.Cleanup(stopCaddyAndCertCache())
 
 	firstCache := activeTLSApp(t).cache
 

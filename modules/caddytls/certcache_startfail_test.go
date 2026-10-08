@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/caddyserver/certmagic"
-
 	"github.com/caddyserver/caddy/v2"
 	_ "github.com/caddyserver/caddy/v2/modules/filestorage"
 )
@@ -70,8 +68,7 @@ func TestCacheSurvivesFailureAfterTLSStarted(t *testing.T) {
 	if err := caddy.Load(tlsConfigJSON(storage, 100, false), true); err != nil {
 		t.Fatalf("loading initial config: %v", err)
 	}
-	var consumed *certmagic.Cache
-	t.Cleanup(stopCaddyAndCertCache(&consumed))
+	t.Cleanup(stopCaddyAndCertCache())
 
 	running := activeTLSApp(t)
 	certCacheMu.RLock()
@@ -119,6 +116,5 @@ func TestCacheSurvivesFailureAfterTLSStarted(t *testing.T) {
 	}
 
 	// the running config's cache must still be maintained
-	consumed = cacheBefore
 	assertCacheRunning(t, cacheBefore)
 }
