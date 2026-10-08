@@ -13,6 +13,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp/reverseproxy"
 )
 
 // fcgiBackend serves h over FastCGI and returns its address.
@@ -118,6 +119,22 @@ func TestIncrementalUnbufferedRequestWithUnknownLength(t *testing.T) {
 func TestRequiresContentLength(t *testing.T) {
 	if !(Transport{}).RequiresContentLength() {
 		t.Error("RequiresContentLength() = false, want true")
+	}
+}
+
+func TestRoundTripDialError(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "http://example.com/index.php", strings.NewReader("body"))
+	_, err := fcgiRoundTrip(t, "invalid address", req)
+	if err == nil {
+		t.Fatal("RoundTrip() error = nil, want a dial error")
+	}
+
+	var dialErr reverseproxy.DialError
+	if !errors.As(err, &dialErr) {
+		t.Fatalf("RoundTrip() error type = %T, want reverseproxy.DialError", err)
+	}
+	if !strings.HasPrefix(err.Error(), "dialing backend:") {
+		t.Errorf("RoundTrip() error = %q, want dialing context", err)
 	}
 }
 
