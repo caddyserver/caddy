@@ -139,6 +139,7 @@ type IdleTimeoutReader struct {
 	mu          sync.Mutex
 	unsupported bool
 	armed       armedDeadline
+	armedUntil  time.Time // last successfully installed read deadline
 	finished    bool
 	terminalErr error
 }
@@ -166,6 +167,18 @@ func terminalReadTimedOut(err error) bool {
 	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
+// expiredTerminalReadDeadline reports whether the timeout is from an expired
+// deadline installed by this reader. A timeout-classified error alone is not
+// evidence that the connection's read deadline has expired.
+func (r *IdleTimeoutReader) expiredTerminalReadDeadline(err error) bool {
+	return r.DrainDeadline &&
+		!r.unsupported &&
+		r.armed == deadlineIdle &&
+		!r.armedUntil.IsZero() &&
+		!time.Now().Before(r.armedUntil) &&
+		terminalReadTimedOut(err)
+}
+
 func (r *IdleTimeoutReader) Read(p []byte) (int, error) {
 	r.mu.Lock()
 	if r.terminalErr != nil {
@@ -186,7 +199,7 @@ func (r *IdleTimeoutReader) Read(p []byte) (int, error) {
 		r.terminalErr = err
 		// Keep an expired deadline for HTTP/1's post-handler drain,
 		// so it cannot wait for the rest of a timed-out request body.
-		if !r.finished && !(r.DrainDeadline && terminalReadTimedOut(err)) {
+		if !r.finished && !r.expiredTerminalReadDeadline(err) {
 			r.clearDeadlineLocked()
 		}
 	} else if r.ClearBetweenReads && !r.finished {
@@ -210,7 +223,7 @@ func (r *IdleTimeoutReader) HandlerDone() {
 		return
 	}
 	if r.terminalErr != nil {
-		if !(r.DrainDeadline && terminalReadTimedOut(r.terminalErr)) {
+		if !r.expiredTerminalReadDeadline(r.terminalErr) {
 			r.clearDeadlineLocked()
 		}
 	} else if r.armed == deadlineHard {
@@ -267,6 +280,7 @@ func (r *IdleTimeoutReader) setReadDeadlineLocked(deadline time.Time, logMessage
 		}
 		return false
 	}
+	r.armedUntil = deadline
 	return true
 }
 

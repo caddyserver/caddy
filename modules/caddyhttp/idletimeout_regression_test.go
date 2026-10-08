@@ -17,6 +17,7 @@ package caddyhttp
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -39,22 +40,35 @@ type terminalErrorBody struct{ err error }
 func (b terminalErrorBody) Read([]byte) (int, error) { return 0, b.err }
 func (terminalErrorBody) Close() error               { return nil }
 
+// earlyTimeoutError models an underlying reader timing out before the
+// deadline installed by Caddy has expired.
+type earlyTimeoutError struct{}
+
+func (earlyTimeoutError) Error() string   { return "unrelated read timeout" }
+func (earlyTimeoutError) Timeout() bool   { return true }
+func (earlyTimeoutError) Temporary() bool { return true }
+
 func TestIdleTimeoutReaderTerminalDeadline(t *testing.T) {
 	for _, tc := range []struct {
-		name string
-		err  error
-		keep bool
+		name   string
+		err    error
+		offset time.Duration
+		keep   bool
 	}{
-		{"timeout", fmt.Errorf("read body: %w", os.ErrDeadlineExceeded), true},
-		{"EOF", io.EOF, false},
-		{"other error", io.ErrUnexpectedEOF, false},
+		{"expired timeout", fmt.Errorf("read body: %w", os.ErrDeadlineExceeded), -time.Second, true},
+		{"early timeout", earlyTimeoutError{}, time.Hour, false},
+		{"early wrapped deadline error", fmt.Errorf("early: %w", os.ErrDeadlineExceeded), time.Hour, false},
+		{"EOF", io.EOF, -time.Second, false},
+		{"other error", io.ErrUnexpectedEOF, -time.Second, false},
+		{"context canceled", context.Canceled, -time.Second, false},
+		{"generic error", fmt.Errorf("read failed"), -time.Second, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			w := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
 			r := &IdleTimeoutReader{
 				ReadCloser:    terminalErrorBody{tc.err},
 				Ctrl:          http.NewResponseController(w),
-				Deadline:      IdleDeadline{Start: time.Now().Add(-time.Second), Timeout: 100 * time.Millisecond, MinRate: 1},
+				Deadline:      IdleDeadline{Start: time.Now().Add(tc.offset), Timeout: 100 * time.Millisecond, MinRate: 1},
 				Logger:        zap.NewNop(),
 				DrainDeadline: true,
 			}
@@ -66,13 +80,35 @@ func TestIdleTimeoutReaderTerminalDeadline(t *testing.T) {
 			require.NotEmpty(t, deadlines)
 			last := deadlines[len(deadlines)-1]
 			if tc.keep {
-				require.False(t, last.IsZero(), "timed-out read must retain a deadline")
-				require.True(t, last.Before(time.Now()), "terminal read deadline must already be expired")
+				require.False(t, last.IsZero(), "expired terminal read deadline must remain installed")
+				require.True(t, last.Before(time.Now()), "preserved deadline must be expired")
 			} else {
-				require.True(t, last.IsZero(), "non-timeout terminal read must clear deadline")
+				require.True(t, last.IsZero(), "EOF, cancellations, and non-expired timeouts must clear deadline")
 			}
 		})
 	}
+}
+
+func TestIdleTimeoutReaderTerminalDeadlineNotArmed(t *testing.T) {
+	// No deadline must never be treated as an expired one, even when
+	// the error happens to implement net.Error.Timeout.
+	r := &IdleTimeoutReader{DrainDeadline: true}
+	require.False(t, r.expiredTerminalReadDeadline(os.ErrDeadlineExceeded))
+	require.False(t, r.expiredTerminalReadDeadline(earlyTimeoutError{}))
+
+	w := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder(), failAt: 1}
+	r = &IdleTimeoutReader{
+		ReadCloser:    terminalErrorBody{os.ErrDeadlineExceeded},
+		Ctrl:          http.NewResponseController(w),
+		Deadline:      IdleDeadline{Start: time.Now().Add(-time.Second), Timeout: 100 * time.Millisecond, MinRate: 1},
+		Logger:        zap.NewNop(),
+		DrainDeadline: true,
+	}
+	_, err := r.Read(make([]byte, 1))
+	require.ErrorIs(t, err, os.ErrDeadlineExceeded)
+	require.True(t, r.unsupported)
+	require.True(t, r.armedUntil.IsZero(), "unsuccessful SetReadDeadline must not be recorded")
+	r.HandlerDone()
 }
 
 func timeoutWireHandler(timeout time.Duration, minRate int64) http.Handler {
@@ -156,6 +192,62 @@ func TestIdleTimeoutReaderWireHTTP1TerminalTimeout(t *testing.T) {
 				require.Less(t, sent.Load(), int64(tc.size), "response must arrive before the body finishes uploading")
 			}
 		})
+	}
+}
+
+// The incomplete final chunk also exercises the HTTP/1 drain for requests
+// whose ContentLength is unknown (Transfer-Encoding: chunked).
+func TestIdleTimeoutReaderWireHTTP1ChunkedStalled(t *testing.T) {
+	const timeout = 180 * time.Millisecond
+	srv := httptest.NewServer(timeoutWireHandler(timeout, 0))
+	defer srv.Close()
+
+	conn, err := net.Dial("tcp", strings.TrimPrefix(srv.URL, "http://"))
+	require.NoError(t, err)
+	defer conn.Close()
+
+	_, err = io.WriteString(conn, "POST / HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\nA\r\n0123456789\r\n")
+	require.NoError(t, err)
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(2*time.Second)))
+
+	resp, err := http.ReadResponse(bufio.NewReader(conn), &http.Request{Method: http.MethodPost})
+	require.NoError(t, err, "chunked HTTP/1 upload must not block the error response")
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusGatewayTimeout, resp.StatusCode)
+}
+
+// A timed-out, incompletely drained HTTP/1 request cannot share its
+// connection with a subsequent request.
+func TestIdleTimeoutReaderWireHTTP1NoReuseAfterTimeout(t *testing.T) {
+	const timeout = 180 * time.Millisecond
+	srv := httptest.NewServer(timeoutWireHandler(timeout, 0))
+	defer srv.Close()
+
+	conn, err := net.Dial("tcp", strings.TrimPrefix(srv.URL, "http://"))
+	require.NoError(t, err)
+	defer conn.Close()
+	reader := bufio.NewReader(conn)
+
+	_, err = io.WriteString(conn, "POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 102400\r\n\r\npartial")
+	require.NoError(t, err)
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(2*time.Second)))
+
+	resp, err := http.ReadResponse(reader, &http.Request{Method: http.MethodPost})
+	require.NoError(t, err)
+	require.Equal(t, http.StatusGatewayTimeout, resp.StatusCode)
+	_, err = io.Copy(io.Discard, resp.Body)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+
+	// Depending on TCP timing, either the write fails immediately
+	// or a subsequent response read observes that the server closed.
+	_, err = io.WriteString(conn, "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
+	if err == nil {
+		next, readErr := http.ReadResponse(reader, &http.Request{Method: http.MethodGet})
+		if next != nil {
+			next.Body.Close()
+		}
+		require.Error(t, readErr, "timed-out connection must not process another request")
 	}
 }
 
