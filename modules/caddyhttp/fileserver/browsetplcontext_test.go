@@ -136,7 +136,7 @@ func TestDirectoryListingSymlinkInEscapedPath(t *testing.T) {
 		}
 
 		fileSystem, entries := readBenchDirEntries(t, dir)
-		listing := benchFileServer().directoryListing(context.Background(), fileSystem, time.Time{}, entries, true, root, tc.urlPath, caddy.NewReplacer())
+		listing := benchFileServer().directoryListing(context.Background(), fileSystem, time.Time{}, entries, true, dir, tc.urlPath, caddy.NewReplacer())
 		if len(listing.Items) != 1 || !listing.Items[0].IsDir {
 			t.Errorf("Test %d: expected the symlink in %q to be listed as a directory", i, tc.dir)
 		}

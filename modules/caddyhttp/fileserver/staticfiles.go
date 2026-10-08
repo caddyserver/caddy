@@ -492,6 +492,9 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			continue
 		}
 		compressedFilename := filename + precompress.Suffix()
+		if fileHidden(compressedFilename, filesToHide) {
+			continue
+		}
 		compressedInfo, err := fs.Stat(fileSystem, compressedFilename)
 		if err != nil || compressedInfo.IsDir() {
 			if c := fsrv.logger.Check(zapcore.DebugLevel, "precompressed file not accessible"); c != nil {
