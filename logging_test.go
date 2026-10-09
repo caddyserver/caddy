@@ -14,7 +14,16 @@
 
 package caddy
 
-import "testing"
+import (
+	"bytes"
+	"strings"
+	"testing"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+
+	"github.com/caddyserver/caddy/v2/internal"
+)
 
 func TestCustomLog_loggerAllowed(t *testing.T) {
 	type fields struct {
@@ -104,3 +113,72 @@ func TestCustomLog_loggerAllowed(t *testing.T) {
 		})
 	}
 }
+
+func TestUnbufferDefaultLogger(t *testing.T) {
+	defaultLoggerMu.RLock()
+	origDefault := defaultLogger
+	defaultLoggerMu.RUnlock()
+	t.Cleanup(func() {
+		defaultLoggerMu.Lock()
+		defaultLogger = origDefault
+		defaultLoggerMu.Unlock()
+	})
+
+	// Set up an observing logger to verify buffer flushing and post-unbuffer logging
+	buf := new(bytes.Buffer)
+	destCore := zapcore.NewCore(
+		zapcore.NewConsoleEncoder(zap.NewDevelopmentEncoderConfig()),
+		zapcore.AddSync(buf),
+		zapcore.InfoLevel,
+	)
+	destLogger := zap.New(destCore)
+
+	defaultLoggerMu.Lock()
+	defaultLogger = &defaultCustomLog{
+		CustomLog: &CustomLog{},
+		logger:    destLogger,
+	}
+	defaultLoggerMu.Unlock()
+
+	// 1. Engage buffered logging
+	bufferedLogger, origLogger, _ := BufferedLog()
+
+	// Verify default logger is now using the buffer core
+	if _, ok := Log().Core().(*internal.LogBufferCore); !ok {
+		t.Fatal("expected default logger core to be *internal.LogBufferCore")
+	}
+
+	// 2. Log while buffered
+	bufferedLogger.Info("early startup log message")
+
+	// Messages should not be written to destination yet while buffered
+	if buf.Len() > 0 {
+		t.Fatalf("expected destination buffer to be empty while buffered, got: %s", buf.String())
+	}
+
+	// 3. Unbuffer the default logger
+	UnbufferDefaultLogger(origLogger)
+
+	// Verify default logger core is no longer LogBufferCore
+	if _, ok := Log().Core().(*internal.LogBufferCore); ok {
+		t.Fatal("expected default logger core to no longer be *internal.LogBufferCore after UnbufferDefaultLogger")
+	}
+
+	// Verify early buffered logs were flushed to destination logger
+	if !strings.Contains(buf.String(), "early startup log message") {
+		t.Fatalf("expected destination buffer to contain early startup log message, got: %s", buf.String())
+	}
+
+	// 4. Log after unbuffering: should go directly to destination logger, not swallowed
+	Log().Error("startup failed error")
+	if !strings.Contains(buf.String(), "startup failed error") {
+		t.Fatalf("expected destination buffer to contain error message, got: %s", buf.String())
+	}
+
+	// 5. Calling UnbufferDefaultLogger again when not buffered should be a safe no-op
+	UnbufferDefaultLogger(origLogger)
+	if _, ok := Log().Core().(*internal.LogBufferCore); ok {
+		t.Fatal("unexpected buffer core after second unbuffer call")
+	}
+}
+
