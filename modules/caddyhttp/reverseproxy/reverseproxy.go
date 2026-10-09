@@ -2130,25 +2130,31 @@ type RequestHeaderOpsTransport interface {
 // upstream round trip completes ({rp.status_code} is adapted to
 // {http.reverse_proxy.status_code}, and so on)
 var responsePlaceholders = []string{
-	"{http.reverse_proxy.status_code",
-	"{http.reverse_proxy.status_text",
-	"{http.reverse_proxy.header.",
-	"{http.reverse_proxy.upstream.latency",
+	"http.reverse_proxy.status_code",
+	"http.reverse_proxy.status_text",
+	"http.reverse_proxy.header.",
+	"http.reverse_proxy.upstream.latency",
 }
 
 // matcherSetReferencesResponse reports whether a matcher set contains an
-// expression matcher that references response data. Other matcher sets
-// only test request or upstream selection properties and should not be
-// evaluated for response-based retry decisions
+// expression matcher that reads response data, or a placeholder whose name
+// is only known at evaluation time. Other matcher sets only test request or
+// upstream selection properties and should not be evaluated for
+// response-based retry decisions
 func matcherSetReferencesResponse(matcherSet caddyhttp.MatcherSet) bool {
 	for _, m := range matcherSet {
 		expr, ok := m.(*caddyhttp.MatchExpression)
 		if !ok {
 			continue
 		}
-		for _, ph := range responsePlaceholders {
-			if strings.Contains(expr.Expr, ph) {
+		for _, name := range expr.Placeholders() {
+			if name == "" {
 				return true
+			}
+			for _, prefix := range responsePlaceholders {
+				if strings.HasPrefix(name, prefix) {
+					return true
+				}
 			}
 		}
 	}

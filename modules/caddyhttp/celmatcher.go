@@ -70,6 +70,7 @@ type MatchExpression struct {
 	Name string `json:"name,omitempty"`
 
 	expandedExpr string
+	placeholders []string
 	prg          cel.Program
 	ta           types.Adapter
 
@@ -192,12 +193,21 @@ func (m *MatchExpression) Provision(ctx caddy.Context) error {
 		return fmt.Errorf("CEL request matcher expects return type of bool, not %s", checked.OutputType())
 	}
 
+	m.placeholders = celPlaceholderNames(checked.NativeRep().Expr())
+
 	// compile the "program"
 	m.prg, err = env.Program(checked, cel.EvalOptions(cel.OptOptimize))
 	if err != nil {
 		return fmt.Errorf("compiling CEL program: %s", err)
 	}
 	return nil
+}
+
+// Placeholders returns the names of the placeholders the provisioned
+// expression reads. A name that is only known at evaluation time is
+// returned as an empty string.
+func (m MatchExpression) Placeholders() []string {
+	return m.placeholders
 }
 
 // Match returns true if r matches m.
@@ -727,6 +737,23 @@ func CELValueToMapStrList(data ref.Val) (map[string][]string, error) {
 		}
 	}
 	return mapStrListStr, nil
+}
+
+// celPlaceholderNames returns the name passed to each placeholder call in e,
+// or an empty string where the name is not a string literal.
+func celPlaceholderNames(e ast.Expr) []string {
+	var names []string
+	ast.PreOrderVisit(e, ast.NewExprVisitor(func(e ast.Expr) {
+		if !isCELCaddyPlaceholderCall(e) {
+			return
+		}
+		name := ""
+		if args := e.AsCall().Args(); len(args) == 2 && isCELStringLiteral(args[1]) {
+			name = args[1].AsLiteral().Value().(string)
+		}
+		names = append(names, name)
+	}))
+	return names
 }
 
 // isCELStringExpr indicates whether the expression is a supported string expression
