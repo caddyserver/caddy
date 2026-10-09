@@ -30,6 +30,7 @@ import (
 	"net/netip"
 	"net/textproto"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -1279,14 +1280,13 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	// check if the response matches a retry match entry; if so,
 	// close the body and return a retryable error so the request
 	// is retried with the next upstream. Only evaluate matcher sets
-	// that contain at least one expression matcher, since those are
-	// the ones that can reference response data ({rp.status_code},
-	// {rp.header.*}). Pure request-only matchers (method, path, etc.)
-	// are skipped to avoid retrying every response that matches a
-	// request condition
+	// with an expression that references response data ({rp.status_code},
+	// {rp.header.*}). Request-only matchers (method, path, or an
+	// expression without response placeholders) are skipped to avoid
+	// retrying every response that matches a request condition
 	if h.LoadBalancing != nil && len(h.LoadBalancing.RetryMatch) > 0 {
 		for _, matcherSet := range h.LoadBalancing.RetryMatch {
-			if !matcherSetHasExpressionMatcher(matcherSet) {
+			if !matcherSetReferencesResponse(matcherSet) {
 				continue
 			}
 			match, err := matcherSet.MatchWithError(req)
@@ -2135,15 +2135,37 @@ type RequestHeaderOpsTransport interface {
 	RequestHeaderOps() *headers.HeaderOps
 }
 
-// matcherSetHasExpressionMatcher reports whether a matcher set contains
-// at least one expression matcher. Expression matchers can reference
-// response data via placeholders like {rp.status_code}. Matcher sets
-// without expression matchers only test request properties and should
-// not be evaluated for response-based retry decisions
-func matcherSetHasExpressionMatcher(matcherSet caddyhttp.MatcherSet) bool {
+// responsePlaceholders are the placeholders that are only set once the
+// upstream round trip completes ({rp.status_code} is adapted to
+// {http.reverse_proxy.status_code}, and so on)
+var responsePlaceholders = []string{
+	"http.reverse_proxy.status_code",
+	"http.reverse_proxy.status_text",
+	"http.reverse_proxy.upstream.latency",
+	"http.reverse_proxy.upstream.latency_ms",
+}
+
+// responseHeaderPlaceholderPrefix is the prefix of the response
+// header placeholders, {http.reverse_proxy.header.*}
+const responseHeaderPlaceholderPrefix = "http.reverse_proxy.header."
+
+// matcherSetReferencesResponse reports whether a matcher set contains an
+// expression matcher that reads response data, or a placeholder whose name
+// is only known at evaluation time. Other matcher sets only test request or
+// upstream selection properties and should not be evaluated for
+// response-based retry decisions
+func matcherSetReferencesResponse(matcherSet caddyhttp.MatcherSet) bool {
 	for _, m := range matcherSet {
-		if _, ok := m.(*caddyhttp.MatchExpression); ok {
-			return true
+		expr, ok := m.(*caddyhttp.MatchExpression)
+		if !ok {
+			continue
+		}
+		for _, name := range expr.Placeholders() {
+			if name == "" ||
+				slices.Contains(responsePlaceholders, name) ||
+				strings.HasPrefix(name, responseHeaderPlaceholderPrefix) {
+				return true
+			}
 		}
 	}
 	return false
