@@ -1,0 +1,56 @@
+{
+	ech Example.COM
+}
+
+example.com {
+	tls internal
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"subjects": [
+							"example.com"
+						],
+						"issuers": [
+							{
+								"module": "internal"
+							}
+						]
+					}
+				]
+			},
+			"encrypted_client_hello": {
+				"configs": [
+					{
+						"public_name": "Example.COM"
+					}
+				]
+			}
+		}
+	}
+}
