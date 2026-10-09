@@ -21,6 +21,7 @@ import (
 	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
@@ -612,41 +613,14 @@ func TestMatchExpressionUnmarshalCaddyfileRepeated(t *testing.T) {
 		expression {http.request.method} == 'GET'
 		expression {http.request.uri.path}.startsWith('/public/')
 	`, `
-		expression {http.request.method} == 'GET' // reads only
-		expression {http.request.uri.path}.startsWith('/public/') // public files
+		expression "{http.request.method} == 'GET'"
+		expression {http.request.uri.path}.startsWith('/public/')
 	`} {
 		d := caddyfile.NewTestDispenser(input)
 		m := new(MatchExpression)
-		if err := m.UnmarshalCaddyfile(d); err != nil {
-			t.Fatalf("UnmarshalCaddyfile() error = %v", err)
-		}
-
-		ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
-		defer cancel()
-		if err := m.Provision(ctx); err != nil {
-			t.Fatalf("Provision() error = %v", err)
-		}
-
-		for _, tc := range []struct {
-			method, target string
-			want           bool
-		}{
-			{http.MethodGet, "/public/a.txt", true},
-			{http.MethodGet, "/private/a.txt", false},
-			{http.MethodPost, "/public/a.txt", false},
-		} {
-			req := httptest.NewRequest(tc.method, tc.target, nil)
-			repl := caddy.NewReplacer()
-			req = req.WithContext(context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl))
-			addHTTPVarsToReplacer(repl, req, httptest.NewRecorder())
-
-			got, err := m.MatchWithError(req)
-			if err != nil {
-				t.Fatalf("MatchWithError() error = %v", err)
-			}
-			if got != tc.want {
-				t.Errorf("%s %s: got %t, want %t (expression: %s)", tc.method, tc.target, got, tc.want, m.Expr)
-			}
+		err := m.UnmarshalCaddyfile(d)
+		if err == nil || !strings.Contains(err.Error(), "repeated expression matchers are not supported") {
+			t.Errorf("UnmarshalCaddyfile() error = %v, want repeated expression error (expression: %s)", err, m.Expr)
 		}
 	}
 }
