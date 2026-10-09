@@ -15,6 +15,7 @@
 package templates
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -22,6 +23,47 @@ import (
 
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
+
+func TestServeHTTPErrorDeletesFileHeaders(t *testing.T) {
+	for i, tc := range []struct {
+		body       string
+		wantStatus int
+	}{
+		{body: `{{httpError 404}}`, wantStatus: http.StatusNotFound},
+		{body: `{{nosuchfunc}}`, wantStatus: http.StatusInternalServerError},
+		{body: `{{include "missing.html"}}`, wantStatus: http.StatusInternalServerError},
+	} {
+		tmpl := &Templates{MIMETypes: defaultMIMETypes}
+		next := caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.Header().Set("Content-Length", "123")
+			w.Header().Set("Etag", `"abc"`)
+			w.Header().Set("Last-Modified", "Mon, 02 Jan 2006 15:04:05 GMT")
+			w.Header().Set("Accept-Ranges", "bytes")
+			w.Header().Set("Content-Encoding", "gzip")
+			w.Header().Set("Content-Range", "bytes 0-122/456")
+			_, err := w.Write([]byte(tc.body))
+			return err
+		})
+
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/index.html", nil)
+
+		err := tmpl.ServeHTTP(w, r, next)
+		handlerErr, ok := errors.AsType[caddyhttp.HandlerError](err)
+		if !ok {
+			t.Fatalf("Test %d: expected a handler error, got %v", i, err)
+		}
+		if handlerErr.StatusCode != tc.wantStatus {
+			t.Errorf("Test %d: expected status %d, got %d", i, tc.wantStatus, handlerErr.StatusCode)
+		}
+		for _, name := range []string{"Content-Length", "Content-Type", "Etag", "Last-Modified", "Accept-Ranges", "Content-Encoding", "Content-Range"} {
+			if got := w.Header().Get(name); got != "" {
+				t.Errorf("Test %d: expected %s to be deleted, got %q", i, name, got)
+			}
+		}
+	}
+}
 
 func TestServeHTTPContentLength(t *testing.T) {
 	const (

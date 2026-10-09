@@ -29,6 +29,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -693,6 +694,16 @@ func cmdFmt(fl Flags) (int, error) {
 	} else if configFile == "" {
 		configFile = configFlag
 	}
+
+	useImports := fl.Bool("imports")
+
+	// --imports cannot be used with stdin: there is no source directory to
+	// resolve import paths against.
+	if useImports && configFile == "-" {
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("cannot use --imports when reading from stdin (no source directory to resolve imports against)")
+	}
+
 	// as a special case, read from stdin if the file name is "-"
 	if configFile == "-" {
 		input, err := io.ReadAll(os.Stdin)
@@ -701,6 +712,63 @@ func cmdFmt(fl Flags) (int, error) {
 				fmt.Errorf("reading stdin: %v", err)
 		}
 		fmt.Print(string(caddyfile.Format(input)))
+		return caddy.ExitCodeSuccess, nil
+	}
+
+	// --imports: format the root file and all files it references via import
+	// directives, then write or print each one.
+	if useImports {
+		results, err := caddyfile.FormatImports(configFile, caddyfile.FormatOptions{})
+		if err != nil {
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("formatting imports: %v", err)
+		}
+
+		if fl.Bool("overwrite") {
+			if err := overwriteFormattedFiles(results); err != nil {
+				return caddy.ExitCodeFailedStartup, err
+			}
+			return caddy.ExitCodeSuccess, nil
+		}
+
+		originals := make([][]byte, len(results))
+		var formattingWarning caddyconfig.Warning
+		for i, f := range results {
+			original, readErr := os.ReadFile(f.Path)
+			if readErr != nil {
+				return caddy.ExitCodeFailedStartup, fmt.Errorf("reading file for formatting comparison %s: %v", f.Path, readErr)
+			}
+			originals[i] = original
+			if warning, different := caddyfile.FormattingDifference(f.Path, original); different && formattingWarning.File == "" {
+				formattingWarning = warning
+			}
+		}
+
+		for i, f := range results {
+			fmt.Printf("# %s\n", f.Path)
+			if fl.Bool("diff") {
+				diff := difflib.Diff(
+					strings.Split(string(originals[i]), "\n"),
+					strings.Split(string(f.Content), "\n"))
+				for _, d := range diff {
+					switch d.Delta {
+					case difflib.Common:
+						fmt.Printf("  %s\n", d.Payload)
+					case difflib.LeftOnly:
+						fmt.Printf("- %s\n", d.Payload)
+					case difflib.RightOnly:
+						fmt.Printf("+ %s\n", d.Payload)
+					}
+				}
+			} else {
+				fmt.Print(string(f.Content))
+			}
+		}
+		if formattingWarning.File != "" {
+			return caddy.ExitCodeFailedStartup, fmt.Errorf(`%s:%d: Caddyfile input is not formatted; Tip: use '--overwrite' to update your Caddyfile in-place instead of previewing it. Consult '--help' for more options`,
+				formattingWarning.File,
+				formattingWarning.Line,
+			)
+		}
 		return caddy.ExitCodeSuccess, nil
 	}
 
@@ -745,6 +813,119 @@ func cmdFmt(fl Flags) (int, error) {
 	}
 
 	return caddy.ExitCodeSuccess, nil
+}
+
+type formattedFileOverwrite struct {
+	path     string
+	content  []byte
+	original []byte
+	info     fs.FileInfo
+}
+
+func overwriteFormattedFiles(results []caddyfile.FormattedFile) error {
+	files := make([]formattedFileOverwrite, 0, len(results))
+	for _, result := range results {
+		path, err := filepath.EvalSymlinks(filepath.Dir(result.Path))
+		if err != nil {
+			return fmt.Errorf("preparing formatted file %s: resolving parent directory: %v", result.Path, err)
+		}
+		path = filepath.Join(path, filepath.Base(result.Path))
+
+		file, err := os.Open(path)
+		if err != nil {
+			return fmt.Errorf("preparing formatted file %s: %v", result.Path, err)
+		}
+		info, statErr := file.Stat()
+		pathInfo, lstatErr := os.Lstat(path)
+		original, readErr := io.ReadAll(file)
+		closeErr := file.Close()
+		if statErr != nil {
+			return fmt.Errorf("preparing formatted file %s: stating open file: %v", result.Path, statErr)
+		}
+		if lstatErr != nil {
+			return fmt.Errorf("preparing formatted file %s: checking destination: %v", result.Path, lstatErr)
+		}
+		if readErr != nil {
+			return fmt.Errorf("preparing formatted file %s: reading destination: %v", result.Path, readErr)
+		}
+		if closeErr != nil {
+			return fmt.Errorf("preparing formatted file %s: %v", result.Path, closeErr)
+		}
+		if pathInfo.Mode()&os.ModeSymlink != 0 || !pathInfo.Mode().IsRegular() || !os.SameFile(info, pathInfo) {
+			return fmt.Errorf("refusing to overwrite %s: destination is not the regular file that was opened", result.Path)
+		}
+		if !bytes.Equal(caddyfile.FormatWithOptions(original, caddyfile.FormatOptions{}), result.Content) {
+			return fmt.Errorf("refusing to overwrite %s: file changed after it was formatted", result.Path)
+		}
+		files = append(files, formattedFileOverwrite{path: path, content: result.Content, original: original, info: info})
+	}
+
+	for i, file := range files {
+		if err := atomicReplaceFormattedFile(file); err != nil {
+			if i > 0 {
+				return fmt.Errorf("overwriting formatted file %s after replacing %d of %d files: %v; configuration files may be partially updated", file.path, i, len(files), err)
+			}
+			return fmt.Errorf("overwriting formatted file %s before replacing any files: %v", file.path, err)
+		}
+	}
+	return nil
+}
+
+func atomicReplaceFormattedFile(file formattedFileOverwrite) (err error) {
+	temp, err := os.CreateTemp(filepath.Dir(file.path), ".caddy-fmt-*")
+	if err != nil {
+		return err
+	}
+	tempPath := temp.Name()
+	defer func() {
+		_ = temp.Close()
+		if err != nil {
+			_ = os.Remove(tempPath)
+		}
+	}()
+
+	if _, err = temp.Write(file.content); err != nil {
+		return err
+	}
+	if err = temp.Chmod(file.info.Mode().Perm()); err != nil {
+		return err
+	}
+	if err = temp.Sync(); err != nil {
+		return err
+	}
+	if err = temp.Close(); err != nil {
+		return err
+	}
+
+	destination, err := os.Open(file.path)
+	if err != nil {
+		return fmt.Errorf("reopening destination: %v", err)
+	}
+	destinationInfo, statErr := destination.Stat()
+	pathInfo, lstatErr := os.Lstat(file.path)
+	current, readErr := io.ReadAll(destination)
+	closeErr := destination.Close()
+	if statErr != nil {
+		return fmt.Errorf("restating destination: %v", statErr)
+	}
+	if lstatErr != nil {
+		return fmt.Errorf("rechecking destination: %v", lstatErr)
+	}
+	if readErr != nil {
+		return fmt.Errorf("rereading destination: %v", readErr)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("closing destination: %v", closeErr)
+	}
+	if pathInfo.Mode()&os.ModeSymlink != 0 || !pathInfo.Mode().IsRegular() ||
+		!os.SameFile(file.info, destinationInfo) || !os.SameFile(destinationInfo, pathInfo) ||
+		!bytes.Equal(current, file.original) {
+		return fmt.Errorf("destination changed while formatting")
+	}
+	if err = os.Rename(tempPath, file.path); err != nil {
+		return err
+	}
+	return nil
 }
 
 // handleEnvFileFlag loads the environment variables from the given --envfile

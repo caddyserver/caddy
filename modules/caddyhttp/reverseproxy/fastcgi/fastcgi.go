@@ -213,7 +213,7 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 	dialer := net.Dialer{Timeout: time.Duration(t.DialTimeout)}
 	conn, err := dialer.DialContext(ctx, network, address)
 	if err != nil {
-		return nil, fmt.Errorf("dialing backend: %v", err)
+		return nil, reverseproxy.NewDialError(fmt.Errorf("dialing backend: %w", err))
 	}
 	defer func() {
 		// conn will be closed with the response body unless there's an error
