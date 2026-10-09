@@ -107,7 +107,8 @@ func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) *tls.Config {
 				if sni, ok := m.(MatchServerName); ok {
 					for _, sniName := range sni {
 						// index for fast lookups during handshakes
-						indexedBySNI[sniName] = append(indexedBySNI[sniName], p)
+						indexName := asciiServerNameForMatch(sniName)
+						indexedBySNI[indexName] = append(indexedBySNI[indexName], p)
 					}
 				}
 			}
@@ -118,7 +119,7 @@ func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) *tls.Config {
 		// filter policies by SNI first, if possible, to speed things up
 		// when there may be lots of policies
 		possiblePolicies := cp
-		if indexedPolicies, ok := indexedBySNI[hello.ServerName]; ok {
+		if indexedPolicies, ok := indexedBySNI[asciiServerNameForMatch(hello.ServerName)]; ok {
 			possiblePolicies = indexedPolicies
 		}
 
@@ -153,9 +154,9 @@ func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) *tls.Config {
 			// in its config (remember, TLS connection policies are used by *other* apps to
 			// run TLS servers) -- we skip names with placeholders
 			if tlsApp.EncryptedClientHello.Publication == nil {
-				var echNames []string
 				repl := caddy.NewReplacer()
 				for _, p := range cp {
+					var echNames []string
 					for _, m := range p.matchers {
 						if sni, ok := m.(MatchServerName); ok {
 							for _, name := range sni {
@@ -164,14 +165,24 @@ func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) *tls.Config {
 							}
 						}
 					}
+					tlsApp.RegisterServerNames(echNames, p.ALPN)
 				}
-				tlsApp.RegisterServerNames(echNames)
 			}
 
-			tlsCfg.GetEncryptedClientHelloKeys = func(chi *tls.ClientHelloInfo) ([]tls.EncryptedClientHelloKey, error) {
+			getECHKeys := func(chi *tls.ClientHelloInfo) ([]tls.EncryptedClientHelloKey, error) {
 				tlsApp.EncryptedClientHello.configsMu.RLock()
 				defer tlsApp.EncryptedClientHello.configsMu.RUnlock()
 				return tlsApp.EncryptedClientHello.stdlibReady, nil
+			}
+
+			// crypto/tls decrypts the ClientHello with the keys from this config,
+			// but builds the retry configs it sends when ECH is rejected from the
+			// config returned by GetConfigForClient, so both need the keys.
+			tlsCfg.GetEncryptedClientHelloKeys = getECHKeys
+			for _, p := range cp {
+				if p.TLSConfig != nil && p.TLSConfig.GetEncryptedClientHelloKeys == nil {
+					p.TLSConfig.GetEncryptedClientHelloKeys = getECHKeys
+				}
 			}
 		}
 	}
@@ -896,18 +907,19 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 // Unlike VerifyPeerCertificate, VerifyConnection is called on every
 // connection including resumed sessions, preventing session-resumption bypass.
 func (clientauth *ClientAuthentication) verifyConnection(cs tls.ConnectionState) error {
+	rawCerts := make([][]byte, len(cs.PeerCertificates))
+	for i, cert := range cs.PeerCertificates {
+		rawCerts[i] = cert.Raw
+	}
+
 	// first use any pre-existing custom verification function
 	if clientauth.existingVerifyPeerCert != nil {
-		rawCerts := make([][]byte, len(cs.PeerCertificates))
-		for i, cert := range cs.PeerCertificates {
-			rawCerts[i] = cert.Raw
-		}
 		if err := clientauth.existingVerifyPeerCert(rawCerts, cs.VerifiedChains); err != nil {
 			return err
 		}
 	}
 	for _, verifier := range clientauth.verifiers {
-		if err := verifier.VerifyClientCertificate(nil, cs.VerifiedChains); err != nil {
+		if err := verifier.VerifyClientCertificate(rawCerts, cs.VerifiedChains); err != nil {
 			return err
 		}
 	}
@@ -1095,6 +1107,10 @@ var (
 func ParseCaddyfileNestedMatcherSet(d *caddyfile.Dispenser) (caddy.ModuleMap, error) {
 	matcherMap := make(map[string]ConnectionMatcher)
 
+	// in case there are multiple instances of the same matcher, concatenate
+	// their tokens (we expect that UnmarshalCaddyfile should be able to
+	// handle more than one segment); otherwise, we'd overwrite other
+	// instances of the matcher in this set
 	tokensByMatcherName := make(map[string][]caddyfile.Token)
 	for nesting := d.Nesting(); d.NextArg() || d.NextBlock(nesting); {
 		matcherName := d.Val()
@@ -1102,10 +1118,15 @@ func ParseCaddyfileNestedMatcherSet(d *caddyfile.Dispenser) (caddy.ModuleMap, er
 	}
 
 	for matcherName, tokens := range tokensByMatcherName {
-		dd := caddyfile.NewDispenser(tokens)
-		dd.Next() // consume wrapper name
-
-		unm, err := caddyfile.UnmarshalModule(dd, "tls.handshake_match."+matcherName)
+		mod, err := caddy.GetModule("tls.handshake_match." + matcherName)
+		if err != nil {
+			return nil, d.Errf("getting matcher module '%s': %v", matcherName, err)
+		}
+		unm, ok := mod.New().(caddyfile.Unmarshaler)
+		if !ok {
+			return nil, d.Errf("matcher module '%s' is not a Caddyfile unmarshaler", matcherName)
+		}
+		err = unm.UnmarshalCaddyfile(caddyfile.NewDispenser(tokens))
 		if err != nil {
 			return nil, err
 		}

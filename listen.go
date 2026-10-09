@@ -30,10 +30,6 @@ import (
 	"go.uber.org/zap"
 )
 
-func reuseUnixSocket(_, _ string) (any, error) {
-	return nil, nil
-}
-
 func listenReusable(ctx context.Context, lnKey string, network, address string, config net.ListenConfig) (any, error) {
 	var socketFile *os.File
 
@@ -166,6 +162,10 @@ func (fcl *fakeCloseListener) Accept() (net.Conn, error) {
 		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 			return nil, fakeClosedErr(fcl)
 		}
+	} else if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		// still open: this timeout is a past deadline a sibling set in Close(),
+		// clear it so the server loop resumes instead of spinning on it
+		_ = fcl.sharedListener.clearDeadline()
 	}
 
 	return nil, err

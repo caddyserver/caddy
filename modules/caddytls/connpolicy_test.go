@@ -15,6 +15,8 @@
 package caddytls
 
 import (
+	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -23,6 +25,40 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
+
+func TestConnectionPolicyIDNSNIMatcherFastPath(t *testing.T) {
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+
+	targetTLSConfig := &tls.Config{ClientAuth: tls.RequireAnyClientCert}
+	policies := ConnectionPolicies{
+		{
+			matchers:  []ConnectionMatcher{MatchServerName{"つ.Localhost"}},
+			TLSConfig: targetTLSConfig,
+		},
+	}
+
+	const sniFastPathThreshold = 30
+	for i := len(policies); i < sniFastPathThreshold; i++ {
+		policies = append(policies, &ConnectionPolicy{
+			matchers:  []ConnectionMatcher{MatchServerName{fmt.Sprintf("example-%d.localhost", i)}},
+			TLSConfig: &tls.Config{},
+		})
+	}
+	policies = append(policies, &ConnectionPolicy{
+		matchers:  []ConnectionMatcher{MatchServerName{"xn--k9j.localhost"}},
+		TLSConfig: &tls.Config{ClientAuth: tls.NoClientCert},
+	})
+
+	tlsConfig := policies.TLSConfig(ctx)
+	got, err := tlsConfig.GetConfigForClient(&tls.ClientHelloInfo{ServerName: "XN--K9J.LOCALHOST"})
+	if err != nil {
+		t.Fatalf("GetConfigForClient() error = %v", err)
+	}
+	if got != targetTLSConfig {
+		t.Fatalf("expected Unicode IDN policy to match before later punycode policy")
+	}
+}
 
 func TestClientAuthenticationUnmarshalCaddyfileWithDirectiveName(t *testing.T) {
 	const test_der_1 = `MIIDSzCCAjOgAwIBAgIUfIRObjWNUA4jxQ/0x8BOCvE2Vw4wDQYJKoZIhvcNAQELBQAwFjEUMBIGA1UEAwwLRWFzeS1SU0EgQ0EwHhcNMTkwODI4MTYyNTU5WhcNMjkwODI1MTYyNTU5WjAWMRQwEgYDVQQDDAtFYXN5LVJTQSBDQTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAK5m5elxhQfMp/3aVJ4JnpN9PUSz6LlP6LePAPFU7gqohVVFVtDkChJAG3FNkNQNlieVTja/bgH9IcC6oKbROwdY1h0MvNV8AHHigvl03WuJD8g2ReVFXXwsnrPmKXCFzQyMI6TYk3m2gYrXsZOU1GLnfMRC3KAMRgE2F45twOs9hqG169YJ6mM2eQjzjCHWI6S2/iUYvYxRkCOlYUbLsMD/AhgAf1plzg6LPqNxtdlwxZnA0ytgkmhK67HtzJu0+ovUCsMv0RwcMhsEo9T8nyFAGt9XLZ63X5WpBCTUApaAUhnG0XnerjmUWb6eUWw4zev54sEfY5F3x002iQaW6cECAwEAAaOBkDCBjTAdBgNVHQ4EFgQU4CBUbZsS2GaNIkGRz/cBsD5ivjswUQYDVR0jBEowSIAU4CBUbZsS2GaNIkGRz/cBsD5ivjuhGqQYMBYxFDASBgNVBAMMC0Vhc3ktUlNBIENBghR8hE5uNY1QDiPFD/THwE4K8TZXDjAMBgNVHRMEBTADAQH/MAsGA1UdDwQEAwIBBjANBgkqhkiG9w0BAQsFAAOCAQEAKB3V4HIzoiO/Ch6WMj9bLJ2FGbpkMrcb/Eq01hT5zcfKD66lVS1MlK+cRL446Z2b2KDP1oFyVs+qmrmtdwrWgD+nfe2sBmmIHo9m9KygMkEOfG3MghGTEcS+0cTKEcoHYWYyOqQh6jnedXY8Cdm4GM1hAc9MiL3/sqV8YCVSLNnkoNysmr06/rZ0MCUZPGUtRmfd0heWhrfzAKw2HLgX+RAmpOE2MZqWcjvqKGyaRiaZks4nJkP6521aC2Lgp0HhCz1j8/uQ5ldoDszCnu/iro0NAsNtudTMD+YoLQxLqdleIh6CW+illc2VdXwj7mn6J04yns9jfE2jRjW/yTLFuQ==`
@@ -323,5 +359,62 @@ func TestClientAuthenticationProvision(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestParseCaddyfileNestedMatcherSet(t *testing.T) {
+	for i, tc := range []struct {
+		input   string
+		expect  string
+		wantErr bool
+	}{
+		{
+			input:  `match sni example.com`,
+			expect: `{"sni":["example.com"]}`,
+		},
+		{
+			input: `match {
+				sni example.com
+				sni example.net
+			}`,
+			expect: `{"sni":["example.com","example.net"]}`,
+		},
+		{
+			input: `match {
+				remote_ip 10.0.0.0/8
+				sni example.com
+				remote_ip !10.1.2.3
+			}`,
+			expect: `{"remote_ip":{"ranges":["10.0.0.0/8"],"not_ranges":["10.1.2.3"]},"sni":["example.com"]}`,
+		},
+		{
+			input: `match {
+				sni_regexp ^a
+				sni_regexp ^b
+			}`,
+			wantErr: true,
+		},
+	} {
+		d := caddyfile.NewTestDispenser(tc.input)
+		d.Next() // consume "match"
+		matcherSet, err := ParseCaddyfileNestedMatcherSet(d)
+		if tc.wantErr {
+			if err == nil {
+				t.Errorf("Test %d: expected error but got none", i)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("Test %d: unexpected error: %v", i, err)
+			continue
+		}
+
+		actual, err := json.Marshal(matcherSet)
+		if err != nil {
+			t.Fatalf("Test %d: marshaling matcher set: %v", i, err)
+		}
+		if string(actual) != tc.expect {
+			t.Errorf("Test %d: expected %s, got %s", i, tc.expect, actual)
+		}
 	}
 }

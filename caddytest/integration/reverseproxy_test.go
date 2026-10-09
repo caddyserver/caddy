@@ -1,9 +1,14 @@
 package integration
 
 import (
+	"bufio"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
+	"net/textproto"
 	"os"
 	"runtime"
 	"strings"
@@ -199,7 +204,7 @@ func TestReverseProxyWithPlaceholderDialAddress(t *testing.T) {
 								],
 								"handle": [
 									{
-	
+
 										"handler": "reverse_proxy",
 										"upstreams": [
 											{
@@ -293,7 +298,7 @@ func TestReverseProxyWithPlaceholderTCPDialAddress(t *testing.T) {
 								],
 								"handle": [
 									{
-	
+
 										"handler": "reverse_proxy",
 										"upstreams": [
 											{
@@ -374,7 +379,7 @@ func TestReverseProxyHealthCheck(t *testing.T) {
 	http://localhost:9080 {
 		reverse_proxy {
 			to localhost:2020
-	
+
 			health_uri /health
 			health_port 2021
 			health_interval 10ms
@@ -495,7 +500,7 @@ func TestReverseProxyHealthCheckUnixSocket(t *testing.T) {
 	http://localhost:9080 {
 		reverse_proxy {
 			to unix/%s
-	
+
 			health_uri /health
 			health_port 2021
 			health_interval 2s
@@ -553,7 +558,7 @@ func TestReverseProxyHealthCheckUnixSocketWithoutPort(t *testing.T) {
 	http://localhost:9080 {
 		reverse_proxy {
 			to unix/%s
-	
+
 			health_uri /health
 			health_interval 2s
 			health_timeout 5s
@@ -792,4 +797,309 @@ func TestReverseProxyRetryMatchIsTransportError(t *testing.T) {
 
 	// Transport error on broken upstream should be retried to good upstream
 	tester.AssertGetResponse("http://localhost:9080/", 200, "ok")
+}
+
+func TestReverseProxySNIPlaceHolder(t *testing.T) {
+	configTemplate := `
+	{
+        skip_install_trust
+        local_certs
+        admin localhost:2999
+        http_port 9080
+        https_port 9443
+        grace_period 1ns
+	}
+	localhost example.com {
+		@proxied header X-Transport caddy
+		respond @proxied {http.request.tls.server_name}
+		reverse_proxy 127.0.0.1:9443 {
+			header_up X-Transport caddy
+			header_up Host {host}
+			transport http {
+				versions %s
+				tls_server_name {header.X-SNI}
+				tls_insecure_skip_verify
+			}
+		}
+	}
+	`
+	for _, versions := range []string{"1.1 2", "3"} {
+		tester := caddytest.NewTester(t)
+		tester.InitServer(fmt.Sprintf(configTemplate, versions), "caddyfile")
+		req, err := http.NewRequest("GET", "https://localhost:9443", nil)
+		if err != nil {
+			t.Errorf("failed to create request %s", err)
+			return
+		}
+
+		req.Header.Set("X-SNI", "example.com")
+		tester.AssertResponse(req, 200, "example.com")
+	}
+}
+
+func TestReverseProxyNormalizeWebSocketHeaders(t *testing.T) {
+	// 503s if it doesn't see "WebSocket" in a request
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	// http.Server would canonicalize these headers, so plain tcp:
+	errc := make(chan error, 1)
+	defer func() {
+		for range errc {
+		}
+	}()
+	defer ln.Close()
+	handleConn := func(conn net.Conn) error {
+		defer conn.Close()
+		rd := textproto.NewReader(bufio.NewReader(io.LimitReader(conn, 4096)))
+		status := 503
+		for {
+			line, err := rd.ReadLine()
+			if err != nil {
+				return fmt.Errorf("failed to read line: %v", err)
+			}
+			if len(line) == 0 {
+				break
+			}
+			if strings.Contains(line, "WebSocket") {
+				status = 200
+			}
+		}
+		res := fmt.Sprintf("HTTP/1.1 %d %s\r\nConnection: close\r\n\r\n", status, http.StatusText(status))
+		if _, err = conn.Write([]byte(res)); err != nil {
+			return fmt.Errorf("failed to write: %v", err)
+		}
+		return nil
+	}
+	go func() {
+		defer close(errc)
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				if !errors.Is(err, net.ErrClosed) {
+					errc <- fmt.Errorf("failed to accept: %v", err)
+				}
+				return
+			}
+			if err := handleConn(conn); err != nil {
+				errc <- fmt.Errorf("failed to handle: %v", err)
+			}
+		}
+	}()
+	checkServer := func() {
+		select {
+		case err := <-errc:
+			t.Fatalf("failed to serve test request: %v", err)
+		default:
+		}
+	}
+	tester := caddytest.NewTester(t)
+	tester.InitServer(fmt.Sprintf(`
+	{
+        skip_install_trust
+        local_certs
+        admin localhost:2999
+        http_port 9080
+        https_port 9443
+        grace_period 1ns
+	}
+	http://localhost:9080 {
+		reverse_proxy http://%s {
+			# test compatibility with header manipulations
+			header_up X-Add-Header "1"
+		}
+	}`, ln.Addr()), "caddyfile")
+	req, err := http.NewRequest(http.MethodGet, "http://localhost:9080/", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	// Only the first WebSocket header needs the manual assignment,
+	// but mixing in .Set is likely to be more confusing.
+	req.Header["Connection"] = []string{"Upgrade"}
+	req.Header["Upgrade"] = []string{"websocket"}
+	// 1. resembling a browser via http/1.1
+	req.Header["Sec-WebSocket-Version"] = []string{"13"}
+	tester.AssertResponse(req, 200, "")
+	checkServer()
+	delete(req.Header, "Sec-WebSocket-Version")
+	// 2. canonicalized is okay
+	req.Header["Sec-Websocket-Version"] = []string{"13"}
+	tester.AssertResponse(req, 200, "")
+	checkServer()
+	delete(req.Header, "Sec-Websocket-Version")
+	// 3. unknown header doesn't receive special handling
+	req.Header["Sec-Websocket-Unnormalizedkey"] = []string{"13"}
+	tester.AssertResponse(req, 503, "")
+	checkServer()
+}
+
+func TestWeightedRoundRobinSelectionValidation(t *testing.T) {
+	configTemplate := `
+	{
+		"apps": {
+			"http": {
+				"servers": {
+					"srv0": {
+						"listen": [":18080"],
+						"routes": [
+							{
+								"handle": [
+									{
+										"handler": "reverse_proxy",
+										"load_balancing": {
+											"selection_policy": {
+												"policy": "weighted_round_robin",
+												"weights": %s
+											}
+										},
+										"upstreams": [
+											{"dial": "localhost:18081"},
+											{"dial": "localhost:18082"}
+										]
+									}
+								]
+							}
+						]
+					}
+				}
+			}
+		}
+	}`
+
+	tests := []struct {
+		name    string
+		weights string
+		errMsg  string
+	}{
+		{
+			name:    "negative weight",
+			weights: "[-1, 2]",
+			errMsg:  "weight of an upstream cannot be negative",
+		},
+		{
+			name:    "zero total weight",
+			weights: "[0, 0]",
+			errMsg:  "requires at least one upstream with a positive weight",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			caddytest.AssertLoadError(
+				t,
+				fmt.Sprintf(configTemplate, tc.weights),
+				"json",
+				tc.errMsg,
+			)
+		})
+	}
+}
+
+func TestReverseProxyResponseHandling(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/header", func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Length", "500")
+		writer.WriteHeader(500)
+		_ = http.NewResponseController(writer).Flush()
+		panic(http.ErrAbortHandler)
+	})
+	mux.HandleFunc("/partial", func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Length", "500")
+		writer.WriteHeader(500)
+		_, _ = io.WriteString(writer, "partial")
+		_ = http.NewResponseController(writer).Flush()
+		panic(http.ErrAbortHandler)
+	})
+	mux.HandleFunc("/full", func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Length", "500")
+		writer.WriteHeader(500)
+		for range 125 {
+			_, _ = io.WriteString(writer, "full")
+		}
+		_ = http.NewResponseController(writer).Flush()
+	})
+	mux.HandleFunc("/empty", func(writer http.ResponseWriter, request *http.Request) {
+		panic(http.ErrAbortHandler)
+	})
+	ts := httptest.NewUnstartedServer(mux)
+	ts.Start()
+	t.Cleanup(func() {
+		ts.Close()
+	})
+
+	tester := caddytest.NewTester(t)
+	tester.InitServer(fmt.Sprintf(`
+	{
+		skip_install_trust
+		admin localhost:2999
+		http_port 9080
+		https_port 9443
+		grace_period 1ns
+	}
+	http://localhost:9080 {
+		reverse_proxy %s
+	}
+	`, ts.URL), "caddyfile")
+
+	for _, tc := range []struct {
+		endpoint string
+		status   int
+		bodyType int // 0 = no body, 1 = partial, 2 = full
+		body     string
+	}{
+		{
+			endpoint: "/header",
+			status:   500,
+			bodyType: 0,
+			body:     "",
+		},
+		{
+			endpoint: "/partial",
+			status:   500,
+			bodyType: 1,
+			body:     "partial",
+		},
+		{
+			endpoint: "/full",
+			status:   500,
+			bodyType: 2,
+			body:     strings.Repeat("full", 125),
+		},
+		{
+			endpoint: "/empty",
+			status:   502,
+			bodyType: 2,
+			body:     "",
+		},
+	} {
+		req, err := http.NewRequest("GET", "http://localhost:9080"+tc.endpoint, nil)
+		if err != nil {
+			t.Fatalf("unable to create request %s for endpoint %s", err, tc.endpoint)
+		}
+
+		resp, err := tester.Client.Do(req)
+		if err != nil {
+			t.Fatalf("request failed: %s for endpoint %s", err, tc.endpoint)
+		}
+		if resp.StatusCode != tc.status {
+			t.Fatalf("unexpected status code for %s: got %d, want %d", tc.endpoint, resp.StatusCode, tc.status)
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		switch tc.bodyType {
+		case 0, 1:
+			if err == nil {
+				t.Fatalf("expected error reading body for %s, got none", tc.endpoint)
+			}
+		case 2:
+			if err != nil {
+				t.Fatalf("error reading body for %s: %s", tc.endpoint, err)
+			}
+		}
+		if string(body) != tc.body {
+			t.Fatalf("unexpected body for %s: got %q, want %q", tc.endpoint, string(body), tc.body)
+		}
+	}
 }

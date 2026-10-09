@@ -28,8 +28,6 @@ import (
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	"golang.org/x/text/language"
-	"golang.org/x/text/search"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -159,6 +157,14 @@ func (t Transport) DefaultBufferSizes() (int64, int64) {
 	return 4096, 0
 }
 
+// RequiresContentLength reports that fastcgi cannot forward a body of unknown
+// length: without a valid CONTENT_LENGTH the client rejects the request rather
+// than let the upstream hang, so the request buffer above is the only way to
+// learn the length of a body that does not announce one.
+func (t Transport) RequiresContentLength() bool {
+	return true
+}
+
 // RoundTrip implements http.RoundTripper.
 func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 	server := r.Context().Value(caddyhttp.ServerCtxKey).(*caddyhttp.Server)
@@ -207,7 +213,7 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 	dialer := net.Dialer{Timeout: time.Duration(t.DialTimeout)}
 	conn, err := dialer.DialContext(ctx, network, address)
 	if err != nil {
-		return nil, fmt.Errorf("dialing backend: %v", err)
+		return nil, reverseproxy.NewDialError(fmt.Errorf("dialing backend: %w", err))
 	}
 	defer func() {
 		// conn will be closed with the response body unless there's an error
@@ -367,6 +373,18 @@ func (t Transport) buildEnv(r *http.Request) (envVars, error) {
 		"SCRIPT_NAME":     scriptName,
 	}
 
+	if localAddr, ok := r.Context().Value(http.LocalAddrContextKey).(net.Addr); ok {
+		var ipStr string
+		if host, _, err := net.SplitHostPort(localAddr.String()); err == nil {
+			ipStr = host
+		} else {
+			ipStr = localAddr.String()
+		}
+		if ip := net.ParseIP(ipStr); ip != nil {
+			env["SERVER_ADDR"] = ipStr
+		}
+	}
+
 	// compliance with the CGI specification requires that
 	// PATH_TRANSLATED should only exist if PATH_INFO is defined.
 	// Info: https://www.ietf.org/rfc/rfc3875 Page 14
@@ -411,6 +429,13 @@ func (t Transport) buildEnv(r *http.Request) (envVars, error) {
 
 	// Add all HTTP headers to env variables
 	for field, val := range r.Header {
+		// HTTPoxy mitigation: client-supplied Proxy header must not
+		// be trusted for setting the HTTP_PROXY environment variable.
+		// See https://httpoxy.org for details.
+		if http.CanonicalHeaderKey(field) == "Proxy" {
+			continue
+		}
+
 		header := strings.ToUpper(field)
 		header = headerNameReplacer.Replace(header)
 		env["HTTP_"+header] = strings.Join(val, ", ")
@@ -418,13 +443,18 @@ func (t Transport) buildEnv(r *http.Request) (envVars, error) {
 	return env, nil
 }
 
-var splitSearchNonASCII = search.New(language.Und, search.IgnoreCase)
-
 // splitPos returns the index where path should
 // be split based on t.SplitPath.
 //
 // example: if splitPath is [".php"]
 // "/path/to/script.php/some/path": ("/path/to/script.php", "/some/path")
+//
+// Matching is strictly ASCII case-insensitive. Bytes >= utf8.RuneSelf in path
+// never match any split entry: split strings are validated ASCII-only and
+// lower-cased in Provision(), so any Unicode equivalence (e.g. fullwidth or
+// mathematical letters folding to ASCII) would let an attacker upload a file
+// whose name contains such code points and have it served as PHP. See
+// FrankenPHP advisories GHSA-3g8v-8r37-cgjm and GHSA-v4h7-cj44-8fc8.
 //
 // Adapted from FrankenPHP's code (copyright 2026 Kévin Dunglas, MIT license)
 func (t Transport) splitPos(path string) int {
@@ -438,31 +468,18 @@ func (t Transport) splitPos(path string) int {
 
 	pathLen := len(path)
 
-	// We are sure that split strings are all ASCII-only and lower-case because of validation and normalization in Provision().
 	for _, split := range t.SplitPath {
 		splitLen := len(split)
+		if splitLen == 0 || splitLen > pathLen {
+			continue
+		}
 
-		for i := range pathLen {
-			if path[i] >= utf8.RuneSelf {
-				if _, end := splitSearchNonASCII.IndexString(path, split); end > -1 {
-					return end
-				}
-
-				break
-			}
-
-			if i+splitLen > pathLen {
-				continue
-			}
-
+		for i := 0; i <= pathLen-splitLen; i++ {
 			match := true
 			for j := range splitLen {
 				c := path[i+j]
-
 				if c >= utf8.RuneSelf {
-					if _, end := splitSearchNonASCII.IndexString(path, split); end > -1 {
-						return end
-					}
+					match = false
 
 					break
 				}
@@ -517,13 +534,14 @@ var tlsProtocolStrings = map[uint16]string{
 	tls.VersionTLS13: "TLSv1.3",
 }
 
-var headerNameReplacer = strings.NewReplacer(" ", "_", "-", "_")
+var headerNameReplacer = strings.NewReplacer("-", "_")
 
 // Interface guards
 var (
 	_ zapcore.ObjectMarshaler = (*loggableEnv)(nil)
 
-	_ caddy.Provisioner              = (*Transport)(nil)
-	_ http.RoundTripper              = (*Transport)(nil)
-	_ reverseproxy.BufferedTransport = (*Transport)(nil)
+	_ caddy.Provisioner                           = (*Transport)(nil)
+	_ http.RoundTripper                           = (*Transport)(nil)
+	_ reverseproxy.BufferedTransport              = (*Transport)(nil)
+	_ reverseproxy.ContentLengthRequiredTransport = (*Transport)(nil)
 )

@@ -152,6 +152,9 @@ func (ca *CA) Provision(ctx caddy.Context, id string, log *zap.Logger) error {
 			ca.rootCertPath = ca.Root.Certificate
 		}
 		rootCertChain, rootKey, err = ca.Root.Load()
+		if err != nil {
+			return err
+		}
 		rootCert = rootCertChain[0]
 	} else {
 		ca.rootCertPath = "storage:" + ca.storageKeyRootCert()

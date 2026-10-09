@@ -70,9 +70,8 @@ func Main() {
 	}
 
 	if err := defaultFactory.Build().Execute(); err != nil {
-		var exitError *exitError
-		if errors.As(err, &exitError) {
-			os.Exit(exitError.ExitCode)
+		if exitErr, ok := errors.AsType[*exitError](err); ok {
+			os.Exit(exitErr.ExitCode)
 		}
 		os.Exit(1)
 	}
@@ -482,7 +481,7 @@ func setResourceLimits(logger *zap.Logger) func() {
 
 	// Configure the maximum memory to use to match the Linux container quota (if any) or system memory
 	// See https://pkg.go.dev/runtime/debug#SetMemoryLimit
-	_, _ = memlimit.SetGoMemLimitWithOpts(
+	_, _ = memlimit.Set(
 		memlimit.WithLogger(
 			slog.New(zapslog.NewHandler(
 				logger.Core(),

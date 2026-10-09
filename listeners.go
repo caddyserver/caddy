@@ -179,7 +179,9 @@ func (na NetworkAddress) listen(ctx context.Context, portOffset uint, config net
 		if ln == nil && err == nil {
 			// otherwise, create a new listener
 			lnKey := listenerKey(na.Network, address)
-			ln, err = listenReusable(ctx, lnKey, na.Network, address, config)
+			ln, err = internal.WithBindCapability(na.Network, address, func() (any, error) {
+				return listenReusable(ctx, lnKey, na.Network, address, config)
+			})
 		}
 	}
 
@@ -361,7 +363,7 @@ func ParseNetworkAddressWithDefaults(addr, defaultNetwork string, defaultPort ui
 		if end < start {
 			return NetworkAddress{}, fmt.Errorf("end port must not be less than start port")
 		}
-		if (end - start) > maxPortSpan {
+		if (end-start)+1 > maxPortSpan {
 			return NetworkAddress{}, fmt.Errorf("port range exceeds %d ports", maxPortSpan)
 		}
 	}
@@ -480,8 +482,9 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 		earlyLn, err := tr.ListenEarly(
 			http3.ConfigureTLSConfig(quicTlsConfig),
 			&quic.Config{
-				Allow0RTT: allow0rtt,
-				Tracer:    h3qlog.DefaultConnectionTracer,
+				InitialPacketSize: 1200,
+				Allow0RTT:         allow0rtt,
+				Tracer:            h3qlog.DefaultConnectionTracer,
 			},
 		)
 		if err != nil {

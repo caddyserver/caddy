@@ -22,6 +22,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/caddyserver/caddy/v2/caddytest"
 )
 
@@ -203,4 +205,70 @@ func TestForwardAuthCopyHeadersAuthResponseWins(t *testing.T) {
 	if gotRole != wantUserRole {
 		t.Errorf("X-User-Role: want %q, got %q", wantUserRole, gotRole)
 	}
+}
+
+// TestForwardAuthCopyHeadersUnderscoreAlias guards GHSA-f59h-q822-g45g and
+// GHSA-49wc-4hcv-v58q: client-supplied `Remote_user`/`Remote.user` aliases
+// of the copy_headers target `Remote-User` must be stripped before the
+// auth route runs, otherwise a downstream CGI/FastCGI/PHP backend would
+// fold all three names into the same HTTP_REMOTE_USER variable and the
+// attacker would override the trusted identity.
+func TestForwardAuthCopyHeadersUnderscoreAlias(t *testing.T) {
+	const wantRemoteUser = "alice"
+
+	authSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Remote-User", wantRemoteUser)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(authSrv.Close)
+
+	type received struct {
+		remoteUserHyphen, remoteUserUnderscore, remoteUserDot string
+	}
+	var (
+		mu   sync.Mutex
+		last received
+	)
+	backendSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		last = received{
+			remoteUserHyphen:     r.Header.Get("Remote-User"),
+			remoteUserUnderscore: strings.Join(r.Header["Remote_user"], ","),
+			remoteUserDot:        strings.Join(r.Header["Remote.user"], ","),
+		}
+		mu.Unlock()
+		fmt.Fprint(w, "ok")
+	}))
+	t.Cleanup(backendSrv.Close)
+
+	tester := caddytest.NewTester(t)
+	tester.InitServer(fmt.Sprintf(`
+	{
+		skip_install_trust
+		admin localhost:2999
+		http_port 9080
+		https_port 9443
+		grace_period 1ns
+	}
+	http://localhost:9080 {
+		forward_auth %s {
+			uri /
+			copy_headers Remote-User
+		}
+		reverse_proxy %s
+	}
+	`, strings.TrimPrefix(authSrv.URL, "http://"), strings.TrimPrefix(backendSrv.URL, "http://")), "caddyfile")
+
+	req, _ := http.NewRequest(http.MethodGet, "http://localhost:9080/", nil)
+	// Set the underscore and dot aliases via raw map access to bypass
+	// http.Header canonicalization, as an attacker would on the wire.
+	req.Header["Remote_user"] = []string{"attacker"}
+	req.Header["Remote.user"] = []string{"attacker"}
+	tester.AssertResponse(req, http.StatusOK, "ok")
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, wantRemoteUser, last.remoteUserHyphen, "trusted Remote-User must reach the backend")
+	assert.Empty(t, last.remoteUserUnderscore, "underscore alias must be dropped")
+	assert.Empty(t, last.remoteUserDot, "dot alias must be dropped")
 }

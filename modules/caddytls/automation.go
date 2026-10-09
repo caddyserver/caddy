@@ -158,7 +158,7 @@ type AutomationPolicy struct {
 	DisableOCSPStapling bool `json:"disable_ocsp_stapling,omitempty"`
 
 	// Overrides the URLs of OCSP responders embedded in certificates.
-	// Each key is a OCSP server URL to override, and its value is the
+	// Each key is an OCSP server URL to override, and its value is the
 	// replacement. An empty value will disable querying of that server.
 	// EXPERIMENTAL. Subject to change.
 	OCSPOverrides map[string]string `json:"ocsp_overrides,omitempty"`
@@ -366,6 +366,7 @@ func (ap *AutomationPolicy) makeCertMagicConfig(tlsApp *TLS, issuers []certmagic
 		RenewalWindowRatio: ap.RenewalWindowRatio,
 		KeySource:          keySource,
 		OnEvent:            tlsApp.onEvent,
+		ShouldEmitFunc:     tlsApp.events.ShouldEmit,
 		OnDemand:           ond,
 		ReusePrivateKeys:   ap.ReusePrivateKeys,
 		OCSP: certmagic.OCSPConfig{

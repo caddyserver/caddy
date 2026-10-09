@@ -110,6 +110,13 @@ func replaceEnvVars(input []byte) []byte {
 	return input
 }
 
+// importAncestor tracks active physical files during formatting import discovery.
+// Nodes are immutable and shared by all tokens from one import expansion.
+type importAncestor struct {
+	info   os.FileInfo
+	parent *importAncestor
+}
+
 type parser struct {
 	*Dispenser
 	block           ServerBlock // current server block being parsed
@@ -117,6 +124,11 @@ type parser struct {
 	definedSnippets map[string][]Token
 	nesting         int
 	importGraph     importGraph
+	// importObserver, when set, runs after an imported file is opened and read but
+	// before its tokens are inserted. Returning true skips token insertion. This
+	// internal hook lets FormatImports observe the parser's actual import execution
+	// and suppress physical-file cycles without duplicating parser semantics.
+	importObserver func(string, os.FileInfo, []byte, *importAncestor) (bool, error)
 }
 
 func (p *parser) parseAll() ([]ServerBlock, error) {
@@ -173,8 +185,15 @@ func (p *parser) begin() error {
 		if err != nil {
 			return err
 		}
-		tokens = append([]Token{nameToken}, tokens...)
-		p.block.Segments = []Segment{tokens}
+
+		// expand any import directives inside the named route block
+		expandedTokens, err := p.expandImportsInBlock(tokens)
+		if err != nil {
+			return err
+		}
+
+		expandedTokens = append([]Token{nameToken}, expandedTokens...)
+		p.block.Segments = []Segment{expandedTokens}
 		return nil
 	}
 
@@ -229,7 +248,7 @@ func (p *parser) addresses() error {
 		}
 
 		// Open brace definitely indicates end of addresses
-		if value == "{" {
+		if isOpenCurlyBrace(token) {
 			if expectingAnother {
 				return p.Errf("Expected another address but had '%s' - check for extra comma", value)
 			}
@@ -243,7 +262,7 @@ func (p *parser) addresses() error {
 		}
 
 		// Users commonly forget to place a space between the address and the '{'
-		if strings.HasSuffix(value, "{") {
+		if strings.HasSuffix(value, "{") && token.wasQuoted == 0 {
 			return p.Errf("Site addresses cannot end with a curly brace: '%s' - put a space between the token and the brace", value)
 		}
 
@@ -320,7 +339,7 @@ func (p *parser) blockContents() error {
 func (p *parser) directives() error {
 	for p.Next() {
 		// end of server block
-		if p.Val() == "}" {
+		if isCloseCurlyBrace(p.Token()) {
 			// p.nesting has already been decremented
 			break
 		}
@@ -384,7 +403,7 @@ func (p *parser) doImport(nesting int) error {
 		for bd.Next() {
 			currentMappingKey := bd.Val()
 
-			if currentMappingKey == "{" {
+			if isOpenCurlyBrace(bd.Token()) {
 				return p.Err("anonymous blocks are not supported")
 			}
 
@@ -418,46 +437,23 @@ func (p *parser) doImport(nesting int) error {
 		// make path relative to the file of the _token_ being processed rather
 		// than current working directory (issue #867) and then use glob to get
 		// list of matching filenames
-		absFile, err := caddy.FastAbs(p.Dispenser.File())
+		matches, globPattern, err := resolveImportGlob(p.Dispenser.File(), importPattern)
 		if err != nil {
-			return p.Errf("Failed to get absolute path of file: %s: %v", p.Dispenser.File(), err)
-		}
-
-		var matches []string
-		var globPattern string
-		if !filepath.IsAbs(importPattern) {
-			globPattern = filepath.Join(filepath.Dir(absFile), importPattern)
-		} else {
-			globPattern = importPattern
-		}
-		if strings.Count(globPattern, "*") > 1 || strings.Count(globPattern, "?") > 1 ||
-			(strings.Contains(globPattern, "[") && strings.Contains(globPattern, "]")) {
-			// See issue #2096 - a pattern with many glob expansions can hang for too long
-			return p.Errf("Glob pattern may only contain one wildcard (*), but has others: %s", globPattern)
-		}
-		matches, err = filepath.Glob(globPattern)
-		if err != nil {
-			return p.Errf("Failed to use import pattern %s: %v", importPattern, err)
+			return p.WrapErr(err)
 		}
 		if len(matches) == 0 {
 			if strings.ContainsAny(globPattern, "*?[]") {
 				caddy.Log().Warn("No files matching import glob pattern", zap.String("pattern", importPattern))
 			} else {
-				return p.Errf("File to import not found: %s", importPattern)
-			}
-		} else {
-			// See issue #5295 - should skip any files that start with a . when iterating over them.
-			sep := string(filepath.Separator)
-			segGlobPattern := strings.Split(globPattern, sep)
-			if strings.HasPrefix(segGlobPattern[len(segGlobPattern)-1], "*") {
-				var tmpMatches []string
-				for _, m := range matches {
-					seg := strings.Split(m, sep)
-					if !strings.HasPrefix(seg[len(seg)-1], ".") {
-						tmpMatches = append(tmpMatches, m)
-					}
+				// filepath.Glob ignores file system errors (it only
+				// returns ErrBadPattern), so a file that exists but
+				// cannot be accessed - e.g. permission denied - looks
+				// the same as a missing file. Stat the path directly
+				// so the real error is reported instead (issue #8161).
+				if _, err := os.Stat(globPattern); err != nil && !os.IsNotExist(err) {
+					return p.Errf("Failed to import file %s: %v", importPattern, err)
 				}
-				matches = tmpMatches
+				return p.Errf("File to import not found: %s", importPattern)
 			}
 		}
 
@@ -496,6 +492,11 @@ func (p *parser) doImport(nesting int) error {
 	// golang for range slice return a copy of value
 	// similarly, append also copy value
 	for i, token := range importedTokens {
+		if p.importObserver != nil && p.definedSnippets[importPattern] != nil {
+			// A snippet executes in its caller's ancestry, not the ancestry
+			// of the file expansion where it was originally declared.
+			token.importAncestry = p.Token().importAncestry
+		}
 		// update the token's imports to refer to import directive filename, line number and snippet name if there is one
 		if token.snippetName != "" {
 			token.imports = append(token.imports, fmt.Sprintf("%s:%d (import %s)", p.File(), p.Line(), token.snippetName))
@@ -518,14 +519,14 @@ func (p *parser) doImport(nesting int) error {
 			}
 		}
 
-		switch token.Text {
-		case "{":
+		switch {
+		case isOpenCurlyBrace(token):
 			nesting++
 			if index == 1 && maybeSnippetId && nesting == 1 {
 				maybeSnippet = true
 				maybeSnippetId = false
 			}
-		case "}":
+		case isCloseCurlyBrace(token):
 			nesting--
 			if nesting == 0 && maybeSnippet {
 				maybeSnippet = false
@@ -553,7 +554,13 @@ func (p *parser) doImport(nesting int) error {
 			if maybeSnippet {
 				tokensCopy = append(tokensCopy, token)
 			} else {
+				start := len(tokensCopy)
 				tokensCopy = append(tokensCopy, tokensToAdd...)
+				if p.importObserver != nil {
+					for i := range tokensToAdd {
+						tokensCopy[start+i].importAncestry = token.importAncestry
+					}
+				}
 			}
 			continue
 		}
@@ -583,6 +590,44 @@ func (p *parser) doImport(nesting int) error {
 	return nil
 }
 
+// expandImportsInBlock takes a slice of tokens (typically the contents of a
+// named route block including its outer curly braces) and expands any import
+// directives found at the beginning of a line. The expansion is done by
+// creating a temporary parser that shares the same snippets and import graph,
+// then looping through the tokens and calling doImport whenever an import
+// directive is encountered. All other tokens are left untouched.
+func (p *parser) expandImportsInBlock(tokens []Token) ([]Token, error) {
+	// Create a temporary parser that operates on the provided tokens.
+	// The Dispenser is initialized with the token slice; snippets and the
+	// import graph are shared so that imports and cycle detection work
+	// consistently across the whole Caddyfile.
+	tempParser := &parser{
+		Dispenser:       NewDispenser(tokens),
+		definedSnippets: p.definedSnippets,
+		importGraph:     p.importGraph,
+		// Carry the observer so callers watching import execution (such as
+		// FormatImports) also see files imported from inside a named route.
+		importObserver: p.importObserver,
+	}
+
+	// Loop through the tokens. We only care about import directives that
+	// appear at the start of a line (same logic as directives()).
+	for tempParser.Next() {
+		if tempParser.Val() == "import" && tempParser.isNewLine() {
+			if err := tempParser.doImport(1); err != nil {
+				return nil, err
+			}
+			// Roll back the cursor so the next iteration sees the first
+			// token of the imported content (or the next token after it).
+			tempParser.cursor--
+		}
+	}
+
+	// The temporary parser's token slice has been modified in place by
+	// doImport, so we return it directly.
+	return tempParser.tokens, nil
+}
+
 // doSingleImport lexes the individual file at importFile and returns
 // its tokens or an error, if any.
 func (p *parser) doSingleImport(importFile string) ([]Token, error) {
@@ -592,15 +637,29 @@ func (p *parser) doSingleImport(importFile string) ([]Token, error) {
 	}
 	defer file.Close()
 
-	if info, err := file.Stat(); err != nil {
+	info, err := file.Stat()
+	if err != nil {
 		return nil, p.Errf("Could not import %s: %v", importFile, err)
-	} else if info.IsDir() {
+	}
+	if info.IsDir() {
 		return nil, p.Errf("Could not import %s: is a directory", importFile)
 	}
 
 	input, err := io.ReadAll(file)
 	if err != nil {
 		return nil, p.Errf("Could not read imported file %s: %v", importFile, err)
+	}
+	// Notify only after a successful read so observers receive bytes and metadata
+	// from the same open descriptor. A skipped cyclic import contributes no
+	// tokens at this occurrence.
+	if p.importObserver != nil {
+		skip, err := p.importObserver(importFile, info, input, p.Token().importAncestry)
+		if err != nil {
+			return nil, p.Errf("Could not import %s: %v", importFile, err)
+		}
+		if skip {
+			return nil, nil
+		}
 	}
 
 	// only warning in case of empty files
@@ -620,8 +679,13 @@ func (p *parser) doSingleImport(importFile string) ([]Token, error) {
 	if err != nil {
 		return nil, p.Errf("Failed to get absolute path of file: %s: %v", importFile, err)
 	}
+	var ancestry *importAncestor
+	if p.importObserver != nil {
+		ancestry = &importAncestor{info: info, parent: p.Token().importAncestry}
+	}
 	for i := range importedTokens {
 		importedTokens[i].File = filename
+		importedTokens[i].importAncestry = ancestry
 	}
 
 	return importedTokens, nil
@@ -641,24 +705,24 @@ func (p *parser) directive() error {
 	segment = append(segment, p.Token())
 
 	for p.Next() {
-		if p.Val() == "{" {
+		if isOpenCurlyBrace(p.Token()) {
 			p.nesting++
-			if !p.isNextOnNewLine() && p.Token().wasQuoted == 0 {
+			if !p.isNextOnNewLine() {
 				return p.Err("Unexpected next token after '{' on same line")
 			}
 			if p.isNewLine() {
 				return p.Err("Unexpected '{' on a new line; did you mean to place the '{' on the previous line?")
 			}
-		} else if p.Val() == "{}" {
-			if p.isNextOnNewLine() && p.Token().wasQuoted == 0 {
+		} else if p.Val() == "{}" && p.Token().wasQuoted == 0 {
+			if p.isNextOnNewLine() {
 				return p.Err("Unexpected '{}' at end of line")
 			}
 		} else if p.isNewLine() && p.nesting == 0 {
 			p.cursor-- // read too far
 			break
-		} else if p.Val() == "}" && p.nesting > 0 {
+		} else if isCloseCurlyBrace(p.Token()) && p.nesting > 0 {
 			p.nesting--
-		} else if p.Val() == "}" && p.nesting == 0 {
+		} else if isCloseCurlyBrace(p.Token()) && p.nesting == 0 {
 			return p.Err("Unexpected '}' because no matching opening brace")
 		} else if p.Val() == "import" && p.isNewLine() {
 			if err := p.doImport(1); err != nil {
@@ -683,9 +747,9 @@ func (p *parser) directive() error {
 // openCurlyBrace expects the current token to be an
 // opening curly brace. This acts like an assertion
 // because it returns an error if the token is not
-// a opening curly brace. It does NOT advance the token.
+// an opening curly brace. It does NOT advance the token.
 func (p *parser) openCurlyBrace() error {
-	if p.Val() != "{" {
+	if !isOpenCurlyBrace(p.Token()) {
 		if p.valLooksLikeGlobalOptionsAfterImportedSnippets() {
 			return p.Err("global options block must appear before import directives; move the global options block to the top of the Caddyfile")
 		}
@@ -713,7 +777,7 @@ func (p *parser) valLooksLikeGlobalOptionsAfterImportedSnippets() bool {
 // because it returns an error if the token is not
 // a closing curly brace. It does NOT advance the token.
 func (p *parser) closeCurlyBrace() error {
-	if p.Val() != "}" {
+	if !isCloseCurlyBrace(p.Token()) {
 		return p.SyntaxErr("}")
 	}
 	return nil
@@ -750,7 +814,7 @@ func (p *parser) blockTokens(retainCurlies bool) ([]Token, error) {
 		tokens = append(tokens, p.Token())
 	}
 	for p.Next() {
-		if p.Val() == "}" {
+		if isCloseCurlyBrace(p.Token()) {
 			nesting--
 			if nesting == 0 {
 				if retainCurlies {
@@ -759,7 +823,7 @@ func (p *parser) blockTokens(retainCurlies bool) ([]Token, error) {
 				break
 			}
 		}
-		if p.Val() == "{" {
+		if isOpenCurlyBrace(p.Token()) {
 			nesting++
 		}
 		tokens = append(tokens, p.tokens[p.cursor])
@@ -813,6 +877,54 @@ func (s Segment) Directive() string {
 		return s[0].Text
 	}
 	return ""
+}
+
+// resolveImportGlob resolves importPattern relative to importerFile into a
+// list of matching file paths. It handles making the pattern absolute (issue
+// #867), enforces the single-wildcard limit (issue #2096), runs filepath.Glob,
+// and skips dot-files for glob matches (issue #5295). It returns the matched
+// paths, the resolved glob pattern (so callers can distinguish glob vs literal
+// for warning/error purposes), and any hard error. Empty-match handling (the
+// Warn vs "not found" decision) is left to the caller.
+func resolveImportGlob(importerFile, importPattern string) (matches []string, globPattern string, err error) {
+	absFile, err := caddy.FastAbs(importerFile)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get absolute path of file: %s: %v", importerFile, err)
+	}
+
+	if !filepath.IsAbs(importPattern) {
+		globPattern = filepath.Join(filepath.Dir(absFile), importPattern)
+	} else {
+		globPattern = importPattern
+	}
+
+	if strings.Count(globPattern, "*") > 1 || strings.Count(globPattern, "?") > 1 ||
+		(strings.Contains(globPattern, "[") && strings.Contains(globPattern, "]")) {
+		// See issue #2096 - a pattern with many glob expansions can hang for too long
+		return nil, globPattern, fmt.Errorf("glob pattern may only contain one wildcard (*), but has others: %s", globPattern)
+	}
+
+	matches, err = filepath.Glob(globPattern)
+	if err != nil {
+		return nil, globPattern, fmt.Errorf("failed to use import pattern %s: %v", importPattern, err)
+	}
+
+	// See issue #5295 - skip files that start with a . when the last path
+	// segment of the glob pattern starts with *.
+	sep := string(filepath.Separator)
+	segGlobPattern := strings.Split(globPattern, sep)
+	if strings.HasPrefix(segGlobPattern[len(segGlobPattern)-1], "*") {
+		var filtered []string
+		for _, m := range matches {
+			seg := strings.Split(m, sep)
+			if !strings.HasPrefix(seg[len(seg)-1], ".") {
+				filtered = append(filtered, m)
+			}
+		}
+		matches = filtered
+	}
+
+	return matches, globPattern, nil
 }
 
 // spanOpen and spanClose are used to bound spans that

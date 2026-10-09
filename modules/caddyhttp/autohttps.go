@@ -173,7 +173,7 @@ func (app *App) automaticHTTPSPhase1(ctx caddy.Context, repl *caddy.Replacer) er
 		for d := range serverDomainSet {
 			echDomains = append(echDomains, d)
 		}
-		app.tlsApp.RegisterServerNames(echDomains)
+		app.tlsApp.RegisterServerNames(echDomains, httpsRRALPNs(srv))
 
 		// nothing more to do here if there are no domains that qualify for
 		// automatic HTTPS and there are no explicit TLS connection policies:
@@ -572,6 +572,20 @@ func (app *App) makeRedirRoute(redirToPort uint, matcherSet MatcherSet) Route {
 			},
 		},
 	}
+}
+
+func httpsRRALPNs(srv *Server) []string {
+	alpn := make(map[string]struct{}, 3)
+	if srv.protocol("h3") {
+		alpn["h3"] = struct{}{}
+	}
+	if srv.protocol("h2") {
+		alpn["h2"] = struct{}{}
+	}
+	if srv.protocol("h1") {
+		alpn["http/1.1"] = struct{}{}
+	}
+	return caddytls.OrderedHTTPSRRALPN(alpn)
 }
 
 // createAutomationPolicies ensures that automated certificates for this

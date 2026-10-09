@@ -49,7 +49,7 @@ We'll need enough information to verify the bug and make a patch. To speed thing
 
 Please DO NOT use containers, VMs, cloud instances or services, or any other complex infrastructure in your steps. Always prefer `curl -v` instead of web browsers.
 
-We consider publicly-registered domain names to be public information. This necessary in order to maintain the integrity of certificate transparency, public DNS, and other public trust systems. Do not redact domain names from your reports. The actual content of your domain name affects Caddy's behavior, so we need the exact domain name(s) to reproduce with, or your report will be ignored.
+We consider publicly-registered domain names to be public information. This is necessary in order to maintain the integrity of certificate transparency, public DNS, and other public trust systems. Do not redact domain names from your reports. The actual content of your domain name affects Caddy's behavior, so we need the exact domain name(s) to reproduce with, or your report will be ignored.
 
 It will speed things up if you suggest a working patch, such as a code diff, and explain why and how it works. Reports that are not actionable, do not contain enough information, are too pushy/demanding, or are not able to convince us that it is a viable and practical attack on the web server itself may be deferred to a later time or possibly ignored, depending on available resources. Priority will be given to credible, responsible reports that are constructive, specific, and actionable. (We get a lot of invalid reports.) Thank you for understanding.
 

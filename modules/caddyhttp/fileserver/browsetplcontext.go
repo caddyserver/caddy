@@ -34,16 +34,20 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
-func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, parentModTime time.Time, entries []fs.DirEntry, canGoUp bool, root, urlPath string, repl *caddy.Replacer) *browseTemplateContext {
+func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, parentModTime time.Time, entries []fs.DirEntry, canGoUp bool, dirPath, urlPath string, repl *caddy.Replacer) *browseTemplateContext {
 	filesToHide := fsrv.transformHidePaths(repl)
 
-	name, _ := url.PathUnescape(urlPath)
+	// urlPath is escaped, but filesystem lookups need the decoded path
+	reqPath, _ := url.PathUnescape(urlPath)
 
 	tplCtx := &browseTemplateContext{
-		Name:         path.Base(name),
+		Name:         path.Base(reqPath),
 		Path:         urlPath,
 		CanGoUp:      canGoUp,
 		lastModified: parentModTime,
+		// preallocate, since we know the upper bound on the number of
+		// items; avoids repeated slice growth/copy for large directories
+		Items: make([]fileInfo, 0, len(entries)),
 	}
 
 	for _, entry := range entries {
@@ -53,14 +57,14 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, 
 
 		name := entry.Name()
 
-		if fileHidden(name, filesToHide) {
+		if fileHidden(caddyhttp.SanitizedPathJoin(dirPath, name), filesToHide) {
 			continue
 		}
 
 		info, err := entry.Info()
 		if err != nil {
 			if c := fsrv.logger.Check(zapcore.ErrorLevel, "could not get info about directory entry"); c != nil {
-				c.Write(zap.String("name", entry.Name()), zap.String("root", root))
+				c.Write(zap.String("name", entry.Name()), zap.String("dir_path", dirPath))
 			}
 			continue
 		}
@@ -71,7 +75,23 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, 
 			tplCtx.lastModified = modTime
 		}
 
-		isDir := entry.IsDir() || fsrv.isSymlinkTargetDir(fileSystem, info, root, urlPath)
+		fileIsSymlink := isSymlink(info)
+		size := info.Size()
+
+		// for a symlink, a single stat of its target tells us both whether
+		// the target is a directory and what its size is
+		var targetInfo fs.FileInfo
+		var targetPath string
+		if fileIsSymlink {
+			targetPath = caddyhttp.SanitizedPathJoin(dirPath, info.Name())
+			// An error most likely means the symlink target doesn't exist,
+			// which isn't entirely unusual and shouldn't fail the listing.
+			// In this case, targetInfo stays nil and we fall back to
+			// treating it as a non-directory, using the symlink's own size.
+			targetInfo, _ = fs.Stat(fileSystem, targetPath)
+		}
+
+		isDir := entry.IsDir() || (targetInfo != nil && targetInfo.IsDir())
 
 		// add the slash after the escape of path to avoid escaping the slash as well
 		if isDir {
@@ -81,34 +101,24 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, 
 			tplCtx.NumFiles++
 		}
 
-		size := info.Size()
-
 		if !isDir {
 			// increase the total by the symlink's size, not the target's size,
 			// by incrementing before we follow the symlink
 			tplCtx.TotalFileSize += size
 		}
 
-		fileIsSymlink := isSymlink(info)
 		symlinkPath := ""
 		if fileIsSymlink {
-			path := caddyhttp.SanitizedPathJoin(root, path.Join(urlPath, info.Name()))
-			fileInfo, err := fs.Stat(fileSystem, path)
-			if err == nil {
-				size = fileInfo.Size()
+			if targetInfo != nil {
+				size = targetInfo.Size()
 			}
 
 			if fsrv.Browse.RevealSymlinks {
-				symLinkTarget, err := os.Readlink(path)
+				symLinkTarget, err := os.Readlink(targetPath)
 				if err == nil {
 					symlinkPath = symLinkTarget
 				}
 			}
-
-			// An error most likely means the symlink target doesn't exist,
-			// which isn't entirely unusual and shouldn't fail the listing.
-			// In this case, just use the size of the symlink itself, which
-			// was already set above.
 		}
 
 		if !isDir {
@@ -220,6 +230,14 @@ func (l *browseTemplateContext) applySortAndLimit(sortParam, orderParam, limitPa
 	l.Sort = sortParam
 	l.Order = orderParam
 
+	// Only compute lowercase names when the selected sort comparator needs it;
+	// avoid O(n) work when sorting by time or when no sorting is requested.
+	if l.Sort == sortByName || l.Sort == sortByNameDirFirst || l.Sort == sortBySize {
+		for i := range l.Items {
+			l.Items[i].nameLower = strings.ToLower(l.Items[i].Name)
+		}
+	}
+
 	if l.Order == "desc" {
 		switch l.Sort {
 		case sortByName:
@@ -282,6 +300,11 @@ type fileInfo struct {
 
 	// a pointer to the template context is useful inside nested templates
 	Tpl *browseTemplateContext `json:"-"`
+
+	// cached lowercase Name, precomputed once by applySortAndLimit so that
+	// byName/byNameDirFirst/bySize don't each recompute it on every one of
+	// the O(n log n) comparisons sort.Sort makes; not serialized.
+	nameLower string
 }
 
 // HasExt returns true if the filename has any of the given suffixes, case-insensitive.
@@ -328,7 +351,7 @@ func (l byName) Len() int      { return len(l.Items) }
 func (l byName) Swap(i, j int) { l.Items[i], l.Items[j] = l.Items[j], l.Items[i] }
 
 func (l byName) Less(i, j int) bool {
-	return strings.ToLower(l.Items[i].Name) < strings.ToLower(l.Items[j].Name)
+	return l.Items[i].nameLower < l.Items[j].nameLower
 }
 
 func (l byNameDirFirst) Len() int      { return len(l.Items) }
@@ -337,7 +360,7 @@ func (l byNameDirFirst) Swap(i, j int) { l.Items[i], l.Items[j] = l.Items[j], l.
 func (l byNameDirFirst) Less(i, j int) bool {
 	// sort by name if both are dir or file
 	if l.Items[i].IsDir == l.Items[j].IsDir {
-		return strings.ToLower(l.Items[i].Name) < strings.ToLower(l.Items[j].Name)
+		return l.Items[i].nameLower < l.Items[j].nameLower
 	}
 	// sort dir ahead of file
 	return l.Items[i].IsDir
@@ -347,7 +370,7 @@ func (l bySize) Len() int      { return len(l.Items) }
 func (l bySize) Swap(i, j int) { l.Items[i], l.Items[j] = l.Items[j], l.Items[i] }
 
 func (l bySize) Less(i, j int) bool {
-	const directoryOffset = -1 << 31 // = -math.MinInt32
+	const directoryOffset = -1 << 31 // = -2147483648 (min int32)
 
 	iSize, jSize := l.Items[i].Size, l.Items[j].Size
 
@@ -361,7 +384,7 @@ func (l bySize) Less(i, j int) bool {
 		jSize = directoryOffset
 	}
 	if l.Items[i].IsDir && l.Items[j].IsDir {
-		return strings.ToLower(l.Items[i].Name) < strings.ToLower(l.Items[j].Name)
+		return l.Items[i].nameLower < l.Items[j].nameLower
 	}
 
 	return iSize < jSize

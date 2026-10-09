@@ -15,6 +15,7 @@
 package caddy
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/tls"
@@ -270,19 +271,21 @@ func TestAdminHandlerServeHTTPRedactsSensitiveHeadersInLogs(t *testing.T) {
 	handler := adminHandler{
 		mux: http.NewServeMux(),
 	}
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/redaction-test", nil)
 	req.Header.Set("Authorization", "Bearer secret")
 	req.Header.Set("Cookie", "session=secret")
 	req.Header.Set("X-Test", "ok")
 	rr := httptest.NewRecorder()
 
+	Log().Info("unrelated test log")
 	handler.ServeHTTP(rr, req)
 
-	if logs.Len() == 0 {
-		t.Fatal("expected request log entry")
+	entries := logs.FilterMessage("received request").FilterField(zap.String("uri", req.RequestURI)).All()
+	if len(entries) != 1 {
+		t.Fatalf("request log entries = %d, want 1", len(entries))
 	}
 
-	ctx := logs.All()[0].ContextMap()
+	ctx := entries[0].ContextMap()
 	headers, ok := ctx["headers"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected headers field in log context, got %T", ctx["headers"])
@@ -339,7 +342,10 @@ func TestAdminHandlerBuiltinRouteErrors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to parse address: %v", err)
 	}
-	handler := cfg.Admin.newAdminHandler(addr, false, Context{})
+	handler, err := cfg.Admin.newAdminHandler(addr, false, Context{})
+	if err != nil {
+		t.Fatalf("Failed to create admin handler: %v", err)
+	}
 
 	tests := []struct {
 		name           string
@@ -460,7 +466,10 @@ func TestNewAdminHandlerRouterRegistration(t *testing.T) {
 	admin := &AdminConfig{
 		EnforceOrigin: false,
 	}
-	handler := admin.newAdminHandler(addr, false, Context{})
+	handler, err := admin.newAdminHandler(addr, false, Context{})
+	if err != nil {
+		t.Fatalf("Failed to create admin handler: %v", err)
+	}
 
 	req := httptest.NewRequest("GET", "/mock", nil)
 	req.Host = "localhost:2019"
@@ -471,10 +480,6 @@ func TestNewAdminHandlerRouterRegistration(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Errorf("Expected status code %d but got %d", http.StatusOK, rr.Code)
 		t.Logf("Response body: %s", rr.Body.String())
-	}
-
-	if len(admin.routers) != 1 {
-		t.Errorf("Expected 1 router to be stored, got %d", len(admin.routers))
 	}
 }
 
@@ -513,19 +518,16 @@ func TestAdminRouterProvisioning(t *testing.T) {
 		name         string
 		provisionErr error
 		wantErr      bool
-		routersAfter int // expected number of routers after provisioning
 	}{
 		{
 			name:         "successful provisioning",
 			provisionErr: nil,
 			wantErr:      false,
-			routersAfter: 0,
 		},
 		{
 			name:         "provisioning error",
 			provisionErr: fmt.Errorf("provision failed"),
 			wantErr:      true,
-			routersAfter: 1,
 		},
 	}
 
@@ -561,8 +563,7 @@ func TestAdminRouterProvisioning(t *testing.T) {
 				t.Fatalf("Failed to parse address: %v", err)
 			}
 
-			_ = admin.newAdminHandler(addr, false, Context{})
-			err = admin.provisionAdminRouters(Context{})
+			_, err = admin.newAdminHandler(addr, false, Context{})
 
 			if test.wantErr {
 				if err == nil {
@@ -572,10 +573,6 @@ func TestAdminRouterProvisioning(t *testing.T) {
 				if err != nil {
 					t.Errorf("Expected no error but got: %v", err)
 				}
-			}
-
-			if len(admin.routers) != test.routersAfter {
-				t.Errorf("Expected %d routers after provisioning, got %d", test.routersAfter, len(admin.routers))
 			}
 		})
 	}
@@ -690,6 +687,18 @@ func TestRemoteAdminAccessControlPathSegmentMatching(t *testing.T) {
 			wantErr:     false,
 		},
 		{
+			name:        "trailing slash scope excludes exact path without slash",
+			allowedPath: "/pki/ca/prod/",
+			requestPath: "/pki/ca/prod",
+			wantErr:     true,
+		},
+		{
+			name:        "trailing slash scope includes exact path with slash",
+			allowedPath: "/pki/ca/prod/",
+			requestPath: "/pki/ca/prod/",
+			wantErr:     false,
+		},
+		{
 			name:        "sibling with shared prefix",
 			allowedPath: "/pki/ca/prod",
 			requestPath: "/pki/ca/prod-backup",
@@ -705,6 +714,48 @@ func TestRemoteAdminAccessControlPathSegmentMatching(t *testing.T) {
 			name:        "root path",
 			allowedPath: "/",
 			requestPath: "/pki/ca/prod",
+			wantErr:     false,
+		},
+		{
+			name:        "empty path preserves allow all",
+			allowedPath: "",
+			requestPath: "/pki/ca/prod",
+			wantErr:     false,
+		},
+		{
+			name:        "dot-dot traversal out of scope",
+			allowedPath: "/pki/ca/prod",
+			requestPath: "/pki/ca/prod/../../../../load",
+			wantErr:     true,
+		},
+		{
+			name:        "dot-dot traversal out of trailing slash scope",
+			allowedPath: "/pki/ca/prod/",
+			requestPath: "/pki/ca/prod/../../../../load",
+			wantErr:     true,
+		},
+		{
+			name:        "encoded traversal (net/url decodes %2e to . before path.Clean resolves ..)",
+			allowedPath: "/pki/ca/prod",
+			requestPath: "/pki/ca/prod/%2e%2e/load",
+			wantErr:     true,
+		},
+		{
+			name:        "sibling traversal",
+			allowedPath: "/pki/ca/prod",
+			requestPath: "/pki/ca/prod/../staging",
+			wantErr:     true,
+		},
+		{
+			name:        "collapsed slashes",
+			allowedPath: "/pki/ca/prod",
+			requestPath: "/pki//ca/prod",
+			wantErr:     false,
+		},
+		{
+			name:        "exact request with trailing slash",
+			allowedPath: "/pki/ca/prod",
+			requestPath: "/pki/ca/prod/",
 			wantErr:     false,
 		},
 	}
@@ -837,6 +888,96 @@ vq+SH04xKhtFudVBAQ==`
 							{
 								PublicKeys:  []string{"invalid-cert-data"},
 								Permissions: []AdminPermissions{{Methods: []string{"GET"}, Paths: []string{"/test"}}},
+							},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "non-canonical root path with trailing slash",
+			cfg: &Config{
+				Admin: &AdminConfig{
+					Identity: &IdentityConfig{},
+					Remote: &RemoteAdmin{
+						Listen: "localhost:2021",
+						AccessControl: []*AdminAccess{
+							{
+								PublicKeys:  []string{testCert},
+								Permissions: []AdminPermissions{{Methods: []string{"GET"}, Paths: []string{"//"}}},
+							},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "canonical subpath with trailing slash",
+			cfg: &Config{
+				Admin: &AdminConfig{
+					Identity: &IdentityConfig{},
+					Remote: &RemoteAdmin{
+						Listen: "localhost:2021",
+						AccessControl: []*AdminAccess{
+							{
+								PublicKeys:  []string{testCert},
+								Permissions: []AdminPermissions{{Methods: []string{"GET"}, Paths: []string{"/foo/"}}},
+							},
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "non-canonical path /..",
+			cfg: &Config{
+				Admin: &AdminConfig{
+					Identity: &IdentityConfig{},
+					Remote: &RemoteAdmin{
+						Listen: "localhost:2021",
+						AccessControl: []*AdminAccess{
+							{
+								PublicKeys:  []string{testCert},
+								Permissions: []AdminPermissions{{Methods: []string{"GET"}, Paths: []string{"/.."}}},
+							},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "non-canonical path with double slashes",
+			cfg: &Config{
+				Admin: &AdminConfig{
+					Identity: &IdentityConfig{},
+					Remote: &RemoteAdmin{
+						Listen: "localhost:2021",
+						AccessControl: []*AdminAccess{
+							{
+								PublicKeys:  []string{testCert},
+								Permissions: []AdminPermissions{{Methods: []string{"GET"}, Paths: []string{"/foo//bar"}}},
+							},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "non-canonical path with double trailing slashes",
+			cfg: &Config{
+				Admin: &AdminConfig{
+					Identity: &IdentityConfig{},
+					Remote: &RemoteAdmin{
+						Listen: "localhost:2021",
+						AccessControl: []*AdminAccess{
+							{
+								PublicKeys:  []string{testCert},
+								Permissions: []AdminPermissions{{Methods: []string{"GET"}, Paths: []string{"/foo//"}}},
 							},
 						},
 					},
@@ -1102,6 +1243,50 @@ MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDRS0LmTwUT0iwP
 
 			if test.checkState != nil {
 				test.checkState(t, test.cfg)
+			}
+		})
+	}
+}
+
+func TestUnsyncedConfigAccessCanonicalArrayIndices(t *testing.T) {
+	rawCfg = map[string]any{
+		rawConfigKey: map[string]any{
+			"list": []any{"zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"},
+		},
+	}
+
+	tests := []struct {
+		name       string
+		path       string
+		wantOutput string
+		wantErr    bool
+	}{
+		{name: "allow zero", path: "/" + rawConfigKey + "/list/0", wantOutput: "\"zero\"\n"},
+		{name: "allow one", path: "/" + rawConfigKey + "/list/1", wantOutput: "\"one\"\n"},
+		{name: "allow ten", path: "/" + rawConfigKey + "/list/10", wantOutput: "\"ten\"\n"},
+		{name: "reject leading zero", path: "/" + rawConfigKey + "/list/01", wantErr: true},
+		{name: "reject multiple leading zeros", path: "/" + rawConfigKey + "/list/002", wantErr: true},
+		{name: "reject plus sign", path: "/" + rawConfigKey + "/list/+1", wantErr: true},
+		{name: "reject negative zero", path: "/" + rawConfigKey + "/list/-0", wantErr: true},
+	}
+
+	for i, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotOutput bytes.Buffer
+			err := unsyncedConfigAccess(http.MethodGet, tc.path, nil, &gotOutput)
+
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("test %d (%s): input path %q: expected error, got nil with output %q", i, tc.name, tc.path, gotOutput.String())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("test %d (%s): input path %q: expected no error with output %q, got error %v with output %q", i, tc.name, tc.path, tc.wantOutput, err, gotOutput.String())
+			}
+			if gotOutput.String() != tc.wantOutput {
+				t.Errorf("test %d (%s): input path %q: expected output %q, got %q", i, tc.name, tc.path, tc.wantOutput, gotOutput.String())
 			}
 		})
 	}

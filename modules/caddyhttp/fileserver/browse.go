@@ -116,7 +116,7 @@ func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w ht
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	// TODO: not entirely sure if path.Clean() is necessary here but seems like a safe plan (i.e. /%2e%2e%2f) - someone could verify this
-	listing, err := fsrv.loadDirectoryContents(r.Context(), fileSystem, dir.(fs.ReadDirFile), root, path.Clean(r.URL.EscapedPath()), repl)
+	listing, err := fsrv.loadDirectoryContents(r.Context(), fileSystem, dir.(fs.ReadDirFile), dirPath, path.Clean(r.URL.EscapedPath()), repl)
 	switch {
 	case errors.Is(err, fs.ErrPermission):
 		return caddyhttp.Error(http.StatusForbidden, err)
@@ -213,7 +213,7 @@ func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w ht
 	return nil
 }
 
-func (fsrv *FileServer) loadDirectoryContents(ctx context.Context, fileSystem fs.FS, dir fs.ReadDirFile, root, urlPath string, repl *caddy.Replacer) (*browseTemplateContext, error) {
+func (fsrv *FileServer) loadDirectoryContents(ctx context.Context, fileSystem fs.FS, dir fs.ReadDirFile, dirPath, urlPath string, repl *caddy.Replacer) (*browseTemplateContext, error) {
 	// modTime for the directory itself
 	stat, err := dir.Stat()
 	if err != nil {
@@ -231,7 +231,7 @@ func (fsrv *FileServer) loadDirectoryContents(ctx context.Context, fileSystem fs
 	// user can presumably browse "up" to parent folder if path is longer than "/"
 	canGoUp := len(urlPath) > 1
 
-	return fsrv.directoryListing(ctx, fileSystem, stat.ModTime(), files, canGoUp, root, urlPath, repl), nil
+	return fsrv.directoryListing(ctx, fileSystem, stat.ModTime(), files, canGoUp, dirPath, urlPath, repl), nil
 }
 
 // browseApplyQueryParams applies query parameters to the listing.
@@ -281,7 +281,13 @@ func (fsrv *FileServer) browseApplyQueryParams(w http.ResponseWriter, r *http.Re
 			sortParam = sortCookie.Value
 		}
 	case sortByName, sortByNameDirFirst, sortBySize, sortByTime:
-		http.SetCookie(w, &http.Cookie{Name: "sort", Value: sortParam, Secure: r.TLS != nil})
+		http.SetCookie(w, &http.Cookie{ //nolint:gosec // Secure depends on whether the request itself used TLS
+			Name:     "sort",
+			Value:    sortParam,
+			Secure:   r.TLS != nil,
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+		})
 	}
 
 	// then figure out the order
@@ -292,7 +298,13 @@ func (fsrv *FileServer) browseApplyQueryParams(w http.ResponseWriter, r *http.Re
 			orderParam = orderCookie.Value
 		}
 	case sortOrderAsc, sortOrderDesc:
-		http.SetCookie(w, &http.Cookie{Name: "order", Value: orderParam, Secure: r.TLS != nil})
+		http.SetCookie(w, &http.Cookie{ //nolint:gosec // Secure depends on whether the request itself used TLS
+			Name:     "order",
+			Value:    orderParam,
+			Secure:   r.TLS != nil,
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+		})
 	}
 
 	// finally, apply the sorting and limiting
@@ -319,20 +331,6 @@ func (fsrv *FileServer) makeBrowseTemplate(tplCtx *templateContext) (*template.T
 	}
 
 	return tpl, nil
-}
-
-// isSymlinkTargetDir returns true if f's symbolic link target
-// is a directory.
-func (fsrv *FileServer) isSymlinkTargetDir(fileSystem fs.FS, f fs.FileInfo, root, urlPath string) bool {
-	if !isSymlink(f) {
-		return false
-	}
-	target := caddyhttp.SanitizedPathJoin(root, path.Join(urlPath, f.Name()))
-	targetInfo, err := fs.Stat(fileSystem, target)
-	if err != nil {
-		return false
-	}
-	return targetInfo.IsDir()
 }
 
 // isSymlink return true if f is a symbolic link.
