@@ -2,7 +2,10 @@ package reverseproxy
 
 import (
 	"context"
+	"net/http"
 	"net/http/httptest"
+	"net/http/httptrace"
+	"net/textproto"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -123,5 +126,62 @@ func TestAddForwardedHeaders_UnixSocketTrustedNoExistingHeaders(t *testing.T) {
 	}
 	if got := req.Header.Get("X-Forwarded-Host"); got != "example.com" {
 		t.Errorf("X-Forwarded-Host = %q, want %q", got, "example.com")
+	}
+}
+
+// TestInformationalResponseKeepsHandlerHeaders verifies that a 1xx response
+// from the upstream does not remove response headers set before proxying.
+func TestInformationalResponseKeepsHandlerHeaders(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Link", "</style.css>; rel=preload")
+		w.WriteHeader(http.StatusEarlyHints)
+		w.Header().Del("Link")
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(backend.Close)
+
+	h := minimalHandler(0, &Upstream{Host: new(Host), Dial: backend.Listener.Addr().String()})
+
+	front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Strict-Transport-Security", "max-age=31536000")
+		_ = h.ServeHTTP(w, prepareTestRequest(r), caddyhttp.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
+			return nil
+		}))
+	}))
+	t.Cleanup(front.Close)
+
+	var earlyHints []textproto.MIMEHeader
+	trace := &httptrace.ClientTrace{
+		Got1xxResponse: func(code int, header textproto.MIMEHeader) error {
+			if code == http.StatusEarlyHints {
+				earlyHints = append(earlyHints, header)
+			}
+			return nil
+		},
+	}
+	req, err := http.NewRequestWithContext(httptrace.WithClientTrace(context.Background(), trace), http.MethodGet, front.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	resp.Body.Close()
+
+	if len(earlyHints) != 1 {
+		t.Fatalf("103 responses: got %d, want 1", len(earlyHints))
+	}
+	if got := earlyHints[0].Get("Link"); got != "</style.css>; rel=preload" {
+		t.Errorf("Link on the 103: got %q, want %q", got, "</style.css>; rel=preload")
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	if got := resp.Header.Get("Strict-Transport-Security"); got != "max-age=31536000" {
+		t.Errorf("Strict-Transport-Security: got %q, want %q", got, "max-age=31536000")
+	}
+	if got := resp.Header.Get("Link"); got != "" {
+		t.Errorf("Link from the 103 leaked into the final response: %q", got)
 	}
 }
