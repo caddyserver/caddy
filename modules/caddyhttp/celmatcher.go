@@ -256,7 +256,7 @@ func (m *MatchExpression) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	if len(exprs) == 1 {
 		m.Expr = exprs[0]
 	} else {
-		m.Expr = "(" + strings.Join(exprs, ") && (") + ")"
+		m.Expr = "(\n" + strings.Join(exprs, "\n) && (\n") + "\n)"
 	}
 
 	return nil

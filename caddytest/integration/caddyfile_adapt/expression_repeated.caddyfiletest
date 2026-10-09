@@ -27,7 +27,7 @@
 							"match": [
 								{
 									"expression": {
-										"expr": "({http.request.method} == 'GET') \u0026\u0026 ({http.request.uri.path}.startsWith('/public/'))",
+										"expr": "(\n{http.request.method} == 'GET'\n) \u0026\u0026 (\n{http.request.uri.path}.startsWith('/public/')\n)",
 										"name": "public"
 									}
 								}
@@ -44,7 +44,7 @@
 								{
 									"not": [
 										{
-											"expression": "({http.request.header.X-Api-Key} == 'secret') \u0026\u0026 ({http.request.remote.host} == '127.0.0.1')"
+											"expression": "(\n{http.request.header.X-Api-Key} == 'secret'\n) \u0026\u0026 (\n{http.request.remote.host} == '127.0.0.1'\n)"
 										}
 									]
 								}
