@@ -587,6 +587,9 @@ func (h *Handler) Cleanup() error {
 type bodyNopCloserIfNotRead struct {
 	io.ReadCloser
 	read int // tracks the number of bytes read, -1 when first Read returns 0, io.EOF
+
+	// connected is set once a connection to the upstream was obtained.
+	connected atomic.Bool
 }
 
 func (b *bodyNopCloserIfNotRead) Read(p []byte) (int, error) {
@@ -604,8 +607,8 @@ func (b *bodyNopCloserIfNotRead) Read(p []byte) (int, error) {
 }
 
 func (b *bodyNopCloserIfNotRead) Close() error {
-	// don't close the body
-	if b.read == 0 {
+	// don't close the body when no connection to the upstream was obtained
+	if !b.connected.Load() {
 		return nil
 	}
 	// close as usual, when -1, any read will return EOF as the original read will do
@@ -1166,6 +1169,11 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 		roundTripDone  bool
 	)
 	trace := &httptrace.ClientTrace{
+		GotConn: func(httptrace.GotConnInfo) {
+			if b, ok := req.Body.(*bodyNopCloserIfNotRead); ok {
+				b.connected.Store(true)
+			}
+		},
 		Got1xxResponse: func(code int, header textproto.MIMEHeader) error {
 			roundTripMutex.Lock()
 			defer roundTripMutex.Unlock()
