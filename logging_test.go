@@ -181,4 +181,3 @@ func TestUnbufferDefaultLogger(t *testing.T) {
 		t.Fatal("unexpected buffer core after second unbuffer call")
 	}
 }
-

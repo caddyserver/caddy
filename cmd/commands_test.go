@@ -364,4 +364,3 @@ func TestWrapCommandFuncForCobra_RunFailure(t *testing.T) {
 		t.Error("caddy.Log() was left in a buffered state after WrapCommandFuncForCobra; should be unbuffered")
 	}
 }
-
