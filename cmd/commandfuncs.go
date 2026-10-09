@@ -193,9 +193,9 @@ func cmdRun(fl Flags) (int, error) {
 	// so that we can hold onto logs until after
 	// the config is loaded (or fails to load)
 	// so that we can write the logs to the user's
-	// configured output. we must be sure to flush
-	// on any error before the config is loaded.
-	logger, defaultLogger, logBuffer := caddy.BufferedLog()
+	// configured output.
+	logger, defaultLogger, _ := caddy.BufferedLog()
+	defer caddy.UnbufferDefaultLogger(defaultLogger)
 
 	undoMaxProcs := setResourceLimits(logger)
 	defer undoMaxProcs()
@@ -214,7 +214,6 @@ func cmdRun(fl Flags) (int, error) {
 	// load all additional envs as soon as possible
 	err := handleEnvFileFlag(fl)
 	if err != nil {
-		logBuffer.FlushTo(defaultLogger)
 		return caddy.ExitCodeFailedStartup, err
 	}
 
@@ -232,7 +231,6 @@ func cmdRun(fl Flags) (int, error) {
 			logger.Info("no autosave file exists", zap.String("autosave_file", caddy.ConfigAutosavePath))
 			resumeFlag = false
 		} else if err != nil {
-			logBuffer.FlushTo(defaultLogger)
 			return caddy.ExitCodeFailedStartup, err
 		} else {
 			if configFlag == "" {
@@ -252,7 +250,6 @@ func cmdRun(fl Flags) (int, error) {
 	if !resumeFlag {
 		config, configFile, adapterUsed, err = LoadConfig(configFlag, configAdapterFlag)
 		if err != nil {
-			logBuffer.FlushTo(defaultLogger)
 			return caddy.ExitCodeFailedStartup, err
 		}
 	}
@@ -283,7 +280,6 @@ func cmdRun(fl Flags) (int, error) {
 	// run the initial config
 	err = caddy.Load(config, true)
 	if err != nil {
-		logBuffer.FlushTo(defaultLogger)
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("loading initial config: %v", err)
 	}
 	// release the reference to the config so it can be GC'd
@@ -295,7 +291,6 @@ func cmdRun(fl Flags) (int, error) {
 	// also clear our ref to the buffer so it can get GC'd
 	logger = caddy.Log()
 	defaultLogger = nil //nolint:ineffassign,wastedassign
-	logBuffer = nil     //nolint:wastedassign,ineffassign
 	logger.Info("serving initial configuration")
 
 	// if we are to report to another process the successful start
