@@ -81,7 +81,7 @@ type Logging struct {
 }
 
 // openLogs sets up the config and opens all the configured writers.
-// It closes its logs when ctx is canceled, so it should clean up
+// It closes its logs when ctx is cleaned up, so it should clean up
 // after itself.
 func (logging *Logging) openLogs(ctx Context) error {
 	// make sure to deallocate resources when context is done
@@ -460,7 +460,7 @@ func (sll *SinkLog) provision(ctx Context, logging *Logging) error {
 	}
 
 	logger := zap.New(sll.core, options...)
-	ctx.cleanupFuncs = append(ctx.cleanupFuncs, zap.RedirectStdLog(logger))
+	ctx.OnCancel(zap.RedirectStdLog(logger))
 	return nil
 }
 

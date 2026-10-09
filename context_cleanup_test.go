@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -33,11 +34,12 @@ type cleanupTestModule struct {
 }
 
 type cleanupTestControl struct {
-	entered   chan struct{}
-	proceed   chan struct{}
-	cleaned   atomic.Int32
-	fail      string
-	onCleanup func()
+	entered     chan struct{}
+	proceed     chan struct{}
+	cleaned     atomic.Int32
+	fail        string
+	onCleanup   func()
+	onProvision func(Context)
 }
 
 var (
@@ -58,12 +60,15 @@ func (cleanupTestModule) CaddyModule() ModuleInfo {
 	return ModuleInfo{ID: "test.cleanup_hold", New: func() Module { return new(cleanupTestModule) }}
 }
 
-func (m *cleanupTestModule) Provision(Context) error {
+func (m *cleanupTestModule) Provision(ctx Context) error {
 	value, _ := cleanupTestControls.Load(m.Key)
 	m.control = value.(*cleanupTestControl)
 	if m.control.entered != nil {
 		close(m.control.entered)
 		<-m.control.proceed
+	}
+	if m.control.onProvision != nil {
+		m.control.onProvision(ctx)
 	}
 	if m.control.fail == "provision" {
 		return errors.New("provision failed")
@@ -193,35 +198,112 @@ func TestContextCleanupParentCancellation(t *testing.T) {
 	}
 }
 
-func TestContextCleanupCapturedParentCallbacks(t *testing.T) {
-	parent := Context{Context: context.Background()}
-	var child Context
-	control := new(cleanupTestControl)
-	called := 0
-	parent.OnCancel(func() {
-		called++
-		if child.Err() == nil {
-			t.Error("callback preceded cancellation")
-		}
-		if control.cleaned.Load() != 0 {
-			t.Error("callback ran after module cleanup")
-		}
-	})
-	ctx, cancel := NewContext(parent)
-	cancel = sync.OnceFunc(cancel)
-	child = ctx
-	if _, err := child.LoadModuleByID("test.cleanup_hold", cleanupTestConfig(t, control)); err != nil {
+func TestContextCleanupCallbacks(t *testing.T) {
+	ctx, cancel, control := cleanupTestContext(t)
+	copyCtx := ctx
+	type key struct{}
+	valued := ctx.WithValue(key{}, true)
+	release1, release2 := copyCtx.HoldCleanup(), valued.HoldCleanup()
+	t.Cleanup(release1)
+	t.Cleanup(release2)
+	var order []string
+	control.onCleanup = func() { order = append(order, "module") }
+	// All contexts exist before registration, so copied slice headers cannot
+	// accidentally capture any of these callbacks.
+	for _, target := range []struct {
+		ctx  *Context
+		name string
+	}{{&ctx, "original"}, {&copyCtx, "copy"}, {&valued, "value"}} {
+		target.ctx.OnCancel(func() {
+			if ctx.Err() != context.Canceled {
+				t.Error("callback preceded cancellation")
+			}
+			order = append(order, target.name)
+		})
+	}
+	cancel(nil)
+	cancel(nil)
+	if len(order) != 0 || control.cleaned.Load() != 0 {
+		t.Fatal("resource or module cleanup ran while held")
+	}
+	release1()
+	if len(order) != 0 || control.cleaned.Load() != 0 {
+		t.Fatal("cleanup ran with a remaining hold")
+	}
+	release2()
+	release2()
+	cancel(nil)
+	want := []string{"original", "copy", "value", "module"}
+	if !slices.Equal(order, want) || control.cleaned.Load() != 1 {
+		t.Fatalf("cleanup order/count changed: got %v, want %v", order, want)
+	}
+}
+
+func TestContextCleanupCallbacksWithoutHold(t *testing.T) {
+	ctx, cancel, control := cleanupTestContext(t)
+	var called atomic.Int32
+	ctx.OnCancel(func() { called.Add(1) })
+	cancel(nil)
+	if called.Load() != 1 || control.cleaned.Load() != 1 {
+		t.Fatal("unheld callbacks and module cleanup must remain synchronous")
+	}
+	cancel(nil)
+	if called.Load() != 1 {
+		t.Fatal("repeated cancellation repeated callback")
+	}
+}
+
+func TestContextCleanupCallbacksIndependentContexts(t *testing.T) {
+	parent, cancelParent, parentControl := cleanupTestContext(t)
+	var parentCalls, childCalls atomic.Int32
+	parent.OnCancel(func() { parentCalls.Add(1) })
+	child, cancelChild := NewContextWithCause(parent)
+	t.Cleanup(func() { cancelChild(nil) })
+	childControl := new(cleanupTestControl)
+	if _, err := child.LoadModuleByID("test.cleanup_hold", cleanupTestConfig(t, childControl)); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(cancel)
-	parent.OnCancel(func() { t.Error("callback appended after construction was captured") })
-	ctx.OnCancel(func() { t.Error("child callback unexpectedly ran on its own cancellation") })
-	cancel()
-	if called != 1 {
-		t.Fatal("captured parent callback was deferred")
+	child.OnCancel(func() { childCalls.Add(1) })
+	release := child.HoldCleanup()
+	t.Cleanup(release)
+	cancelParent(nil)
+	if child.Err() != context.Canceled || parentCalls.Load() != 1 || parentControl.cleaned.Load() != 1 {
+		t.Fatal("parent cancellation or cleanup failed")
 	}
-	if control.cleaned.Load() != 1 {
-		t.Fatal("unheld module cleanup did not follow callback")
+	if childCalls.Load() != 0 || childControl.cleaned.Load() != 0 {
+		t.Fatal("parent cleanup retired child resources")
+	}
+	cancelChild(nil)
+	if childCalls.Load() != 0 || childControl.cleaned.Load() != 0 {
+		t.Fatal("explicit child cancellation ignored its hold")
+	}
+	release()
+	if childCalls.Load() != 1 || childControl.cleaned.Load() != 1 || parentCalls.Load() != 1 {
+		t.Fatal("child cleanup omitted or repeated callbacks")
+	}
+}
+
+func TestContextCleanupConcurrentCallbacks(t *testing.T) {
+	ctx, cancel, control := cleanupTestContext(t)
+	type key struct{}
+	copies := []Context{ctx, ctx, ctx.WithValue(key{}, true)}
+	release := ctx.HoldCleanup()
+	t.Cleanup(release)
+	var called atomic.Int32
+	var wg sync.WaitGroup
+	const registrations = 32
+	for i := range registrations {
+		copyCtx := copies[i%len(copies)]
+		wg.Go(func() { copyCtx.OnCancel(func() { called.Add(1) }) })
+	}
+	wg.Go(func() { cancel(nil) })
+	wg.Wait()
+	if called.Load() != 0 || control.cleaned.Load() != 0 {
+		t.Fatal("concurrent registration/cancellation cleaned held resources")
+	}
+	release()
+	if called.Load() != registrations || control.cleaned.Load() != 1 {
+		t.Fatal("concurrent registration lost callbacks or repeated cleanup")
 	}
 }
 
@@ -229,7 +311,13 @@ func TestContextCleanupInFlightLoad(t *testing.T) {
 	for _, failure := range []string{"", "provision", "validate"} {
 		t.Run(failure, func(t *testing.T) {
 			ctx, cancel, existing := cleanupTestContext(t)
+			var callbacks atomic.Int32
 			loading := &cleanupTestControl{entered: make(chan struct{}), proceed: make(chan struct{}), fail: failure}
+			loading.onProvision = func(copyCtx Context) {
+				// Provisioning resumes after cancellation with its loader hold
+				// still active; registering its resource cleanup must still work.
+				copyCtx.OnCancel(func() { callbacks.Add(1) })
+			}
 			raw := cleanupTestConfig(t, loading)
 			result := make(chan error, 1)
 			finished := make(chan struct{})
@@ -247,7 +335,7 @@ func TestContextCleanupInFlightLoad(t *testing.T) {
 			if (err != nil) != (failure != "") {
 				t.Fatalf("unexpected load result: %v", err)
 			}
-			if existing.cleaned.Load() != 1 || loading.cleaned.Load() != 1 {
+			if existing.cleaned.Load() != 1 || loading.cleaned.Load() != 1 || callbacks.Load() != 1 {
 				t.Fatal("loaded or failed module was not cleaned exactly once")
 			}
 		})
@@ -297,16 +385,20 @@ func TestContextCleanupRecursiveReleaseAndLoad(t *testing.T) {
 }
 
 func TestContextCleanupWaitDeadlineAndCompletion(t *testing.T) {
-	for _, blocked := range []bool{false, true} {
-		t.Run(fmt.Sprint(blocked), func(t *testing.T) {
+	for _, blocked := range []string{"hold", "module", "callback"} {
+		t.Run(blocked, func(t *testing.T) {
 			ctx, cancel, control := cleanupTestContext(t)
 			release := ctx.HoldCleanup()
 			entered, proceed, finished := make(chan struct{}), make(chan struct{}), make(chan struct{})
-			if blocked {
-				control.onCleanup = func() { close(entered); <-proceed }
+			block := func() { close(entered); <-proceed }
+			switch blocked {
+			case "module":
+				control.onCleanup = block
+			case "callback":
+				ctx.OnCancel(block)
 			}
 			cancel(nil)
-			if blocked {
+			if blocked != "hold" {
 				go func() { release(); close(finished) }()
 				<-entered
 			}
@@ -315,7 +407,7 @@ func TestContextCleanupWaitDeadlineAndCompletion(t *testing.T) {
 			if err := internal.WaitForCleanup(deadline); !errors.Is(err, context.DeadlineExceeded) {
 				t.Fatalf("wait failed to honor deadline: %v", err)
 			}
-			if blocked {
+			if blocked != "hold" {
 				close(proceed)
 				<-finished
 			} else {

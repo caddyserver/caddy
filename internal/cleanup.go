@@ -23,18 +23,35 @@ import (
 // Cleanup coordinates holds on a cleanup callback and tracks retired callbacks
 // for process exit. Use NewCleanup to construct one; it must not be copied.
 type Cleanup struct {
-	mu       sync.Mutex
-	cleanup  func()
-	holds    int
-	retired  bool
-	cleaning bool
-	done     chan struct{}
+	mu        sync.Mutex
+	cleanup   func()
+	callbacks []func()
+	holds     int
+	retired   bool
+	cleaning  bool
+	done      chan struct{}
 }
 
 // NewCleanup returns a coordinator for cleanup, which runs once after retirement
 // and release of all holds. The callback runs synchronously without locks held.
 func NewCleanup(cleanup func()) *Cleanup {
 	return &Cleanup{cleanup: cleanup, done: make(chan struct{})}
+}
+
+// Add registers a callback to run before the constructor's cleanup function.
+// Callbacks run in registration order, synchronously without locks held.
+// Registration remains possible while a retired coordinator still has holds.
+// Callbacks added after cleanup starts run immediately and may overlap the
+// cleanup pass already in progress.
+func (c *Cleanup) Add(callback func()) {
+	c.mu.Lock()
+	if !c.cleaning {
+		c.callbacks = append(c.callbacks, callback)
+		c.mu.Unlock()
+		return
+	}
+	c.mu.Unlock()
+	callback()
 }
 
 // Acquire retains cleanup until the returned idempotent release is called.
@@ -93,6 +110,13 @@ func (c *Cleanup) reserveCleanup() bool {
 }
 
 func (c *Cleanup) clean() {
+	c.mu.Lock()
+	callbacks := c.callbacks
+	c.callbacks = nil
+	c.mu.Unlock()
+	for _, callback := range callbacks {
+		callback()
+	}
 	c.cleanup()
 	retiredCleanups.Lock()
 	close(c.done)

@@ -16,8 +16,10 @@ package internal
 
 import (
 	"context"
+	"slices"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestCleanupRegistrationAndCompletion(t *testing.T) {
@@ -73,5 +75,47 @@ func TestCleanupCanceledAcquisition(t *testing.T) {
 	release()
 	if ok {
 		t.Fatal("missing lifecycle accepted a canceled context")
+	}
+}
+
+func TestCleanupCallbackRegistration(t *testing.T) {
+	var order []string
+	cleanup := NewCleanup(func() { order = append(order, "module") })
+	cleanup.Add(func() { order = append(order, "before") })
+	release, ok := cleanup.Acquire(context.Background())
+	if !ok {
+		t.Fatal("acquisition failed")
+	}
+	t.Cleanup(release)
+	cleanup.Retire()
+	cleanup.Add(func() { order = append(order, "retired") })
+	if len(order) != 0 {
+		t.Fatal("callbacks ran with a hold")
+	}
+	release()
+	cleanup.Add(func() { order = append(order, "late") })
+	want := []string{"before", "retired", "module", "late"}
+	if !slices.Equal(order, want) {
+		t.Fatalf("callback order/count changed: got %v, want %v", order, want)
+	}
+}
+
+func TestCleanupCallbacksOutsideLocks(t *testing.T) {
+	var called atomic.Int32
+	cleanup := NewCleanup(func() { called.Add(1) })
+	cleanup.Add(func() {
+		cleanup.Add(func() { called.Add(1) })
+		cleanup.Retire()
+		called.Add(1)
+	})
+	finished := make(chan struct{})
+	go func() { cleanup.Retire(); close(finished) }()
+	select {
+	case <-finished:
+	case <-time.After(time.Second):
+		t.Fatal("recursive callback registration or retirement deadlocked")
+	}
+	if called.Load() != 3 {
+		t.Fatal("recursive callback or module cleanup was omitted or repeated")
 	}
 }

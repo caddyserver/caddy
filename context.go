@@ -52,7 +52,6 @@ type Context struct {
 	cleanup           *internal.Cleanup
 	cfg               *Config
 	ancestry          []Module
-	cleanupFuncs      []func()                // invoked at every config unload
 	exitFuncs         []func(context.Context) // invoked at config unload ONLY IF the process is exiting (EXPERIMENTAL)
 	metricsRegistry   *prometheus.Registry
 }
@@ -98,10 +97,6 @@ func NewContextWithCause(ctx Context) (Context, context.CancelCauseFunc) {
 	wrappedCancel := func(cause error) {
 		cancel(cause)
 
-		for _, f := range ctx.cleanupFuncs {
-			f()
-		}
-
 		cleanup.Retire()
 	}
 	newCtx.Context = c
@@ -109,15 +104,15 @@ func NewContextWithCause(ctx Context) (Context, context.CancelCauseFunc) {
 	return newCtx, wrappedCancel
 }
 
-// HoldCleanup delays Cleanup of modules loaded by ctx until the returned
-// release function has been called. Acquire the hold before cancellation;
-// acquisition after cancellation does nothing. All holds must be released,
+// HoldCleanup delays module Cleanup methods and OnCancel callbacks until the
+// returned release function has been called. Acquire the hold before
+// cancellation; acquisition after cancellation does nothing. All holds must be released,
 // including on error paths. Release is safe to call more than once.
-// The final release may run module Cleanup methods synchronously, so release
-// only after the work that needs those modules has finished.
+// The final release may run cleanup synchronously, so release only after the
+// work that needs those modules and resources has finished.
 //
-// A hold does not delay context cancellation or OnCancel callbacks. Copies
-// of ctx, including those returned by WithValue, share the same holds.
+// A hold does not delay context cancellation. Copies of ctx, including those
+// returned by WithValue, share the same holds and cleanup callbacks.
 // Module cleanup still requires calling the cancel function from NewContext
 // or NewContextWithCause; cancellation of a parent alone does not trigger it.
 //
@@ -127,9 +122,16 @@ func (ctx Context) HoldCleanup() func() {
 	return release
 }
 
-// OnCancel executes f when ctx is canceled.
+// OnCancel registers f to run when ctx is explicitly canceled and all cleanup
+// holds have been released. Callbacks run once in registration order, before
+// module Cleanup methods. Copies of ctx share the same callbacks.
+// A callback registered after cleanup starts runs immediately and may overlap
+// cleanup already in progress.
 func (ctx *Context) OnCancel(f func()) {
-	ctx.cleanupFuncs = append(ctx.cleanupFuncs, f)
+	if ctx.cleanup == nil {
+		panic("caddy: OnCancel requires a context created with NewContext")
+	}
+	ctx.cleanup.Add(f)
 }
 
 // FileSystems returns a ref to the FilesystemMap.
@@ -719,7 +721,6 @@ func (ctx *Context) WithValue(key, value any) Context {
 		cleanup:           ctx.cleanup,
 		cfg:               ctx.cfg,
 		ancestry:          ctx.ancestry,
-		cleanupFuncs:      ctx.cleanupFuncs,
 		exitFuncs:         ctx.exitFuncs,
 		metricsRegistry:   ctx.metricsRegistry,
 	}
