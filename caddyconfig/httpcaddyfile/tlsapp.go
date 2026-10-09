@@ -344,20 +344,27 @@ func (st ServerType) buildTLSApp(
 		tlsApp.EncryptedClientHello = ech
 
 		// outer server names will need certificates, so make sure they're included
-		// in an automation policy for them that applies any global options
+		// in an automation policy for them that applies any global options. A name
+		// that a site block's policy already covers keeps that policy, because a
+		// second policy for it would be rejected as ambiguous or picked ahead of
+		// the site's.
 		ap, err := newBaseAutomationPolicy(options, warnings, true)
 		if err != nil {
 			return nil, warnings, err
 		}
 		for _, cfg := range ech.Configs {
-			if cfg.PublicName != "" {
-				ap.SubjectsRaw = append(ap.SubjectsRaw, cfg.PublicName)
+			if cfg.PublicName == "" || automationPolicyCoversName(tlsApp.Automation, cfg.PublicName) {
+				continue
 			}
+			ap.SubjectsRaw = append(ap.SubjectsRaw, cfg.PublicName)
 		}
-		if tlsApp.Automation == nil {
-			tlsApp.Automation = new(caddytls.AutomationConfig)
+		// without subjects, the policy would apply to every name as a catch-all
+		if len(ap.SubjectsRaw) > 0 {
+			if tlsApp.Automation == nil {
+				tlsApp.Automation = new(caddytls.AutomationConfig)
+			}
+			tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, ap)
 		}
-		tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, ap)
 	}
 
 	// if the storage clean interval is a boolean, then it's "off" to disable cleaning
@@ -952,6 +959,23 @@ func automationPolicyExistsForSubject(automation *caddytls.AutomationConfig, sub
 	}
 	return slices.ContainsFunc(automation.Policies, func(ap *caddytls.AutomationPolicy) bool {
 		return slices.Contains(ap.SubjectsRaw, subject)
+	})
+}
+
+// automationPolicyCoversName reports whether some automation policy with
+// subjects would be selected for the ECH public name at runtime. The TLS app
+// trims and lowercases public names, then picks a policy for each one with
+// certmagic.MatchWildcard, so a wildcard or differently cased subject covers
+// it too. A catch-all policy names no subjects and so never matches.
+func automationPolicyCoversName(automation *caddytls.AutomationConfig, publicName string) bool {
+	if automation == nil {
+		return false
+	}
+	name := strings.ToLower(strings.TrimSpace(publicName))
+	return slices.ContainsFunc(automation.Policies, func(ap *caddytls.AutomationPolicy) bool {
+		return slices.ContainsFunc(ap.SubjectsRaw, func(subj string) bool {
+			return certmagic.MatchWildcard(name, subj)
+		})
 	})
 }
 
