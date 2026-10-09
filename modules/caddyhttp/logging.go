@@ -19,8 +19,10 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 
@@ -133,6 +135,9 @@ func (slc ServerLogConfig) wrapLogger(logger *zap.Logger, req *http.Request) []*
 }
 
 func (slc ServerLogConfig) getLoggerHosts(host string) []string {
+	// hostnames are case insensitive, keys were lowercased during provisioning
+	host = strings.ToLower(host)
+
 	// try the exact hostname first
 	if hosts, ok := slc.LoggerNames[host]; ok {
 		return hosts
@@ -152,6 +157,29 @@ func (slc ServerLogConfig) getLoggerHosts(host string) []string {
 	}
 
 	return []string{slc.DefaultLoggerName}
+}
+
+// normalizeLoggerNames lowercases the hostname keys of LoggerNames
+// because hostnames are case-insensitive. When two keys differ only
+// by case, their logger names are merged
+func (slc *ServerLogConfig) normalizeLoggerNames() {
+	if len(slc.LoggerNames) == 0 {
+		return
+	}
+	normalized := make(map[string]StringArray, len(slc.LoggerNames))
+	// iterate in sorted order so merged logger names are deterministic
+	for _, host := range slices.Sorted(maps.Keys(slc.LoggerNames)) {
+		lowerHost := strings.ToLower(host)
+		merged := normalized[lowerHost]
+		for _, name := range slc.LoggerNames[host] {
+			if !slices.Contains(merged, name) {
+				merged = append(merged, name)
+			}
+		}
+		// keep empty mappings, they disable logging for the host
+		normalized[lowerHost] = merged
+	}
+	slc.LoggerNames = normalized
 }
 
 func (slc *ServerLogConfig) clone() *ServerLogConfig {
