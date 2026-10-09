@@ -1,0 +1,76 @@
+{
+	ech example.com
+}
+
+example.com {
+	tls internal
+}
+
+:8443 {
+	tls internal
+	respond "catch-all"
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				},
+				"srv1": {
+					"listen": [
+						":8443"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"body": "catch-all",
+									"handler": "static_response"
+								}
+							]
+						}
+					],
+					"tls_connection_policies": [
+						{}
+					]
+				}
+			}
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"issuers": [
+							{
+								"module": "internal"
+							}
+						]
+					}
+				]
+			},
+			"encrypted_client_hello": {
+				"configs": [
+					{
+						"public_name": "example.com"
+					}
+				]
+			}
+		}
+	}
+}
