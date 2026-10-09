@@ -580,6 +580,7 @@ func TestRequestOnlyExpressionDoesNotRetryResponses(t *testing.T) {
 		`{http.request.method} == "POST"`,
 		`{http.reverse_proxy.upstream.host} == "127.0.0.1"`,
 		`{http.request.uri.path} != "\{http.reverse_proxy.status_code}"`,
+		`{http.reverse_proxy.status_codes} == null`,
 	} {
 		t.Run(expr, func(t *testing.T) {
 			var hits atomic.Int32

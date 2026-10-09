@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -207,7 +208,7 @@ func (m *MatchExpression) Provision(ctx caddy.Context) error {
 // expression reads. A name that is only known at evaluation time is
 // returned as an empty string.
 func (m MatchExpression) Placeholders() []string {
-	return m.placeholders
+	return slices.Clone(m.placeholders)
 }
 
 // Match returns true if r matches m.

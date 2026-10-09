@@ -29,6 +29,7 @@ import (
 	"net/netip"
 	"net/textproto"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -2132,9 +2133,13 @@ type RequestHeaderOpsTransport interface {
 var responsePlaceholders = []string{
 	"http.reverse_proxy.status_code",
 	"http.reverse_proxy.status_text",
-	"http.reverse_proxy.header.",
 	"http.reverse_proxy.upstream.latency",
+	"http.reverse_proxy.upstream.latency_ms",
 }
+
+// responseHeaderPlaceholderPrefix is the prefix of the response
+// header placeholders, {http.reverse_proxy.header.*}
+const responseHeaderPlaceholderPrefix = "http.reverse_proxy.header."
 
 // matcherSetReferencesResponse reports whether a matcher set contains an
 // expression matcher that reads response data, or a placeholder whose name
@@ -2148,13 +2153,10 @@ func matcherSetReferencesResponse(matcherSet caddyhttp.MatcherSet) bool {
 			continue
 		}
 		for _, name := range expr.Placeholders() {
-			if name == "" {
+			if name == "" ||
+				slices.Contains(responsePlaceholders, name) ||
+				strings.HasPrefix(name, responseHeaderPlaceholderPrefix) {
 				return true
-			}
-			for _, prefix := range responsePlaceholders {
-				if strings.HasPrefix(name, prefix) {
-					return true
-				}
 			}
 		}
 	}
