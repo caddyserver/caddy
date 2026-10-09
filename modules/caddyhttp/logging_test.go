@@ -15,9 +15,38 @@
 package caddyhttp
 
 import (
+	"bytes"
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"testing"
+
+	"github.com/caddyserver/caddy/v2"
 )
+
+func TestAppProvisionLoggerNamesCaseInsensitive(t *testing.T) {
+	ctx, err := caddy.ProvisionContext(&caddy.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &Server{
+		Logs: &ServerLogConfig{
+			LoggerNames: map[string]StringArray{"Mixed.Example.org": {"mixed"}},
+		},
+	}
+	app := &App{Servers: map[string]*Server{"srv0": srv}}
+	if err := app.Provision(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	srv.accessLogger = testLogger(buf.Write)
+	srv.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "http://MIXED.example.org/", nil))
+
+	if !bytes.Contains(buf.Bytes(), []byte(`"logger":"mixed"`)) {
+		t.Errorf("expected access log from logger %q, got %s", "mixed", buf.String())
+	}
+}
 
 func TestServerLogConfigLoggerNamesCaseInsensitive(t *testing.T) {
 	slc := ServerLogConfig{
