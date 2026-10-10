@@ -45,3 +45,25 @@ func TestTryFilesErrorCodeAfterQueryItem(t *testing.T) {
 	}
 	tester.AssertResponseCode(req, http.StatusNotFound)
 }
+
+func TestSkippedGroupedRouteKeepsRegexpCapture(t *testing.T) {
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`
+	{
+		skip_install_trust
+		admin localhost:2999
+		http_port 9080
+		grace_period 1ns
+	}
+	http://localhost:9080 {
+		@x path_regexp x ^/x/(.*)$
+		@y path_regexp x ^/(.*)$
+		rewrite @x /one/{re.x.1}
+		rewrite @y /two/{re.x.1}
+		respond "path={path} cap={re.x.1}"
+	}
+	`, "caddyfile")
+
+	tester.AssertGetResponse("http://localhost:9080/x/q", 200, "path=/one/q cap=q")
+	tester.AssertGetResponse("http://localhost:9080/z", 200, "path=/two/z cap=z")
+}
