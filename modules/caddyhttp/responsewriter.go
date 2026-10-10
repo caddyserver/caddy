@@ -255,6 +255,14 @@ func (rr *responseRecorder) WriteResponse() error {
 // FlushError will suppress actual flushing if the response is buffered. See:
 // https://github.com/caddyserver/caddy/issues/6144
 func (rr *responseRecorder) FlushError() error {
+	// Hijack releases the underlying bufio.Writer. net/http's Write returns
+	// ErrHijacked from then on and WriteHeader silently does nothing, but
+	// net/http's FlushError does neither and dereferences the released
+	// writer, so flushing after an upgrade panics with a nil pointer
+	// dereference. Report the hijack from here too. See #8151.
+	if rr.hijacked {
+		return http.ErrHijacked
+	}
 	if rr.stream {
 		//nolint:bodyclose
 		return http.NewResponseController(rr.ResponseWriterWrapper).Flush()
