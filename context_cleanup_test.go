@@ -504,3 +504,77 @@ func TestContextCleanupConcurrentLoadCopies(t *testing.T) {
 		}
 	}
 }
+
+func TestContextCleanupConcurrentLateRegistration(t *testing.T) {
+	for _, phase := range []string{"callback", "module"} {
+		t.Run(phase, func(t *testing.T) {
+			ctx, cancel, control := cleanupTestContext(t)
+			copyCtx := ctx
+			release := ctx.HoldCleanup()
+			entered, proceed := make(chan struct{}), make(chan struct{})
+			lateProceed := make(chan struct{})
+			var resume, resumeLate sync.Once
+			unblock := func() { resume.Do(func() { close(proceed) }) }
+			unblockLate := func() { resumeLate.Do(func() { close(lateProceed) }) }
+			block := func() { close(entered); <-proceed }
+			if phase == "callback" {
+				ctx.OnCancel(block)
+			} else {
+				control.onCleanup = block
+			}
+			cancel(nil)
+			cleaned := make(chan struct{})
+			go func() { release(); close(cleaned) }()
+			<-entered
+			var lateCalls atomic.Int32
+			result := make(chan any, 1)
+			go func() {
+				defer func() { result <- recover() }()
+				copyCtx.OnCancel(func() { lateCalls.Add(1); <-lateProceed })
+			}()
+			defer func() { unblock(); unblockLate(); <-cleaned }()
+			select {
+			case rejected := <-result:
+				if rejected == nil {
+					t.Error("late registration was not explicitly rejected")
+				}
+			case <-time.After(time.Second):
+				// Unblock an incorrectly executed callback so the failing
+				// negative control cannot leak a goroutine or lifecycle.
+				unblockLate()
+				<-result
+				t.Error("late registration executed an untracked callback")
+			}
+			if lateCalls.Load() != 0 {
+				t.Error("rejected callback executed")
+			}
+			deadline, stop := context.WithTimeout(context.Background(), 20*time.Millisecond)
+			defer stop()
+			if err := internal.WaitForCleanup(deadline); !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("exit wait omitted blocked cleanup: %v", err)
+			}
+			if phase == "callback" && control.cleaned.Load() != 0 {
+				t.Error("module cleanup ran alongside a blocked callback")
+			}
+			unblock()
+			<-cleaned
+			if err := internal.WaitForCleanup(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if control.cleaned.Load() != 1 {
+				t.Fatal("module cleanup was omitted or repeated")
+			}
+		})
+	}
+}
+
+func TestContextCleanupCompletedRegistrationRejected(t *testing.T) {
+	ctx, cancel, _ := cleanupTestContext(t)
+	cancel(nil)
+	defer func() {
+		if recover() == nil {
+			t.Error("registration after cleanup completion was not rejected")
+		}
+	}()
+	ctx.OnCancel(func() { t.Error("callback ran after lifecycle completion") })
+}

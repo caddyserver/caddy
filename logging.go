@@ -15,6 +15,7 @@
 package caddy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -33,6 +34,10 @@ import (
 )
 
 func init() {
+	// Capture standard-library logs before any configuration is loaded.
+	// Subsequent changes belong to individual configuration generations.
+	_ = zap.RedirectStdLog(defaultLogger.logger)
+
 	RegisterModule(StdoutWriter{})
 	RegisterModule(StderrWriter{})
 	RegisterModule(DiscardWriter{})
@@ -78,6 +83,7 @@ type Logging struct {
 	// must have their keys added to this list so they
 	// can be closed when cleaning up
 	writerKeys []string
+	stdLogSink *stdLogSink
 }
 
 // openLogs sets up the config and opens all the configured writers.
@@ -86,6 +92,7 @@ type Logging struct {
 func (logging *Logging) openLogs(ctx Context) error {
 	// make sure to deallocate resources when context is done
 	ctx.OnCancel(func() {
+		logging.releaseStdLogSink()
 		err := logging.closeLogs()
 		if err != nil {
 			Log().Error("closing logs", zap.Error(err))
@@ -98,6 +105,10 @@ func (logging *Logging) openLogs(ctx Context) error {
 		if err != nil {
 			return fmt.Errorf("setting up sink log: %v", err)
 		}
+	} else {
+		// A configuration without a sink also owns the standard logger,
+		// so removing a sink takes effect before old resources drain.
+		logging.stdLogSink = acquireStdLogSink(ctx.Context, nil)
 	}
 
 	// as a special case, set up the default structured Caddy log next
@@ -460,8 +471,71 @@ func (sll *SinkLog) provision(ctx Context, logging *Logging) error {
 	}
 
 	logger := zap.New(sll.core, options...)
-	ctx.OnCancel(zap.RedirectStdLog(logger))
+	logging.stdLogSink = acquireStdLogSink(ctx.Context, zap.NewStdLog(logger))
 	return nil
+}
+
+// stdLogSink is one configuration's ownership of the process-global standard
+// logger. A nil logger selects the state from before Caddy acquired ownership.
+type stdLogSink struct {
+	ctx    context.Context
+	logger *log.Logger
+}
+
+var stdLogSinks = struct {
+	sync.Mutex
+	owners   []*stdLogSink
+	baseline *log.Logger
+}{}
+
+func acquireStdLogSink(ctx context.Context, logger *log.Logger) *stdLogSink {
+	stdLogSinks.Lock()
+	defer stdLogSinks.Unlock()
+	if len(stdLogSinks.owners) == 0 {
+		stdLogSinks.baseline = log.New(log.Writer(), log.Prefix(), log.Flags())
+	}
+	owner := &stdLogSink{ctx: ctx, logger: logger}
+	stdLogSinks.owners = append(stdLogSinks.owners, owner)
+	applyStdLogSink(logger)
+	return owner
+}
+
+// releaseStdLogSink relinquishes this configuration's ownership before its
+// writers close. Failed candidates also call it before cancellation, allowing
+// immediate rollback even when their module cleanup is held.
+func (logging *Logging) releaseStdLogSink() {
+	if logging == nil || logging.stdLogSink == nil {
+		return
+	}
+	stdLogSinks.Lock()
+	defer stdLogSinks.Unlock()
+	i := slices.Index(stdLogSinks.owners, logging.stdLogSink)
+	if i < 0 {
+		return
+	}
+	stdLogSinks.owners = slices.Delete(stdLogSinks.owners, i, i+1)
+	var logger *log.Logger
+	for _, owner := range slices.Backward(stdLogSinks.owners) {
+		if owner.ctx.Err() == nil {
+			logger = owner.logger
+			break
+		}
+	}
+	applyStdLogSink(logger)
+	if len(stdLogSinks.owners) == 0 {
+		stdLogSinks.baseline = nil
+	}
+}
+
+// applyStdLogSink requires stdLogSinks to be locked. Changing output waits for
+// any standard-log write already in progress before its old writer can close.
+func applyStdLogSink(logger *log.Logger) {
+	if logger == nil {
+		logger = stdLogSinks.baseline
+	}
+	log.SetFlags(logger.Flags())
+	log.SetPrefix(logger.Prefix())
+	log.SetOutput(logger.Writer())
 }
 
 // CustomLog represents a custom logger configuration.
@@ -721,10 +795,6 @@ func newDefaultProductionLog() (*defaultCustomLog, error) {
 	cl.buildCore()
 
 	logger := zap.New(cl.core)
-
-	// capture logs from other libraries which
-	// may not be using zap logging directly
-	_ = zap.RedirectStdLog(logger)
 
 	return &defaultCustomLog{
 		CustomLog: cl,

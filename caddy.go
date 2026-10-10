@@ -433,6 +433,7 @@ func run(newCfg *Config, start bool) (Context, error) {
 		// partially copied from provisionContext
 		if err != nil {
 			globalMetrics.configSuccess.Set(0)
+			ctx.cfg.Logging.releaseStdLogSink()
 			ctx.cfg.cancelFunc(fmt.Errorf("configuration start error: %w", err))
 
 			if currentCtx.cfg != nil {
@@ -511,6 +512,7 @@ func provisionContext(newCfg *Config, replaceAdminServer bool) (Context, error) 
 			// since the associated config won't be used;
 			// this will cause all modules that were newly
 			// provisioned to clean themselves up
+			newCfg.Logging.releaseStdLogSink()
 			cancelCause(fmt.Errorf("configuration error: %w", err))
 
 			// also undo any other state changes we made

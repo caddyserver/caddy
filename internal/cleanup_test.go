@@ -93,8 +93,10 @@ func TestCleanupCallbackRegistration(t *testing.T) {
 		t.Fatal("callbacks ran with a hold")
 	}
 	release()
-	cleanup.Add(func() { order = append(order, "late") })
-	want := []string{"before", "retired", "module", "late"}
+	if cleanup.Add(func() { order = append(order, "late") }) {
+		t.Fatal("late registration was accepted")
+	}
+	want := []string{"before", "retired", "module"}
 	if !slices.Equal(order, want) {
 		t.Fatalf("callback order/count changed: got %v, want %v", order, want)
 	}
@@ -104,7 +106,9 @@ func TestCleanupCallbacksOutsideLocks(t *testing.T) {
 	var called atomic.Int32
 	cleanup := NewCleanup(func() { called.Add(1) })
 	cleanup.Add(func() {
-		cleanup.Add(func() { called.Add(1) })
+		if cleanup.Add(func() { called.Add(1) }) {
+			t.Error("recursive late registration was accepted")
+		}
 		cleanup.Retire()
 		called.Add(1)
 	})
@@ -115,7 +119,7 @@ func TestCleanupCallbacksOutsideLocks(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("recursive callback registration or retirement deadlocked")
 	}
-	if called.Load() != 3 {
+	if called.Load() != 2 {
 		t.Fatal("recursive callback or module cleanup was omitted or repeated")
 	}
 }

@@ -125,13 +125,16 @@ func (ctx Context) HoldCleanup() func() {
 // OnCancel registers f to run when ctx is explicitly canceled and all cleanup
 // holds have been released. Callbacks run once in registration order, before
 // module Cleanup methods. Copies of ctx share the same callbacks.
-// A callback registered after cleanup starts runs immediately and may overlap
-// cleanup already in progress.
+// Registration is allowed after cancellation while a cleanup hold remains.
+// OnCancel panics if cleanup has already started; acquire a hold before work
+// that may register callbacks concurrently with cancellation.
 func (ctx *Context) OnCancel(f func()) {
 	if ctx.cleanup == nil {
 		panic("caddy: OnCancel requires a context created with NewContext")
 	}
-	ctx.cleanup.Add(f)
+	if !ctx.cleanup.Add(f) {
+		panic("caddy: OnCancel called after cleanup started")
+	}
 }
 
 // FileSystems returns a ref to the FilesystemMap.

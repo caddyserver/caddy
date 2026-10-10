@@ -41,17 +41,15 @@ func NewCleanup(cleanup func()) *Cleanup {
 // Add registers a callback to run before the constructor's cleanup function.
 // Callbacks run in registration order, synchronously without locks held.
 // Registration remains possible while a retired coordinator still has holds.
-// Callbacks added after cleanup starts run immediately and may overlap the
-// cleanup pass already in progress.
-func (c *Cleanup) Add(callback func()) {
+// Once cleanup starts, Add returns false without registering or running callback.
+func (c *Cleanup) Add(callback func()) bool {
 	c.mu.Lock()
-	if !c.cleaning {
-		c.callbacks = append(c.callbacks, callback)
-		c.mu.Unlock()
-		return
+	defer c.mu.Unlock()
+	if c.cleaning {
+		return false
 	}
-	c.mu.Unlock()
-	callback()
+	c.callbacks = append(c.callbacks, callback)
+	return true
 }
 
 // Acquire retains cleanup until the returned idempotent release is called.
