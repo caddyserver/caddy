@@ -1103,3 +1103,15 @@ func TestReverseProxyResponseHandling(t *testing.T) {
 		}
 	}
 }
+
+func TestReverseProxyH2CRejectsTLSOptions(t *testing.T) {
+	caddytest.AssertLoadError(t, `
+	localhost {
+		reverse_proxy h2c://localhost:3000 {
+			transport http {
+				tls_insecure_skip_verify
+			}
+		}
+	}
+	`, "caddyfile", "cannot use TLS options with h2c:// upstreams")
+}
