@@ -243,24 +243,28 @@ func (m *MatchExpression) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	// CEL expression (e.g. strings) and we should retain that
 	if d.CountRemainingArgs() > 1 {
 		m.Expr = strings.Join(d.RemainingArgsRaw(), " ")
-		return nil
+	} else {
+		// there should at least be one arg
+		if !d.NextArg() {
+			return d.ArgErr()
+		}
+
+		// if there's only one token, then we can safely grab the
+		// cleaned token (no quotes) and use that as the expression
+		// because there's no valid CEL expression that is only a
+		// quoted string; commonly quotes are used in Caddyfile to
+		// define the expression
+		m.Expr = d.Val()
+
+		// use the named matcher's name, to fill regexp
+		// matchers names by default
+		m.Name = d.GetContextString(caddyfile.MatcherNameCtxKey)
 	}
 
-	// there should at least be one arg
-	if !d.NextArg() {
-		return d.ArgErr()
+	// a matcher set holds only one expression matcher
+	if d.Next() {
+		return d.Err("repeated expression matchers are not supported, combine them into one expression with &&")
 	}
-
-	// if there's only one token, then we can safely grab the
-	// cleaned token (no quotes) and use that as the expression
-	// because there's no valid CEL expression that is only a
-	// quoted string; commonly quotes are used in Caddyfile to
-	// define the expression
-	m.Expr = d.Val()
-
-	// use the named matcher's name, to fill regexp
-	// matchers names by default
-	m.Name = d.GetContextString(caddyfile.MatcherNameCtxKey)
 
 	return nil
 }
