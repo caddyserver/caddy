@@ -16,9 +16,11 @@ package admininfo
 
 import (
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
+	"runtime/debug"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
@@ -96,4 +98,47 @@ func TestAdminInfoHandler(t *testing.T) {
 			t.Errorf("expected Allow header %q, got %q", http.MethodGet, allow)
 		}
 	})
+}
+
+func TestFilterBuildSettings(t *testing.T) {
+	for i, tc := range []struct {
+		input    []debug.BuildSetting
+		expected map[string]string
+	}{
+		{
+			input:    nil,
+			expected: nil,
+		},
+		{
+			input: []debug.BuildSetting{
+				{Key: "-ldflags", Value: "-X main.secret=hunter2"},
+				{Key: "CGO_CFLAGS", Value: "-I/home/user/include"},
+				{Key: "GOOS", Value: "linux"},
+			},
+			expected: nil,
+		},
+		{
+			input: []debug.BuildSetting{
+				{Key: "-buildmode", Value: "exe"},
+				{Key: "CGO_ENABLED", Value: "1"},
+				{Key: "vcs", Value: "git"},
+				{Key: "vcs.revision", Value: "abc123"},
+				{Key: "vcs.time", Value: "2025-07-01T12:00:00Z"},
+				{Key: "vcs.modified", Value: "false"},
+			},
+			expected: map[string]string{
+				"vcs.revision": "abc123",
+				"vcs.time":     "2025-07-01T12:00:00Z",
+				"vcs.modified": "false",
+			},
+		},
+	} {
+		actual := filterBuildSettings(tc.input)
+		if !maps.Equal(actual, tc.expected) {
+			t.Errorf("Test %d: expected %v, got %v", i, tc.expected, actual)
+		}
+		if tc.expected == nil && actual != nil {
+			t.Errorf("Test %d: expected nil map, got %v", i, actual)
+		}
+	}
 }

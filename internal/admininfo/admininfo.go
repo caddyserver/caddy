@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"runtime"
 	"runtime/debug"
+	"slices"
 
 	"github.com/caddyserver/caddy/v2"
 )
@@ -47,14 +48,39 @@ func (ai AdminInfo) Routes() []caddy.AdminRoute {
 	}
 }
 
-// infoResponse is the JSON structure returned by GET /info.
+// infoResponse is the JSON structure returned by GET /info. Its
+// fields are part of the admin API contract.
 type infoResponse struct {
-	Version       string            `json:"version"`
-	VersionFull   string            `json:"version_full"`
-	GoVersion     string            `json:"go_version"`
-	OS            string            `json:"os"`
-	Arch          string            `json:"arch"`
+	// Version is the short version string, as printed by `caddy version`.
+	Version string `json:"version"`
+
+	// VersionFull is the full version string, which may include
+	// the module checksum.
+	VersionFull string `json:"version_full"`
+
+	// GoVersion is the Go toolchain version used to build Caddy.
+	GoVersion string `json:"go_version"`
+
+	// OS is the target operating system.
+	OS string `json:"os"`
+
+	// Arch is the target architecture.
+	Arch string `json:"arch"`
+
+	// BuildSettings contains the VCS metadata embedded at build time,
+	// limited to the keys in exposedBuildSettings. It is omitted when
+	// unavailable, such as for builds made with `go install` or xcaddy.
 	BuildSettings map[string]string `json:"build_settings,omitempty"`
+}
+
+// exposedBuildSettings lists the build setting keys included in the
+// response. Other settings, such as compiler and linker flags, vary
+// by toolchain and may contain local paths or injected values, so
+// they are not exposed.
+var exposedBuildSettings = []string{
+	"vcs.revision",
+	"vcs.time",
+	"vcs.modified",
 }
 
 func (AdminInfo) handleInfo(w http.ResponseWriter, r *http.Request) error {
@@ -77,17 +103,27 @@ func (AdminInfo) handleInfo(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	if bi, ok := debug.ReadBuildInfo(); ok {
-		settings := make(map[string]string)
-		for _, s := range bi.Settings {
-			settings[s.Key] = s.Value
-		}
-		if len(settings) > 0 {
-			resp.BuildSettings = settings
-		}
+		resp.BuildSettings = filterBuildSettings(bi.Settings)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	return json.NewEncoder(w).Encode(resp)
+}
+
+// filterBuildSettings returns the settings whose keys are in
+// exposedBuildSettings, or nil if there are none.
+func filterBuildSettings(settings []debug.BuildSetting) map[string]string {
+	var filtered map[string]string
+	for _, s := range settings {
+		if !slices.Contains(exposedBuildSettings, s.Key) {
+			continue
+		}
+		if filtered == nil {
+			filtered = make(map[string]string)
+		}
+		filtered[s.Key] = s.Value
+	}
+	return filtered
 }
 
 // Interface guards
