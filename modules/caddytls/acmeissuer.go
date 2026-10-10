@@ -41,6 +41,35 @@ func init() {
 	caddy.RegisterModule(ACMEIssuer{})
 }
 
+const (
+	letsEncryptProductionDirectory = "https://acme-v02.api.letsencrypt.org/directory"
+	letsEncryptStagingDirectory    = "https://acme-staging-v02.api.letsencrypt.org/directory"
+	letsEncryptShortlivedProfile   = "shortlived"
+)
+
+func letsEncryptDirectory(ca string) bool {
+	switch ca {
+	case "", letsEncryptProductionDirectory, letsEncryptStagingDirectory:
+		return true
+	default:
+		return false
+	}
+}
+
+// letsEncryptProfile returns the profile sent to both the CA and TestCA.
+// CertMagic uses one profile for both endpoints, so the shortlived default
+// applies only when each endpoint is Let's Encrypt. An explicit profile,
+// including "classic", is left alone. A custom CA or TestCA gets no default.
+func letsEncryptProfile(ca, testCA, profile string) string {
+	if profile != "" {
+		return profile
+	}
+	if letsEncryptDirectory(ca) && letsEncryptDirectory(testCA) {
+		return letsEncryptShortlivedProfile
+	}
+	return ""
+}
+
 // ACMEIssuer manages certificates using the ACME protocol (RFC 8555).
 type ACMEIssuer struct {
 	// The URL to the CA's ACME directory endpoint. Default:
@@ -63,6 +92,13 @@ type ACMEIssuer struct {
 	// Optionally select an ACME profile to use for certificate
 	// orders. Must be a profile name offered by the ACME server,
 	// which are listed at its directory endpoint.
+	//
+	// When this is empty and both the CA and the test CA are Let's
+	// Encrypt (the default directories, or either public directory),
+	// Caddy asks for the "shortlived" profile. The same profile is
+	// sent to both endpoints, so a custom test CA does not get that
+	// default. Set this to "classic" to keep Let's Encrypt's
+	// long-lived profile.
 	//
 	// EXPERIMENTAL: Subject to change.
 	// See https://datatracker.ietf.org/doc/draft-aaron-acme-profiles/
@@ -256,7 +292,7 @@ func (iss *ACMEIssuer) makeIssuerTemplate(ctx caddy.Context) (certmagic.ACMEIssu
 		CA:                iss.CA,
 		TestCA:            iss.TestCA,
 		Email:             iss.Email,
-		Profile:           iss.Profile,
+		Profile:           letsEncryptProfile(iss.CA, iss.TestCA, iss.Profile),
 		AccountKeyPEM:     iss.AccountKey,
 		CertObtainTimeout: time.Duration(iss.ACMETimeout),
 		TrustedRoots:      iss.rootPool,
@@ -426,7 +462,7 @@ func (iss *ACMEIssuer) generateZeroSSLEABCredentials(ctx context.Context, acct a
 //	    dir <directory_url>
 //	    test_dir <test_directory_url>
 //	    email <email>
-//	    profile <profile_name>
+//	    profile <profile_name>  # Let's Encrypt default: shortlived. Use "classic" for the long-lived profile.
 //	    timeout <duration>
 //	    disable_http_challenge
 //	    disable_tlsalpn_challenge
