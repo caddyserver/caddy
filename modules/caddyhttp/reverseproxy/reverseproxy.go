@@ -167,6 +167,13 @@ type Handler struct {
 	// only when the request already meets the transport's framing requirements.
 	RequestBuffers int64 `json:"request_buffers,omitempty"`
 
+	// Extends request_buffers with opt-in disk buffering for unknown-length
+	// request bodies. The entire body is buffered before dialing an upstream,
+	// spilling to temporary files above the request_buffers memory threshold.
+	// Requires a positive, finite request_buffers value. If omitted, the existing
+	// memory-only buffering behavior is retained, including its streaming fallback.
+	RequestBufferOptions *RequestBufferOptions `json:"request_buffer_options,omitempty"`
+
 	// If nonzero, the entire response body up to this size will be read
 	// and buffered in memory before being proxied to the client. This
 	// should be avoided if at all possible for performance reasons, but
@@ -299,6 +306,12 @@ func (Handler) CaddyModule() caddy.ModuleInfo {
 
 // Provision ensures that h is set up properly before use.
 func (h *Handler) Provision(ctx caddy.Context) error {
+	if h.RequestBufferOptions != nil {
+		if err := h.RequestBufferOptions.provision(h.RequestBuffers); err != nil {
+			return fmt.Errorf("request_buffer_options: %w", err)
+		}
+	}
+
 	eventAppIface, err := ctx.App("events")
 	if err != nil {
 		return fmt.Errorf("getting events app: %v", err)
@@ -625,7 +638,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 			return h.refuseIncremental(w, nil)
 		}
 		return caddyhttp.Error(http.StatusInternalServerError,
-			fmt.Errorf("preparing request for upstream round-trip: %v", err))
+			fmt.Errorf("preparing request for upstream round-trip: %w", err))
+	}
+
+	// The proxy owns this buffer until all attempts finish. Each attempt gets an
+	// independent reader; transport Close calls must not remove the backing file.
+	spooledReqBody, _ := clonedReq.Body.(*spooledBody)
+	if spooledReqBody != nil {
+		defer func() {
+			if err := spooledReqBody.Close(); err != nil {
+				h.logger.Warn("cleaning up request buffer", zap.Error(err))
+			}
+		}()
+		clonedReq.Body = io.NopCloser(spooledReqBody.reader())
 	}
 
 	// websocket over http2 or http3 if extended connect is enabled, assuming backend doesn't support this, the request will be modified to http1.1 upgrade
@@ -679,7 +704,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 				bufferedReqBody.Reset()
 				bufPool.Put(bufferedReqBody)
 			}()
-		} else {
+		} else if spooledReqBody == nil {
 			clonedReq.Body = &bodyNopCloserIfNotRead{ReadCloser: clonedReq.Body}
 		}
 	}
@@ -704,6 +729,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		// the full body (retries should only happen for idempotent requests) (see #6259)
 		if bufferedReqBody != nil {
 			clonedReq.Body = io.NopCloser(bytes.NewReader(bufferedReqBody.Bytes()))
+		}
+		if spooledReqBody != nil {
+			clonedReq.Body = io.NopCloser(spooledReqBody.reader())
 		}
 
 		var done bool
@@ -937,7 +965,18 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	// attacks, so it is strongly recommended to only use this
 	// feature if absolutely required, if read timeouts are
 	// set, and if body size is limited
-	if h.RequestBuffers != 0 && req.Body != nil && !caddyhttp.IsIncremental(req.Header) {
+	if h.RequestBufferOptions != nil && req.ContentLength < 0 && req.Body != nil {
+		body, err := h.RequestBufferOptions.buffer(req.Context(), req.Body)
+		if err != nil {
+			return nil, err
+		}
+		req.Body = body
+		req.ContentLength = body.size
+		req.Header.Set("Content-Length", strconv.FormatInt(body.size, 10))
+		if body.size == 0 {
+			_ = body.Close()
+		}
+	} else if h.RequestBuffers != 0 && req.Body != nil && !caddyhttp.IsIncremental(req.Header) {
 		var readBytes int64
 		req.Body, readBytes = h.bufferedBody(req.Body, h.RequestBuffers)
 		// set Content-Length when body is fully buffered
