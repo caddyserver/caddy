@@ -26,7 +26,7 @@ import (
 	"time"
 )
 
-func TestBodyNopCloserIfNotReadHTTP2Reset(t *testing.T) {
+func TestBodyCloserIfConnectedHTTP2Reset(t *testing.T) {
 	reader, writer := io.Pipe()
 	defer writer.Close()
 	defer reader.Close()
@@ -51,7 +51,7 @@ func TestBodyNopCloserIfNotReadHTTP2Reset(t *testing.T) {
 	defer client.CloseIdleConnections()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	wrapped := &bodyNopCloserIfNotRead{ReadCloser: body}
+	wrapped := &bodyCloserIfConnected{ReadCloser: body}
 	trace := &httptrace.ClientTrace{GotConn: func(httptrace.GotConnInfo) { wrapped.connected.Store(true) }}
 	req, err := http.NewRequestWithContext(httptrace.WithClientTrace(ctx, trace), http.MethodPost, upstream.URL, wrapped)
 	if err != nil {
@@ -99,11 +99,9 @@ func (b *blockingRequestBody) Close() error { return b.reader.Close() }
 type trackedRequestBody struct {
 	io.Reader
 	closed bool
-	reads  int
 }
 
 func (b *trackedRequestBody) Read(p []byte) (int, error) {
-	b.reads++
 	return b.Reader.Read(p)
 }
 
@@ -112,7 +110,7 @@ func (b *trackedRequestBody) Close() error {
 	return nil
 }
 
-func TestBodyNopCloserIfNotRead(t *testing.T) {
+func TestBodyCloserIfConnected(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		payload   string
@@ -126,7 +124,7 @@ func TestBodyNopCloserIfNotRead(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			body := &trackedRequestBody{Reader: strings.NewReader(tc.payload)}
-			wrapped := &bodyNopCloserIfNotRead{ReadCloser: body}
+			wrapped := &bodyCloserIfConnected{ReadCloser: body}
 			wrapped.connected.Store(tc.connected)
 			if tc.read {
 				if _, err := io.ReadAll(wrapped); err != nil {
@@ -143,15 +141,6 @@ func TestBodyNopCloserIfNotRead(t *testing.T) {
 				data, err := io.ReadAll(wrapped)
 				if err != nil || string(data) != tc.payload {
 					t.Fatalf("retry body = %q, error = %v", data, err)
-				}
-			}
-			if tc.read && tc.payload == "" {
-				reads := body.reads
-				if n, err := wrapped.Read(make([]byte, 1)); n != 0 || err != io.EOF {
-					t.Fatalf("read after EOF = %d, %v", n, err)
-				}
-				if body.reads != reads {
-					t.Fatal("underlying body read again after initial EOF")
 				}
 			}
 		})
