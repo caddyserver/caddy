@@ -24,6 +24,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
+	"github.com/caddyserver/certmagic"
+	"go.uber.org/zap"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyevents"
 )
@@ -55,8 +58,22 @@ func TestInitTLSMetricsRegistersOnEachRegistry(t *testing.T) {
 	}
 }
 
-func TestObserveCertEvent(t *testing.T) {
+// newTestTLSApp returns a TLS app with a provisioned events app, enough for
+// onEvent and the on-demand decision function.
+func newTestTLSApp(t *testing.T) *TLS {
+	t.Helper()
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	t.Cleanup(cancel)
+	events := new(caddyevents.App)
+	if err := events.Provision(ctx); err != nil {
+		t.Fatal(err)
+	}
+	return &TLS{ctx: ctx, events: events, logger: zap.NewNop()}
+}
+
+func TestOnEventCountsCertificateOperations(t *testing.T) {
 	mustInitTLSMetrics(t)
+	tlsApp := newTestTLSApp(t)
 	count := func(labels ...string) float64 {
 		return testutil.ToFloat64(tlsMetrics.certOperations.WithLabelValues(labels...))
 	}
@@ -105,7 +122,9 @@ func TestObserveCertEvent(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			before := count(tc.labels...)
-			observeCertEvent(tc.event, tc.data)
+			if err := tlsApp.onEvent(context.Background(), tc.event, tc.data); err != nil {
+				t.Fatal(err)
+			}
 			if got := count(tc.labels...) - before; got != 1 {
 				t.Fatalf("counter %v increased by %v, want 1", tc.labels, got)
 			}
@@ -114,8 +133,11 @@ func TestObserveCertEvent(t *testing.T) {
 
 	t.Run("other events are not counted", func(t *testing.T) {
 		before := testutil.CollectAndCount(tlsMetrics.certOperations)
-		observeCertEvent("cert_obtaining", map[string]any{"renewal": false, "identifier": "new.example.com"})
-		observeCertEvent("tls_get_certificate", map[string]any{"client_hello": nil})
+		for _, event := range []string{"cert_obtaining", "cached_managed_cert"} {
+			if err := tlsApp.onEvent(context.Background(), event, map[string]any{"renewal": false, "identifier": "d.example.com"}); err != nil {
+				t.Fatal(err)
+			}
+		}
 		if after := testutil.CollectAndCount(tlsMetrics.certOperations); after != before {
 			t.Fatalf("series went from %d to %d", before, after)
 		}
@@ -145,33 +167,45 @@ func TestCertErrorType(t *testing.T) {
 	}
 }
 
-func TestObserveOnDemandAsk(t *testing.T) {
+type stubPermission struct{ err error }
+
+func (p stubPermission) CertificateAllowed(context.Context, string) error { return p.err }
+
+func TestOnDemandDecisionCountsAsks(t *testing.T) {
 	mustInitTLSMetrics(t)
 	tests := []struct {
+		name string
 		err  error
 		want string
 	}{
-		{nil, "allowed"},
-		{fmt.Errorf("a.example.com: %w ask - non-2xx status code 403", ErrPermissionDenied), "denied"},
-		{errors.New("checking ask endpoint: connection refused"), "error"},
+		{"allowed", nil, "allowed"},
+		{"denied", fmt.Errorf("a.example.com: %w ask - non-2xx status code 403", ErrPermissionDenied), "denied"},
+		{"error", errors.New("checking ask endpoint: connection refused"), "error"},
 	}
 	for _, tc := range tests {
-		before := testutil.ToFloat64(tlsMetrics.onDemandAsks.WithLabelValues(tc.want))
-		observeOnDemandAsk(tc.err)
-		if got := testutil.ToFloat64(tlsMetrics.onDemandAsks.WithLabelValues(tc.want)) - before; got != 1 {
-			t.Errorf("observeOnDemandAsk(%v): %q increased by %v, want 1", tc.err, tc.want, got)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			tlsApp := newTestTLSApp(t)
+			tlsApp.Automation = &AutomationConfig{OnDemand: &OnDemandConfig{permission: stubPermission{err: tc.err}}}
+			ap := AutomationPolicy{OnDemand: true}
+			cfg, err := ap.makeCertMagicConfig(tlsApp, nil, &certmagic.FileStorage{Path: t.TempDir()})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			before := testutil.ToFloat64(tlsMetrics.onDemandAsks.WithLabelValues(tc.want))
+			if err := cfg.OnDemand.DecisionFunc(context.Background(), "a.example.com"); !errors.Is(err, tc.err) {
+				t.Fatalf("DecisionFunc returned %v, want %v", err, tc.err)
+			}
+			if got := testutil.ToFloat64(tlsMetrics.onDemandAsks.WithLabelValues(tc.want)) - before; got != 1 {
+				t.Fatalf("%q increased by %v, want 1", tc.want, got)
+			}
+		})
 	}
 }
 
 func TestShouldEmitIncludesMetricEvents(t *testing.T) {
-	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
-	defer cancel()
-	events := new(caddyevents.App)
-	if err := events.Provision(ctx); err != nil {
-		t.Fatal(err)
-	}
-	tlsApp := &TLS{events: events}
+	tlsApp := newTestTLSApp(t)
+	events := tlsApp.events
 
 	// The metrics need these whether or not anything observes them.
 	for name := range certMetricEvents {
