@@ -21,9 +21,11 @@ import (
 	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
 var (
@@ -603,5 +605,22 @@ func TestMatchExpressionProvision(t *testing.T) {
 				t.Errorf("MatchExpression.Provision() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestMatchExpressionUnmarshalCaddyfileRepeated(t *testing.T) {
+	for _, input := range []string{`
+		expression {http.request.method} == 'GET'
+		expression {http.request.uri.path}.startsWith('/public/')
+	`, `
+		expression "{http.request.method} == 'GET'"
+		expression {http.request.uri.path}.startsWith('/public/')
+	`} {
+		d := caddyfile.NewTestDispenser(input)
+		m := new(MatchExpression)
+		err := m.UnmarshalCaddyfile(d)
+		if err == nil || !strings.Contains(err.Error(), "repeated expression matchers are not supported") {
+			t.Errorf("UnmarshalCaddyfile() error = %v, want repeated expression error (expression: %s)", err, m.Expr)
+		}
 	}
 }
