@@ -69,10 +69,17 @@ type Browse struct {
 
 	// FileLimit limits the number of up to n DirEntry values in directory order.
 	FileLimit int `json:"file_limit,omitempty"`
+
+	// PlainTimeFormat specifies the Go time layout used for modification
+	// times in plain-text directory listings. The default layout is
+	// `January 2, 2006 at 15:04:05`. See
+	// [Go's time layout documentation](https://pkg.go.dev/time#pkg-constants).
+	PlainTimeFormat string `json:"plain_time_format,omitempty"`
 }
 
 const (
-	defaultDirEntryLimit = 10000
+	defaultDirEntryLimit   = 10000
+	defaultPlainTimeFormat = "January 2, 2006 at 15:04:05"
 )
 
 func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
@@ -167,11 +174,19 @@ func (fsrv *FileServer) serveBrowse(fileSystem fs.FS, root, dirPath string, w ht
 			return caddyhttp.Error(http.StatusInternalServerError, err)
 		}
 
+		// Use the configured time format if specified, otherwise use the default
+		plainTimeFormat := defaultPlainTimeFormat
+		if fsrv.Browse.PlainTimeFormat != "" {
+			plainTimeFormat = fsrv.Browse.PlainTimeFormat
+		}
+
 		// Actual files
 		for _, item := range listing.Items {
 			//nolint:gosec // not sure how this could be XSS unless you lose control of the file system (like aren't sanitizing) and client ignores Content-Type of text/plain
 			if _, err := fmt.Fprintf(writer, "%s\t%s\t%s\n",
-				item.Name, item.HumanSize(), item.HumanModTime("January 2, 2006 at 15:04:05"),
+				item.Name,
+				item.HumanSize(),
+				item.HumanModTime(plainTimeFormat),
 			); err != nil {
 				return caddyhttp.Error(http.StatusInternalServerError, err)
 			}
