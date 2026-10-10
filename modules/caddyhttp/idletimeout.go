@@ -110,7 +110,8 @@ func (d *IdleDeadline) restore(o idleOverride) {
 // whole body transfer with a single hard deadline.
 // The deadline is cleared after a non-timeout error (most likely io.EOF) is
 // encountered when reading the body to prevent context canceled errors for h1
-// requests. An expired deadline is kept to bound net/http's post-handler drain.
+// requests. An expired deadline is kept when DrainDeadline is set to bound
+// net/http's post-handler drain.
 // see: https://github.com/caddyserver/caddy/issues/8103
 type IdleTimeoutReader struct {
 	io.ReadCloser
@@ -136,11 +137,12 @@ type IdleTimeoutReader struct {
 	// Other protocols only check the deadline during a read.
 	ClearBetweenReads bool
 
-	mu          sync.Mutex
-	unsupported bool
-	armed       armedDeadline
-	finished    bool
-	terminalErr error
+	mu                sync.Mutex
+	unsupported       bool
+	armed             armedDeadline
+	installedDeadline time.Time // Last deadline successfully installed through Ctrl.
+	finished          bool
+	terminalErr       error
 }
 
 // armedDeadline is which read deadline IdleTimeoutReader has armed.
@@ -190,7 +192,8 @@ func (r *IdleTimeoutReader) Read(p []byte) (int, error) {
 // If the body is not finished and DrainDeadline is set, it leaves an idle
 // deadline armed for net/http's post-handler drain. Otherwise, it clears a
 // deadline left from a finished body or put back between reads, unless the
-// body timed out. It must be called before the installing handler returns.
+// body timed out with an expired drain deadline. It must be called before the
+// installing handler returns.
 func (r *IdleTimeoutReader) HandlerDone() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -252,6 +255,7 @@ func (r *IdleTimeoutReader) setReadDeadlineLocked(deadline time.Time, logMessage
 		}
 		return false
 	}
+	r.installedDeadline = deadline
 	return true
 }
 
@@ -281,7 +285,8 @@ func (r *IdleTimeoutReader) clearDeadlineLocked() {
 	if r.armed == deadlineNone {
 		return
 	}
-	if errors.Is(r.terminalErr, os.ErrDeadlineExceeded) {
+	if r.DrainDeadline && !r.installedDeadline.IsZero() && !time.Now().Before(r.installedDeadline) &&
+		errors.Is(r.terminalErr, os.ErrDeadlineExceeded) {
 		// HTTP/1 drains a small unread body before writing the response.
 		// Clearing its expired deadline would let a stalled client block
 		// that drain, and therefore the error response, indefinitely.

@@ -189,6 +189,66 @@ func TestIdleTimeoutReaderTerminalError(t *testing.T) {
 	}
 }
 
+// Only an expired deadline successfully installed for a draining request may
+// survive a timeout; a failed replacement must not change that decision.
+func TestIdleTimeoutReaderTimeoutDeadlineCleanup(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		drain       bool
+		initial     time.Duration
+		replacement time.Duration
+		failAt      int
+		wrapped     bool
+		wantClear   bool
+		wantCalls   int
+	}{
+		{name: "early timeout", drain: true, initial: time.Hour, wantClear: true, wantCalls: 2},
+		{name: "wrapped early timeout", drain: true, initial: time.Hour, wrapped: true, wantClear: true, wantCalls: 2},
+		{name: "expired without drain", initial: -time.Hour, wantClear: true, wantCalls: 2},
+		{name: "initial installation fails", drain: true, initial: -time.Hour, failAt: 1, wantCalls: 1},
+		{name: "failed expired replacement", drain: true, initial: time.Hour, replacement: -time.Hour, failAt: 2, wantClear: true, wantCalls: 3},
+		{name: "failed future replacement", drain: true, initial: -time.Hour, replacement: time.Hour, failAt: 2, wantCalls: 2},
+		{name: "failed clear retries at completion", drain: true, initial: time.Hour, failAt: 2, wantClear: true, wantCalls: 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder(), failAt: tc.failAt}
+			terminalErr := error(os.ErrDeadlineExceeded)
+			if tc.wrapped {
+				terminalErr = fmt.Errorf("read body: %w", terminalErr)
+			}
+			r := &IdleTimeoutReader{
+				ReadCloser: io.NopCloser(iotest.ErrReader(terminalErr)),
+				Ctrl:       http.NewResponseController(w),
+				Deadline:   IdleDeadline{Timeout: tc.initial},
+				Logger:     zap.NewNop(), DrainDeadline: tc.drain,
+			}
+			// Install once, then exercise a failed replacement during Read.
+			if tc.replacement != 0 {
+				r.setDeadlineLocked("initial deadline")
+				r.Deadline.Timeout = tc.replacement
+			}
+			_, err := r.Read(make([]byte, 1))
+			require.ErrorIs(t, err, terminalErr)
+			afterRead := w.snapshot()
+			if tc.wantClear {
+				require.True(t, afterRead[len(afterRead)-1].IsZero(), "must attempt clearing after Read")
+			}
+			r.HandlerDone()
+			deadlines := w.snapshot()
+			require.Len(t, deadlines, tc.wantCalls)
+			if tc.wantClear {
+				assert.True(t, deadlines[len(deadlines)-1].IsZero())
+			} else if tc.failAt != 1 {
+				assert.True(t, deadlines[0].Before(time.Now()), "the successfully installed deadline expired")
+			}
+			_, err = r.Read(make([]byte, 1))
+			require.ErrorIs(t, err, terminalErr)
+			r.HandlerDone()
+			assert.Equal(t, deadlines, w.snapshot(), "late reads and completion must leave deadlines alone")
+		})
+	}
+}
+
 func TestIdleTimeoutReaderTimeoutAfterOverride(t *testing.T) {
 	w := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
 	r := &IdleTimeoutReader{
