@@ -15,7 +15,9 @@
 package caddy
 
 import (
+	"context"
 	"crypto/tls"
+	"net"
 	"reflect"
 	"testing"
 
@@ -708,5 +710,28 @@ func TestSplitUnixSocketPermissionsBits(t *testing.T) {
 		if !tc.expectErr && actualFileMode.Perm().String() != tc.expectFileMode {
 			t.Errorf("Test %d: Expected perms '%s' but got '%s'", i, tc.expectFileMode, actualFileMode.Perm().String())
 		}
+	}
+}
+
+// TestListenQUICOptions_ZeroValueAllows0RTT checks that ListenQUIC accepts a
+// zero-value options struct (historical default: 0-RTT allowed) and that the
+// returned listener is released by closing it twice, per ListenQUIC's contract.
+func TestListenQUICOptions_ZeroValueAllows0RTT(t *testing.T) {
+	na, err := ParseNetworkAddress("udp/127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("ParseNetworkAddress: %v", err)
+	}
+
+	ln, err := na.ListenQUIC(context.Background(), 0, net.ListenConfig{}, ListenQUICOptions{
+		TLSConfig: &tls.Config{}, //nolint:gosec // test listener; no client handshake
+	})
+	if err != nil {
+		t.Fatalf("ListenQUIC: %v", err)
+	}
+	if err := ln.Close(); err != nil {
+		t.Errorf("first Close: %v", err)
+	}
+	if err := ln.Close(); err != nil {
+		t.Errorf("second Close: %v", err)
 	}
 }
