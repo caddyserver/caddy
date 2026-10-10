@@ -128,7 +128,7 @@ func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					for d.NextArg() {
 						dVal := d.Val()
 						switch dVal {
-						case sortByName, sortByNameDirFirst, sortBySize, sortByTime, sortOrderAsc, sortOrderDesc:
+						case sortByName, sortByNameDirFirst, sortBySize, sortByTime, sortOrderAsc, sortOrderDesc, sortMethodLexicographic, sortMethodNatural:
 							fsrv.Browse.SortOptions = append(fsrv.Browse.SortOptions, dVal)
 						default:
 							return d.Errf("unknown sort option '%s'", dVal)
