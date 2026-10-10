@@ -828,6 +828,13 @@ func (m MatchPathRE) MatchWithError(r *http.Request) (bool, error) {
 // Example:
 //
 //	expression path_regexp('^/bar')
+//
+// The pattern is a CEL string literal, so CEL's own escape sequences
+// (e.g. \b, \n, \t) are interpreted before the result reaches the regexp
+// engine. A pattern that needs a literal backslash escape meant for the
+// regexp engine, such as \b for a word boundary, should be written as a
+// CEL raw string (prefixed with r) so CEL passes the backslash through
+// unchanged: expression path_regexp(r'^/bar\b').
 func (MatchPathRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 	unnamedPattern, err := CELMatcherImpl(
 		"path_regexp",
@@ -1294,6 +1301,15 @@ func (m MatchHeaderRE) Validate() error {
 // Example:
 //
 //	expression header_regexp('foo', 'Field', 'fo+')
+//
+// The pattern is a CEL string literal, so CEL's own escape sequences
+// (e.g. \b, \n, \t) are interpreted before the result reaches the regexp
+// engine. A pattern that needs a literal backslash escape meant for the
+// regexp engine, such as \b for a word boundary, should be written as a
+// CEL raw string (prefixed with r) so CEL passes the backslash through
+// unchanged: expression header_regexp('foo', 'User-Agent', r'bot\b').
+// Without the r prefix, \b is interpreted by CEL as a backspace
+// character before the regexp engine ever sees the pattern.
 func (MatchHeaderRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 	unnamedPattern, err := CELMatcherImpl(
 		"header_regexp",
