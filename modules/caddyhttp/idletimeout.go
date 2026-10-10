@@ -16,8 +16,10 @@ package caddyhttp
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -106,8 +108,10 @@ func (d *IdleDeadline) restore(o idleOverride) {
 // IdleTimeoutReader wraps a request body with IdleDeadline, resetting
 // the read deadline before every Read call instead of bounding the
 // whole body transfer with a single hard deadline.
-// The deadline is cleared after an error (most likely io.EOF) is encountered when reading the body
-// to prevent context canceled error for h1 requests.
+// The deadline is cleared after a non-timeout error (most likely io.EOF) is
+// encountered when reading the body to prevent context canceled errors for h1
+// requests. An expired deadline is kept when DrainDeadline is set to bound
+// net/http's post-handler drain.
 // see: https://github.com/caddyserver/caddy/issues/8103
 type IdleTimeoutReader struct {
 	io.ReadCloser
@@ -136,6 +140,7 @@ type IdleTimeoutReader struct {
 	mu          sync.Mutex
 	unsupported bool
 	armed       armedDeadline
+	installed   time.Time // Last deadline successfully installed through Ctrl.
 	finished    bool
 	terminalErr error
 }
@@ -186,8 +191,9 @@ func (r *IdleTimeoutReader) Read(p []byte) (int, error) {
 // HandlerDone prevents later body reads from using the response controller.
 // If the body is not finished and DrainDeadline is set, it leaves an idle
 // deadline armed for net/http's post-handler drain. Otherwise, it clears a
-// deadline left from a finished body or put back between reads. It must be
-// called before the installing handler returns.
+// deadline left from a finished body or put back between reads, unless the
+// body timed out with an expired drain deadline. It must be called before the
+// installing handler returns.
 func (r *IdleTimeoutReader) HandlerDone() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -227,7 +233,7 @@ func (r *IdleTimeoutReader) Override(timeout time.Duration, minRate int64) (rest
 
 // rearmLocked moves an armed deadline to what the current settings give.
 func (r *IdleTimeoutReader) rearmLocked() {
-	if r.armed == deadlineIdle && !r.finished && !r.unsupported {
+	if r.armed == deadlineIdle && !r.finished && !r.unsupported && r.terminalErr == nil {
 		r.setDeadlineLocked("could not set read deadline")
 	}
 }
@@ -249,6 +255,7 @@ func (r *IdleTimeoutReader) setReadDeadlineLocked(deadline time.Time, logMessage
 		}
 		return false
 	}
+	r.installed = deadline
 	return true
 }
 
@@ -276,6 +283,13 @@ func (r *IdleTimeoutReader) releaseDeadlineLocked() {
 
 func (r *IdleTimeoutReader) clearDeadlineLocked() {
 	if r.armed == deadlineNone {
+		return
+	}
+	if r.DrainDeadline && !r.installed.IsZero() && !time.Now().Before(r.installed) &&
+		errors.Is(r.terminalErr, os.ErrDeadlineExceeded) {
+		// HTTP/1 drains a small unread body before writing the response.
+		// Clearing its expired deadline would let a stalled client block
+		// that drain, and therefore the error response, indefinitely.
 		return
 	}
 	if !r.setReadDeadlineLocked(time.Time{}, "could not clear read deadline") {
@@ -310,6 +324,11 @@ func (r *IdleTimeoutReader) clearDeadlineLocked() {
 // like a hard WriteTimeout would. A 64 KiB default still preserves
 // most of the sendfile fast path's benefit (net/sendfile.go
 // special-cases *io.LimitedReader to keep using sendfile per chunk).
+//
+// A write deadline set by a handler through http.ResponseController
+// reaches SetWriteDeadline and caps every idle reset, so a handler can
+// tighten the idle timeout (e.g. to drop a slow SSE subscriber) but
+// can't loosen it.
 type IdleTimeoutWriter struct {
 	*ResponseWriterWrapper
 	Ctrl     *http.ResponseController
@@ -318,17 +337,40 @@ type IdleTimeoutWriter struct {
 	Logger   *zap.Logger
 
 	// ClearBetweenWrites makes the writer clear its idle deadline after
-	// every successful write or flush, putting back HardDeadline if any,
-	// and arm a final one in HandlerDone if written data may still be
-	// buffered. It is required for HTTP/2 and unnecessary (and costs a
-	// deadline update per write) for other protocols.
+	// every successful write or flush, putting back HardDeadline or the
+	// deadline set by the handler if any, and arm a final one in
+	// HandlerDone if written data may still be buffered. It is required
+	// for HTTP/2 and unnecessary (and costs a deadline update per write)
+	// for other protocols.
 	ClearBetweenWrites bool
 
 	unsupported bool
 	// deadlineSet is whether the idle deadline is armed. clearDeadline
 	// leaves HardDeadline armed, if any, which nothing needs to undo.
-	deadlineSet bool
-	unflushed   bool
+	deadlineSet     bool
+	unflushed       bool
+	handlerDeadline time.Time
+}
+
+// SetWriteDeadline sets the write deadline on behalf of a handler and
+// keeps it as a ceiling for the idle deadline, until the handler sets
+// another one. A zero deadline removes the ceiling.
+func (w *IdleTimeoutWriter) SetWriteDeadline(deadline time.Time) error {
+	if err := w.Ctrl.SetWriteDeadline(deadline); err != nil {
+		return err
+	}
+	w.handlerDeadline = deadline
+	return nil
+}
+
+// ceiling returns the earliest of HardDeadline and the deadline set by
+// the handler, or zero if there is neither.
+func (w *IdleTimeoutWriter) ceiling() time.Time {
+	hard := w.Deadline.HardDeadline
+	if w.handlerDeadline.IsZero() || (!hard.IsZero() && hard.Before(w.handlerDeadline)) {
+		return hard
+	}
+	return w.handlerDeadline
 }
 
 func (w *IdleTimeoutWriter) resetDeadline() {
@@ -336,7 +378,12 @@ func (w *IdleTimeoutWriter) resetDeadline() {
 		return
 	}
 
-	if w.setWriteDeadline(w.Deadline.next(), "could not set write deadline") {
+	deadline := w.Deadline.next()
+	if !w.handlerDeadline.IsZero() && deadline.After(w.handlerDeadline) {
+		deadline = w.handlerDeadline
+	}
+
+	if w.setWriteDeadline(deadline, "could not set write deadline") {
 		w.deadlineSet = true
 	}
 }
@@ -356,20 +403,22 @@ func (w *IdleTimeoutWriter) setWriteDeadline(deadline time.Time, logMessage stri
 }
 
 // clearDeadline replaces the idle deadline set by resetDeadline with
-// HardDeadline, which is zero (no deadline) unless a hard ceiling is
-// configured. It does nothing unless ClearBetweenWrites is set.
+// the earliest of HardDeadline and the deadline set by the handler,
+// which is zero (no deadline) if there is neither. It does nothing
+// unless ClearBetweenWrites is set.
 func (w *IdleTimeoutWriter) clearDeadline() {
 	if !w.ClearBetweenWrites || !w.deadlineSet || w.unsupported {
 		return
 	}
 
-	// once the hard deadline has passed, the deadline set by
-	// resetDeadline (capped to it) has already expired; keep it
-	if !w.Deadline.HardDeadline.IsZero() && !time.Now().Before(w.Deadline.HardDeadline) {
+	// once the ceiling has passed, the deadline set by resetDeadline
+	// (capped to it) has already expired; keep it
+	ceiling := w.ceiling()
+	if !ceiling.IsZero() && !time.Now().Before(ceiling) {
 		return
 	}
 
-	if !w.setWriteDeadline(w.Deadline.HardDeadline, "could not clear write deadline") {
+	if !w.setWriteDeadline(ceiling, "could not clear write deadline") {
 		return
 	}
 	w.deadlineSet = false

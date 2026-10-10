@@ -26,6 +26,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -144,6 +145,133 @@ func TestIdleTimeoutReaderClearsDeadlineAtEOF(t *testing.T) {
 	deadlines := w.snapshot()
 	require.NotEmpty(t, deadlines)
 	assert.True(t, deadlines[len(deadlines)-1].IsZero())
+}
+
+func TestIdleTimeoutReaderTerminalError(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		err          error
+		keepDeadline bool
+	}{
+		{"timeout", os.ErrDeadlineExceeded, true},
+		{"wrapped timeout", fmt.Errorf("read body: %w", os.ErrDeadlineExceeded), true},
+		{"EOF", io.EOF, false},
+		{"other error", errors.New("read failed"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			deadline := time.Now().Add(-time.Second)
+			w := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+			r := &IdleTimeoutReader{
+				ReadCloser:    io.NopCloser(iotest.ErrReader(tc.err)),
+				Ctrl:          http.NewResponseController(w),
+				Deadline:      IdleDeadline{Timeout: time.Hour, HardDeadline: deadline},
+				Logger:        zap.NewNop(),
+				DrainDeadline: true,
+			}
+			_, err := r.Read(make([]byte, 1))
+			require.ErrorIs(t, err, tc.err)
+			want := time.Time{}
+			if tc.keepDeadline {
+				want = deadline
+			}
+			deadlines := w.snapshot()
+			require.NotEmpty(t, deadlines)
+			assert.Equal(t, want, deadlines[len(deadlines)-1], "after Read")
+			r.HandlerDone()
+			deadlines = w.snapshot()
+			assert.Equal(t, want, deadlines[len(deadlines)-1], "after HandlerDone")
+
+			_, err = r.Read(make([]byte, 1))
+			require.ErrorIs(t, err, tc.err)
+			r.HandlerDone()
+			assert.Equal(t, deadlines, w.snapshot(), "late reads and repeated completion must not change deadlines")
+		})
+	}
+}
+
+// Only an expired deadline successfully installed for a draining request may
+// survive a timeout; a failed replacement must not change that decision.
+func TestIdleTimeoutReaderTimeoutDeadlineCleanup(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		drain       bool
+		initial     time.Duration
+		replacement time.Duration
+		failAt      int
+		wrapped     bool
+		wantClear   bool
+		wantCalls   int
+	}{
+		{name: "early timeout", drain: true, initial: time.Hour, wantClear: true, wantCalls: 2},
+		{name: "wrapped early timeout", drain: true, initial: time.Hour, wrapped: true, wantClear: true, wantCalls: 2},
+		{name: "expired without drain", initial: -time.Hour, wantClear: true, wantCalls: 2},
+		{name: "initial installation fails", drain: true, initial: -time.Hour, failAt: 1, wantCalls: 1},
+		{name: "failed expired replacement", drain: true, initial: time.Hour, replacement: -time.Hour, failAt: 2, wantClear: true, wantCalls: 3},
+		{name: "failed future replacement", drain: true, initial: -time.Hour, replacement: time.Hour, failAt: 2, wantCalls: 2},
+		{name: "failed clear retries at completion", drain: true, initial: time.Hour, failAt: 2, wantClear: true, wantCalls: 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder(), failAt: tc.failAt}
+			terminalErr := error(os.ErrDeadlineExceeded)
+			if tc.wrapped {
+				terminalErr = fmt.Errorf("read body: %w", terminalErr)
+			}
+			r := &IdleTimeoutReader{
+				ReadCloser: io.NopCloser(iotest.ErrReader(terminalErr)),
+				Ctrl:       http.NewResponseController(w),
+				Deadline:   IdleDeadline{Timeout: tc.initial},
+				Logger:     zap.NewNop(), DrainDeadline: tc.drain,
+			}
+			// Install once, then exercise a failed replacement during Read.
+			if tc.replacement != 0 {
+				r.setDeadlineLocked("initial deadline")
+				r.Deadline.Timeout = tc.replacement
+			}
+			_, err := r.Read(make([]byte, 1))
+			require.ErrorIs(t, err, terminalErr)
+			afterRead := w.snapshot()
+			if tc.wantClear {
+				require.True(t, afterRead[len(afterRead)-1].IsZero(), "must attempt clearing after Read")
+			}
+			r.HandlerDone()
+			deadlines := w.snapshot()
+			require.Len(t, deadlines, tc.wantCalls)
+			if tc.wantClear {
+				assert.True(t, deadlines[len(deadlines)-1].IsZero())
+			} else if tc.failAt != 1 {
+				assert.True(t, deadlines[0].Before(time.Now()), "the successfully installed deadline expired")
+			}
+			_, err = r.Read(make([]byte, 1))
+			require.ErrorIs(t, err, terminalErr)
+			r.HandlerDone()
+			assert.Equal(t, deadlines, w.snapshot(), "late reads and completion must leave deadlines alone")
+		})
+	}
+}
+
+func TestIdleTimeoutReaderTimeoutAfterOverride(t *testing.T) {
+	w := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	r := &IdleTimeoutReader{
+		ReadCloser:    io.NopCloser(iotest.ErrReader(os.ErrDeadlineExceeded)),
+		Ctrl:          http.NewResponseController(w),
+		Deadline:      IdleDeadline{Timeout: time.Hour},
+		Logger:        zap.NewNop(),
+		DrainDeadline: true,
+	}
+	restore := r.Override(-time.Second, 0)
+	_, err := r.Read(make([]byte, 1))
+	require.ErrorIs(t, err, os.ErrDeadlineExceeded)
+	deadlines := w.snapshot()
+	require.NotEmpty(t, deadlines)
+	expired := deadlines[0]
+	require.True(t, expired.Before(time.Now()))
+	assert.Equal(t, expired, deadlines[len(deadlines)-1])
+
+	// Unwinding a route-level timeout must not rearm the longer server timeout.
+	restore()
+	r.HandlerDone()
+	deadlines = w.snapshot()
+	assert.Equal(t, expired, deadlines[len(deadlines)-1])
 }
 
 func TestIdleTimeoutReaderHandlerDone(t *testing.T) {
@@ -773,6 +901,109 @@ func TestIdleTimeoutWriter_ClearBetweenWrites(t *testing.T) {
 			switch {
 			case d.IsZero():
 				actual = append(actual, zeroSet)
+			case d.Equal(hard):
+				actual = append(actual, hardSet)
+			case !d.Before(before.Add(idle)) && !d.After(after.Add(idle)):
+				actual = append(actual, idleSet)
+			default:
+				actual = append(actual, otherSet)
+			}
+		}
+		assert.Equal(t, tc.expected, actual, "Test %d (%s)", i, tc.name)
+	}
+}
+
+func TestIdleTimeoutWriter_HandlerDeadline(t *testing.T) {
+	const idle = time.Hour
+	now := time.Now()
+	earlier := now.Add(30 * time.Minute)
+	later := now.Add(2 * time.Hour)
+	hard := now.Add(20 * time.Minute)
+
+	// the values recorded for each SetWriteDeadline call
+	const (
+		idleSet    = "idle"
+		zeroSet    = "zero"
+		earlierSet = "earlier"
+		laterSet   = "later"
+		hardSet    = "hard"
+		otherSet   = "other"
+	)
+
+	for i, tc := range []struct {
+		name      string
+		clear     bool
+		hard      bool
+		deadlines []time.Time
+		expected  []string
+	}{
+		{
+			name:      "earlier handler deadline caps the idle reset",
+			deadlines: []time.Time{earlier},
+			expected:  []string{earlierSet, earlierSet},
+		},
+		{
+			name:      "clearing puts back the handler deadline",
+			clear:     true,
+			deadlines: []time.Time{earlier},
+			expected:  []string{earlierSet, earlierSet, earlierSet},
+		},
+		{
+			name:      "later handler deadline doesn't loosen the idle timeout",
+			deadlines: []time.Time{later},
+			expected:  []string{laterSet, idleSet},
+		},
+		{
+			name:      "clearing puts back a later handler deadline",
+			clear:     true,
+			deadlines: []time.Time{later},
+			expected:  []string{laterSet, idleSet, laterSet},
+		},
+		{
+			name:      "zero handler deadline removes the ceiling",
+			deadlines: []time.Time{earlier, {}},
+			expected:  []string{earlierSet, zeroSet, idleSet},
+		},
+		{
+			name:      "earlier hard deadline stays the ceiling",
+			clear:     true,
+			hard:      true,
+			deadlines: []time.Time{earlier},
+			expected:  []string{earlierSet, hardSet, hardSet},
+		},
+	} {
+		rec := &writeDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+		w := &IdleTimeoutWriter{
+			ResponseWriterWrapper: &ResponseWriterWrapper{ResponseWriter: rec},
+			Ctrl:                  http.NewResponseController(rec),
+			Deadline:              IdleDeadline{Timeout: idle},
+			Logger:                zap.NewNop(),
+			ClearBetweenWrites:    tc.clear,
+		}
+		if tc.hard {
+			w.Deadline.HardDeadline = hard
+		}
+
+		// handlers usually reach the writer through other wrappers
+		ctrl := http.NewResponseController(&ResponseWriterWrapper{ResponseWriter: w})
+		for _, d := range tc.deadlines {
+			require.NoError(t, ctrl.SetWriteDeadline(d))
+		}
+
+		before := time.Now()
+		_, err := w.Write([]byte("x"))
+		require.NoError(t, err)
+		after := time.Now()
+
+		var actual []string
+		for _, d := range rec.deadlines {
+			switch {
+			case d.IsZero():
+				actual = append(actual, zeroSet)
+			case d.Equal(earlier):
+				actual = append(actual, earlierSet)
+			case d.Equal(later):
+				actual = append(actual, laterSet)
 			case d.Equal(hard):
 				actual = append(actual, hardSet)
 			case !d.Before(before.Add(idle)) && !d.After(after.Add(idle)):
