@@ -1482,6 +1482,28 @@ func (m *MatchTLS) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
+// CELLibrary produces options that expose this matcher for use in CEL
+// expression matchers.
+//
+// Example:
+//
+//	expression tls(true)
+func (MatchTLS) CELLibrary(ctx caddy.Context) (cel.Library, error) {
+	return CELMatcherImpl(
+		"tls",
+		"tls_request_bool",
+		[]*cel.Type{cel.BoolType},
+		func(data ref.Val) (RequestMatcherWithError, error) {
+			b, ok := data.(types.Bool)
+			if !ok {
+				return nil, errors.New("tls argument was not a bool")
+			}
+			complete := bool(b)
+			return MatchTLS{HandshakeComplete: &complete}, nil
+		},
+	)
+}
+
 // CaddyModule returns the Caddy module information.
 func (MatchNot) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
@@ -1787,6 +1809,7 @@ var (
 	_ CELLibraryProducer = (*MatchHeader)(nil)
 	_ CELLibraryProducer = (*MatchHeaderRE)(nil)
 	_ CELLibraryProducer = (*MatchProtocol)(nil)
+	_ CELLibraryProducer = (*MatchTLS)(nil)
 	_ CELLibraryProducer = (*VarsMatcher)(nil)
 	_ CELLibraryProducer = (*MatchVarsRE)(nil)
 

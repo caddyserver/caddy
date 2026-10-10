@@ -410,6 +410,8 @@ func CELMatcherImpl(macroName, funcName string, matcherDataTypes []*cel.Type, fa
 			macro = parser.NewGlobalVarArgMacro(macroName, celMatcherStringListMacroExpander(funcName))
 		case cel.StringType.String():
 			macro = parser.NewGlobalMacro(macroName, 1, celMatcherStringMacroExpander(funcName))
+		case cel.BoolType.String():
+			macro = parser.NewGlobalMacro(macroName, 1, celMatcherBoolMacroExpander(funcName))
 		case CELTypeJSON.String():
 			macro = parser.NewGlobalMacro(macroName, 1, celMatcherJSONMacroExpander(funcName))
 		default:
@@ -633,6 +635,22 @@ func celMatcherStringMacroExpander(funcName string) parser.MacroExpander {
 	}
 }
 
+// celMatcherBoolMacroExpander validates that the macro is called with a
+// single bool argument.
+//
+// The following function call is returned: <funcName>(request, arg)
+func celMatcherBoolMacroExpander(funcName string) parser.MacroExpander {
+	return func(eh cel.MacroExprFactory, target ast.Expr, args []ast.Expr) (ast.Expr, *common.Error) {
+		if len(args) != 1 {
+			return nil, eh.NewError(0, "matcher requires one argument")
+		}
+		if isCELBoolExpr(args[0]) {
+			return eh.NewCall(funcName, eh.NewIdent(CELRequestVarName), args[0]), nil
+		}
+		return nil, eh.NewError(args[0].ID(), "matcher argument must be a bool literal")
+	}
+}
+
 // celMatcherJSONMacroExpander validates that the macro is called a single
 // map literal argument.
 //
@@ -769,6 +787,21 @@ func isCELStringLiteral(e ast.Expr) bool {
 		constant := e.AsLiteral()
 		switch constant.Type() {
 		case types.StringType:
+			return true
+		}
+	case ast.UnspecifiedExprKind, ast.CallKind, ast.ComprehensionKind, ast.IdentKind, ast.ListKind, ast.MapKind, ast.SelectKind, ast.StructKind:
+		// appeasing the linter :)
+	}
+	return false
+}
+
+// isCELBoolExpr returns whether the expression is a CEL bool literal.
+func isCELBoolExpr(e ast.Expr) bool {
+	switch e.Kind() {
+	case ast.LiteralKind:
+		constant := e.AsLiteral()
+		switch constant.Type() {
+		case types.BoolType:
 			return true
 		}
 	case ast.UnspecifiedExprKind, ast.CallKind, ast.ComprehensionKind, ast.IdentKind, ast.ListKind, ast.MapKind, ast.SelectKind, ast.StructKind:
