@@ -137,12 +137,12 @@ type IdleTimeoutReader struct {
 	// Other protocols only check the deadline during a read.
 	ClearBetweenReads bool
 
-	mu                sync.Mutex
-	unsupported       bool
-	armed             armedDeadline
-	installedDeadline time.Time // Last deadline successfully installed through Ctrl.
-	finished          bool
-	terminalErr       error
+	mu          sync.Mutex
+	unsupported bool
+	armed       armedDeadline
+	installed   time.Time // Last deadline successfully installed through Ctrl.
+	finished    bool
+	terminalErr error
 }
 
 // armedDeadline is which read deadline IdleTimeoutReader has armed.
@@ -255,7 +255,7 @@ func (r *IdleTimeoutReader) setReadDeadlineLocked(deadline time.Time, logMessage
 		}
 		return false
 	}
-	r.installedDeadline = deadline
+	r.installed = deadline
 	return true
 }
 
@@ -285,7 +285,7 @@ func (r *IdleTimeoutReader) clearDeadlineLocked() {
 	if r.armed == deadlineNone {
 		return
 	}
-	if r.DrainDeadline && !r.installedDeadline.IsZero() && !time.Now().Before(r.installedDeadline) &&
+	if r.DrainDeadline && !r.installed.IsZero() && !time.Now().Before(r.installed) &&
 		errors.Is(r.terminalErr, os.ErrDeadlineExceeded) {
 		// HTTP/1 drains a small unread body before writing the response.
 		// Clearing its expired deadline would let a stalled client block
