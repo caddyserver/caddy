@@ -53,6 +53,10 @@ type webtransportPump struct {
 
 	closeClientOnce   sync.Once
 	closeUpstreamOnce sync.Once
+	// streams owns every bidi and uni splice. run waits for them after
+	// the accept loops return so the handler does not unregister the
+	// session while a copy is still unwinding.
+	streams sync.WaitGroup
 }
 
 func (p *webtransportPump) run() {
@@ -71,6 +75,7 @@ func (p *webtransportPump) run() {
 	wg.Go(func() { p.pumpDatagrams(p.client, p.upstream, closeUpstream) })
 	wg.Go(func() { p.pumpDatagrams(p.upstream, p.client, closeClient) })
 	wg.Wait()
+	p.streams.Wait()
 }
 
 // propagateClose closes target once with a code/message derived from
@@ -125,7 +130,7 @@ func (p *webtransportPump) acceptBidi(src, dst *webtransport.Session, propagate 
 			propagate(err)
 			return
 		}
-		go p.spliceBidi(srcStr, dstStr)
+		p.streams.Go(func() { p.spliceBidi(srcStr, dstStr) })
 	}
 }
 
@@ -134,16 +139,10 @@ func (p *webtransportPump) acceptBidi(src, dst *webtransport.Session, propagate 
 func (p *webtransportPump) spliceBidi(a, b *webtransport.Stream) {
 	var wg sync.WaitGroup
 	wg.Go(func() {
-		if _, err := io.Copy(b, a); err != nil && !isExpectedEOF(err) {
-			p.logger.Debug("webtransport bidi splice a->b", zap.Error(err))
-		}
-		_ = b.Close()
+		p.spliceOne(b, a, "webtransport bidi splice a->b")
 	})
 	wg.Go(func() {
-		if _, err := io.Copy(a, b); err != nil && !isExpectedEOF(err) {
-			p.logger.Debug("webtransport bidi splice b->a", zap.Error(err))
-		}
-		_ = a.Close()
+		p.spliceOne(a, b, "webtransport bidi splice b->a")
 	})
 	wg.Wait()
 }
@@ -165,13 +164,27 @@ func (p *webtransportPump) acceptUni(src, dst *webtransport.Session, propagate f
 			propagate(err)
 			return
 		}
-		go func() {
-			if _, err := io.Copy(send, recv); err != nil && !isExpectedEOF(err) {
+		p.streams.Go(func() {
+			if _, err := streamCopy(send, recv); err != nil && !isExpectedEOF(err) {
 				p.logger.Debug("webtransport uni splice", zap.Error(err))
+				recv.CancelRead(0)
+				send.CancelWrite(0)
 			}
 			_ = send.Close()
-		}()
+		})
 	}
+}
+
+// spliceOne copies src into dst. A hard error cancels both reads so the
+// opposite copy, which may be blocked in Read, can finish. A clean EOF
+// only closes dst's write side; the other direction may still be sending.
+func (p *webtransportPump) spliceOne(dst, src *webtransport.Stream, failMsg string) {
+	if _, err := streamCopy(dst, src); err != nil && !isExpectedEOF(err) {
+		p.logger.Debug(failMsg, zap.Error(err))
+		src.CancelRead(0)
+		dst.CancelRead(0)
+	}
+	_ = dst.Close()
 }
 
 // pumpDatagrams forwards datagrams from src to dst until src ends. Unlike
@@ -190,6 +203,9 @@ func (p *webtransportPump) pumpDatagrams(src, dst *webtransport.Session, propaga
 		}
 	}
 }
+
+// streamCopy is io.Copy. Tests replace it to hold a worker open across shutdown.
+var streamCopy = io.Copy
 
 // closeCodeFromErr extracts a SessionErrorCode + message from err if it
 // represents a session close. The bool is false when err is nil or not

@@ -392,3 +392,134 @@ func TestPump_SessionLifecycle_NoGoroutineLeak(t *testing.T) {
 		t.Errorf("possible goroutine leak: before=%d after=%d", before, after)
 	}
 }
+
+// TestPump_StreamResetReleasesWorkers resets many bidi streams without
+// closing the session. The opposite copy must not stay blocked, or each
+// reset leaks a worker for the life of the session.
+func TestPump_StreamResetReleasesWorkers(t *testing.T) {
+	if testing.Short() {
+		t.Skip()
+	}
+	tt := newPumpTestTopology(t, func(sess *webtransport.Session, _ *http.Request) {
+		ctx := sess.Context()
+		for {
+			if _, err := sess.AcceptStream(ctx); err != nil {
+				return
+			}
+		}
+	})
+	t.Cleanup(tt.shutdown)
+
+	sess := tt.dialFrontend(t)
+	defer sess.CloseWithError(0, "")
+
+	// Let the session-level accept loops settle before counting.
+	time.Sleep(100 * time.Millisecond)
+	before := runtime.NumGoroutine()
+
+	const n = 15
+	for i := range n {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		str, err := sess.OpenStreamSync(ctx)
+		cancel()
+		if err != nil {
+			t.Fatalf("open stream %d: %v", i, err)
+		}
+		if _, err := str.Write([]byte("x")); err != nil {
+			t.Fatalf("write stream %d: %v", i, err)
+		}
+		str.CancelWrite(0)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	var after int
+	for {
+		after = runtime.NumGoroutine()
+		if after <= before+8 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if after > before+8 {
+		t.Fatalf("stream workers still running after reset: before=%d after=%d", before, after)
+	}
+}
+
+// TestPump_ShutdownWaitsForBlockedStream closes the session while a stream
+// copy is still inside the pump. The pump must not return until that worker
+// finishes.
+func TestPump_ShutdownWaitsForBlockedStream(t *testing.T) {
+	if testing.Short() {
+		t.Skip()
+	}
+
+	blocked := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	orig := streamCopy
+	streamCopy = func(dst io.Writer, src io.Reader) (int64, error) {
+		once.Do(func() { close(blocked) })
+		<-release
+		return orig(dst, src)
+	}
+	t.Cleanup(func() { streamCopy = orig })
+
+	pumpDone := make(chan struct{})
+	uAddr, uRoot, uShutdown := startTestWebTransportServer(t, func(sess *webtransport.Session, _ *http.Request) {
+		<-sess.Context().Done()
+	})
+	t.Cleanup(uShutdown)
+	fAddr, fRoot, fShutdown := startTestWebTransportServer(t, func(clientSess *webtransport.Session, _ *http.Request) {
+		defer close(pumpDone)
+		dialCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		url := fmt.Sprintf("https://localhost:%d/", uAddr.Port)
+		_, upstreamSess, err := dialUpstreamWebTransport(dialCtx, clientTLSFor(uRoot), url, nil, nil, "")
+		if err != nil {
+			t.Errorf("frontend: dial upstream: %v", err)
+			_ = clientSess.CloseWithError(0, "upstream dial failed")
+			return
+		}
+		runWebTransportPump(clientSess, upstreamSess, zap.NewNop())
+	})
+	t.Cleanup(fShutdown)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	url := fmt.Sprintf("https://localhost:%d/", fAddr.Port)
+	_, sess, err := dialUpstreamWebTransport(ctx, clientTLSFor(fRoot), url, nil, nil, "")
+	if err != nil {
+		t.Fatalf("client dial: %v", err)
+	}
+
+	strCtx, strCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	str, err := sess.OpenStreamSync(strCtx)
+	strCancel()
+	if err != nil {
+		t.Fatalf("open stream: %v", err)
+	}
+	if _, err := str.Write([]byte("x")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	defer str.CancelRead(0)
+
+	select {
+	case <-blocked:
+	case <-time.After(2 * time.Second):
+		t.Fatal("stream worker did not start")
+	}
+
+	_ = sess.CloseWithError(0, "")
+	select {
+	case <-pumpDone:
+		t.Fatal("pump returned while a stream worker was still blocked")
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	close(release)
+	select {
+	case <-pumpDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("pump did not return after the stream worker finished")
+	}
+}
