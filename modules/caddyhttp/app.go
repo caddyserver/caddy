@@ -824,6 +824,13 @@ func (app *App) stop(exiting bool) error {
 		// period closes sessions at the deadline, while the sockets are
 		// still up, so the close capsule can reach the client.
 		// The close below is for a session whose loop already returned.
+		// Fallback HTTP/3 servers are drained at the same time so an
+		// active request on a reused non-WebTransport listener gets this
+		// grace period instead of dying when the packet conn closes.
+		fbErr := make(chan error, 1)
+		go func() {
+			fbErr <- server.shutdownFallbackHTTP3(ctx)
+		}()
 		server.waitWebTransportConns(ctx)
 		server.closeWebTransportSessions()
 
@@ -832,6 +839,11 @@ func (app *App) stop(exiting bool) error {
 				err = cause
 			}
 			app.logger.Error("HTTP/3 server shutdown",
+				zap.Error(err),
+				zap.Strings("addresses", server.Listen))
+		}
+		if err := <-fbErr; err != nil {
+			app.logger.Error("HTTP/3 fallback shutdown",
 				zap.Error(err),
 				zap.Strings("addresses", server.Listen))
 		}

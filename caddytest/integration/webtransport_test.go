@@ -902,6 +902,161 @@ func TestWebTransport_ShutdownDrainsPlainHTTP3(t *testing.T) {
 	waitForUDPPortFree(t, 9443)
 }
 
+// TestWebTransport_IdleHTTP3DoesNotPinConfig completes one HTTP/3 request
+// and leaves the QUIC connection open. Eternal grace must drop that idle
+// connection on reload instead of retaining the old listener.
+func TestWebTransport_IdleHTTP3DoesNotPinConfig(t *testing.T) {
+	if testing.Short() {
+		t.Skip()
+	}
+
+	tester := caddytest.NewTester(t)
+	tester.InitServer(wtJSONEternalGrace(`"proxy": `+wtH3Server(":9443",
+		`{"handler":"static_response","body":"ok"}`)), "json")
+
+	tr := &http3.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true, //nolint:gosec // local CA
+			ServerName:         "a.caddy.localhost",
+			NextProtos:         []string{http3.NextProtoH3},
+		},
+		QUICConfig: &quic.Config{
+			EnableDatagrams:                  true,
+			EnableStreamResetPartialDelivery: true,
+		},
+	}
+	t.Cleanup(func() { _ = tr.Close() })
+
+	resp, err := tr.RoundTrip(mustNewRequest(t, "https://127.0.0.1:9443/"))
+	if err != nil {
+		t.Fatalf("http/3 request: %v", err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK || string(body) != "ok" {
+		t.Fatalf("response = %d %q", resp.StatusCode, body)
+	}
+
+	go tester.InitServer(`{"admin": {"listen": "localhost:2999"}}`, "json")
+
+	// The client transport is still open. An idle keepalive must not hold
+	// the packet conn for the whole QUIC idle timeout.
+	waitForUDPPortFree(t, 9443)
+}
+
+// TestWebTransport_FallbackRequestSurvivesReload enables WebTransport on a
+// reused QUIC listener that was created without datagrams. The plain HTTP/3
+// fallback has to drain an in-flight request across reload.
+func TestWebTransport_FallbackRequestSurvivesReload(t *testing.T) {
+	if testing.Short() {
+		t.Skip()
+	}
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-release
+		_, _ = io.WriteString(w, "fallback-ok")
+	}))
+	t.Cleanup(upstream.Close)
+
+	grace := 3 * time.Second
+	graceJSON := fmt.Sprintf(`"grace_period": %d,`, grace.Nanoseconds())
+	tester := caddytest.NewTester(t)
+	tester.InitServer(wtJSONWithHTTPPrefix(
+		`"proxy": `+h3ServerNoWebTransport(":9443", `{"handler":"static_response","body":"plain"}`),
+		graceJSON,
+	), "json")
+
+	routes := fmt.Sprintf(`{
+		"match": [{"path": ["/slow"]}],
+		"handle": [{
+			"handler": "reverse_proxy",
+			"upstreams": [{"dial": "%s"}]
+		}]
+	}`, upstream.Listener.Addr().String())
+	tester.InitServer(wtJSONWithHTTPPrefix(
+		`"proxy": `+wtH3ServerRoutes(":9443", routes),
+		graceJSON,
+	), "json")
+
+	if serverAdvertisesDatagrams(t) {
+		t.Fatal("reused listener advertises datagrams; fallback path was not taken")
+	}
+
+	tr := &http3.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true, //nolint:gosec // local CA
+			ServerName:         "a.caddy.localhost",
+			NextProtos:         []string{http3.NextProtoH3},
+		},
+	}
+	t.Cleanup(func() { _ = tr.Close() })
+
+	type h3Result struct {
+		body string
+		err  error
+	}
+	got := make(chan h3Result, 1)
+	go func() {
+		req, err := http.NewRequest(http.MethodGet, "https://127.0.0.1:9443/slow", nil)
+		if err != nil {
+			got <- h3Result{err: err}
+			return
+		}
+		resp, err := tr.RoundTrip(req)
+		if err != nil {
+			got <- h3Result{err: err}
+			return
+		}
+		defer resp.Body.Close()
+		b, err := io.ReadAll(resp.Body)
+		if err != nil {
+			got <- h3Result{err: err}
+			return
+		}
+		if resp.StatusCode != http.StatusOK {
+			got <- h3Result{err: fmt.Errorf("status %d", resp.StatusCode)}
+			return
+		}
+		got <- h3Result{body: string(b)}
+	}()
+
+	select {
+	case <-started:
+	case res := <-got:
+		t.Fatalf("fallback request failed before the handler started: %v", res.err)
+	case <-time.After(3 * time.Second):
+		t.Fatal("fallback request did not reach the upstream")
+	}
+
+	go tester.InitServer(`{"admin": {"listen": "localhost:2999"}}`, "json")
+
+	select {
+	case res := <-got:
+		t.Fatalf("fallback request aborted before release: %v", res.err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	close(release)
+
+	select {
+	case res := <-got:
+		if res.err != nil {
+			t.Fatalf("fallback request aborted during grace: %v", res.err)
+		}
+		if res.body != "fallback-ok" {
+			t.Fatalf("fallback body = %q", res.body)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("fallback request did not finish during grace")
+	}
+	waitForUDPPortFree(t, 9443)
+}
+
 func wtH3ServerRoutes(listen, routesJSON string) string {
 	return fmt.Sprintf(`{
   "listen": [%q],
@@ -957,6 +1112,45 @@ func wtJSONWithHTTPPrefix(serversJSON, httpPrefix string) string {
     "pki": {"certificate_authorities": {"local": {"install_trust": false}}}
   }
 }`, httpPrefix, serversJSON)
+}
+
+func h3ServerNoWebTransport(listen, handlerJSON string) string {
+	return fmt.Sprintf(`{
+  "listen": [%q],
+  "protocols": ["h3"],
+  "routes": [{"handle": [%s]}],
+  "tls_connection_policies": [
+    {
+      "certificate_selection": {"any_tag": ["cert0"]},
+      "default_sni": "a.caddy.localhost"
+    }
+  ]
+}`, listen, handlerJSON)
+}
+
+func serverAdvertisesDatagrams(t *testing.T) bool {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	conn, err := quic.DialAddr(ctx, "127.0.0.1:9443", &tls.Config{
+		InsecureSkipVerify: true, //nolint:gosec // local CA
+		ServerName:         "a.caddy.localhost",
+		NextProtos:         []string{http3.NextProtoH3},
+	}, nil)
+	if err != nil {
+		t.Fatalf("datagram probe: %v", err)
+	}
+	defer conn.CloseWithError(0, "")
+	return conn.ConnectionState().SupportsDatagrams.Remote
+}
+
+func mustNewRequest(t *testing.T, url string) *http.Request {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	return req
 }
 
 func wtH3Server(listen, handlerJSON string) string {

@@ -415,10 +415,21 @@ type Server struct {
 	// ends the session. wtConns counts ServeQUICConn accept loops.
 	// wtStopping is set before waiting on wtConns so Add cannot race
 	// with Wait.
-	wtServeMu  sync.Mutex
-	wtStopping bool
-	wtConns    sync.WaitGroup
-	wtSessions map[io.Closer]struct{}
+	//
+	// rawConns are the QUIC connections passed to ServeQUICConn. reqs
+	// counts in-flight HTTP/3 requests on that connection, including a
+	// WebTransport extended CONNECT that is still inside ServeHTTP.
+	// Shutdown closes connections with no in-flight requests so an idle
+	// keepalive cannot retain the old config for the QUIC idle timeout.
+	// h3Fallbacks are plain HTTP/3 servers used when a pooled listener
+	// cannot offer WebTransport. Shutdown must drain them itself;
+	// s.h3server does not track their connections.
+	wtServeMu   sync.Mutex
+	wtStopping  bool
+	wtConns     sync.WaitGroup
+	wtSessions  map[io.Closer]struct{}
+	rawConns    map[*quic.Conn]*rawQUICConn
+	h3Fallbacks []*http3.Server
 
 	trustedProxies IPRangeSource
 
@@ -586,6 +597,13 @@ var (
 // ServeHTTP is the entry point for all HTTP requests.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
+
+	// Count HTTP/3 requests on connections ServeQUICConn owns. http3.Server
+	// does not track those, so shutdown uses this to tell an idle keepalive
+	// from work that still has to drain.
+	if finish := s.trackRawHTTP3Request(r); finish != nil {
+		defer finish()
+	}
 
 	// If there are listener wrappers that process tls connections but don't return a *tls.Conn, this field will be nil.
 	if r.TLS == nil {
@@ -1149,9 +1167,14 @@ func (s *Server) serveH3AcceptLoop(h3ln http3.QUICListener) {
 			_ = conn.CloseWithError(0, "")
 			continue
 		}
+		if s.rawConns == nil {
+			s.rawConns = make(map[*quic.Conn]*rawQUICConn)
+		}
+		s.rawConns[conn] = &rawQUICConn{}
 		s.wtConns.Add(1)
 		s.wtServeMu.Unlock()
 		go func(conn *quic.Conn) {
+			defer s.untrackRawConn(conn)
 			defer s.wtConns.Done()
 			err := s.wtServer.ServeQUICConn(conn)
 			if err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -1181,7 +1204,11 @@ func (s *Server) http3ServerForListener(h3ln http3.QUICListener) *http3.Server {
 		if s.h3server != nil {
 			tlsCfg = s.h3server.TLSConfig
 		}
-		return s.buildHTTP3ServerWithWebTransport(tlsCfg, false)
+		plain := s.buildHTTP3ServerWithWebTransport(tlsCfg, false)
+		s.wtServeMu.Lock()
+		s.h3Fallbacks = append(s.h3Fallbacks, plain)
+		s.wtServeMu.Unlock()
+		return plain
 	}
 	return s.h3server
 }
@@ -1213,6 +1240,11 @@ func (s *Server) buildHTTP3ServerWithWebTransport(tlsCfg *tls.Config, enableWT b
 	}
 	if enableWT {
 		qc.EnableStreamResetPartialDelivery = true
+		// Stash the conn before ConfigureHTTP3Server wraps ConnContext, so
+		// ServeHTTP can attribute the request to this raw connection.
+		h3.ConnContext = func(ctx context.Context, c *quic.Conn) context.Context {
+			return context.WithValue(ctx, rawQUICConnCtxKey, c)
+		}
 		webtransport.ConfigureHTTP3Server(h3)
 	}
 	return h3
@@ -1557,6 +1589,137 @@ func (s *Server) RegisterWebTransportSession(c io.Closer) (unregister func()) {
 	}
 }
 
+// rawQUICConn is the shutdown state of one ServeQUICConn connection.
+type rawQUICConn struct {
+	reqs    int
+	closing bool
+}
+
+// rawQUICConnCtxKey is the request-context key for the *quic.Conn serving
+// a WebTransport-enabled HTTP/3 connection. The key is set from ConnContext
+// before webtransport.ConfigureHTTP3Server wraps it.
+type rawQUICConnCtxKeyType struct{}
+
+var rawQUICConnCtxKey = rawQUICConnCtxKeyType{}
+
+// trackRawHTTP3Request counts r against the raw QUIC connection that is
+// serving it. The returned function drops the count after the HTTP/3 stack
+// finishes the stream and, once shutdown has started, closes the connection
+// when nothing is left in flight. Closing from inside ServeHTTP would abort
+// the response: quic-go flushes and closes the stream only after the handler
+// returns. It returns nil when r is not served by a tracked ServeQUICConn
+// connection.
+func (s *Server) trackRawHTTP3Request(r *http.Request) func() {
+	if s == nil || !s.webTransportEnabled() || r == nil {
+		return nil
+	}
+	c, ok := r.Context().Value(rawQUICConnCtxKey).(*quic.Conn)
+	if !ok || c == nil {
+		return nil
+	}
+	s.wtServeMu.Lock()
+	st := s.rawConns[c]
+	if st == nil || st.closing {
+		s.wtServeMu.Unlock()
+		return nil
+	}
+	st.reqs++
+	s.wtServeMu.Unlock()
+	// The request context is cancelled when the HTTP/3 stream's context
+	// ends. That happens after this handler returns, so wait in the
+	// background. Waiting here would deadlock the stream close.
+	ctx := r.Context()
+	return func() { go s.finishRawHTTP3Request(c, ctx) }
+}
+
+// finishRawHTTP3Request drops one in-flight request once ctx ends. When
+// shutdown is in progress and this was the last request, the connection is
+// closed after a short delay so an idle keepalive cannot pin eternal grace.
+// Closing immediately aborts a response the client has not read: quic-go
+// turns a CONNECTION_CLOSE into a stream read error even if the bytes were
+// already buffered.
+func (s *Server) finishRawHTTP3Request(c *quic.Conn, ctx context.Context) {
+	if ctx != nil {
+		<-ctx.Done()
+	}
+	s.wtServeMu.Lock()
+	st := s.rawConns[c]
+	if st == nil {
+		s.wtServeMu.Unlock()
+		return
+	}
+	if st.reqs > 0 {
+		st.reqs--
+	}
+	closeNow := s.wtStopping && st.reqs == 0 && !st.closing
+	if closeNow {
+		st.closing = true
+	}
+	s.wtServeMu.Unlock()
+	if !closeNow {
+		return
+	}
+	timer := time.NewTimer(time.Second)
+	defer timer.Stop()
+	select {
+	case <-c.Context().Done():
+	case <-timer.C:
+		_ = c.CloseWithError(0, "")
+	}
+}
+
+// closeIdleRawConns closes tracked connections that have no in-flight
+// HTTP/3 request. An idle keepalive would otherwise keep ServeQUICConn
+// running for the QUIC idle timeout, and eternal grace would wait that
+// whole time.
+func (s *Server) closeIdleRawConns() {
+	if s == nil {
+		return
+	}
+	s.wtServeMu.Lock()
+	var idle []*quic.Conn
+	for c, st := range s.rawConns {
+		if st.reqs == 0 && !st.closing {
+			st.closing = true
+			idle = append(idle, c)
+		}
+	}
+	s.wtServeMu.Unlock()
+	for _, c := range idle {
+		_ = c.CloseWithError(0, "")
+	}
+}
+
+func (s *Server) untrackRawConn(c *quic.Conn) {
+	s.wtServeMu.Lock()
+	delete(s.rawConns, c)
+	s.wtServeMu.Unlock()
+}
+
+// shutdownFallbackHTTP3 drains plain HTTP/3 servers created for listeners
+// that cannot offer WebTransport. Each uses ServeListener, so its own
+// Shutdown applies the grace period. The shared h3server does not see
+// those connections.
+func (s *Server) shutdownFallbackHTTP3(ctx context.Context) error {
+	if s == nil {
+		return nil
+	}
+	s.wtServeMu.Lock()
+	fallbacks := s.h3Fallbacks
+	s.h3Fallbacks = nil
+	s.wtServeMu.Unlock()
+	var errs []error
+	for _, fb := range fallbacks {
+		if fb == nil {
+			continue
+		}
+		if err := fb.Shutdown(ctx); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
 // closeWebTransportSessions closes sessions registered with
 // RegisterWebTransportSession. It does not close QUIC connections or the
 // HTTP/3 server.
@@ -1592,6 +1755,7 @@ func (s *Server) waitWebTransportConns(ctx context.Context) {
 	s.wtServeMu.Lock()
 	s.wtStopping = true
 	s.wtServeMu.Unlock()
+	s.closeIdleRawConns()
 
 	done := make(chan struct{})
 	go func() {
