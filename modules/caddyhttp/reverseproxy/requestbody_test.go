@@ -27,6 +27,32 @@ import (
 )
 
 func TestBodyCloserIfConnectedHTTP2Reset(t *testing.T) {
+	testBodyCloserHTTP2Reset(t, true)
+}
+
+// TestBodyCloserIfConnectedHTTP2ResetWithoutTrace covers transports that never
+// report a connection through httptrace; reading the body must be enough to
+// let it be closed.
+func TestBodyCloserIfConnectedHTTP2ResetWithoutTrace(t *testing.T) {
+	testBodyCloserHTTP2Reset(t, false)
+}
+
+// untracedTransport hides the request's httptrace hooks from the wrapped
+// transport while still propagating cancellation.
+type untracedTransport struct{ http.RoundTripper }
+
+func (u untracedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+	stop := context.AfterFunc(req.Context(), cancel)
+	defer stop()
+	resp, err := u.RoundTripper.RoundTrip(req.WithContext(ctx))
+	if err != nil {
+		cancel()
+	}
+	return resp, err
+}
+
+func testBodyCloserHTTP2Reset(t *testing.T, traced bool) {
 	reader, writer := io.Pipe()
 	defer writer.Close()
 	defer reader.Close()
@@ -49,11 +75,17 @@ func TestBodyCloserIfConnectedHTTP2Reset(t *testing.T) {
 	defer upstream.Close()
 	client := upstream.Client()
 	defer client.CloseIdleConnections()
+	if !traced {
+		client.Transport = untracedTransport{client.Transport}
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	wrapped := &bodyCloserIfConnected{ReadCloser: body}
-	trace := &httptrace.ClientTrace{GotConn: func(httptrace.GotConnInfo) { wrapped.connected.Store(true) }}
-	req, err := http.NewRequestWithContext(httptrace.WithClientTrace(ctx, trace), http.MethodPost, upstream.URL, wrapped)
+	if traced {
+		trace := &httptrace.ClientTrace{GotConn: func(httptrace.GotConnInfo) { wrapped.connected.Store(true) }}
+		ctx = httptrace.WithClientTrace(ctx, trace)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, upstream.URL, wrapped)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,6 +153,7 @@ func TestBodyCloserIfConnected(t *testing.T) {
 		{name: "body is closed once connected", payload: "request-body", connected: true, read: true},
 		{name: "body is closed once connected even if unread", payload: "request-body", connected: true},
 		{name: "empty body is closed after EOF", connected: true, read: true},
+		{name: "body is closed once read even without upstream connection trace", payload: "request-body", read: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			body := &trackedRequestBody{Reader: strings.NewReader(tc.payload)}
@@ -134,10 +167,11 @@ func TestBodyCloserIfConnected(t *testing.T) {
 			if err := wrapped.Close(); err != nil {
 				t.Fatal(err)
 			}
-			if body.closed != tc.connected {
-				t.Fatalf("closed = %v, want %v", body.closed, tc.connected)
+			wantClosed := tc.connected || tc.read
+			if body.closed != wantClosed {
+				t.Fatalf("closed = %v, want %v", body.closed, wantClosed)
 			}
-			if !tc.connected {
+			if !wantClosed {
 				data, err := io.ReadAll(wrapped)
 				if err != nil || string(data) != tc.payload {
 					t.Fatalf("retry body = %q, error = %v", data, err)

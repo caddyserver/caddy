@@ -582,18 +582,29 @@ func (h *Handler) Cleanup() error {
 }
 
 // bodyCloserIfConnected wraps a request body to prevent closing it until a
-// connection to the upstream is obtained, i.e., a failed dial leaves the body
-// intact so the request can be retried. Once connected, the body is closed as normal.
+// connection to the upstream is obtained or reading has begun, i.e., a failed
+// dial leaves the body intact so the request can be retried. Afterwards, the
+// body is closed as normal.
 type bodyCloserIfConnected struct {
 	io.ReadCloser
 
 	// connected is set once a connection to the upstream was obtained.
 	connected atomic.Bool
+
+	// started is set on the first Read, which covers transports that do not
+	// report a connection through httptrace.
+	started atomic.Bool
+}
+
+func (b *bodyCloserIfConnected) Read(p []byte) (int, error) {
+	b.started.Store(true)
+	return b.ReadCloser.Read(p)
 }
 
 func (b *bodyCloserIfConnected) Close() error {
 	// don't close the body when no connection to the upstream was obtained
-	if !b.connected.Load() {
+	// and nothing has tried to read it
+	if !b.connected.Load() && !b.started.Load() {
 		return nil
 	}
 	// close as usual: reads will fail as the body is closed because we do not want partial bodies to be sent to the upstream
