@@ -587,26 +587,46 @@ func (h *Handler) Cleanup() error {
 // It will close the body as normal if the body is read.
 type bodyNopCloserIfNotRead struct {
 	io.ReadCloser
-	read int // tracks the number of bytes read, -1 when first Read returns 0, io.EOF
+	// read tracks the number of bytes read. -1 means the first Read
+	// returned 0, io.EOF. The transport reads the body while the
+	// response is finalized, so the counter is atomic.
+	read atomic.Int64
 }
 
 func (b *bodyNopCloserIfNotRead) Read(p []byte) (int, error) {
-	if b.read == -1 {
+	if b.read.Load() == -1 {
 		return 0, io.EOF
 	}
 	n, err := b.ReadCloser.Read(p)
 	// first Read returns 0, io.EOF
-	if b.read == 0 && n == 0 && err == io.EOF {
-		b.read = -1
-	} else {
-		b.read += n
+	if b.read.Load() == 0 && n == 0 && err == io.EOF {
+		b.read.Store(-1)
+	} else if n != 0 {
+		b.read.Add(int64(n))
 	}
 	return n, err
 }
 
+// closeUnreadRequestBody reports whether an HTTP/1 client still owes
+// bytes on a request with a known Content-Length.
+func closeUnreadRequestBody(req *http.Request) bool {
+	if req == nil || req.ProtoMajor != 1 || req.ContentLength < 0 {
+		return false
+	}
+	body, ok := req.Body.(*bodyNopCloserIfNotRead)
+	if !ok {
+		return false
+	}
+	n := body.read.Load()
+	if n < 0 {
+		return false
+	}
+	return n < req.ContentLength
+}
+
 func (b *bodyNopCloserIfNotRead) Close() error {
 	// don't close the body
-	if b.read == 0 {
+	if b.read.Load() == 0 {
 		return nil
 	}
 	// close as usual, when -1, any read will return EOF as the original read will do
@@ -1426,6 +1446,14 @@ func (h *Handler) finalizeResponse(
 	}
 
 	copyHeader(rw.Header(), res.Header)
+
+	// The upstream answered before the client finished a known-length body.
+	// Keep-alive would leave those bytes for the next request to parse as
+	// headers. Closing the connection is what RFC 9110 section 6.5 requires
+	// when the rest of the body is not consumed.
+	if closeUnreadRequestBody(req) {
+		rw.Header().Set("Connection", "close")
+	}
 
 	// The "Trailer" header isn't included in the Transport's response,
 	// at least for *http.Transport. Build it up from Trailer.

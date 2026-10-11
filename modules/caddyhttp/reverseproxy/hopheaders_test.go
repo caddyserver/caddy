@@ -180,6 +180,68 @@ func TestFinalizeResponse_101_NoUpgradeRequest(t *testing.T) {
 	}
 }
 
+func TestFinalizeResponseClosesUnreadRequestBody(t *testing.T) {
+	h := &Handler{logger: caddy.Log()}
+
+	body := &bodyNopCloserIfNotRead{ReadCloser: io.NopCloser(strings.NewReader("partial"))}
+	body.read.Store(7)
+	req := httptest.NewRequest(http.MethodPut, "/early", body)
+	req.ContentLength = 100
+	req.Body = body
+	vars := map[string]any{}
+	ctx := context.WithValue(req.Context(), caddyhttp.VarsCtxKey, vars)
+	req = req.WithContext(ctx)
+
+	res := &http.Response{
+		StatusCode: http.StatusLocked,
+		Proto:      "HTTP/1.1",
+		ProtoMajor: 1,
+		ProtoMinor: 1,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader("locked")),
+	}
+
+	rw := httptest.NewRecorder()
+	err := h.finalizeResponse(rw, req, res, caddy.NewReplacer(), fakeStart, caddy.Log(), "")
+	if err != nil {
+		t.Fatalf("finalizeResponse returned error: %v", err)
+	}
+	if got := rw.Header().Get("Connection"); got != "close" {
+		t.Fatalf("Connection = %q, want close", got)
+	}
+}
+
+func TestFinalizeResponseKeepsCompleteRequestBody(t *testing.T) {
+	h := &Handler{logger: caddy.Log()}
+
+	body := &bodyNopCloserIfNotRead{ReadCloser: io.NopCloser(strings.NewReader("complete"))}
+	body.read.Store(8)
+	req := httptest.NewRequest(http.MethodPut, "/done", body)
+	req.ContentLength = 8
+	req.Body = body
+	vars := map[string]any{}
+	ctx := context.WithValue(req.Context(), caddyhttp.VarsCtxKey, vars)
+	req = req.WithContext(ctx)
+
+	res := &http.Response{
+		StatusCode: http.StatusOK,
+		Proto:      "HTTP/1.1",
+		ProtoMajor: 1,
+		ProtoMinor: 1,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader("ok")),
+	}
+
+	rw := httptest.NewRecorder()
+	err := h.finalizeResponse(rw, req, res, caddy.NewReplacer(), fakeStart, caddy.Log(), "")
+	if err != nil {
+		t.Fatalf("finalizeResponse returned error: %v", err)
+	}
+	if got := rw.Header().Get("Connection"); got != "" {
+		t.Fatalf("Connection = %q, want empty", got)
+	}
+}
+
 // fakeRWC lets handleUpgradeResponse proceed past the body type assertion in tests
 type fakeRWC struct {
 	io.Reader
