@@ -469,3 +469,43 @@ func TestLogLevelDirectiveSyntax(t *testing.T) {
 		})
 	}
 }
+
+func TestLogLevelDirectiveOrder(t *testing.T) {
+	for _, input := range []string{
+		"log_level /api/private/* ERROR\nlog_level /api/* DEBUG\nlog_level INFO",
+		"log_level INFO\nlog_level /api/* DEBUG\nlog_level /api/private/* ERROR",
+	} {
+		t.Run(input, func(t *testing.T) {
+			adapter := caddyfile.Adapter{ServerType: ServerType{}}
+			result, _, err := adapter.Adapt([]byte(":8080 {\n"+input+"\n}"), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var config struct {
+				Apps struct {
+					HTTP struct {
+						Servers map[string]struct {
+							Routes []struct {
+								Handle []struct {
+									Level string `json:"log_level"`
+								}
+							}
+						}
+					}
+				}
+			}
+			if err := json.Unmarshal(result, &config); err != nil {
+				t.Fatal(err)
+			}
+			var levels []string
+			for _, route := range config.Apps.HTTP.Servers["srv0"].Routes {
+				for _, handler := range route.Handle {
+					levels = append(levels, handler.Level)
+				}
+			}
+			if got := strings.Join(levels, ","); got != "info,debug,error" {
+				t.Fatalf("expected broadest log_level first, got %q: %s", got, result)
+			}
+		})
+	}
+}
