@@ -181,7 +181,7 @@ func (MatchFile) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		}
 		values := make(map[string][]caddyhttp.CELMatcherString, len(entries))
 		for _, entry := range entries {
-			values[entry.Key.Value] = entry.Values
+			values[entry.Key.Value()] = entry.Values
 		}
 		var m MatchFile
 		if len(values["root"]) > 0 {
@@ -191,7 +191,7 @@ func (MatchFile) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 			m.FileSystem = values["fs"][0].Template()
 		}
 		if len(values["try_policy"]) > 0 {
-			m.TryPolicy = values["try_policy"][0].Value
+			m.TryPolicy = values["try_policy"][0].Value()
 		}
 		if files, exists := values["try_files"]; exists {
 			m.TryFiles = make([]string, len(files))
@@ -202,7 +202,7 @@ func (MatchFile) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		if splits, exists := values["split_path"]; exists {
 			m.SplitPath = make([]string, len(splits))
 			for i, split := range splits {
-				m.SplitPath[i] = split.Value
+				m.SplitPath[i] = split.Value()
 			}
 		}
 		err = m.Provision(ctx)

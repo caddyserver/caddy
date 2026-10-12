@@ -717,7 +717,7 @@ func TestCELMatcherLiteralTemplateRoundTrip(t *testing.T) {
 	for _, input := range []string{
 		"{secret}", `\{secret}`, `{secret\}`, `\\{secret}`, "{}{}", "{unclosed", "closed}",
 	} {
-		value := CELMatcherString{Value: input, Literal: true}
+		value := CELMatcherString{value: input, literal: true}
 		if got := repl.ReplaceAll(value.Template(), ""); got != input {
 			t.Errorf("literal %q replaced to %q", input, got)
 		}

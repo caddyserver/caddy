@@ -255,8 +255,8 @@ func (VarsMatcher) CELLibrary(_ caddy.Context) (cel.Library, error) {
 			matcher := VarsMatcher{}
 			literalKeys := make(map[string]bool)
 			for _, entry := range entries {
-				key := entry.Key.Value
-				literalKeys[key] = entry.Key.Literal
+				key := entry.Key.Value()
+				literalKeys[key] = entry.Key.IsEvaluated()
 				matcher[key] = nil
 				for _, value := range entry.Values {
 					matcher[key] = append(matcher[key], value.Template())
@@ -429,7 +429,7 @@ func (MatchVarsRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 			}
 			strParams := make([]string, len(params))
 			for i, value := range params {
-				strParams[i] = value.Value
+				strParams[i] = value.Value()
 			}
 			matcher := MatchVarsRE{}
 			matcher[strParams[0]] = &MatchRegexp{
@@ -437,7 +437,7 @@ func (MatchVarsRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 				Name:    ctx.Value(MatcherNameCtxKey).(string),
 			}
 			err = matcher.Provision(ctx)
-			return celVarsREMatcher{matcher: matcher, literalKeys: map[string]bool{params[0].Value: params[0].Literal}}, err
+			return celVarsREMatcher{matcher: matcher, literalKeys: map[string]bool{params[0].Value(): params[0].IsEvaluated()}}, err
 		}),
 	)
 	if err != nil {
@@ -454,7 +454,7 @@ func (MatchVarsRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 			}
 			strParams := make([]string, len(params))
 			for i, value := range params {
-				strParams[i] = value.Value
+				strParams[i] = value.Value()
 			}
 			name := strParams[0]
 			if name == "" {
@@ -466,7 +466,7 @@ func (MatchVarsRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 				Name:    name,
 			}
 			err = matcher.Provision(ctx)
-			return celVarsREMatcher{matcher: matcher, literalKeys: map[string]bool{params[1].Value: params[1].Literal}}, err
+			return celVarsREMatcher{matcher: matcher, literalKeys: map[string]bool{params[1].Value(): params[1].IsEvaluated()}}, err
 		}),
 	)
 	if err != nil {

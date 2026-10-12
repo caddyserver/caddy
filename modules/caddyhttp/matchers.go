@@ -1048,7 +1048,7 @@ func (MatchQuery) CELLibrary(_ caddy.Context) (cel.Library, error) {
 			for _, entry := range entries {
 				key := entry.Key.Template()
 				if _, exists := values[key]; exists {
-					return nil, fmt.Errorf("duplicate query matcher key %q", entry.Key.Value)
+					return nil, fmt.Errorf("duplicate query matcher key %q", entry.Key.Value())
 				}
 				values[key] = nil
 				for _, value := range entry.Values {
@@ -1141,7 +1141,7 @@ func (MatchHeader) CELLibrary(_ caddy.Context) (cel.Library, error) {
 			}
 			values := make(map[string][]string, len(entries))
 			for _, entry := range entries {
-				key := entry.Key.Value
+				key := entry.Key.Value()
 				values[key] = nil
 				for _, value := range entry.Values {
 					values[key] = append(values[key], value.Template())

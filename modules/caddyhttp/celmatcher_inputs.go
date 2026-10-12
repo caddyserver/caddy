@@ -31,24 +31,46 @@ import (
 // CELLiteralMatcherFactory opts into distinguishing configured matcher text
 // from evaluated CEL arguments. Unlike legacy factories, it must inspect its
 // input with the CELMatcherString helpers before converting it to native data.
-// Evaluated strings are final data: use Template only for fields subsequently
-// expanded by a replacer; use Value for raw fields such as regex patterns.
+// Native conversion discards provenance. Evaluated strings are final data:
+// use Template only for fields subsequently expanded by a replacer; use Value
+// for raw fields such as regex patterns, and IsEvaluated for lookup keys.
 // Configured literal arguments retain their existing placeholder semantics.
 // CELMatcherImpl marks arguments automatically; custom macros must call
-// CELMatcherLiteralArguments on their matcher data expression.
+// CELMatcherLiteralArguments on their validated matcher data expression.
+// Existing CELMatcherFactory and CELMatcherWithErrorFactory implementations
+// retain their legacy behavior; this contract is explicitly opt-in.
 type CELLiteralMatcherFactory func(data ref.Val) (RequestMatcherWithError, error)
 
-// CELMatcherString retains the origin of one matcher string argument.
+// CELMatcherString is an immutable matcher string together with its origin.
+// Obtain it through the CELMatcherString extraction helpers and copy it intact:
+// converting to a plain string discards the distinction between configured
+// placeholder syntax and evaluated data.
 type CELMatcherString struct {
-	Value    string
-	Literal  bool
+	value    string
+	literal  bool
 	segments []celMatcherSegment
 	replacer *caddy.Replacer
 }
 
-// Template protects evaluated text from a subsequent replacer pass. The
-// replacer removes this protection while emitting the original text. Raw
-// fields which do not use a replacer must use Value instead.
+// Value returns the original, unexpanded text. Use it for fields which do not
+// interpret placeholders, such as header names or regular expression patterns.
+func (s CELMatcherString) Value() string { return s.value }
+
+// IsEvaluated reports whether the argument contains evaluated CEL data. A
+// configured string literal returns false; a concatenation containing evaluated
+// data returns true even when it also contains configured template segments.
+// Matchers which interpret placeholder-shaped keys must use this distinction
+// to keep evaluated keys as exact data rather than provider expressions.
+func (s CELMatcherString) IsEvaluated() bool { return s.literal }
+
+// Template returns text for exactly one subsequent caddy.Replacer expansion.
+// That expansion removes the protection and emits evaluated data literally.
+// Configured arguments retain their existing placeholder semantics. For mixed
+// concatenations, Template resolves configured segments independently using the
+// current request's replacer, so call it while constructing the matcher for
+// that request. It may query providers and must not be cached across requests.
+// Raw fields which do not use a replacer must use Value instead. Template only
+// protects placeholder syntax; it preserves the matcher's other pattern syntax.
 func (s CELMatcherString) Template() string {
 	if len(s.segments) > 0 {
 		var out strings.Builder
@@ -63,10 +85,10 @@ func (s CELMatcherString) Template() string {
 		}
 		return celMatcherBraceEscaper.Replace(out.String())
 	}
-	if !s.Literal {
-		return s.Value
+	if !s.literal {
+		return s.value
 	}
-	return celMatcherBraceEscaper.Replace(s.Value)
+	return celMatcherBraceEscaper.Replace(s.value)
 }
 
 // CELMatcherMapEntry preserves provenance for both a map key and its values.
@@ -76,12 +98,14 @@ type CELMatcherMapEntry struct {
 }
 
 // CELMatcherStringValue extracts a string without discarding its origin.
+// An error-valued CEL argument is returned as an error, retaining its cause;
+// callers must propagate it rather than stringify it as matcher data.
 func CELMatcherStringValue(value ref.Val) (CELMatcherString, error) {
 	if literal, ok := value.(*celMatcherLiteralString); ok {
-		return CELMatcherString{Value: string(literal.String), Literal: true, segments: literal.segments, replacer: literal.replacer}, nil
+		return CELMatcherString{value: string(literal.String), literal: true, segments: literal.segments, replacer: literal.replacer}, nil
 	}
 	if text, ok := value.(types.String); ok {
-		return CELMatcherString{Value: string(text)}, nil
+		return CELMatcherString{value: string(text)}, nil
 	}
 	if err, ok := value.(*types.Err); ok {
 		return CELMatcherString{}, err
@@ -107,7 +131,9 @@ func CELMatcherStringList(value ref.Val) ([]CELMatcherString, error) {
 }
 
 // CELMatcherStringMap extracts a CEL map whose values are strings or lists of
-// strings. It keeps key provenance separate from value provenance.
+// strings. It keeps key provenance separate from value provenance. Entry order
+// is unspecified. Distinct CEL keys with identical underlying text are rejected;
+// callers must also reject collisions introduced by any key transformation.
 func CELMatcherStringMap(value ref.Val) ([]CELMatcherMapEntry, error) {
 	mapping, ok := value.(traits.Mapper)
 	if !ok {
@@ -124,10 +150,10 @@ func CELMatcherStringMap(value ref.Val) ([]CELMatcherMapEntry, error) {
 		}
 		// A literal-aware map can have two differently annotated keys with
 		// identical text. Reject that ambiguity before converting to a Go map.
-		if seen[text.Value] {
-			return nil, fmt.Errorf("duplicate matcher map key %q", text.Value)
+		if seen[text.value] {
+			return nil, fmt.Errorf("duplicate matcher map key %q", text.value)
 		}
-		seen[text.Value] = true
+		seen[text.value] = true
 		val := mapping.Get(key)
 		var values []CELMatcherString
 		if _, ok := val.(traits.Lister); ok {
@@ -243,14 +269,14 @@ func concatCELMatcherLiteral(lhs, rhs ref.Val) ref.Val {
 		if len(s.segments) > 0 {
 			return s.segments
 		}
-		return []celMatcherSegment{{text: s.Value, literal: s.Literal}}
+		return []celMatcherSegment{{text: s.value, literal: s.literal}}
 	}
 	repl := left.replacer
 	if repl == nil {
 		repl = right.replacer
 	}
 	return &celMatcherLiteralString{
-		String:   types.String(left.Value + right.Value),
+		String:   types.String(left.value + right.value),
 		segments: append(append([]celMatcherSegment{}, segments(left)...), segments(right)...),
 		replacer: repl,
 	}
