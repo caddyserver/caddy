@@ -56,6 +56,7 @@ var defaultDirectiveOrder = []string{
 	"skip_log", // TODO: deprecated, renamed to log_skip
 	"log_skip",
 	"log_name",
+	"log_level",
 
 	"header",
 	"copy_response_headers", // only in reverse_proxy's handle_response
