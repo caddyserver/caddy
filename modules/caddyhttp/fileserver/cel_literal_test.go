@@ -76,8 +76,9 @@ func TestCELFileProviderRootRemainsLiteral(t *testing.T) {
 	req.Header.Set("X-Root", root)
 	repl := caddyhttp.NewTestReplacer(req)
 	matchCELFile(t, `file({"root": {http.request.header.X-Root}, "try_files": ["target.txt"]})`, req)
-	if got, _ := repl.Get("http.matchers.file.absolute"); got != filepath.Join(root, "target.txt") {
-		t.Fatalf("selected file = %q, want root %q", got, root)
+	want := filepath.ToSlash(filepath.Join(root, "target.txt"))
+	if got, _ := repl.Get("http.matchers.file.absolute"); got != want {
+		t.Fatalf("selected file = %q, want %q", got, want)
 	}
 }
 
