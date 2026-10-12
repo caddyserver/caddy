@@ -748,3 +748,36 @@ func reqEqual(r1, r2 *http.Request) bool {
 		r1.URL.RawQuery == r2.URL.RawQuery &&
 		r1.URL.Fragment == r2.URL.Fragment
 }
+
+func TestQueryComponentEnd(t *testing.T) {
+	for _, tc := range []struct {
+		name, input, component string
+		wroteVal, ampIsNext    bool
+	}{
+		{name: "empty", wroteVal: true},
+		{name: "whole key", input: "key", component: "key", wroteVal: true},
+		{name: "whole value", input: "value", component: "value"},
+		{name: "key equals", input: "key=value&next=ok", component: "key", wroteVal: true},
+		{name: "value equals", input: "a=b&next=ok", component: "a=b", ampIsNext: true},
+		{name: "key ampersand", input: "key&next=ok", component: "key", wroteVal: true, ampIsNext: true},
+		{name: "empty key", input: "=value", wroteVal: true},
+		{name: "empty value", input: "&next=ok", ampIsNext: true},
+		{name: "ordinary reference", input: "{key&name}=value", component: "{key&name}", wroteVal: true},
+		{name: "default key", input: "{missing:-a=b&c}=value", component: "{missing:-a=b&c}", wroteVal: true},
+		{name: "default value", input: "{missing:-a=b&c}&next=ok", component: "{missing:-a=b&c}", ampIsNext: true},
+		{name: "nested default", input: "{missing:-{other:-a=b&c}}&next=ok", component: "{missing:-{other:-a=b&c}}", ampIsNext: true},
+		{name: "adjacent references", input: "{one}{two:-a&b}=value", component: "{one}{two:-a&b}", wroteVal: true},
+		{name: "escaped closing brace in default", input: `{missing:-a\}&b}=value`, component: `{missing:-a\}&b}`, wroteVal: true},
+		{name: "escaped opening brace", input: `\{missing:-a&b}=value`, component: `\{missing:-a`, wroteVal: true, ampIsNext: true},
+		{name: "double backslash protects opening brace", input: `\\{missing:-a&b}=value`, component: `\\{missing:-a`, wroteVal: true, ampIsNext: true},
+		{name: "unclosed reference", input: "{key&next=ok", component: "{key", wroteVal: true, ampIsNext: true},
+		{name: "malformed default", input: "{missing:-a&next=ok", component: "{missing:-a", wroteVal: true, ampIsNext: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			end, ampIsNext := queryComponentEnd(tc.input, tc.wroteVal)
+			if end != len(tc.component) || ampIsNext != tc.ampIsNext {
+				t.Fatalf("component end = %d, ampersand next = %v; want %d, %v", end, ampIsNext, len(tc.component), tc.ampIsNext)
+			}
+		})
+	}
+}

@@ -387,7 +387,7 @@ func escapePathPlaceholders(path string, r *http.Request, repl *caddy.Replacer) 
 // queryComponentEnd finds the next configured separator outside references.
 func queryComponentEnd(input string, wroteVal bool) (int, bool) {
 	for i := 0; i < len(input); i++ {
-		if input[i] == '{' {
+		if input[i] == '{' && (i == 0 || input[i-1] != '\\') {
 			_, n, err := placeholder.Parse(input[i:])
 			if err == nil && n > 0 {
 				i += n - 1
