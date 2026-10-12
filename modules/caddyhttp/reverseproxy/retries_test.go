@@ -283,50 +283,57 @@ func minimalHandlerWithRetryMatch(retries int, retryMatch caddyhttp.MatcherSets,
 // code matching a retry_match expression, the request is retried on the next
 // upstream
 func TestResponseRetryStatusCode(t *testing.T) {
-	// Bad upstream: returns 502
-	badServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusBadGateway)
-	}))
-	t.Cleanup(badServer.Close)
+	for _, expr := range []string{
+		"{http.reverse_proxy.status_code} in [502, 503]",
+		`ph(req, "http.reverse_proxy.status_code") in [502, 503]`,
+	} {
+		t.Run(expr, func(t *testing.T) {
+			// Bad upstream: returns 502
+			badServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusBadGateway)
+			}))
+			t.Cleanup(badServer.Close)
 
-	// Good upstream: returns 200
-	goodServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok"))
-	}))
-	t.Cleanup(goodServer.Close)
+			// Good upstream: returns 200
+			goodServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte("ok"))
+			}))
+			t.Cleanup(goodServer.Close)
 
-	retryMatch := caddyhttp.MatcherSets{
-		caddyhttp.MatcherSet{
-			newExpressionMatcher(t, "{http.reverse_proxy.status_code} in [502, 503]"),
-		},
-	}
+			retryMatch := caddyhttp.MatcherSets{
+				caddyhttp.MatcherSet{
+					newExpressionMatcher(t, expr),
+				},
+			}
 
-	// RoundRobin picks index 1 first, then 0
-	upstreams := []*Upstream{
-		{Host: new(Host), Dial: goodServer.Listener.Addr().String()},
-		{Host: new(Host), Dial: badServer.Listener.Addr().String()},
-	}
+			// RoundRobin picks index 1 first, then 0
+			upstreams := []*Upstream{
+				{Host: new(Host), Dial: goodServer.Listener.Addr().String()},
+				{Host: new(Host), Dial: badServer.Listener.Addr().String()},
+			}
 
-	h := minimalHandlerWithRetryMatch(1, retryMatch, upstreams...)
+			h := minimalHandlerWithRetryMatch(1, retryMatch, upstreams...)
 
-	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
-	req = prepareTestRequest(req)
-	rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+			req = prepareTestRequest(req)
+			rec := httptest.NewRecorder()
 
-	err := h.ServeHTTP(rec, req, caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
-		return nil
-	}))
+			err := h.ServeHTTP(rec, req, caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+				return nil
+			}))
 
-	gotStatus := rec.Code
-	if err != nil {
-		if herr, ok := err.(caddyhttp.HandlerError); ok {
-			gotStatus = herr.StatusCode
-		}
-	}
+			gotStatus := rec.Code
+			if err != nil {
+				if herr, ok := err.(caddyhttp.HandlerError); ok {
+					gotStatus = herr.StatusCode
+				}
+			}
 
-	if gotStatus != http.StatusOK {
-		t.Errorf("status: got %d, want %d (err=%v)", gotStatus, http.StatusOK, err)
+			if gotStatus != http.StatusOK {
+				t.Errorf("status: got %d, want %d (err=%v)", gotStatus, http.StatusOK, err)
+			}
+		})
 	}
 }
 
@@ -562,6 +569,64 @@ func TestRequestOnlyMatcherDoesNotRetryResponses(t *testing.T) {
 	}
 	if rec.Code != http.StatusOK {
 		t.Errorf("status: got %d, want %d", rec.Code, http.StatusOK)
+	}
+}
+
+// TestRequestOnlyExpressionDoesNotRetryResponses verifies that an expression
+// matcher that only tests the request or the selected upstream (no response
+// placeholders) does not cause successful responses to be retried
+func TestRequestOnlyExpressionDoesNotRetryResponses(t *testing.T) {
+	for _, expr := range []string{
+		`{http.request.method} == "POST"`,
+		`{http.reverse_proxy.upstream.host} == "127.0.0.1"`,
+		`{http.request.uri.path} != "\{http.reverse_proxy.status_code}"`,
+		`{http.reverse_proxy.status_codes} == null`,
+	} {
+		t.Run(expr, func(t *testing.T) {
+			var hits atomic.Int32
+
+			// Server returns 200 OK for all requests
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				hits.Add(1)
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte("ok"))
+			}))
+			t.Cleanup(server.Close)
+
+			retryMatch := caddyhttp.MatcherSets{
+				caddyhttp.MatcherSet{
+					newExpressionMatcher(t, expr),
+				},
+			}
+
+			upstreams := []*Upstream{
+				{Host: new(Host), Dial: server.Listener.Addr().String()},
+				{Host: new(Host), Dial: server.Listener.Addr().String()},
+			}
+
+			h := minimalHandlerWithRetryMatch(2, retryMatch, upstreams...)
+
+			req := httptest.NewRequest(http.MethodPost, "http://example.com/", strings.NewReader("order=1"))
+			req = prepareTestRequest(req)
+			rec := httptest.NewRecorder()
+
+			err := h.ServeHTTP(rec, req, caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+				return nil
+			}))
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if hits.Load() != 1 {
+				t.Errorf("upstream hits: got %d, want 1 (should not retry successful responses)", hits.Load())
+			}
+			if rec.Code != http.StatusOK {
+				t.Errorf("status: got %d, want %d", rec.Code, http.StatusOK)
+			}
+			if rec.Body.String() != "ok" {
+				t.Errorf("body: got %q, want %q", rec.Body.String(), "ok")
+			}
+		})
 	}
 }
 

@@ -497,10 +497,19 @@ func (t *Templates) executeTemplate(rr caddyhttp.ResponseRecorder, r *http.Reque
 
 	err := ctx.executeTemplateInBuffer(r.URL.Path, rr.Buffer())
 	if err != nil {
+		// Delete some headers that may have been set by the underlying
+		// handler (such as file_server) which may break the error response.
+		rr.Header().Del("Content-Length")
+		rr.Header().Del("Content-Type")
+		rr.Header().Del("Etag")
+		rr.Header().Del("Last-Modified")
+		rr.Header().Del("Accept-Ranges")
+		rr.Header().Del("Content-Encoding")
+		rr.Header().Del("Content-Range")
+
 		// templates may return a custom HTTP error to be propagated to the client,
 		// otherwise for any other error we assume the template is broken
-		var handlerErr caddyhttp.HandlerError
-		if errors.As(err, &handlerErr) {
+		if handlerErr, ok := errors.AsType[caddyhttp.HandlerError](err); ok {
 			return handlerErr
 		}
 		return caddyhttp.Error(http.StatusInternalServerError, err)

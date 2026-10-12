@@ -3,15 +3,74 @@ package encode_test
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/encode"
 )
 
 const conformanceContentType = "text/plain"
+
+func TestEncodeIfNoneMatch(t *testing.T) {
+	for _, encCase := range standardEncoderCases(t) {
+		t.Run(encCase.name, func(t *testing.T) {
+			enc := newEncodeHandler(t, encCase, 1)
+			for _, tc := range []struct {
+				name   string
+				values []string
+				want   []string
+				etag   string
+				status int
+			}{
+				{"single", []string{`"response-%s"`}, []string{`"response"`}, `"response"`, 304},
+				{"matching first", []string{`"response-%s", "stale-%s"`}, []string{`"response", "stale"`}, `"response"`, 304},
+				{"matching last", []string{`"stale-%s", "response-%s"`}, []string{`"stale", "response"`}, `"response"`, 304},
+				{"weak", []string{`W/"response-%s"`}, []string{`W/"response"`}, `"response"`, 304},
+				{"mixed", []string{`W/"stale-%s", "response-%s"`}, []string{`W/"stale", "response"`}, `"response"`, 304},
+				{"quoted comma", []string{`"response,part-%s", "stale-%s"`}, []string{`"response,part", "stale"`}, `"response,part"`, 304},
+				{"multiple lines", []string{`"stale-%s"`, `W/"response-%s"`}, []string{`"stale", W/"response"`}, `"response"`, 304},
+				{"wildcard", []string{`*`}, []string{`*`}, `"response"`, 304},
+				{"unencoded", []string{`"response"`}, []string{`"response"`}, `"response"`, 304},
+				{"other suffix", []string{`"response-other"`}, []string{`"response-other"`}, `"response"`, 200},
+				{"suffix inside tag", []string{`"response-%s-extra"`}, []string{`"response-%s-extra"`}, `"response"`, 200},
+				{"unterminated", []string{`"response-%s`}, []string{`"response-%s`}, `"response"`, 200},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					r := httptest.NewRequest(http.MethodGet, "/", nil)
+					r.Header.Set("Accept-Encoding", encCase.encoding.AcceptEncoding())
+					values, want := slices.Clone(tc.values), slices.Clone(tc.want)
+					for _, list := range [][]string{values, want} {
+						for i := range list {
+							list[i] = strings.ReplaceAll(list[i], "%s", encCase.encoding.AcceptEncoding())
+						}
+					}
+					r.Header["If-None-Match"] = values
+					w := httptest.NewRecorder()
+					next := caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+						if got := r.Header.Values("If-None-Match"); !slices.Equal(got, want) {
+							t.Errorf("If-None-Match = %q, want %q", got, want)
+						}
+						w.Header().Set("Etag", tc.etag)
+						http.ServeContent(w, r, "asset.txt", time.Time{}, strings.NewReader("response body"))
+						return nil
+					})
+					if err := enc.ServeHTTP(w, r, next); err != nil {
+						t.Fatal(err)
+					}
+					if w.Code != tc.status {
+						t.Errorf("status = %d, want %d", w.Code, tc.status)
+					}
+				})
+			}
+		})
+	}
+}
 
 // TestStandardEncoderContract verifies Reset, Flush, Close, and Reset-after-Close
 // reuse for each encoder using the same HTML/JSON/JS/CSS payloads as the benchmark suite.
@@ -396,5 +455,87 @@ func checkBypassesEncoding(t *testing.T, w *httptest.ResponseRecorder, encCase e
 	}
 	if !bytes.Equal(w.Body.Bytes(), want) {
 		t.Fatalf("body len = %d, want len = %d", w.Body.Len(), len(want))
+	}
+}
+
+// TestEncodeHeadResponseContentLength verifies that a HEAD response does not
+// advertise the length of an empty encoded stream.
+func TestEncodeHeadResponseContentLength(t *testing.T) {
+	for _, encCase := range standardEncoderCases(t) {
+		t.Run(encCase.name, func(t *testing.T) {
+			enc := newEncodeHandler(t, encCase, 1)
+			next := caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+				w.Header().Set("Content-Type", conformanceContentType)
+				w.Header().Set("Content-Length", "128")
+				return nil
+			})
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if err := enc.ServeHTTP(w, r, next); err != nil {
+					t.Errorf("ServeHTTP() error = %v", err)
+				}
+			}))
+			defer srv.Close()
+
+			req, err := http.NewRequest(http.MethodHead, srv.URL, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Accept-Encoding", encCase.encoding.AcceptEncoding())
+			resp, err := srv.Client().Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp.Body.Close()
+
+			if got := resp.Header.Get("Content-Encoding"); got != encCase.encoding.AcceptEncoding() {
+				t.Fatalf("Content-Encoding = %q, want %q", got, encCase.encoding.AcceptEncoding())
+			}
+			if resp.ContentLength != -1 {
+				t.Fatalf("ContentLength = %d, want -1", resp.ContentLength)
+			}
+		})
+	}
+}
+
+// TestEncodeHeaderOnlyResponseHasNoBody verifies that a response whose header
+// is written without any body does not get an empty encoded stream as its body.
+func TestEncodeHeaderOnlyResponseHasNoBody(t *testing.T) {
+	for _, encCase := range standardEncoderCases(t) {
+		t.Run(encCase.name, func(t *testing.T) {
+			enc := newEncodeHandler(t, encCase, 1)
+			next := caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+				w.Header().Set("Content-Type", "text/event-stream")
+				w.WriteHeader(http.StatusOK)
+				return nil
+			})
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if err := enc.ServeHTTP(w, r, next); err != nil {
+					t.Errorf("ServeHTTP() error = %v", err)
+				}
+			}))
+			defer srv.Close()
+
+			req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Accept-Encoding", encCase.encoding.AcceptEncoding())
+			resp, err := srv.Client().Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if got := resp.Header.Get("Content-Encoding"); got != encCase.encoding.AcceptEncoding() {
+				t.Fatalf("Content-Encoding = %q, want %q", got, encCase.encoding.AcceptEncoding())
+			}
+			if len(body) != 0 {
+				t.Fatalf("body len = %d, want 0", len(body))
+			}
+		})
 	}
 }

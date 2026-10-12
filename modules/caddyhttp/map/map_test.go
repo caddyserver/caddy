@@ -43,6 +43,52 @@ func TestValidateDuplicateInputs(t *testing.T) {
 	}
 }
 
+func TestProvisionDestinations(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		destination string
+		want        string
+		wantErr     bool
+	}{
+		{name: "valid placeholder", destination: "{output}", want: "output"},
+		{name: "trailing text", destination: "{output}suffix", wantErr: true},
+		{name: "leading text", destination: "prefix{output}", wantErr: true},
+		{name: "missing opening brace", destination: "output}", wantErr: true},
+		{name: "missing closing brace", destination: "{output", wantErr: true},
+		{name: "double closing brace", destination: "{output}}", wantErr: true},
+		{name: "double opening brace", destination: "{{output}", wantErr: true},
+		{name: "nested braces", destination: "{out{put}}", wantErr: true},
+		{name: "empty braces", destination: "{}", wantErr: true},
+		{name: "no braces", destination: "output", wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := Handler{
+				Source:       "{http.request.uri.path}",
+				Destinations: []string{tc.destination},
+				Mappings: []Mapping{
+					{
+						Input:   "/foo",
+						Outputs: []any{"FOO"},
+					},
+				},
+			}
+			err := h.Provision(caddy.Context{})
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error for destination %q, but got none (stored %q)", tc.destination, h.Destinations[0])
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error for destination %q: %v", tc.destination, err)
+			}
+			if h.Destinations[0] != tc.want {
+				t.Fatalf("expected destination %q, got %q", tc.want, h.Destinations[0])
+			}
+		})
+	}
+}
+
 func TestHandler(t *testing.T) {
 	for i, tc := range []struct {
 		handler Handler

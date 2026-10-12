@@ -9,6 +9,31 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
+func TestWindowsRootTrailingBackslash(t *testing.T) {
+	adapter := caddyfile.Adapter{ServerType: ServerType{}}
+	input := "http://localhost {\nroot * C:\\site\\\nrespond ok\n}\n"
+	rootJSON, err := json.Marshal(`C:\site\`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, in := range []string{input, strings.ReplaceAll(input, "\n", "\r\n")} {
+		before, _, err := adapter.Adapt([]byte(in), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(before), `"root":`+string(rootJSON)) {
+			t.Fatalf("Windows root not preserved in adapted config: %s", before)
+		}
+		after, _, err := adapter.Adapt(caddyfile.Format([]byte(in)), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(before) != string(after) {
+			t.Fatalf("formatting changed adapted JSON:\nbefore: %s\nafter: %s", before, after)
+		}
+	}
+}
+
 func TestMatcherSyntax(t *testing.T) {
 	for i, tc := range []struct {
 		input          string

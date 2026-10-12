@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -70,6 +71,7 @@ type MatchExpression struct {
 	Name string `json:"name,omitempty"`
 
 	expandedExpr string
+	placeholders []string
 	prg          cel.Program
 	ta           types.Adapter
 
@@ -192,12 +194,21 @@ func (m *MatchExpression) Provision(ctx caddy.Context) error {
 		return fmt.Errorf("CEL request matcher expects return type of bool, not %s", checked.OutputType())
 	}
 
+	m.placeholders = celPlaceholderNames(checked.NativeRep().Expr())
+
 	// compile the "program"
 	m.prg, err = env.Program(checked, cel.EvalOptions(cel.OptOptimize))
 	if err != nil {
 		return fmt.Errorf("compiling CEL program: %s", err)
 	}
 	return nil
+}
+
+// Placeholders returns the names of the placeholders the provisioned
+// expression reads. A name that is only known at evaluation time is
+// returned as an empty string.
+func (m MatchExpression) Placeholders() []string {
+	return slices.Clone(m.placeholders)
 }
 
 // Match returns true if r matches m.
@@ -232,24 +243,28 @@ func (m *MatchExpression) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	// CEL expression (e.g. strings) and we should retain that
 	if d.CountRemainingArgs() > 1 {
 		m.Expr = strings.Join(d.RemainingArgsRaw(), " ")
-		return nil
+	} else {
+		// there should at least be one arg
+		if !d.NextArg() {
+			return d.ArgErr()
+		}
+
+		// if there's only one token, then we can safely grab the
+		// cleaned token (no quotes) and use that as the expression
+		// because there's no valid CEL expression that is only a
+		// quoted string; commonly quotes are used in Caddyfile to
+		// define the expression
+		m.Expr = d.Val()
+
+		// use the named matcher's name, to fill regexp
+		// matchers names by default
+		m.Name = d.GetContextString(caddyfile.MatcherNameCtxKey)
 	}
 
-	// there should at least be one arg
-	if !d.NextArg() {
-		return d.ArgErr()
+	// a matcher set holds only one expression matcher
+	if d.Next() {
+		return d.Err("repeated expression matchers are not supported, combine them into one expression with &&")
 	}
-
-	// if there's only one token, then we can safely grab the
-	// cleaned token (no quotes) and use that as the expression
-	// because there's no valid CEL expression that is only a
-	// quoted string; commonly quotes are used in Caddyfile to
-	// define the expression
-	m.Expr = d.Val()
-
-	// use the named matcher's name, to fill regexp
-	// matchers names by default
-	m.Name = d.GetContextString(caddyfile.MatcherNameCtxKey)
 
 	return nil
 }
@@ -727,6 +742,23 @@ func CELValueToMapStrList(data ref.Val) (map[string][]string, error) {
 		}
 	}
 	return mapStrListStr, nil
+}
+
+// celPlaceholderNames returns the name passed to each placeholder call in e,
+// or an empty string where the name is not a string literal.
+func celPlaceholderNames(e ast.Expr) []string {
+	var names []string
+	ast.PreOrderVisit(e, ast.NewExprVisitor(func(e ast.Expr) {
+		if !isCELCaddyPlaceholderCall(e) {
+			return
+		}
+		name := ""
+		if args := e.AsCall().Args(); len(args) == 2 && isCELStringLiteral(args[1]) {
+			name = args[1].AsLiteral().Value().(string)
+		}
+		names = append(names, name)
+	}))
+	return names
 }
 
 // isCELStringExpr indicates whether the expression is a supported string expression

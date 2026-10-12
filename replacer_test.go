@@ -21,6 +21,7 @@ import (
 	"runtime"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestReplacer(t *testing.T) {
@@ -481,6 +482,39 @@ func TestReplacerNewWithoutFile(t *testing.T) {
 		} else if !tc.notFound {
 			t.Errorf("Expected key '%s' to be recognized", tc.variable)
 		}
+	}
+}
+
+func TestReplacerTimeNowRFC3339(t *testing.T) {
+	originalNowFunc := nowFunc
+	t.Cleanup(func() { nowFunc = originalNowFunc })
+
+	for _, tc := range []struct {
+		name string
+		now  time.Time
+		want string
+	}{
+		{
+			name: "UTC",
+			now:  time.Date(2026, time.October, 3, 4, 30, 0, 123456789, time.UTC),
+			want: "2026-10-03T04:30:00Z",
+		},
+		{
+			name: "numeric offset",
+			now:  time.Date(2026, time.October, 3, 10, 15, 0, 123456789, time.FixedZone("NPT", 5*60*60+45*60)),
+			want: "2026-10-03T10:15:00+05:45",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			nowFunc = func() time.Time { return tc.now }
+			got, ok := NewReplacer().GetString("time.now.rfc3339")
+			if !ok {
+				t.Fatal("time.now.rfc3339 placeholder was not found")
+			}
+			if got != tc.want {
+				t.Fatalf("time.now.rfc3339 = %q; want %q", got, tc.want)
+			}
+		})
 	}
 }
 
