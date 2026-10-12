@@ -15,6 +15,7 @@
 package caddyfile
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -536,6 +537,52 @@ func lexerCompare(t *testing.T, n int, expected, actual []Token) {
 			t.Fatalf("Test case %d token %d: expected text '%s' but was '%s'",
 				n, i, expected[i].Text, actual[i].Text)
 			break
+		}
+	}
+}
+
+// TestLexerLongHeredoc exercises long and overlapping marker prefixes. Checking
+// the entire marker after every rune made these inputs take seconds to tokenize.
+func TestLexerLongHeredoc(t *testing.T) {
+	for _, tc := range []struct {
+		name, marker, body string
+		incomplete         bool
+	}{
+		{name: "long marker", marker: strings.Repeat("a", 8000) + "b", body: strings.Repeat("a", 500000)},
+		{name: "overlapping prefixes", marker: "ababaca", body: "ababababac"},
+		{name: "unicode body", marker: "END", body: "你好\xffEN"},
+		{name: "incomplete", marker: strings.Repeat("a", 8000) + "b", body: strings.Repeat("a", 500000), incomplete: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := "<<" + tc.marker + "\n" + tc.body
+			if !tc.incomplete {
+				input += "\n" + tc.marker
+			}
+			tokens, err := Tokenize([]byte(input), "Caddyfile")
+			if tc.incomplete {
+				if err == nil {
+					t.Fatal("expected incomplete heredoc error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(tokens) != 1 || tokens[0].Text != string([]rune(tc.body)) {
+				t.Fatalf("unexpected heredoc contents: %v", tokens)
+			}
+		})
+	}
+}
+
+func BenchmarkLexerLongHeredoc(b *testing.B) {
+	marker := strings.Repeat("a", 8000) + "b"
+	input := []byte("<<" + marker + "\n" + strings.Repeat("a", 500000) + "\n" + marker)
+	b.SetBytes(int64(len(input)))
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := Tokenize(input, "Caddyfile"); err != nil {
+			b.Fatal(err)
 		}
 	}
 }
