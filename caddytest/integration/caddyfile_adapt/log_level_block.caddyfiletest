@@ -1,0 +1,7 @@
+:80
+
+log_level WARN {
+	foo
+}
+----------
+log_level directive does not accept blocks
