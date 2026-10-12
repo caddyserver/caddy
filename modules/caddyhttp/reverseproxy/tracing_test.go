@@ -2,15 +2,19 @@ package reverseproxy
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/caddyserver/caddy/v2"
 )
 
 func TestUpstreamClientSpans(t *testing.T) {
@@ -33,6 +37,15 @@ func TestUpstreamClientSpans(t *testing.T) {
 			&Upstream{Host: new(Host), Dial: upstream.Listener.Addr().String()},
 			&Upstream{Host: new(Host), Dial: deadUpstreamAddr(t)},
 		)
+		// HTTPTransport sets the URL scheme itself, so the span only records
+		// it if roundTrip calls SetScheme before the traced transport runs
+		caddyCtx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+		t.Cleanup(cancel)
+		ht := new(HTTPTransport)
+		if err := ht.Provision(caddyCtx); err != nil {
+			t.Fatalf("provisioning transport: %v", err)
+		}
+		h.Transport = ht
 		h.tracedTransport = newTracedTransport(h.Transport)
 
 		ctx, serverSpan := tp.Tracer("test").Start(context.Background(), "server",
@@ -61,6 +74,19 @@ func TestUpstreamClientSpans(t *testing.T) {
 		}
 		if clientSpans[0].Status().Code != codes.Error {
 			t.Errorf("expected failed attempt to have error status, got %v", clientSpans[0].Status().Code)
+		}
+
+		upstreamHost, upstreamPort, _ := net.SplitHostPort(upstream.Listener.Addr().String())
+		attrs := attribute.NewSet(clientSpans[1].Attributes()...)
+		for key, want := range map[attribute.Key]string{
+			"url.full":                  "http://" + upstream.Listener.Addr().String() + "/",
+			"server.address":            upstreamHost,
+			"server.port":               upstreamPort,
+			"http.response.status_code": "200",
+		} {
+			if got, _ := attrs.Value(key); got.Emit() != want {
+				t.Errorf("client span attribute %s: expected %q, got %q", key, want, got.Emit())
+			}
 		}
 
 		if len(gotTraceparent) != 1 {
