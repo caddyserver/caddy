@@ -16,18 +16,14 @@ package httpserverblock
 
 import (
 	"fmt"
-	"reflect"
 	"strings"
 
-	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/configbuilder"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile/blocktypes"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	"github.com/caddyserver/caddy/v2/modules/caddypki"
-	"github.com/caddyserver/caddy/v2/modules/caddytls"
 )
 
 func init() {
@@ -95,31 +91,6 @@ func setup(builder *configbuilder.Builder, blocks []caddyfile.ServerBlock, optio
 		return warnings, err
 	}
 
-	// Build TLS app using the pairings
-	tlsApp, tlsWarnings, err := httpcaddyfile.BuildTLSApp(pairings, options, warnings)
-	if err != nil {
-		return append(warnings, tlsWarnings...), err
-	}
-	warnings = append(warnings, tlsWarnings...)
-	// Only add TLS app if it's not empty (has certificates or automation policies)
-	if tlsApp != nil && (!reflect.DeepEqual(tlsApp, &caddytls.TLS{CertificatesRaw: make(caddy.ModuleMap)})) {
-		if err := builder.CreateApp("tls", tlsApp); err != nil {
-			return warnings, err
-		}
-	}
-
-	// Build PKI app using the pairings
-	pkiApp, pkiWarnings, err := httpcaddyfile.BuildPKIApp(pairings, options, warnings)
-	if err != nil {
-		return append(warnings, pkiWarnings...), err
-	}
-	warnings = append(warnings, pkiWarnings...)
-	// Only add PKI app if it's not empty (has CAs)
-	if pkiApp != nil && (!reflect.DeepEqual(pkiApp, &caddypki.PKI{CAs: make(map[string]*caddypki.CA)})) {
-		if err := builder.CreateApp("pki", pkiApp); err != nil {
-			return warnings, err
-		}
-	}
-
-	return warnings, nil
+	err = httpcaddyfile.AddTLSAndPKIApps(builder, pairings, options, &warnings)
+	return warnings, err
 }

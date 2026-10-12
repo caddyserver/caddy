@@ -171,7 +171,7 @@ func (st ServerType) Setup(
 	// global options alone (such as tls_automate_names or pki) can configure
 	// the tls and pki apps, which are otherwise built with the site blocks
 	if !processed["http.server"] {
-		if err := buildAppsWithoutSites(builder, options, &warnings); err != nil {
+		if err := AddTLSAndPKIApps(builder, nil, options, &warnings); err != nil {
 			return nil, warnings, err
 		}
 	}
@@ -197,12 +197,14 @@ func (st ServerType) Setup(
 // and server blocks. This is needed for building TLS and PKI apps.
 type ServerBlockPairings []sbAddrAssociation
 
-// buildAppsWithoutSites adds the tls and pki apps built from global options
-// alone, for configs that have no site blocks.
-func buildAppsWithoutSites(builder *configbuilder.Builder, options map[string]any, warnings *[]caddyconfig.Warning) error {
+// AddTLSAndPKIApps builds the tls and pki apps from the given pairings and
+// global options and adds them to builder, skipping either one if it would be
+// empty or if builder already has it. Pairings may be nil when there are no
+// site blocks.
+func AddTLSAndPKIApps(builder *configbuilder.Builder, pairings ServerBlockPairings, options map[string]any, warnings *[]caddyconfig.Warning) error {
 	st := ServerType{}
 	if _, ok := builder.GetApp("tls"); !ok {
-		tlsApp, w, err := st.buildTLSApp(nil, options, nil)
+		tlsApp, w, err := st.buildTLSApp(pairings, options, nil)
 		*warnings = append(*warnings, w...)
 		if err != nil {
 			return err
@@ -214,7 +216,7 @@ func buildAppsWithoutSites(builder *configbuilder.Builder, options map[string]an
 		}
 	}
 	if _, ok := builder.GetApp("pki"); !ok {
-		pkiApp, w, err := st.buildPKIApp(nil, options, nil)
+		pkiApp, w, err := st.buildPKIApp(pairings, options, nil)
 		*warnings = append(*warnings, w...)
 		if err != nil {
 			return err

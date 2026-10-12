@@ -85,6 +85,24 @@ func GetTypedApp[T any](b *Builder, name string) (*T, bool) {
 	return typedApp, ok
 }
 
+// GetOrCreateApp returns the app stored under name, creating it with newApp
+// if it does not exist yet. Block types that contribute to the same app
+// (for example, several adding certificates to "tls") should use this
+// instead of CreateApp. It returns an error if an app of a different type
+// is already stored under name.
+func GetOrCreateApp[T any](b *Builder, name string, newApp func() *T) (*T, error) {
+	if app, ok := b.apps[name]; ok {
+		typedApp, ok := app.(*T)
+		if !ok {
+			return nil, fmt.Errorf("app '%s' already exists with type %T", name, app)
+		}
+		return typedApp, nil
+	}
+	app := newApp()
+	b.apps[name] = app
+	return app, nil
+}
+
 // CreateApp stores a new structured app config by name.
 // Returns an error if an app with this name already exists.
 // Blocks that want to modify an existing app should use GetApp() first.
