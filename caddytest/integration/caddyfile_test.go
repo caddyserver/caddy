@@ -782,6 +782,37 @@ func TestHandleErrorRangeAndCodes(t *testing.T) {
 	tester.AssertGetResponse("http://localhost:9080/private", 410, "Error in the [400 .. 499] range")
 }
 
+func TestHandleErrorOverlappingCodesKeepOrder(t *testing.T) {
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`{
+		admin localhost:2999
+		http_port     9080
+	}
+	localhost:9080 {
+		root * /srv
+		error /private* "Unauthorized" 410
+		error /hidden* "Not found" 404
+		error /internalerr* "Internal Server Error" 500
+
+		handle_errors 404 {
+			respond "Not found page"
+		}
+		handle_errors 4xx {
+			respond "Error in the [400 .. 499] range"
+		}
+		handle_errors {
+			respond "First fallback"
+		}
+		handle_errors {
+			respond "Second fallback"
+		}
+	}`, "caddyfile")
+	// act and assert
+	tester.AssertGetResponse("http://localhost:9080/hidden", 404, "Not found page")
+	tester.AssertGetResponse("http://localhost:9080/private", 410, "Error in the [400 .. 499] range")
+	tester.AssertGetResponse("http://localhost:9080/internalerr", 500, "First fallback")
+}
+
 func TestHandleErrorSubHandlers(t *testing.T) {
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`{

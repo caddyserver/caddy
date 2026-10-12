@@ -951,10 +951,7 @@ func (st *ServerType) serversFromPairings(
 				}
 				sort.SliceStable(errorSubrouteVals, func(i, j int) bool {
 					sri, srj := errorSubrouteVals[i].Value.(*caddyhttp.Subroute), errorSubrouteVals[j].Value.(*caddyhttp.Subroute)
-					if len(sri.Routes[0].MatcherSetsRaw) == 0 && len(srj.Routes[0].MatcherSetsRaw) != 0 {
-						return false
-					}
-					return true
+					return len(sri.Routes[0].MatcherSetsRaw) != 0 && len(srj.Routes[0].MatcherSetsRaw) == 0
 				})
 				errorsSubroute := &caddyhttp.Subroute{}
 				for _, val := range errorSubrouteVals {
