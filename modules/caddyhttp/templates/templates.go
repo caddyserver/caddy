@@ -469,8 +469,10 @@ func (t *Templates) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 
 	// responses without a body (HEAD, 1xx, 204, 304) can't tell us the
 	// length of the rendered template, so drop the header rather than
-	// advertising the length of the empty buffer (RFC 9110 §8.6)
-	if r.Method == http.MethodHead || !bodyAllowedForStatus(rec.Status()) {
+	// advertising the length of the empty buffer, and a 2xx response to
+	// CONNECT must not have one at all (RFC 9110 §8.6)
+	connectSuccess := r.Method == http.MethodConnect && rec.Status() >= 200 && rec.Status() <= 299
+	if r.Method == http.MethodHead || connectSuccess || !bodyAllowedForStatus(rec.Status()) {
 		rec.Header().Del("Content-Length")
 	} else {
 		rec.Header().Set("Content-Length", strconv.Itoa(buf.Len()))

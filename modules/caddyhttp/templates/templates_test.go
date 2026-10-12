@@ -82,6 +82,8 @@ func TestServeHTTPContentLength(t *testing.T) {
 		{name: "HEAD drops stale length", method: http.MethodHead, status: http.StatusOK},
 		{name: "204 drops stale length", method: http.MethodGet, status: http.StatusNoContent},
 		{name: "304 drops stale length", method: http.MethodGet, status: http.StatusNotModified},
+		{name: "CONNECT 200 drops stale length", method: http.MethodConnect, status: http.StatusOK},
+		{name: "CONNECT 407 reports rendered length", method: http.MethodConnect, status: http.StatusProxyAuthRequired, wantLength: strconv.Itoa(len(rendered)), wantBody: rendered},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// next behaves like file_server: it advertises the length of the
@@ -90,7 +92,7 @@ func TestServeHTTPContentLength(t *testing.T) {
 				w.Header().Set("Content-Type", "text/html")
 				w.Header().Set("Content-Length", strconv.Itoa(len(source)))
 				w.WriteHeader(tc.status)
-				if r.Method != http.MethodHead && tc.status == http.StatusOK {
+				if tc.wantBody != "" {
 					_, err := w.Write([]byte(source))
 					return err
 				}
