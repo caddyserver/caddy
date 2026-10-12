@@ -662,7 +662,7 @@ func isCELCaddyPlaceholderCall(e ast.Expr) bool {
 	switch e.Kind() {
 	case ast.CallKind:
 		call := e.AsCall()
-		if call.FunctionName() == caddyhttp.CELPlaceholderFuncName || call.FunctionName() == caddyhttp.CELPlaceholderDefaultFuncName {
+		if call.FunctionName() == caddyhttp.CELPlaceholderFuncName {
 			return true
 		}
 	case ast.UnspecifiedExprKind, ast.ComprehensionKind, ast.IdentKind, ast.ListKind, ast.LiteralKind, ast.MapKind, ast.SelectKind, ast.StructKind:

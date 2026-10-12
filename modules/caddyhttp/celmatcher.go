@@ -182,7 +182,7 @@ func (m *MatchExpression) Provision(ctx caddy.Context) error {
 			return token
 		}
 		marker := markerPrefix + strconv.Itoa(len(defaultCalls)) + "__"
-		defaultCalls = append(defaultCalls, CELPlaceholderDefaultFuncName+"(req, "+strconv.Quote(token)+")")
+		defaultCalls = append(defaultCalls, CELPlaceholderFuncName+"(req, "+strconv.Quote(token[1:len(token)-1])+")")
 		return marker
 	})
 	if err != nil {
@@ -236,11 +236,6 @@ func (m *MatchExpression) Provision(ctx caddy.Context) error {
 	env, err := cel.NewEnv(
 		cel.Function(CELPlaceholderFuncName, cel.SingletonBinaryBinding(m.caddyPlaceholderFunc), cel.Overload(
 			CELPlaceholderFuncName+"_httpRequest_string",
-			[]*cel.Type{httpRequestObjectType, cel.StringType},
-			cel.AnyType,
-		)),
-		cel.Function(CELPlaceholderDefaultFuncName, cel.SingletonBinaryBinding(m.caddyPlaceholderDefaultFunc), cel.Overload(
-			CELPlaceholderDefaultFuncName+"_httpRequest_string",
 			[]*cel.Type{httpRequestObjectType, cel.StringType},
 			cel.AnyType,
 		)),
@@ -344,7 +339,7 @@ func (m *MatchExpression) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 }
 
 // caddyPlaceholderFunc implements the custom CEL function that accesses the
-// Replacer on a request and gets values from it.
+// Replacer on a request and resolves values, including placeholder defaults.
 func (m MatchExpression) caddyPlaceholderFunc(lhs, rhs ref.Val) ref.Val {
 	celReq, ok := lhs.(celHTTPRequest)
 	if !ok {
@@ -364,27 +359,15 @@ func (m MatchExpression) caddyPlaceholderFunc(lhs, rhs ref.Val) ref.Val {
 	}
 
 	repl := celReq.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-	val, _ := repl.Get(string(phStr))
-
-	return m.ta.NativeToValue(val)
-}
-
-// caddyPlaceholderDefaultFunc evaluates a complete configured reference while
-// ph continues to retrieve its argument as an exact provider key.
-func (m MatchExpression) caddyPlaceholderDefaultFunc(lhs, rhs ref.Val) ref.Val {
-	celReq, ok := lhs.(celHTTPRequest)
-	if !ok {
-		return types.NewErr("invalid request type for %s", CELPlaceholderDefaultFuncName)
+	name := string(phStr)
+	if strings.Contains(name, ":-") {
+		val, _, err := repl.ResolvePlaceholder((placeholder.Reference{Key: name}).String())
+		if err != nil {
+			return types.NewErr("resolving placeholder: %v", err)
+		}
+		return m.ta.NativeToValue(val)
 	}
-	expr, ok := rhs.(types.String)
-	if !ok {
-		return types.NewErr("invalid placeholder expression type for %s", CELPlaceholderDefaultFuncName)
-	}
-	repl := celReq.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-	val, _, err := repl.ResolvePlaceholder(string(expr))
-	if err != nil {
-		return types.NewErr("resolving placeholder: %v", err)
-	}
+	val, _ := repl.Get(name)
 	return m.ta.NativeToValue(val)
 }
 
@@ -849,8 +832,8 @@ func celPlaceholderNames(e ast.Expr) []string {
 		if args := e.AsCall().Args(); len(args) == 2 && isCELStringLiteral(args[1]) {
 			name = args[1].AsLiteral().Value().(string)
 		}
-		if e.AsCall().FunctionName() == CELPlaceholderDefaultFuncName {
-			keys, err := placeholder.Names(name)
+		if strings.Contains(name, ":-") {
+			keys, err := placeholder.Names((placeholder.Reference{Key: name}).String())
 			if err != nil {
 				names = append(names, "")
 				return
@@ -888,7 +871,7 @@ func isCELCaddyPlaceholderCall(e ast.Expr) bool {
 	switch e.Kind() {
 	case ast.CallKind:
 		call := e.AsCall()
-		if call.FunctionName() == CELPlaceholderFuncName || call.FunctionName() == CELPlaceholderDefaultFuncName {
+		if call.FunctionName() == CELPlaceholderFuncName {
 			return true
 		}
 	case ast.UnspecifiedExprKind, ast.ComprehensionKind, ast.IdentKind, ast.ListKind, ast.LiteralKind, ast.MapKind, ast.SelectKind, ast.StructKind:
@@ -960,9 +943,6 @@ var httpRequestObjectType = cel.ObjectType("http.Request")
 
 // The name of the CEL function which accesses Replacer values.
 const CELPlaceholderFuncName = "ph"
-
-// CELPlaceholderDefaultFuncName resolves complete default expressions.
-const CELPlaceholderDefaultFuncName = "ph_default"
 
 // The name of the CEL request variable.
 const CELRequestVarName = "req"
