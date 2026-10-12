@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/internal/placeholder"
 )
 
 type ComplexShorthandReplacer struct {
@@ -99,6 +100,20 @@ func (s ShorthandReplacer) ApplyToSegment(segment *caddyfile.Segment) {
 			// complex regexp replacements
 			for _, r := range s.complex {
 				(*segment)[i].Text = r.search.ReplaceAllString((*segment)[i].Text, r.replace)
+			}
+			// Defaults introduce nested references. Rewrite their keys while
+			// preserving the configured fallback text and escape sequences.
+			if !strings.Contains((*segment)[i].Text, ":-") {
+				continue
+			}
+			if rewritten, err := placeholder.RewriteKeys((*segment)[i].Text, func(key string) string {
+				token := s.simple.Replace("{" + key + "}")
+				for _, r := range s.complex {
+					token = r.search.ReplaceAllString(token, r.replace)
+				}
+				return token[1 : len(token)-1]
+			}); err == nil {
+				(*segment)[i].Text = rewritten
 			}
 		}
 	}

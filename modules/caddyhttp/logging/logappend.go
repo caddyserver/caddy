@@ -23,6 +23,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/internal/placeholder"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
@@ -66,13 +67,27 @@ func (h LogAppend) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 	// if the value is a special placeholder for the request body.
 	needsEarly := h.Early || h.Value == placeholderRequestBody || h.Value == placeholderRequestBodyBase64
 
-	// Check if we need to buffer the response for special placeholders
+	// Check if we need to buffer the response for special placeholders,
+	// including references nested in defaults. Only inspect configured syntax.
 	needsResponseBody := h.Value == placeholderResponseBody || h.Value == placeholderResponseBodyBase64
+	if strings.Contains(h.Value, ":-") {
+		_, _ = placeholder.RewriteKeys(h.Value, func(key string) string {
+			switch "{" + key + "}" {
+			case placeholderResponseBody, placeholderResponseBodyBase64:
+				needsResponseBody = true
+			case placeholderRequestBody, placeholderRequestBodyBase64:
+				needsEarly = true
+			}
+			return key
+		})
+	}
 
 	if needsEarly && !needsResponseBody {
 		// Add the log field before calling the next handler
 		// (but not if we need the response body, which isn't available yet)
-		h.addLogField(r, nil)
+		if err := h.addLogField(r, nil); err != nil {
+			return err
+		}
 	}
 
 	var rec caddyhttp.ResponseRecorder
@@ -97,10 +112,13 @@ func (h LogAppend) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 	if needsResponseBody {
 		// Write the buffered response to the client
 		if rec.Buffered() {
-			h.addLogField(r, buf)
+			fieldErr := h.addLogField(r, buf)
 			err := rec.WriteResponse()
 			if err != nil {
 				return err
+			}
+			if fieldErr != nil && handlerErr == nil {
+				return fieldErr
 			}
 		}
 		return handlerErr
@@ -108,7 +126,9 @@ func (h LogAppend) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 
 	if !h.Early {
 		// Add the log field after the handler completes
-		h.addLogField(r, buf)
+		if err := h.addLogField(r, buf); err != nil && handlerErr == nil {
+			return err
+		}
 	}
 
 	return handlerErr
@@ -117,7 +137,7 @@ func (h LogAppend) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 // addLogField adds the log field to the request's extra log fields.
 // If buf is not nil, it contains the buffered response body for special
 // response body placeholders.
-func (h LogAppend) addLogField(r *http.Request, buf *bytes.Buffer) {
+func (h LogAppend) addLogField(r *http.Request, buf *bytes.Buffer) error {
 	ctx := r.Context()
 
 	vars := ctx.Value(caddyhttp.VarsCtxKey).(map[string]any)
@@ -125,6 +145,10 @@ func (h LogAppend) addLogField(r *http.Request, buf *bytes.Buffer) {
 	extra := ctx.Value(caddyhttp.ExtraLogFieldsCtxKey).(*caddyhttp.ExtraLogFields)
 
 	var varValue any
+	ref, n, err := placeholder.Parse(h.Value)
+	if err != nil {
+		return err
+	}
 
 	// Handle special case placeholders for response body
 	if h.Value == placeholderResponseBody {
@@ -139,11 +163,43 @@ func (h LogAppend) addLogField(r *http.Request, buf *bytes.Buffer) {
 		} else {
 			varValue = ""
 		}
-	} else if strings.HasPrefix(h.Value, "{") &&
-		strings.HasSuffix(h.Value, "}") &&
-		strings.Count(h.Value, "{") == 1 {
-		// the value looks like a placeholder, so get its value
-		varValue, _ = repl.Get(strings.Trim(h.Value, "{}"))
+	} else if n > 0 && n == len(h.Value) {
+		resolver := repl
+		usesResponseBody := false
+		if ref.HasDefault {
+			_, _ = placeholder.RewriteKeys(h.Value, func(key string) string {
+				if "{"+key+"}" == placeholderResponseBody || "{"+key+"}" == placeholderResponseBodyBase64 {
+					usesResponseBody = true
+				}
+				return key
+			})
+		}
+		if usesResponseBody {
+			// Response-body values belong to this handler. A local provider lets
+			// nested defaults read them without changing the request's replacer.
+			local := caddy.NewEmptyReplacer()
+			local.Map(func(key string) (any, bool) {
+				switch "{" + key + "}" {
+				case placeholderResponseBody:
+					if buf != nil {
+						return buf.String(), true
+					}
+					return "", true
+				case placeholderResponseBodyBase64:
+					if buf != nil {
+						return base64.StdEncoding.EncodeToString(buf.Bytes()), true
+					}
+					return "", true
+				default:
+					return repl.Get(key)
+				}
+			})
+			resolver = local
+		}
+		varValue, _, err = resolver.ResolvePlaceholder(h.Value)
+		if err != nil {
+			return err
+		}
 	} else if val, ok := vars[h.Value]; ok {
 		// the value is a key in the vars map
 		varValue = val
@@ -156,6 +212,7 @@ func (h LogAppend) addLogField(r *http.Request, buf *bytes.Buffer) {
 	// We use zap.Any because it will reflect
 	// to the correct type for us.
 	extra.Add(zap.Any(h.Key, varValue))
+	return nil
 }
 
 const (

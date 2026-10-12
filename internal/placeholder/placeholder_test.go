@@ -1,0 +1,136 @@
+package placeholder
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestParse(t *testing.T) {
+	for _, tc := range []struct {
+		input string
+		ref   Reference
+		n     int
+		err   bool
+	}{
+		{input: "plain"},
+		{input: "{unclosed"},
+		{input: "{key} suffix", ref: Reference{Key: "key"}, n: 5},
+		{input: "{}", ref: Reference{}, n: 2},
+		{input: "{:-empty-key}", ref: Reference{Key: ":-empty-key"}, n: 13},
+		{input: "{a:b}", ref: Reference{Key: "a:b"}, n: 5},
+		{input: `{a\:-b}`, ref: Reference{Key: `a\:-b`}, n: 7},
+		{input: "{a:-b}", ref: Reference{Key: "a", Default: "b", HasDefault: true}, n: 6},
+		{input: "{a:-}", ref: Reference{Key: "a", HasDefault: true}, n: 5},
+		{input: "{a:-{b:-c}}tail", ref: Reference{Key: "a", Default: "{b:-c}", HasDefault: true}, n: 11},
+		{input: `{a:-\{literal\}}`, ref: Reference{Key: "a", Default: `\{literal\}`, HasDefault: true}, n: 16},
+		{input: `{a:-\\}tail`, ref: Reference{Key: "a", Default: `\\`, HasDefault: true}, n: 7},
+		{input: `{a:-\}`, err: true},
+		{input: "{a:-unclosed", err: true},
+		{input: "{a:-{b}", err: true},
+		{input: `{"key":"value:-x"}`, ref: Reference{Key: `"key":"value:-x"`}, n: 18},
+		{input: `{{a:-b}}`, ref: Reference{Key: "{a:-b"}, n: 7},
+		{input: `{a\}`, ref: Reference{Key: `a\`}, n: 4},
+		{input: `{a\}tail}`, ref: Reference{Key: `a\}tail`}, n: 9},
+	} {
+		t.Run(tc.input, func(t *testing.T) {
+			ref, n, err := Parse(tc.input)
+			if (err != nil) != tc.err || ref != tc.ref || n != tc.n {
+				t.Fatalf("Parse(%q) = (%+v, %d, %v); want (%+v, %d, error=%v)", tc.input, ref, n, err, tc.ref, tc.n, tc.err)
+			}
+		})
+	}
+}
+
+func TestDepthLimit(t *testing.T) {
+	valid := strings.Repeat("{a:-", MaxDepth) + "x" + strings.Repeat("}", MaxDepth)
+	if _, n, err := Parse(valid); err != nil || n != len(valid) {
+		t.Fatalf("maximum-depth expression rejected: %d, %v", n, err)
+	}
+	invalid := "{a:-" + valid + "}"
+	if _, _, err := Parse(invalid); err == nil {
+		t.Fatal("over-depth expression accepted")
+	}
+}
+
+func TestRewriteKeys(t *testing.T) {
+	input := `prefix {a:-hello {b:-{c}} \{literal\}} {d} \{escaped\}`
+	want := `prefix {full.a:-hello {full.b:-{full.c}} \{literal\}} {full.d} \{escaped\}`
+	actual, err := RewriteKeys(input, func(key string) string { return "full." + key })
+	if err != nil || actual != want {
+		t.Fatalf("got %q, %v; want %q", actual, err, want)
+	}
+}
+
+func TestRewriteKeysInsideLegacyBraces(t *testing.T) {
+	for _, input := range []string{
+		`{"message":"{header.X:-fallback}"}`,
+		`vars({'{header.X:-fallback}':['fallback']})`,
+		strings.Repeat("{", 1000) + "{header.X:-fallback}",
+	} {
+		actual, err := RewriteKeys(input, func(key string) string {
+			if key == "header.X" {
+				return "http.request.header.X"
+			}
+			return key
+		})
+		want := strings.ReplaceAll(input, "header.X", "http.request.header.X")
+		if err != nil || actual != want {
+			t.Fatalf("got %q, %v; want %q", actual, err, want)
+		}
+	}
+}
+
+func TestRewriteTokens(t *testing.T) {
+	input := `{a:-{b}} \{escaped\} {c}`
+	var calls []string
+	actual, err := RewriteTokens(input, func(token string) string {
+		calls = append(calls, token)
+		return "[" + token + "]"
+	})
+	want := `[{a:-{b}}] \{escaped\} [{c}]`
+	if err != nil || actual != want || len(calls) != 2 || calls[0] != "{a:-{b}}" {
+		t.Fatalf("got %q, %v, calls %v; want %q with two outer tokens", actual, err, calls, want)
+	}
+	for _, rewrite := range []func(string) (string, error){
+		func(s string) (string, error) { return RewriteTokens(s, func(t string) string { return t }) },
+		func(s string) (string, error) { return RewriteKeys(s, func(k string) string { return k }) },
+	} {
+		if _, err := rewrite("{a:-unclosed"); err == nil {
+			t.Fatal("rewrite accepted malformed default")
+		}
+	}
+}
+
+func TestRewriteTokensInsideLegacyBraces(t *testing.T) {
+	input := `vars({{key:-{other}}: ['fallback']})`
+	var calls []string
+	out, err := RewriteTokens(input, func(raw string) string {
+		calls = append(calls, raw)
+		return "DEFAULT"
+	})
+	if err != nil || out != `vars({DEFAULT: ['fallback']})` || len(calls) != 1 || calls[0] != `{key:-{other}}` {
+		t.Fatalf("got %q, %v, calls %v", out, err, calls)
+	}
+}
+
+func TestUnescapeKey(t *testing.T) {
+	if got := UnescapeKey(`a\:-b\c\}d`); got != `a:-b\c\}d` {
+		t.Fatalf("unexpected key: %q", got)
+	}
+}
+
+func FuzzParse(f *testing.F) {
+	for _, seed := range []string{"{a:-{b:-x}}", `{a:-\{literal\}}`, "{", `{"x":"y"}`} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, input string) {
+		_, n, err := Parse(input)
+		if n < 0 || n > len(input) || (err != nil && n != 0) {
+			t.Fatalf("invalid result: n=%d err=%v input=%q", n, err, input)
+		}
+		out, err := RewriteTokens(input, func(raw string) string { return raw })
+		if err == nil && out != input {
+			t.Fatalf("identity rewrite changed %q to %q", input, out)
+		}
+	})
+}

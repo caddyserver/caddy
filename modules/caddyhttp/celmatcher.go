@@ -23,6 +23,7 @@ import (
 	"reflect"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -41,6 +42,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/internal/placeholder"
 )
 
 func init() {
@@ -126,11 +128,56 @@ func (m *MatchExpression) Provision(ctx caddy.Context) error {
 
 	// replace placeholders with a function call - this is just some
 	// light (and possibly naïve) syntactic sugar
-	m.expandedExpr = placeholderRegexp.ReplaceAllString(m.Expr, placeholderExpansion)
+	// Shield defaults from the legacy regex passes: nested references in a
+	// quoted function argument must not be rewritten into additional calls.
+	markerPrefix := "__caddy_placeholder_default"
+	for strings.Contains(m.Expr, markerPrefix) {
+		markerPrefix += "_"
+	}
+	var defaultCalls []string
+	// Existing CEL syntax uses two backslashes to keep a reference literal
+	// inside matcher arguments. Protect escaped defaults before scanning so
+	// their nested references are not expanded independently.
+	var shielded strings.Builder
+	last := 0
+	for i := 0; i+2 < len(m.Expr); i++ {
+		if m.Expr[i] != '\\' || m.Expr[i+1] != '\\' || m.Expr[i+2] != '{' {
+			continue
+		}
+		ref, n, err := placeholder.Parse(m.Expr[i+2:])
+		if err != nil {
+			return fmt.Errorf("parsing escaped placeholder default: %w", err)
+		}
+		if !ref.HasDefault {
+			continue
+		}
+		shielded.WriteString(m.Expr[last:i])
+		shielded.WriteString(markerPrefix + strconv.Itoa(len(defaultCalls)) + "__")
+		defaultCalls = append(defaultCalls, m.Expr[i+2:i+2+n])
+		i += n + 1
+		last = i + 1
+	}
+	shielded.WriteString(m.Expr[last:])
+	expanded, err := placeholder.RewriteTokens(shielded.String(), func(token string) string {
+		ref, _, _ := placeholder.Parse(token)
+		if !ref.HasDefault {
+			return token
+		}
+		marker := markerPrefix + strconv.Itoa(len(defaultCalls)) + "__"
+		defaultCalls = append(defaultCalls, CELPlaceholderDefaultFuncName+"(req, "+strconv.Quote(token)+")")
+		return marker
+	})
+	if err != nil {
+		return fmt.Errorf("parsing placeholder defaults: %w", err)
+	}
+	m.expandedExpr = placeholderRegexp.ReplaceAllString(expanded, placeholderExpansion)
 
-	// as a second pass, we'll strip the escape character from an escaped
-	// placeholder, so that it can be used as an input to other CEL functions
+	// Strip escaping only in original expression text, before inserting
+	// safely quoted default arguments.
 	m.expandedExpr = escapedPlaceholderRegexp.ReplaceAllString(m.expandedExpr, escapedPlaceholderExpansion)
+	for i, call := range defaultCalls {
+		m.expandedExpr = strings.ReplaceAll(m.expandedExpr, markerPrefix+strconv.Itoa(i)+"__", call)
+	}
 
 	// our type adapter expands CEL's standard type support
 	m.ta = celTypeAdapter{}
@@ -167,6 +214,11 @@ func (m *MatchExpression) Provision(ctx caddy.Context) error {
 	env, err := cel.NewEnv(
 		cel.Function(CELPlaceholderFuncName, cel.SingletonBinaryBinding(m.caddyPlaceholderFunc), cel.Overload(
 			CELPlaceholderFuncName+"_httpRequest_string",
+			[]*cel.Type{httpRequestObjectType, cel.StringType},
+			cel.AnyType,
+		)),
+		cel.Function(CELPlaceholderDefaultFuncName, cel.SingletonBinaryBinding(m.caddyPlaceholderDefaultFunc), cel.Overload(
+			CELPlaceholderDefaultFuncName+"_httpRequest_string",
 			[]*cel.Type{httpRequestObjectType, cel.StringType},
 			cel.AnyType,
 		)),
@@ -292,6 +344,25 @@ func (m MatchExpression) caddyPlaceholderFunc(lhs, rhs ref.Val) ref.Val {
 	repl := celReq.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 	val, _ := repl.Get(string(phStr))
 
+	return m.ta.NativeToValue(val)
+}
+
+// caddyPlaceholderDefaultFunc evaluates a complete configured reference while
+// ph continues to retrieve its argument as an exact provider key.
+func (m MatchExpression) caddyPlaceholderDefaultFunc(lhs, rhs ref.Val) ref.Val {
+	celReq, ok := lhs.(celHTTPRequest)
+	if !ok {
+		return types.NewErr("invalid request type for %s", CELPlaceholderDefaultFuncName)
+	}
+	expr, ok := rhs.(types.String)
+	if !ok {
+		return types.NewErr("invalid placeholder expression type for %s", CELPlaceholderDefaultFuncName)
+	}
+	repl := celReq.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	val, _, err := repl.ResolvePlaceholder(string(expr))
+	if err != nil {
+		return types.NewErr("resolving placeholder: %v", err)
+	}
 	return m.ta.NativeToValue(val)
 }
 
@@ -756,7 +827,14 @@ func celPlaceholderNames(e ast.Expr) []string {
 		if args := e.AsCall().Args(); len(args) == 2 && isCELStringLiteral(args[1]) {
 			name = args[1].AsLiteral().Value().(string)
 		}
-		names = append(names, name)
+		if e.AsCall().FunctionName() == CELPlaceholderDefaultFuncName {
+			_, _ = placeholder.RewriteKeys(name, func(key string) string {
+				names = append(names, placeholder.UnescapeKey(key))
+				return key
+			})
+		} else {
+			names = append(names, name)
+		}
 	}))
 	return names
 }
@@ -786,7 +864,7 @@ func isCELCaddyPlaceholderCall(e ast.Expr) bool {
 	switch e.Kind() {
 	case ast.CallKind:
 		call := e.AsCall()
-		if call.FunctionName() == CELPlaceholderFuncName {
+		if call.FunctionName() == CELPlaceholderFuncName || call.FunctionName() == CELPlaceholderDefaultFuncName {
 			return true
 		}
 	case ast.UnspecifiedExprKind, ast.ComprehensionKind, ast.IdentKind, ast.ListKind, ast.LiteralKind, ast.MapKind, ast.SelectKind, ast.StructKind:
@@ -858,6 +936,9 @@ var httpRequestObjectType = cel.ObjectType("http.Request")
 
 // The name of the CEL function which accesses Replacer values.
 const CELPlaceholderFuncName = "ph"
+
+// CELPlaceholderDefaultFuncName resolves complete default expressions.
+const CELPlaceholderDefaultFuncName = "ph_default"
 
 // The name of the CEL request variable.
 const CELRequestVarName = "req"

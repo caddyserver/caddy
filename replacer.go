@@ -28,6 +28,8 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+
+	"github.com/caddyserver/caddy/v2/internal/placeholder"
 )
 
 // NewReplacer returns a new Replacer.
@@ -159,7 +161,9 @@ func (r *Replacer) ReplaceKnown(input, empty string) string {
 // ReplaceAll efficiently replaces placeholders in input with
 // their values. All placeholders are replaced in the output
 // whether they are recognized or not. Values that are empty
-// string will be substituted with empty.
+// string will be substituted with empty. An explicit {key:-default} selects
+// its default when key is unknown or empty; an explicitly empty default
+// overrides empty. Defaults may contain nested configured placeholders.
 func (r *Replacer) ReplaceAll(input, empty string) string {
 	out, _ := r.replace(input, empty, true, false, false, nil)
 	return out
@@ -167,7 +171,9 @@ func (r *Replacer) ReplaceAll(input, empty string) string {
 
 // ReplaceFunc is the same as ReplaceAll, but calls f for every
 // replacement to be made, in case f wants to change or inspect
-// the replacement.
+// the replacement. For defaults, f receives the selected placeholder
+// name, or an empty name for literal or composite defaults, and is called once
+// on the selected value. Values returned by providers are never expanded again.
 func (r *Replacer) ReplaceFunc(input string, f ReplacementFunc) (string, error) {
 	return r.replace(input, "", true, false, false, f)
 }
@@ -192,7 +198,6 @@ func (r *Replacer) replace(input, empty string,
 	// fail fast if too many placeholders are unclosed
 	var unclosedCount int
 
-scan:
 	for i := 0; i < len(input); i++ {
 		// check for escaped braces
 		if i > 0 && input[i-1] == phEscape && (input[i] == phClose || input[i] == phOpen) {
@@ -212,40 +217,41 @@ scan:
 			return "", fmt.Errorf("too many unclosed placeholders")
 		}
 
-		// find the end of the placeholder
-		end := strings.Index(input[i:], string(phClose)) + i
-		if end < i {
+		// Parse syntax before invoking providers, which may perform I/O. Only
+		// references with an explicit default use balanced-brace matching.
+		ref, n, err := placeholder.Parse(input[i:])
+		if err != nil {
+			return "", err
+		}
+		if n == 0 {
 			unclosedCount++
 			continue
 		}
-
-		// if necessary look for the first closing brace that is not escaped
-		for end > 0 && end < len(input)-1 && input[end-1] == phEscape {
-			nextEnd := strings.Index(input[end+1:], string(phClose))
-			if nextEnd < 0 {
-				unclosedCount++
-				continue scan
-			}
-			end += nextEnd + 1
-		}
-
-		// write the substring from the last cursor to this point
+		end := i + n - 1
 		sb.WriteString(input[lastWriteCursor:i])
 
-		// trim opening bracket
-		key := input[i+1 : end]
-
-		// try to get a value for this key, handle empty values accordingly
-		val, found := r.Get(key)
+		resolved, err := r.resolveReference(ref, replacementPolicy{
+			treatUnknownAsEmpty: treatUnknownAsEmpty,
+			errOnEmpty:          errOnEmpty,
+			errOnUnknown:        errOnUnknown,
+		}, 0)
+		if err != nil {
+			return "", err
+		}
+		key, val, found := resolved.name, resolved.value, resolved.found
 		if !found {
-			// placeholder is unknown (unrecognized); handle accordingly
 			if errOnUnknown {
-				return "", fmt.Errorf("unrecognized placeholder %s%s%s",
-					string(phOpen), key, string(phClose))
+				return "", fmt.Errorf("unrecognized placeholder {%s}", key)
 			} else if !treatUnknownAsEmpty {
-				// if treatUnknownAsEmpty is true, we'll handle an empty
-				// val later; so only continue otherwise
-				lastWriteCursor = i
+				if !ref.HasDefault {
+					// Keep scanning inside unknown legacy references, which may
+					// themselves contain a recognized reference.
+					lastWriteCursor = i
+					continue
+				}
+				sb.WriteString(resolved.unresolved)
+				i = end
+				lastWriteCursor = i + 1
 				continue
 			}
 		}
@@ -268,7 +274,7 @@ scan:
 			if errOnEmpty {
 				return "", fmt.Errorf("evaluated placeholder %s%s%s is empty",
 					string(phOpen), key, string(phClose))
-			} else if empty != "" {
+			} else if empty != "" && !resolved.defaulted {
 				sb.WriteString(empty)
 			}
 		} else {
