@@ -140,14 +140,6 @@ func (su SRVUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 
 	upstreams := make([]*Upstream, len(targets))
 	for i, t := range targets {
-		if c := su.logger.Check(zapcore.DebugLevel, "discovered SRV record"); c != nil {
-			c.Write(
-				zap.String("target", t.Host),
-				zap.String("port", t.Port),
-				zap.Uint16("priority", t.Priority),
-				zap.Uint16("weight", t.Weight),
-			)
-		}
 		addr := net.JoinHostPort(t.Host, t.Port)
 		if su.DialNetwork != "" {
 			addr = su.DialNetwork + "/" + addr
@@ -299,9 +291,6 @@ func (au AUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 
 	upstreams := make([]*Upstream, len(targets))
 	for i, t := range targets {
-		if c := au.logger.Check(zapcore.DebugLevel, "discovered A record"); c != nil {
-			c.Write(zap.String("ip", t.Host))
-		}
 		upstreams[i] = &Upstream{Dial: net.JoinHostPort(t.Host, t.Port)}
 	}
 	return upstreams, nil

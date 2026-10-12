@@ -53,7 +53,9 @@ type SRVLookupFunc func(ctx context.Context, service, proto, name string) (cname
 // If the lookup fails but returns some records (e.g. a few invalid names were
 // filtered out), those records are still used. If it fails with no records and
 // grace > 0, the previously cached result keeps being served for up to grace
-// past its refresh instead of returning an error.
+// past its refresh instead of returning an error. With no cached result, grace
+// also suppresses the error and returns no targets, preserving the reverse
+// proxy's existing behavior.
 func SRV(ctx context.Context, lookup SRVLookupFunc, service, proto, name string, refresh, grace time.Duration, logger *zap.Logger) ([]Target, error) {
 	key := srvKey(service, proto, name)
 
@@ -74,15 +76,19 @@ func SRV(ctx context.Context, lookup SRVLookupFunc, service, proto, name string,
 		return cached.targets, nil
 	}
 
+	if c := logger.Check(zapcore.DebugLevel, "refreshing SRV upstreams"); c != nil {
+		c.Write(zap.String("service", service), zap.String("proto", proto), zap.String("name", name))
+	}
+
 	_, records, err := lookup(ctx, service, proto, name)
 	if err != nil {
 		// From LookupSRV docs: invalid names are filtered out and an error is
 		// returned alongside any remaining results; only treat it as fatal when
 		// nothing usable came back.
 		if len(records) == 0 {
-			if grace > 0 && cached.targets != nil {
+			if grace > 0 {
 				if c := logger.Check(zapcore.ErrorLevel, "SRV lookup failed; using previously cached"); c != nil {
-					c.Write(zap.String("service", service), zap.String("proto", proto), zap.String("name", name), zap.Error(err))
+					c.Write(zap.Error(err))
 				}
 				cached.freshness = time.Now().Add(grace - refresh)
 				srvCache[key] = cached
@@ -97,6 +103,10 @@ func SRV(ctx context.Context, lookup SRVLookupFunc, service, proto, name string,
 
 	targets := make([]Target, len(records))
 	for i, rec := range records {
+		if c := logger.Check(zapcore.DebugLevel, "discovered SRV record"); c != nil {
+			c.Write(zap.String("target", rec.Target), zap.Uint16("port", rec.Port),
+				zap.Uint16("priority", rec.Priority), zap.Uint16("weight", rec.Weight))
+		}
 		targets[i] = Target{
 			Host:     rec.Target,
 			Port:     strconv.Itoa(int(rec.Port)),
@@ -173,6 +183,10 @@ func A(ctx context.Context, lookup IPLookupFunc, network, name, port string, ref
 		return cached.targets, nil
 	}
 
+	if c := logger.Check(zapcore.DebugLevel, "refreshing A upstreams"); c != nil {
+		c.Write(zap.String("version", network), zap.String("name", name), zap.String("port", port))
+	}
+
 	ips, err := lookup(ctx, network, name)
 	if err != nil {
 		return nil, err
@@ -180,6 +194,9 @@ func A(ctx context.Context, lookup IPLookupFunc, network, name, port string, ref
 
 	targets := make([]Target, len(ips))
 	for i, ip := range ips {
+		if c := logger.Check(zapcore.DebugLevel, "discovered A record"); c != nil {
+			c.Write(zap.String("ip", ip.String()))
+		}
 		targets[i] = Target{Host: ip.String(), Port: port}
 	}
 

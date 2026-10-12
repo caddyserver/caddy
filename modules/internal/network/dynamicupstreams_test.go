@@ -25,6 +25,7 @@ import (
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func TestSRVResolvesAndCaches(t *testing.T) {
@@ -338,4 +339,69 @@ func TestAConcurrentRefreshDeduplicates(t *testing.T) {
 	if got != 1 {
 		t.Fatalf("lookup calls = %d, want 1 (concurrent callers for the same key must share one lookup)", got)
 	}
+}
+
+func TestSRVGracePeriodWithoutCachedResult(t *testing.T) {
+	ResetSRV("svc-cold-grace", "tcp", "x")
+	t.Cleanup(func() { ResetSRV("svc-cold-grace", "tcp", "x") })
+	lookup := func(context.Context, string, string, string) (string, []*net.SRV, error) {
+		return "", nil, errors.New("dns boom")
+	}
+	targets, err := SRV(context.Background(), lookup, "svc-cold-grace", "tcp", "x", time.Minute, time.Minute, zap.NewNop())
+	if err != nil || len(targets) != 0 {
+		t.Fatalf("cold-cache failure with grace: targets = %v, err = %v; want no targets and no error", targets, err)
+	}
+}
+
+func TestDiscoveryLoggingOnlyOnRefresh(t *testing.T) {
+	t.Run("SRV", func(t *testing.T) {
+		ResetSRV("svc-log", "tcp", "x")
+		t.Cleanup(func() { ResetSRV("svc-log", "tcp", "x") })
+		core, logs := observer.New(zap.DebugLevel)
+		logger := zap.New(core)
+		lookup := func(context.Context, string, string, string) (string, []*net.SRV, error) {
+			return "", []*net.SRV{{Target: "a.example.", Port: 5432, Priority: 1, Weight: 10}}, nil
+		}
+		for range 2 {
+			if _, err := SRV(context.Background(), lookup, "svc-log", "tcp", "x", time.Minute, 0, logger); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if got := logs.FilterMessage("refreshing SRV upstreams").Len(); got != 1 {
+			t.Fatalf("refresh logs = %d, want 1", got)
+		}
+		records := logs.FilterMessage("discovered SRV record").All()
+		if len(records) != 1 {
+			t.Fatalf("discovery logs = %d, want 1", len(records))
+		}
+		fields := records[0].ContextMap()
+		if fields["target"] != "a.example." || fields["port"] != uint16(5432) || fields["priority"] != uint16(1) || fields["weight"] != uint16(10) {
+			t.Fatalf("unexpected discovery log fields: %v", fields)
+		}
+	})
+	t.Run("A", func(t *testing.T) {
+		aMu.Lock()
+		aCache = make(map[string]cacheEntry)
+		aMu.Unlock()
+		core, logs := observer.New(zap.DebugLevel)
+		logger := zap.New(core)
+		lookup := func(context.Context, string, string) ([]net.IP, error) {
+			return []net.IP{net.ParseIP("10.0.0.1")}, nil
+		}
+		for range 2 {
+			if _, err := A(context.Background(), lookup, "ip", "db.log", "5432", time.Minute, logger); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if got := logs.FilterMessage("refreshing A upstreams").Len(); got != 1 {
+			t.Fatalf("refresh logs = %d, want 1", got)
+		}
+		records := logs.FilterMessage("discovered A record").All()
+		if len(records) != 1 {
+			t.Fatalf("discovery logs = %d, want 1", len(records))
+		}
+		if got := records[0].ContextMap()["ip"]; got != "10.0.0.1" {
+			t.Fatalf("logged IP = %v, want 10.0.0.1", got)
+		}
+	})
 }
