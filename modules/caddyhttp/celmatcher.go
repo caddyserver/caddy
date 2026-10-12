@@ -170,6 +170,12 @@ func (m *MatchExpression) Provision(ctx caddy.Context) error {
 			[]*cel.Type{httpRequestObjectType, cel.StringType},
 			cel.AnyType,
 		)),
+		cel.Function(celMatcherLiteralFuncName,
+			cel.SingletonBinaryBinding(markCELMatcherLiteral),
+			cel.Overload(celMatcherLiteralFuncName+"_dyn", []*cel.Type{httpRequestObjectType, cel.DynType}, cel.DynType)),
+		cel.Function(celMatcherConcatFuncName,
+			cel.SingletonBinaryBinding(concatCELMatcherLiteral),
+			cel.Overload(celMatcherConcatFuncName+"_dyn_dyn", []*cel.Type{cel.DynType, cel.DynType}, cel.DynType)),
 		cel.Variable(CELRequestVarName, httpRequestObjectType),
 		cel.CustomTypeAdapter(m.ta),
 		ext.Strings(),
@@ -405,23 +411,24 @@ type CELLibraryProducer interface {
 // literal provided to the macro as an argument.
 func CELMatcherImpl(macroName, funcName string, matcherDataTypes []*cel.Type, fac any) (cel.Library, error) {
 	requestType := cel.ObjectType("http.Request")
+	_, literalInputs := fac.(CELLiteralMatcherFactory)
 	var macro parser.Macro
 	switch len(matcherDataTypes) {
 	case 1:
 		matcherDataType := matcherDataTypes[0]
 		switch matcherDataType.String() {
 		case "list(string)":
-			macro = parser.NewGlobalVarArgMacro(macroName, celMatcherStringListMacroExpander(funcName))
+			macro = parser.NewGlobalVarArgMacro(macroName, celMatcherStringListMacroExpander(funcName, literalInputs))
 		case cel.StringType.String():
-			macro = parser.NewGlobalMacro(macroName, 1, celMatcherStringMacroExpander(funcName))
+			macro = parser.NewGlobalMacro(macroName, 1, celMatcherStringMacroExpander(funcName, literalInputs))
 		case CELTypeJSON.String():
-			macro = parser.NewGlobalMacro(macroName, 1, celMatcherJSONMacroExpander(funcName))
+			macro = parser.NewGlobalMacro(macroName, 1, celMatcherJSONMacroExpander(funcName, literalInputs))
 		default:
 			return nil, fmt.Errorf("unsupported matcher data type: %s", matcherDataType)
 		}
 	case 2:
 		if matcherDataTypes[0] == cel.StringType && matcherDataTypes[1] == cel.StringType {
-			macro = parser.NewGlobalMacro(macroName, 2, celMatcherStringListMacroExpander(funcName))
+			macro = parser.NewGlobalMacro(macroName, 2, celMatcherStringListMacroExpander(funcName, literalInputs))
 			matcherDataTypes = []*cel.Type{cel.ListType(cel.StringType)}
 		} else {
 			return nil, fmt.Errorf("unsupported matcher data type: %s, %s", matcherDataTypes[0], matcherDataTypes[1])
@@ -429,7 +436,7 @@ func CELMatcherImpl(macroName, funcName string, matcherDataTypes []*cel.Type, fa
 	case 3:
 		// nolint:gosec // false positive, impossible to be out of bounds; see: https://github.com/securego/gosec/issues/1525
 		if matcherDataTypes[0] == cel.StringType && matcherDataTypes[1] == cel.StringType && matcherDataTypes[2] == cel.StringType {
-			macro = parser.NewGlobalMacro(macroName, 3, celMatcherStringListMacroExpander(funcName))
+			macro = parser.NewGlobalMacro(macroName, 3, celMatcherStringListMacroExpander(funcName, literalInputs))
 			matcherDataTypes = []*cel.Type{cel.ListType(cel.StringType)}
 		} else {
 			// nolint:gosec // false positive, impossible to be out of bounds; see: https://github.com/securego/gosec/issues/1525
@@ -482,6 +489,9 @@ func (lib *matcherCELLibrary) ProgramOptions() []cel.ProgramOption {
 // the matcher and return a function that references the precompiled and
 // provisioned matcher.
 func CELMatcherDecorator(funcName string, fac any) interpreter.InterpretableDecorator {
+	if factory, ok := fac.(CELLiteralMatcherFactory); ok {
+		fac = CELMatcherWithErrorFactory(factory)
+	}
 	return func(i interpreter.Interpretable) (interpreter.Interpretable, error) {
 		call, ok := i.(interpreter.InterpretableCall)
 		if !ok {
@@ -567,6 +577,9 @@ func CELMatcherDecorator(funcName string, fac any) interpreter.InterpretableDeco
 // CELMatcherRuntimeFunction creates a function binding for when the input to the matcher
 // is dynamically resolved rather than a set of static constant values.
 func CELMatcherRuntimeFunction(funcName string, fac any) functions.BinaryOp {
+	if factory, ok := fac.(CELLiteralMatcherFactory); ok {
+		fac = CELMatcherWithErrorFactory(factory)
+	}
 	return func(celReq, matcherData ref.Val) ref.Val {
 		if factory, ok := fac.(CELMatcherWithErrorFactory); ok {
 			matcher, err := factory(matcherData)
@@ -604,7 +617,7 @@ func CELMatcherRuntimeFunction(funcName string, fac any) functions.BinaryOp {
 //
 // The arguments are collected into a single list argument the following
 // function call returned: <funcName>(request, [args])
-func celMatcherStringListMacroExpander(funcName string) cel.MacroFactory {
+func celMatcherStringListMacroExpander(funcName string, literalInputs bool) cel.MacroFactory {
 	return func(eh cel.MacroExprFactory, target ast.Expr, args []ast.Expr) (ast.Expr, *common.Error) {
 		matchArgs := []ast.Expr{}
 		if len(args) == 0 {
@@ -612,6 +625,9 @@ func celMatcherStringListMacroExpander(funcName string) cel.MacroFactory {
 		}
 		for _, arg := range args {
 			if isCELStringExpr(arg) {
+				if literalInputs {
+					arg = CELMatcherLiteralArguments(eh, arg)
+				}
 				matchArgs = append(matchArgs, arg)
 			} else {
 				return nil, eh.NewError(arg.ID(), "matcher arguments must be string constants")
@@ -625,13 +641,17 @@ func celMatcherStringListMacroExpander(funcName string) cel.MacroFactory {
 // string argument.
 //
 // The following function call is returned: <funcName>(request, arg)
-func celMatcherStringMacroExpander(funcName string) parser.MacroExpander {
+func celMatcherStringMacroExpander(funcName string, literalInputs bool) parser.MacroExpander {
 	return func(eh cel.MacroExprFactory, target ast.Expr, args []ast.Expr) (ast.Expr, *common.Error) {
 		if len(args) != 1 {
 			return nil, eh.NewError(0, "matcher requires one argument")
 		}
 		if isCELStringExpr(args[0]) {
-			return eh.NewCall(funcName, eh.NewIdent(CELRequestVarName), args[0]), nil
+			arg := args[0]
+			if literalInputs {
+				arg = CELMatcherLiteralArguments(eh, arg)
+			}
+			return eh.NewCall(funcName, eh.NewIdent(CELRequestVarName), arg), nil
 		}
 		return nil, eh.NewError(args[0].ID(), "matcher argument must be a string literal")
 	}
@@ -641,7 +661,7 @@ func celMatcherStringMacroExpander(funcName string) parser.MacroExpander {
 // map literal argument.
 //
 // The following function call is returned: <funcName>(request, arg)
-func celMatcherJSONMacroExpander(funcName string) parser.MacroExpander {
+func celMatcherJSONMacroExpander(funcName string, literalInputs bool) parser.MacroExpander {
 	return func(eh cel.MacroExprFactory, target ast.Expr, args []ast.Expr) (ast.Expr, *common.Error) {
 		if len(args) != 1 {
 			return nil, eh.NewError(0, "matcher requires a map literal argument")
@@ -664,6 +684,9 @@ func celMatcherJSONMacroExpander(funcName string) parser.MacroExpander {
 				if !isStringListPlaceholder {
 					return nil, eh.NewError(entry.AsMapEntry().Value().ID(), "matcher map values must be string or list literals")
 				}
+			}
+			if literalInputs {
+				arg = CELMatcherLiteralArguments(eh, arg)
 			}
 			return eh.NewCall(funcName, eh.NewIdent(CELRequestVarName), arg), nil
 		case ast.UnspecifiedExprKind, ast.CallKind, ast.ComprehensionKind, ast.IdentKind, ast.ListKind, ast.LiteralKind, ast.SelectKind:

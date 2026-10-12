@@ -175,6 +175,10 @@ func (m VarsMatcher) Match(r *http.Request) bool {
 
 // MatchWithError returns true if r matches m.
 func (m VarsMatcher) MatchWithError(r *http.Request) (bool, error) {
+	return m.matchWithError(r, nil)
+}
+
+func (m VarsMatcher) matchWithError(r *http.Request, literalKeys map[string]bool) (bool, error) {
 	if len(m) == 0 {
 		return true, nil
 	}
@@ -185,7 +189,7 @@ func (m VarsMatcher) MatchWithError(r *http.Request) (bool, error) {
 	var matcherValExpanded, varStr string
 	var varValue any
 	for key, vals := range m {
-		if strings.HasPrefix(key, "{") &&
+		if !literalKeys[key] && strings.HasPrefix(key, "{") &&
 			strings.HasSuffix(key, "}") &&
 			strings.Count(key, "{") == 1 {
 			varValue, _ = repl.Get(strings.Trim(key, "{}"))
@@ -243,14 +247,43 @@ func (VarsMatcher) CELLibrary(_ caddy.Context) (cel.Library, error) {
 		"vars",
 		"vars_matcher_request_map",
 		[]*cel.Type{CELTypeJSON},
-		func(data ref.Val) (RequestMatcherWithError, error) {
-			mapStrListStr, err := CELValueToMapStrList(data)
+		CELLiteralMatcherFactory(func(data ref.Val) (RequestMatcherWithError, error) {
+			entries, err := CELMatcherStringMap(data)
 			if err != nil {
 				return nil, err
 			}
-			return VarsMatcher(mapStrListStr), nil
-		},
+			matcher := VarsMatcher{}
+			literalKeys := make(map[string]bool)
+			for _, entry := range entries {
+				key := entry.Key.Value
+				literalKeys[key] = entry.Key.Literal
+				matcher[key] = nil
+				for _, value := range entry.Values {
+					matcher[key] = append(matcher[key], value.Template())
+				}
+			}
+			return celVarsMatcher{matcher: matcher, literalKeys: literalKeys}, nil
+		}),
 	)
+}
+
+// CEL-only wrappers retain final key provenance outside the public map types.
+type celVarsMatcher struct {
+	matcher     VarsMatcher
+	literalKeys map[string]bool
+}
+
+func (m celVarsMatcher) MatchWithError(r *http.Request) (bool, error) {
+	return m.matcher.matchWithError(r, m.literalKeys)
+}
+
+type celVarsREMatcher struct {
+	matcher     MatchVarsRE
+	literalKeys map[string]bool
+}
+
+func (m celVarsREMatcher) MatchWithError(r *http.Request) (bool, error) {
+	return m.matcher.matchWithError(r, m.literalKeys)
 }
 
 // MatchVarsRE matches the value of the context variables by a given regular expression.
@@ -324,6 +357,10 @@ func (m MatchVarsRE) Match(r *http.Request) bool {
 
 // MatchWithError returns true if r matches m.
 func (m MatchVarsRE) MatchWithError(r *http.Request) (bool, error) {
+	return m.matchWithError(r, nil)
+}
+
+func (m MatchVarsRE) matchWithError(r *http.Request, literalKeys map[string]bool) (bool, error) {
 	vars := r.Context().Value(VarsCtxKey).(map[string]any)
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
@@ -331,7 +368,7 @@ func (m MatchVarsRE) MatchWithError(r *http.Request) (bool, error) {
 	var varStr string
 	var varValue any
 	for key, val := range m {
-		if strings.HasPrefix(key, "{") &&
+		if !literalKeys[key] && strings.HasPrefix(key, "{") &&
 			strings.HasSuffix(key, "}") &&
 			strings.Count(key, "{") == 1 {
 			varValue, _ = repl.Get(strings.Trim(key, "{}"))
@@ -385,21 +422,23 @@ func (MatchVarsRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		"vars_regexp",
 		"vars_regexp_request_string_string",
 		[]*cel.Type{cel.StringType, cel.StringType},
-		func(data ref.Val) (RequestMatcherWithError, error) {
-			refStringList := stringSliceType
-			params, err := data.ConvertToNative(refStringList)
+		CELLiteralMatcherFactory(func(data ref.Val) (RequestMatcherWithError, error) {
+			params, err := CELMatcherStringList(data)
 			if err != nil {
 				return nil, err
 			}
-			strParams := params.([]string)
+			strParams := make([]string, len(params))
+			for i, value := range params {
+				strParams[i] = value.Value
+			}
 			matcher := MatchVarsRE{}
 			matcher[strParams[0]] = &MatchRegexp{
 				Pattern: strParams[1],
 				Name:    ctx.Value(MatcherNameCtxKey).(string),
 			}
 			err = matcher.Provision(ctx)
-			return matcher, err
-		},
+			return celVarsREMatcher{matcher: matcher, literalKeys: map[string]bool{params[0].Value: params[0].Literal}}, err
+		}),
 	)
 	if err != nil {
 		return nil, err
@@ -408,13 +447,15 @@ func (MatchVarsRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		"vars_regexp",
 		"vars_regexp_request_string_string_string",
 		[]*cel.Type{cel.StringType, cel.StringType, cel.StringType},
-		func(data ref.Val) (RequestMatcherWithError, error) {
-			refStringList := stringSliceType
-			params, err := data.ConvertToNative(refStringList)
+		CELLiteralMatcherFactory(func(data ref.Val) (RequestMatcherWithError, error) {
+			params, err := CELMatcherStringList(data)
 			if err != nil {
 				return nil, err
 			}
-			strParams := params.([]string)
+			strParams := make([]string, len(params))
+			for i, value := range params {
+				strParams[i] = value.Value
+			}
 			name := strParams[0]
 			if name == "" {
 				name = ctx.Value(MatcherNameCtxKey).(string)
@@ -425,8 +466,8 @@ func (MatchVarsRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 				Name:    name,
 			}
 			err = matcher.Provision(ctx)
-			return matcher, err
-		},
+			return celVarsREMatcher{matcher: matcher, literalKeys: map[string]bool{params[1].Value: params[1].Literal}}, err
+		}),
 	)
 	if err != nil {
 		return nil, err

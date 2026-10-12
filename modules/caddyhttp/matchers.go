@@ -376,16 +376,18 @@ func (MatchHost) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		"host",
 		"host_match_request_list",
 		[]*cel.Type{cel.ListType(cel.StringType)},
-		func(data ref.Val) (RequestMatcherWithError, error) {
-			refStringList := stringSliceType
-			strList, err := data.ConvertToNative(refStringList)
+		CELLiteralMatcherFactory(func(data ref.Val) (RequestMatcherWithError, error) {
+			values, err := CELMatcherStringList(data)
 			if err != nil {
 				return nil, err
 			}
-			matcher := MatchHost(strList.([]string))
+			matcher := MatchHost(make([]string, len(values)))
+			for i, value := range values {
+				matcher[i] = value.Template()
+			}
 			err = matcher.Provision(ctx)
 			return matcher, err
-		},
+		}),
 	)
 }
 
@@ -769,16 +771,18 @@ func (MatchPath) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		// internal data type of the MatchPath value.
 		[]*cel.Type{cel.ListType(cel.StringType)},
 		// function to convert a constant list of strings to a MatchPath instance.
-		func(data ref.Val) (RequestMatcherWithError, error) {
-			refStringList := stringSliceType
-			strList, err := data.ConvertToNative(refStringList)
+		CELLiteralMatcherFactory(func(data ref.Val) (RequestMatcherWithError, error) {
+			values, err := CELMatcherStringList(data)
 			if err != nil {
 				return nil, err
 			}
-			matcher := MatchPath(strList.([]string))
+			matcher := MatchPath(make([]string, len(values)))
+			for i, value := range values {
+				matcher[i] = value.Template()
+			}
 			err = matcher.Provision(ctx)
 			return matcher, err
-		},
+		}),
 	)
 }
 
@@ -1035,13 +1039,24 @@ func (MatchQuery) CELLibrary(_ caddy.Context) (cel.Library, error) {
 		"query",
 		"query_matcher_request_map",
 		[]*cel.Type{CELTypeJSON},
-		func(data ref.Val) (RequestMatcherWithError, error) {
-			mapStrListStr, err := CELValueToMapStrList(data)
+		CELLiteralMatcherFactory(func(data ref.Val) (RequestMatcherWithError, error) {
+			entries, err := CELMatcherStringMap(data)
 			if err != nil {
 				return nil, err
 			}
-			return MatchQuery(url.Values(mapStrListStr)), nil
-		},
+			values := make(map[string][]string, len(entries))
+			for _, entry := range entries {
+				key := entry.Key.Template()
+				if _, exists := values[key]; exists {
+					return nil, fmt.Errorf("duplicate query matcher key %q", entry.Key.Value)
+				}
+				values[key] = nil
+				for _, value := range entry.Values {
+					values[key] = append(values[key], value.Template())
+				}
+			}
+			return MatchQuery(url.Values(values)), nil
+		}),
 	)
 }
 
@@ -1119,13 +1134,21 @@ func (MatchHeader) CELLibrary(_ caddy.Context) (cel.Library, error) {
 		"header",
 		"header_matcher_request_map",
 		[]*cel.Type{CELTypeJSON},
-		func(data ref.Val) (RequestMatcherWithError, error) {
-			mapStrListStr, err := CELValueToMapStrList(data)
+		CELLiteralMatcherFactory(func(data ref.Val) (RequestMatcherWithError, error) {
+			entries, err := CELMatcherStringMap(data)
 			if err != nil {
 				return nil, err
 			}
-			return MatchHeader(http.Header(mapStrListStr)), nil
-		},
+			values := make(map[string][]string, len(entries))
+			for _, entry := range entries {
+				key := entry.Key.Value
+				values[key] = nil
+				for _, value := range entry.Values {
+					values[key] = append(values[key], value.Template())
+				}
+			}
+			return MatchHeader(http.Header(values)), nil
+		}),
 	)
 }
 
