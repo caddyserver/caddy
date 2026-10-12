@@ -312,6 +312,10 @@ const (
 	// should be omitted from the access logs
 	LogSkipVar string = "log_skip"
 
+	// LogLevelVar is the request variable used to override access log severity.
+	// Supported string values are DEBUG, INFO, WARN, and ERROR (case-insensitive).
+	LogLevelVar string = "log_level"
+
 	// For adding additional fields to the access logs
 	ExtraLogFieldsCtxKey caddy.CtxKey = "extra_log_fields"
 

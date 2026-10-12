@@ -1,0 +1,63 @@
+:80
+
+@first header X-Test a
+@second header X-Test a
+@third header X-Other b
+
+log_level @first INFO
+log_level @second WARN
+log_level @third ERROR
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"header": {
+										"X-Test": [
+											"a"
+										]
+									}
+								}
+							],
+							"handle": [
+								{
+									"handler": "vars",
+									"log_level": "info"
+								},
+								{
+									"handler": "vars",
+									"log_level": "warn"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"header": {
+										"X-Other": [
+											"b"
+										]
+									}
+								}
+							],
+							"handle": [
+								{
+									"handler": "vars",
+									"log_level": "error"
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

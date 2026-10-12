@@ -1259,6 +1259,11 @@ func (s *Server) logRequest(
 	if status >= 500 {
 		logLevel = zapcore.ErrorLevel
 	}
+	if levelName, ok := GetVar(ctx, LogLevelVar).(string); ok {
+		if level, err := zapcore.ParseLevel(levelName); err == nil && level >= zapcore.DebugLevel && level <= zapcore.ErrorLevel {
+			logLevel = level
+		}
+	}
 
 	var fields []zapcore.Field
 	for _, logger := range loggers {

@@ -56,6 +56,7 @@ var defaultDirectiveOrder = []string{
 	"skip_log", // TODO: deprecated, renamed to log_skip
 	"log_skip",
 	"log_name",
+	"log_level",
 
 	"header",
 	"copy_response_headers", // only in reverse_proxy's handle_response
@@ -470,7 +471,7 @@ func sortRoutes(routes []ConfigValue, order []string) {
 		// that the least-specific matcher is first, allowing the last
 		// matching one to win; we swap i and j instead of using !,
 		// so matchers that can't be compared keep their order
-		if iDir == "vars" {
+		if iDir == "vars" || iDir == "log_level" {
 			i, j = j, i
 		}
 
@@ -544,7 +545,7 @@ func sortRoutes(routes []ConfigValue, order []string) {
 			return len(iRoute.MatcherSetsRaw) > 0 && len(jRoute.MatcherSetsRaw) == 0
 		}()
 
-		// most-specific matcher first (or last for vars, see above)
+		// most-specific matcher first (or last for vars and log_level, see above)
 		return sortByPath
 	})
 }
