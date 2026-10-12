@@ -53,6 +53,7 @@ func init() {
 	RegisterHandlerDirective("skip_log", parseLogSkip)
 	RegisterHandlerDirective("log_skip", parseLogSkip)
 	RegisterHandlerDirective("log_name", parseLogName)
+	RegisterHandlerDirective("log_level", parseLogLevel)
 }
 
 // parseBind parses the bind directive. Syntax:
@@ -1252,4 +1253,26 @@ func parseLogName(h Helper) (caddyhttp.MiddlewareHandler, error) {
 	return caddyhttp.VarsMiddleware{
 		caddyhttp.AccessLoggerNameVarKey: h.RemainingArgs(),
 	}, nil
+}
+
+// parseLogLevel parses the log_level directive. Syntax:
+//
+//	log_level [<matcher>] <level>
+//
+// The level overrides the access log severity for matching requests.
+// Supported levels are DEBUG, INFO, WARN, and ERROR (case-insensitive).
+func parseLogLevel(h Helper) (caddyhttp.MiddlewareHandler, error) {
+	h.Next() // consume directive name
+	args := h.RemainingArgs()
+	if len(args) != 1 {
+		return nil, h.ArgErr()
+	}
+	if h.NextBlock(0) {
+		return nil, h.Err("log_level directive does not accept blocks")
+	}
+	level, err := zapcore.ParseLevel(args[0])
+	if err != nil || level < zapcore.DebugLevel || level > zapcore.ErrorLevel {
+		return nil, h.Errf("invalid log level %q: expected DEBUG, INFO, WARN, or ERROR", args[0])
+	}
+	return caddyhttp.VarsMiddleware{caddyhttp.LogLevelVar: level.String()}, nil
 }
