@@ -175,6 +175,8 @@ func (l *lexer) next() (bool, error) {
 	var val []rune
 	var comment, quoted, btQuoted, inHeredoc, heredocEscaped, escaped, continueLine bool
 	var heredocMarker string
+	var heredocPrefix []int
+	var heredocMatched int
 	var tokenStartSet bool // whether l.tokenStart has been set for the current token
 
 	// format-mode separator tracking: record how this token was separated from
@@ -257,6 +259,20 @@ func (l *lexer) next() (bool, error) {
 					return false, fmt.Errorf("heredoc marker on line #%d must contain only alphanumeric characters, dashes and underscores; got '%s'", l.line, heredocMarker)
 				}
 
+				// Build a prefix table for incremental marker matching (KMP).
+				// Comparing the whole suffix after every rune costs O(body * marker)
+				// and repeatedly converts large rune slices to strings.
+				heredocPrefix = make([]int, len(heredocMarker))
+				for i, matched := 1, 0; i < len(heredocMarker); i++ {
+					for matched > 0 && heredocMarker[i] != heredocMarker[matched] {
+						matched = heredocPrefix[matched-1]
+					}
+					if heredocMarker[i] == heredocMarker[matched] {
+						matched++
+					}
+					heredocPrefix[i] = matched
+				}
+
 				inHeredoc = true
 				l.skippedLines++
 				val = nil
@@ -274,8 +290,16 @@ func (l *lexer) next() (bool, error) {
 				l.skippedLines++
 			}
 
-			// check if we're done, i.e. that the last few characters are the marker
-			if len(val) >= len(heredocMarker) && heredocMarker == string(val[len(val)-len(heredocMarker):]) {
+			// Markers contain only ASCII, so compare each rune directly with
+			// the next marker byte. Prefix fallback also handles overlapping
+			// partial matches without rescanning the body.
+			for heredocMatched > 0 && ch != rune(heredocMarker[heredocMatched]) {
+				heredocMatched = heredocPrefix[heredocMatched-1]
+			}
+			if ch == rune(heredocMarker[heredocMatched]) {
+				heredocMatched++
+			}
+			if heredocMatched == len(heredocMarker) {
 				// set the final value
 				val, err = l.finalizeHeredoc(val, heredocMarker)
 				if err != nil {
