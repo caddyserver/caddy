@@ -57,17 +57,51 @@ func letsEncryptDirectory(ca string) bool {
 }
 
 // letsEncryptProfile returns the profile sent to both the CA and TestCA.
-// CertMagic uses one profile for both endpoints, so the shortlived default
-// applies only when each endpoint is Let's Encrypt. An explicit profile,
-// including "classic", is left alone. A custom CA or TestCA gets no default.
-func letsEncryptProfile(ca, testCA, profile string) string {
+// An explicit profile is returned unchanged. The shortlived name is only a
+// preference, and only when both Let's Encrypt directories advertise it.
+// A custom CA or TestCA gets no default.
+func letsEncryptProfile(ca, testCA, profile string, caProfiles, testProfiles map[string]string) string {
 	if profile != "" {
 		return profile
 	}
-	if letsEncryptDirectory(ca) && letsEncryptDirectory(testCA) {
-		return letsEncryptShortlivedProfile
+	if !letsEncryptDirectory(ca) || !letsEncryptDirectory(testCA) {
+		return ""
 	}
-	return ""
+	if _, ok := caProfiles[letsEncryptShortlivedProfile]; !ok {
+		return ""
+	}
+	if _, ok := testProfiles[letsEncryptShortlivedProfile]; !ok {
+		return ""
+	}
+	return letsEncryptShortlivedProfile
+}
+
+func directoryProfiles(ctx context.Context, directoryURL string) (map[string]string, error) {
+	if directoryURL == "" {
+		directoryURL = letsEncryptProductionDirectory
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, directoryURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("acme directory %s: %s", directoryURL, resp.Status)
+	}
+	var dir acme.Directory
+	if err := json.NewDecoder(resp.Body).Decode(&dir); err != nil {
+		return nil, err
+	}
+	if dir.Meta == nil {
+		return nil, nil
+	}
+	return dir.Meta.Profiles, nil
 }
 
 // ACMEIssuer manages certificates using the ACME protocol (RFC 8555).
@@ -94,10 +128,9 @@ type ACMEIssuer struct {
 	// which are listed at its directory endpoint.
 	//
 	// When this is empty and both the CA and the test CA are Let's
-	// Encrypt (the default directories, or either public directory),
-	// Caddy asks for the "shortlived" profile. The same profile is
-	// sent to both endpoints, so a custom test CA does not get that
-	// default. Set this to "classic" to keep Let's Encrypt's
+	// Encrypt, Caddy prefers the "shortlived" profile only if both
+	// directories advertise it. An explicit profile is sent as
+	// configured. Set this to "classic" to keep Let's Encrypt's
 	// long-lived profile.
 	//
 	// EXPERIMENTAL: Subject to change.
@@ -288,11 +321,24 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 }
 
 func (iss *ACMEIssuer) makeIssuerTemplate(ctx caddy.Context) (certmagic.ACMEIssuer, error) {
+	profile := iss.Profile
+	if profile == "" && letsEncryptDirectory(iss.CA) && letsEncryptDirectory(iss.TestCA) {
+		caProfiles, caErr := directoryProfiles(ctx, iss.CA)
+		testProfiles, testErr := directoryProfiles(ctx, iss.TestCA)
+		if caErr != nil || testErr != nil {
+			iss.logger.Warn("not defaulting the ACME profile; directory profiles could not be read",
+				zap.NamedError("ca", caErr),
+				zap.NamedError("test_ca", testErr),
+			)
+		} else {
+			profile = letsEncryptProfile(iss.CA, iss.TestCA, "", caProfiles, testProfiles)
+		}
+	}
 	template := certmagic.ACMEIssuer{
 		CA:                iss.CA,
 		TestCA:            iss.TestCA,
 		Email:             iss.Email,
-		Profile:           letsEncryptProfile(iss.CA, iss.TestCA, iss.Profile),
+		Profile:           profile,
 		AccountKeyPEM:     iss.AccountKey,
 		CertObtainTimeout: time.Duration(iss.ACMETimeout),
 		TrustedRoots:      iss.rootPool,
@@ -462,7 +508,7 @@ func (iss *ACMEIssuer) generateZeroSSLEABCredentials(ctx context.Context, acct a
 //	    dir <directory_url>
 //	    test_dir <test_directory_url>
 //	    email <email>
-//	    profile <profile_name>  # Let's Encrypt default: shortlived. Use "classic" for the long-lived profile.
+//	    profile <profile_name>  # optional. empty Let's Encrypt issuers prefer "shortlived" when both directories advertise it.
 //	    timeout <duration>
 //	    disable_http_challenge
 //	    disable_tlsalpn_challenge
