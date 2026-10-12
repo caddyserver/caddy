@@ -804,7 +804,12 @@ func (st *ServerType) serversFromPairings(
 			if cpVals, ok := sblock.pile["tls.connection_policy"]; ok {
 				// tls connection policies
 				for _, cpVal := range cpVals {
-					cp := cpVal.Value.(*caddytls.ConnectionPolicy)
+					// Policies are parsed once per original server block. Each listener
+					// rewrites and consolidates them independently.
+					cp, err := cloneConnectionPolicy(cpVal.Value.(*caddytls.ConnectionPolicy))
+					if err != nil {
+						return nil, fmt.Errorf("cloning TLS connection policy: %v", err)
+					}
 
 					// make sure the policy covers all hostnames from the block
 					for _, h := range hosts {
@@ -1127,6 +1132,19 @@ func (st *ServerType) serversFromPairings(
 	}
 
 	return servers, nil
+}
+
+func cloneConnectionPolicy(cp *caddytls.ConnectionPolicy) (*caddytls.ConnectionPolicy, error) {
+	encoded, err := json.Marshal(cp)
+	if err != nil {
+		return nil, err
+	}
+
+	cloned := new(caddytls.ConnectionPolicy)
+	if err := json.Unmarshal(encoded, cloned); err != nil {
+		return nil, err
+	}
+	return cloned, nil
 }
 
 // sniNames returns the server names a connection policy's sni matcher matches.
