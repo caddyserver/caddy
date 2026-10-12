@@ -465,6 +465,15 @@ func sortRoutes(routes []ConfigValue, order []string) {
 			return dirPositions[iDir] < dirPositions[jDir]
 		}
 
+		// some directives involve setting values which can overwrite
+		// each other, so it makes most sense to reverse the order so
+		// that the least-specific matcher is first, allowing the last
+		// matching one to win; we swap i and j instead of using !,
+		// so matchers that can't be compared keep their order
+		if iDir == "vars" {
+			i, j = j, i
+		}
+
 		// directives are the same; sub-sort by path matcher length if there's
 		// only one matcher set and one path (this is a very common case and
 		// usually -- but not always -- helpful/expected, oh well; user can
@@ -535,15 +544,7 @@ func sortRoutes(routes []ConfigValue, order []string) {
 			return len(iRoute.MatcherSetsRaw) > 0 && len(jRoute.MatcherSetsRaw) == 0
 		}()
 
-		// some directives involve setting values which can overwrite
-		// each other, so it makes most sense to reverse the order so
-		// that the least-specific matcher is first, allowing the last
-		// matching one to win
-		if iDir == "vars" {
-			return !sortByPath
-		}
-
-		// everything else is most-specific matcher first
+		// most-specific matcher first (or last for vars, see above)
 		return sortByPath
 	})
 }
