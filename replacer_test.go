@@ -830,21 +830,38 @@ func TestResolvePlaceholderContextOverrides(t *testing.T) {
 func TestReplacerReferenceAllocations(t *testing.T) {
 	r := NewEmptyReplacer()
 	r.Set("present", "value")
-	for _, tc := range []struct{ input, want string }{
-		{strings.Repeat("{unknown}", 1000), strings.Repeat("{unknown}", 1000)},
-		{strings.Repeat("{", 1000) + "unknown}", strings.Repeat("{", 1000) + "unknown}"},
-		{strings.Repeat("{missing:-{present}}", 1000), strings.Repeat("value", 1000)},
+	for _, tc := range []struct {
+		name  string
+		build func(int) (input, want string)
+	}{
+		{"unknown", func(count int) (string, string) {
+			input := strings.Repeat("{unknown}", count)
+			return input, input
+		}},
+		{"nested unknown", func(count int) (string, string) {
+			input := strings.Repeat("{", count) + "unknown}"
+			return input, input
+		}},
+		{"selected default", func(count int) (string, string) {
+			return strings.Repeat("{missing:-{present}}", count), strings.Repeat("value", count)
+		}},
 	} {
-		if got := r.ReplaceKnown(tc.input, ""); got != tc.want {
-			t.Fatalf("replacement = %q, want %q", got, tc.want)
-		}
-		// Each replacement needs only the output buffer. In particular,
-		// legacy nested opens must not allocate every suffix, and selecting
-		// a known fallback must not reconstruct unused source expressions.
-		allocs := testing.AllocsPerRun(10, func() { r.ReplaceKnown(tc.input, "") })
-		if allocs > 2 {
-			t.Fatalf("replacement allocated %.0f times; want at most 2", allocs)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			small, _ := tc.build(10)
+			large, want := tc.build(1000)
+			if got := r.ReplaceKnown(large, ""); got != want {
+				t.Fatalf("replacement = %q, want %q", got, want)
+			}
+			// Compare growth instead of an absolute count, which can vary
+			// with the platform and instrumentation. Reconstructing every
+			// unknown suffix or unused default would add hundreds of
+			// allocations as the reference count grows from 10 to 1000.
+			smallAllocs := testing.AllocsPerRun(100, func() { r.ReplaceKnown(small, "") })
+			largeAllocs := testing.AllocsPerRun(100, func() { r.ReplaceKnown(large, "") })
+			if largeAllocs > smallAllocs+8 {
+				t.Fatalf("allocations grew from %.1f to %.1f for 10 versus 1000 references; want approximately constant", smallAllocs, largeAllocs)
+			}
+		})
 	}
 }
 
