@@ -3,11 +3,13 @@ package httpcaddyfile
 import (
 	"testing"
 
+	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
 func TestShorthandDefaults(t *testing.T) {
 	for _, tc := range []struct{ input, want string }{
+		{`{host} {query.user}`, `{http.request.host} {http.request.uri.query.user}`},
 		{`{path:-/index.html}`, `{http.request.uri.path:-/index.html}`},
 		{`{header.X-User:-{cookie.user:-{query.user:-anonymous}}}`, `{http.request.header.X-User:-{http.request.cookie.user:-{http.request.uri.query.user:-anonymous}}}`},
 		{`{vars.name:-{re.route.1:-{host}}}`, `{http.vars.name:-{http.regexp.route.1:-{http.request.host}}}`},
@@ -19,7 +21,12 @@ func TestShorthandDefaults(t *testing.T) {
 		{`{hostsuffix:-host}`, `{hostsuffix:-host}`},
 		{`{missing:-header.X-User query.user host}`, `{missing:-header.X-User query.user host}`},
 		{`{missing:-\{host\}}`, `{missing:-\{host\}}`},
-		{`\{host}`, `\{http.request.host}`},
+		{`\{host}`, `\{host}`},
+		{`\{query.user}`, `\{query.user}`},
+		{`\\{host}`, `\\{host}`},
+		{`{\{host}, \{http.request.host}}`, `{\{host}, \{http.request.host}}`},
+		{`\{"message":"{host}","user":"{query.user}"\}`, `\{"message":"{http.request.host}","user":"{http.request.uri.query.user}"\}`},
+		{`{missing:-\\{host}}`, `{missing:-\\{http.request.host}}`},
 		{`{"message":"{host}","fallback":"{query.user:-anonymous}"}`, `{"message":"{http.request.host}","fallback":"{http.request.uri.query.user:-anonymous}"}`},
 	} {
 		segment := caddyfile.Segment{{Text: tc.input}}
@@ -27,5 +34,15 @@ func TestShorthandDefaults(t *testing.T) {
 		if got := segment[0].Text; got != tc.want {
 			t.Errorf("%s: got %s, want %s", tc.input, got, tc.want)
 		}
+	}
+}
+
+func TestEscapedShorthandOutput(t *testing.T) {
+	segment := caddyfile.Segment{{Text: `\{host}`}}
+	NewShorthandReplacer().ApplyToSegment(&segment)
+	repl := caddy.NewReplacer()
+	repl.Set("http.request.host", "example.com")
+	if got := repl.ReplaceAll(segment[0].Text, ""); got != "{host}" {
+		t.Fatalf("escaped shorthand output = %q; want literal {host}", got)
 	}
 }

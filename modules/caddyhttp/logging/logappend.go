@@ -125,6 +125,12 @@ func (h LogAppend) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 			fieldErr = h.appendLogValue(r, selected)
 		}
 	}
+	// A late request-body fallback can carry a 413 while the response is
+	// still buffered. Leave that response uncommitted so the error handler
+	// can render the selected error's status instead of a success status.
+	if handlerErr == nil && fieldErr != nil && rec != nil && rec.Buffered() {
+		return fieldErr
+	}
 	var writeErr error
 	if rec != nil && rec.Status() != 0 && rec.Buffered() {
 		writeErr = rec.WriteResponse()

@@ -110,10 +110,14 @@ func UnescapeKey(key string) string {
 // RewriteKeys rewrites reference keys, including keys inside defaults. Literal
 // text and escape sequences are preserved byte for byte.
 func RewriteKeys(input string, rewrite func(string) string) (string, error) {
-	return rewriteInput(input, func(raw string, ref Reference) (string, error) {
+	return rewriteKeys(input, rewrite, false)
+}
+
+func rewriteKeys(input string, rewrite func(string) string, inDefault bool) (string, error) {
+	return rewriteInput(input, inDefault, func(raw string, ref Reference) (string, error) {
 		ref.Key = rewrite(ref.Key)
 		if ref.HasDefault {
-			fallback, err := RewriteKeys(ref.Default, rewrite)
+			fallback, err := rewriteKeys(ref.Default, rewrite, true)
 			if err != nil {
 				return "", err
 			}
@@ -127,12 +131,16 @@ func RewriteKeys(input string, rewrite func(string) string) (string, error) {
 // Escaped references are skipped. Legacy spans containing nested opening braces
 // are scanned for their inner references, as with RewriteTokens.
 func Walk(input string, visit func(Reference) error) error {
-	return scanInput(input, func(_, _ int, ref Reference) error {
+	return walkInput(input, visit, false)
+}
+
+func walkInput(input string, visit func(Reference) error, inDefault bool) error {
+	return scanInput(input, inDefault, func(_, _ int, ref Reference) error {
 		if err := visit(ref); err != nil {
 			return err
 		}
 		if ref.HasDefault {
-			return Walk(ref.Default, visit)
+			return walkInput(ref.Default, visit, true)
 		}
 		return nil
 	})
@@ -156,15 +164,15 @@ func Names(input string) ([]string, error) {
 // spans containing nested opening braces are scanned for their inner references.
 // Literal text and escape sequences are preserved byte for byte.
 func RewriteTokens(input string, rewrite func(string) string) (string, error) {
-	return rewriteInput(input, func(raw string, _ Reference) (string, error) {
+	return rewriteInput(input, false, func(raw string, _ Reference) (string, error) {
 		return rewrite(raw), nil
 	})
 }
 
-func rewriteInput(input string, rewrite func(string, Reference) (string, error)) (string, error) {
+func rewriteInput(input string, inDefault bool, rewrite func(string, Reference) (string, error)) (string, error) {
 	var out strings.Builder
 	last := 0
-	err := scanInput(input, func(start, end int, ref Reference) error {
+	err := scanInput(input, inDefault, func(start, end int, ref Reference) error {
 		replacement, err := rewrite(input[start:end], ref)
 		if err != nil {
 			return err
@@ -186,13 +194,15 @@ func rewriteInput(input string, rewrite func(string, Reference) (string, error))
 
 // scanInput supplies complete references and their byte spans without allocating
 // replacement text. All syntax visitors share this scanner.
-func scanInput(input string, visit func(int, int, Reference) error) error {
+// Outside defaults, a preceding backslash always protects an opening brace,
+// matching legacy replacement. Default text uses paired backslash escapes.
+func scanInput(input string, inDefault bool, visit func(int, int, Reference) error) error {
 	for i := 0; i < len(input); i++ {
-		if input[i] == '\\' && i+1 < len(input) && strings.ContainsRune("{}\\", rune(input[i+1])) {
+		if inDefault && input[i] == '\\' && i+1 < len(input) && strings.ContainsRune("{}\\", rune(input[i+1])) {
 			i++
 			continue
 		}
-		if input[i] != '{' {
+		if input[i] != '{' || (!inDefault && i > 0 && input[i-1] == '\\') {
 			continue
 		}
 		ref, n, err := Parse(input[i:])
@@ -212,11 +222,11 @@ func scanInput(input string, visit func(int, int, Reference) error) error {
 			inner := -1
 			eligible := false
 			for j := 0; j < len(ref.Key); j++ {
-				if ref.Key[j] == '\\' && j+1 < len(ref.Key) && strings.ContainsRune("{}\\", rune(ref.Key[j+1])) {
+				if inDefault && ref.Key[j] == '\\' && j+1 < len(ref.Key) && strings.ContainsRune("{}\\", rune(ref.Key[j+1])) {
 					j++
 					continue
 				}
-				if ref.Key[j] == '{' {
+				if ref.Key[j] == '{' && (inDefault || j == 0 || ref.Key[j-1] != '\\') {
 					inner = j
 					eligible = true
 				}

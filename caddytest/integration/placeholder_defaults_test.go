@@ -16,10 +16,14 @@ func TestPlaceholderDefaults(t *testing.T) {
   grace_period 1ns
  }
  http://localhost:9080 {
+  handle /literal {
+   respond \{host}
+  }
   header X-User "{cookie.session:-{header.X-User:-guest}}"
   respond "{cookie.session:-{header.X-User:-guest}}"
  }
  `, "caddyfile")
+	tester.AssertGetResponse("http://localhost:9080/literal", http.StatusOK, "{host}")
 	for _, tc := range []struct{ cookie, header, want string }{
 		{want: "guest"},
 		{header: "header-user", want: "header-user"},

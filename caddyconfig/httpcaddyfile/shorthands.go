@@ -2,7 +2,6 @@ package httpcaddyfile
 
 import (
 	"regexp"
-	"strings"
 
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/internal/placeholder"
@@ -14,18 +13,11 @@ type ComplexShorthandReplacer struct {
 }
 
 type ShorthandReplacer struct {
-	complex     []ComplexShorthandReplacer
-	simple      *strings.Replacer
-	names       map[string]string
-	nameComplex []ComplexShorthandReplacer
+	complex []ComplexShorthandReplacer
+	names   map[string]string
 }
 
 func NewShorthandReplacer() ShorthandReplacer {
-	// replace shorthand placeholders (which are convenient
-	// when writing a Caddyfile) with their actual placeholder
-	// identifiers or variable names
-	replacer := strings.NewReplacer(placeholderShorthands()...)
-
 	// these are placeholders that allow a user-defined final
 	// parameters, but we still want to provide a shorthand
 	// for those, so we use a regexp to replace
@@ -44,13 +36,8 @@ func NewShorthandReplacer() ShorthandReplacer {
 		{`file_match\.([\w-]*)`, "http.matchers.file.$1"},
 	}
 	complex := make([]ComplexShorthandReplacer, 0, len(namePatterns))
-	nameComplex := make([]ComplexShorthandReplacer, 0, len(namePatterns))
 	for _, pattern := range namePatterns {
 		complex = append(complex, ComplexShorthandReplacer{
-			search:  regexp.MustCompile((placeholder.Reference{Key: pattern.search}).String()),
-			replace: (placeholder.Reference{Key: pattern.replace}).String(),
-		})
-		nameComplex = append(nameComplex, ComplexShorthandReplacer{
 			search:  regexp.MustCompile("^" + pattern.search + "$"),
 			replace: pattern.replace,
 		})
@@ -62,10 +49,8 @@ func NewShorthandReplacer() ShorthandReplacer {
 	}
 
 	return ShorthandReplacer{
-		complex:     complex,
-		simple:      replacer,
-		names:       names,
-		nameComplex: nameComplex,
+		complex: complex,
+		names:   names,
 	}
 }
 
@@ -126,22 +111,13 @@ func placeholderShorthandNames() []string {
 func (s ShorthandReplacer) ApplyToSegment(segment *caddyfile.Segment) {
 	if segment != nil {
 		for i := 0; i < len(*segment); i++ {
-			// simple string replacements
-			(*segment)[i].Text = s.simple.Replace((*segment)[i].Text)
-			// complex regexp replacements
-			for _, r := range s.complex {
-				(*segment)[i].Text = r.search.ReplaceAllString((*segment)[i].Text, r.replace)
-			}
-			// Defaults introduce nested references. Rewrite their keys while
-			// preserving the configured fallback text and escape sequences.
-			if !strings.Contains((*segment)[i].Text, ":-") {
-				continue
-			}
+			// Rewrite reference keys without touching escaped aliases or
+			// configured literal text. Defaults may contain nested references.
 			if rewritten, err := placeholder.RewriteKeys((*segment)[i].Text, func(key string) string {
 				if full, ok := s.names[key]; ok {
 					return full
 				}
-				for _, r := range s.nameComplex {
+				for _, r := range s.complex {
 					if r.search.MatchString(key) {
 						return r.search.ReplaceAllString(key, r.replace)
 					}

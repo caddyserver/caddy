@@ -263,3 +263,30 @@ func (h LogAppend) addLogField(r *http.Request, buf *bytes.Buffer) error {
 	}
 	return h.appendLogValue(r, value)
 }
+
+func TestLogAppendLateBodyLimitDoesNotCommitBufferedResponse(t *testing.T) {
+	repl := caddy.NewReplacer()
+	repl.Set("http.request.body", caddyhttp.RequestBodyLimitError{Err: &http.MaxBytesError{Limit: 1}})
+	req, extra := newLogAppendTestRequest(repl)
+	outer := &logAppendHeaderRecorder{ResponseRecorder: httptest.NewRecorder()}
+	h := LogAppend{Key: "value", Value: `{http.response.body:-{http.request.body}}`}
+	err := h.ServeHTTP(outer, req, caddyhttp.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) error { w.WriteHeader(http.StatusOK); return nil }))
+	var handlerErr caddyhttp.HandlerError
+	if !errors.As(err, &handlerErr) || handlerErr.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatalf("lost late body-limit error: %v", err)
+	}
+	if outer.wroteHeader {
+		t.Fatal("committed success response before returning body-limit error")
+	}
+	assertLogFieldCount(t, extra, 0)
+}
+
+type logAppendHeaderRecorder struct {
+	*httptest.ResponseRecorder
+	wroteHeader bool
+}
+
+func (w *logAppendHeaderRecorder) WriteHeader(status int) {
+	w.wroteHeader = true
+	w.ResponseRecorder.WriteHeader(status)
+}

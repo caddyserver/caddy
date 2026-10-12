@@ -53,6 +53,34 @@ func TestNamesAndWalk(t *testing.T) {
 	}
 }
 
+func TestTraversalEscapeContexts(t *testing.T) {
+	for _, tc := range []struct {
+		input, want string
+		names       []string
+	}{
+		{`\{a}`, `\{a}`, nil},
+		{`\\{a}`, `\\{a}`, nil},
+		{`{\{a}, \{b}}`, `{\{a}, \{b}}`, []string{`\{a`}},
+		{`\{"value":"{a}"\}`, `\{"value":"{full.a}"\}`, []string{"a"}},
+		{`{missing:-\{a\}}`, `{missing:-\{a\}}`, []string{"missing"}},
+		{`{missing:-\\{a}}`, `{missing:-\\{full.a}}`, []string{"missing", "a"}},
+	} {
+		got, err := RewriteKeys(tc.input, func(key string) string {
+			if key == "a" || key == "b" {
+				return "full." + key
+			}
+			return key
+		})
+		if err != nil || got != tc.want {
+			t.Errorf("RewriteKeys(%q) = %q, %v; want %q", tc.input, got, err, tc.want)
+		}
+		names, err := Names(tc.input)
+		if err != nil || !reflect.DeepEqual(names, tc.names) {
+			t.Errorf("Names(%q) = %v, %v; want %v", tc.input, names, err, tc.names)
+		}
+	}
+}
+
 func TestParse(t *testing.T) {
 	for _, tc := range []struct {
 		input string
@@ -168,7 +196,7 @@ func TestUnescapeKey(t *testing.T) {
 }
 
 func FuzzParse(f *testing.F) {
-	for _, seed := range []string{"{a:-{b:-x}}", `{a:-\{literal\}}`, "{", `{"x":"y"}`} {
+	for _, seed := range []string{"{a:-{b:-x}}", `{a:-\{literal\}}`, "{", `{"x":"y"}`, `\\{a}`, `{missing:-\\{a}}`} {
 		f.Add(seed)
 	}
 	f.Fuzz(func(t *testing.T, input string) {
@@ -183,6 +211,10 @@ func FuzzParse(f *testing.F) {
 		out, err := RewriteTokens(input, func(raw string) string { return raw })
 		if err == nil && out != input {
 			t.Fatalf("identity rewrite changed %q to %q", input, out)
+		}
+		out, err = RewriteKeys(input, func(key string) string { return key })
+		if err == nil && out != input {
+			t.Fatalf("identity key rewrite changed %q to %q", input, out)
 		}
 	})
 }
