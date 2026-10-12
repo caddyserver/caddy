@@ -60,9 +60,13 @@ func Parse(input string) (Reference, int, error) {
 	// Ordinary references are by far the common case. Use the optimized
 	// string scans without examining the remainder of the template: searching
 	// the entire suffix for a default operator at every reference is quadratic.
-	if end := strings.IndexByte(input, '}'); end > 0 &&
+	end := strings.IndexByte(input, '}')
+	if end < 0 && !strings.Contains(input, ":-") {
+		return Reference{}, 0, nil
+	}
+	if end > 0 &&
 		(input[end-1] != '\\' || end == len(input)-1) &&
-		!strings.Contains(input[1:end], ":-") {
+		(input[1] == '{' || input[1] == '"' || !strings.Contains(input[1:end], ":-")) {
 		return Reference{Key: input[1:end]}, end + 1, nil
 	}
 	eligible := true

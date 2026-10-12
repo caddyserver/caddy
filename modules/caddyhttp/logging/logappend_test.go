@@ -183,7 +183,7 @@ func TestLogAppendSelectedResponseAndNoWriteDefaults(t *testing.T) {
 					buf = bytes.NewBufferString(body)
 					want = "prefix" + body
 				}
-				value, err := h.resolveLogValue(r, responseBodyProvider(buf, false))
+				value, err := h.resolveLogValue(r, nil, responseBodyProvider(buf, false))
 				if err != nil || value != want {
 					t.Fatalf("selected log value = %v, %v; want %q", value, err, want)
 				}
@@ -271,7 +271,7 @@ func assertLogFieldCount(t *testing.T, extra *caddyhttp.ExtraLogFields, want int
 
 // addLogField resolves and adds a field using the available response body.
 func (h LogAppend) addLogField(r *http.Request, buf *bytes.Buffer) error {
-	value, err := h.resolveLogValue(r, responseBodyProvider(buf, false))
+	value, err := h.resolveLogValue(r, nil, responseBodyProvider(buf, false))
 	if err != nil {
 		return err
 	}
@@ -303,4 +303,41 @@ type logAppendHeaderRecorder struct {
 func (w *logAppendHeaderRecorder) WriteHeader(status int) {
 	w.wroteHeader = true
 	w.ResponseRecorder.WriteHeader(status)
+}
+
+func TestLogAppendResponseSelectionReadsOrdinaryProvidersOnce(t *testing.T) {
+	for _, early := range []bool{false, true} {
+		for _, found := range []bool{false, true} {
+			t.Run(fmt.Sprintf("early=%v/found=%v", early, found), func(t *testing.T) {
+				repl := caddy.NewReplacer()
+				calls := 0
+				primary := ""
+				repl.Map(func(key string) (any, bool) {
+					if key != "primary" {
+						return nil, false
+					}
+					calls++
+					return primary, found
+				})
+				r, extra := newLogAppendTestRequest(repl)
+				h := LogAppend{Key: "value", Value: `{primary:-{http.response.body}}`, Early: early}
+				outer := httptest.NewRecorder()
+				err := h.ServeHTTP(outer, r, caddyhttp.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) error {
+					_, err := w.Write([]byte("response"))
+					primary = "late change"
+					return err
+				}))
+				if err != nil || calls != 1 {
+					t.Fatalf("got %v, primary evaluated %d times; want once", err, calls)
+				}
+				if outer.Body.String() != "response" {
+					t.Fatalf("response changed: %q", outer.Body.String())
+				}
+				assertLogFieldCount(t, extra, 1)
+				if logged := reflect.ValueOf(extra).Elem().FieldByName("fields").Index(0).FieldByName("String").String(); logged != "response" {
+					t.Fatalf("selected branch changed after capture began: logged %q, want response", logged)
+				}
+			})
+		}
+	}
 }

@@ -875,3 +875,20 @@ func TestRewriteDefaultsDoNotEvaluateProviderExpressions(t *testing.T) {
 		}
 	}
 }
+
+func TestRewriteEscapedOpeningBraceDelimiters(t *testing.T) {
+	for _, tc := range []struct{ uri, path, query, fragment string }{
+		{`/dest?q=\{missing:-a#fragment}`, "/dest", `q={missing:-a`, "fragment}"},
+		{`/dest?q=\\{missing:-a#fragment}`, "/dest", `q=\{missing:-a`, "fragment}"},
+		{`/dest/\{missing:-a?b=c#fragment}`, "/dest/{missing:-a", "b=c", "fragment}"},
+	} {
+		t.Run(tc.uri, func(t *testing.T) {
+			req := newRequest(t, http.MethodGet, "/orig")
+			repl := caddyhttp.NewTestReplacer(req)
+			Rewrite{URI: tc.uri}.Rewrite(req, repl)
+			if req.URL.Path != tc.path || req.URL.RawQuery != tc.query || req.URL.Fragment != tc.fragment {
+				t.Fatalf("rewritten URL = %s; want path %q, query %q, fragment %q", req.URL, tc.path, tc.query, tc.fragment)
+			}
+		})
+	}
+}

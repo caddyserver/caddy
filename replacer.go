@@ -97,8 +97,9 @@ func (r *Replacer) Set(variable string, value any) {
 	r.mapMutex.Unlock()
 }
 
-// Get gets a value from the replacer. It returns
-// the value and whether the variable was known.
+// Get looks up variable verbatim and returns its value and whether it was
+// known. It does not interpret braces or default syntax; use ResolvePlaceholder
+// to evaluate a complete configured placeholder expression.
 func (r *Replacer) Get(variable string) (any, bool) {
 	for _, mapFunc := range r.providers {
 		if val, ok := mapFunc.replace(variable); ok {
@@ -143,16 +144,19 @@ func (r *Replacer) fromStatic(key string) (any, bool) {
 	return val, ok
 }
 
-// ReplaceOrErr is like ReplaceAll, but any placeholders
-// that are empty or not recognized will cause an error to
-// be returned.
+// ReplaceOrErr replaces placeholders and returns syntax errors. If errOnEmpty
+// or errOnUnknown is true, an empty or unrecognized selected reference also
+// causes an error. Defaults are selected before these checks; providers in
+// unused defaults are not queried. Unknown references otherwise remain literal.
 func (r *Replacer) ReplaceOrErr(input string, errOnEmpty, errOnUnknown bool) (string, error) {
 	return r.replace(input, "", false, errOnEmpty, errOnUnknown, nil)
 }
 
 // ReplaceKnown is like ReplaceAll but only replaces
 // placeholders that are known (recognized). Unrecognized
-// placeholders will remain in the output.
+// references in the selected expression remain in the output. Explicit
+// defaults are recognized even when their primary key is unknown. Malformed
+// defaults produce an empty result; use ReplaceOrErr to inspect syntax errors.
 func (r *Replacer) ReplaceKnown(input, empty string) string {
 	out, _ := r.replace(input, empty, false, false, false, nil)
 	return out
@@ -164,6 +168,8 @@ func (r *Replacer) ReplaceKnown(input, empty string) string {
 // string will be substituted with empty. An explicit {key:-default} selects
 // its default when key is unknown or empty; an explicitly empty default
 // overrides empty. Defaults may contain nested configured placeholders.
+// Malformed defaults produce an empty result; use ReplaceOrErr to inspect
+// syntax errors. Provider values are emitted without further expansion.
 func (r *Replacer) ReplaceAll(input, empty string) string {
 	out, _ := r.replace(input, empty, true, false, false, nil)
 	return out
@@ -230,13 +236,21 @@ func (r *Replacer) replace(input, empty string,
 		end := i + n - 1
 		sb.WriteString(input[lastWriteCursor:i])
 
-		resolved, err := r.resolveReference(ref, replacementPolicy{
-			treatUnknownAsEmpty: treatUnknownAsEmpty,
-			errOnEmpty:          errOnEmpty,
-			errOnUnknown:        errOnUnknown,
-		}, 0)
-		if err != nil {
-			return "", err
+		var resolved resolvedPlaceholder
+		if !ref.HasDefault {
+			// Ordinary references need only exact lookup; reserve the typed
+			// default resolver's bookkeeping for expressions with defaults.
+			resolved.name = placeholder.UnescapeKey(ref.Key)
+			resolved.value, resolved.found = r.Get(resolved.name)
+		} else {
+			resolved, err = r.resolveReference(ref, replacementPolicy{
+				treatUnknownAsEmpty: treatUnknownAsEmpty,
+				errOnEmpty:          errOnEmpty,
+				errOnUnknown:        errOnUnknown,
+			}, 0)
+			if err != nil {
+				return "", err
+			}
 		}
 		key, val, found := resolved.name, resolved.value, resolved.found
 		if !found {
@@ -462,21 +476,33 @@ const filePrefix = "file."
 
 // ResolvePlaceholder resolves exactly one complete placeholder expression.
 // Unlike Get, it understands {key:-default}: the default is selected when key
-// is unknown or its value's string representation is empty. Defaults can contain
-// nested placeholders and are evaluated only when selected. Provider values are
-// never evaluated as placeholder expressions.
+// is unknown or ToString(value) is empty. Recognized nil values select defaults;
+// false and numeric zero do not. Error-valued providers never select a default,
+// even if their error message is empty.
+//
+// Defaults can contain nested placeholders. Their syntax is validated even
+// when unused, but their providers are queried only when selected. Provider
+// values are never evaluated as placeholder expressions. In default text,
+// backslashes escape braces and backslashes. Escape a key's reserved operator
+// as \:- to look up a key containing a literal :-.
 //
 // Primary values and defaults consisting of a single placeholder retain their
 // Go type. Literal and composite defaults produce strings, except that an
-// error-valued nested reference stops composition and retains its type.
-// The boolean reports
-// whether the selected placeholder is known; an explicit literal default is
-// always known, including an empty default. Unknown references in composite
-// defaults remain literal, as with ReplaceKnown.
+// error-valued nested reference stops composition and retains its type. The
+// returned error reports invalid syntax or excessive nesting, not errors
+// supplied by providers: those are returned as value with found=true, err=nil.
+// Callers that consume typed values must inspect error-valued results.
 //
-// Overrides are consulted before the regular providers, in order, and apply
-// throughout the selected expression without modifying the replacer. They let
-// callers supply values whose lifetime belongs to the caller, such as a
+// The boolean reports whether the selected result is recognized, including
+// recognized nil values and explicit empty defaults. A sole unresolved nested
+// reference returns (nil, false, nil); a composite default retains unknown
+// references as literal text and returns found=true, as with ReplaceKnown.
+//
+// Overrides must be non-nil. They are consulted before the regular providers,
+// in order, using unescaped provider keys. The first found=true result wins,
+// including nil or empty values. Overrides apply throughout the selected expression
+// without modifying the replacer and are not retained after this call. They
+// let callers supply values whose lifetime belongs to the caller, such as a
 // buffered response body.
 //
 // Get continues to perform exact lookup, including keys containing :-.
@@ -521,9 +547,6 @@ func (r *Replacer) resolveReference(ref placeholder.Reference, policy replacemen
 		value, found = r.Get(key)
 	}
 	resolved := resolvedPlaceholder{value: value, found: found, name: key}
-	if !found && !policy.treatUnknownAsEmpty {
-		resolved.unresolved = ref.String()
-	}
 	// Errors can carry control-flow information even when their text is empty.
 	// Never turn an error-valued primary into a successful literal fallback.
 	if found {
@@ -544,6 +567,9 @@ func (r *Replacer) resolveReference(ref placeholder.Reference, policy replacemen
 	}
 	if n > 0 && n == len(ref.Default) {
 		selected, err := r.resolveReference(nested, policy, depth+1)
+		if !selected.found && !nested.HasDefault && !policy.treatUnknownAsEmpty {
+			selected.unresolved = ref.Default
+		}
 		selected.defaulted = true
 		return selected, err
 	}
@@ -584,7 +610,13 @@ func (r *Replacer) expandDefault(input string, policy replacementPolicy, depth i
 				return resolvedPlaceholder{}, fmt.Errorf("unrecognized placeholder {%s}", resolved.name)
 			}
 			if !policy.treatUnknownAsEmpty {
-				out.WriteString(resolved.unresolved)
+				if ref.HasDefault {
+					out.WriteString(resolved.unresolved)
+				} else {
+					out.WriteByte(phOpen)
+					out.WriteString(ref.Key)
+					out.WriteByte(phClose)
+				}
 			}
 		} else {
 			// Error values may carry control-flow information, such as an HTTP

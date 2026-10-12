@@ -78,6 +78,32 @@ func (h LogAppend) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 		}
 	}
 
+	// A response-body selection spans a probe and a final resolution. Freeze
+	// regular provider values at the first applicable phase (early or final
+	// response headers), including unknown and empty results. Response-body
+	// overrides remain live so a pending probe can become the captured body.
+	var logRepl *caddy.Replacer
+	if needsResponseBody {
+		original := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+		type result struct {
+			value any
+			found bool
+		}
+		values := make(map[string]result)
+		logRepl = caddy.NewEmptyReplacer()
+		logRepl.Map(func(key string) (any, bool) {
+			if cached, ok := values[key]; ok {
+				return cached.value, cached.found
+			}
+			value, found := original.Get(key)
+			values[key] = result{value: value, found: found}
+			return value, found
+		})
+	}
+	resolve := func(override caddy.ReplacerFunc) (any, error) {
+		return h.resolveLogValue(r, logRepl, override)
+	}
+
 	var selected any
 	selectedSet := false
 	fieldAdded := false
@@ -85,7 +111,7 @@ func (h LogAppend) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 		// Resolve only the selected branch before downstream handlers consume
 		// the request body. Response-body branches wait until the response is
 		// available; any request-body fallback then sees its current contents.
-		selected, fieldErr = h.resolveLogValue(r, responseBodyProvider(nil, needsResponseBody))
+		selected, fieldErr = resolve(responseBodyProvider(nil, needsResponseBody))
 		if fieldErr == nil && !isResponseBodyPending(selected) {
 			selectedSet = true
 			fieldErr = h.appendLogValue(r, selected)
@@ -107,7 +133,7 @@ func (h LogAppend) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 			// Select the branch when final response headers are written. A
 			// non-body result is frozen at this point: streaming it prevents
 			// a later change from selecting a body we did not capture.
-			selected, fieldErr = h.resolveLogValue(r, responseBodyProvider(nil, true))
+			selected, fieldErr = resolve(responseBodyProvider(nil, true))
 			selectedSet = fieldErr == nil && !isResponseBodyPending(selected)
 			return fieldErr == nil && isResponseBodyPending(selected)
 		})
@@ -119,7 +145,7 @@ func (h LogAppend) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 		if !selectedSet {
 			// This also handles downstream handlers which never wrote a
 			// response: the body is empty, so its default can be selected.
-			selected, fieldErr = h.resolveLogValue(r, responseBodyProvider(buf, false))
+			selected, fieldErr = resolve(responseBodyProvider(buf, false))
 		}
 		if fieldErr == nil {
 			fieldErr = h.appendLogValue(r, selected)
@@ -144,13 +170,15 @@ func (h LogAppend) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 	return fieldErr
 }
 
-func (h LogAppend) resolveLogValue(r *http.Request, override caddy.ReplacerFunc) (any, error) {
+func (h LogAppend) resolveLogValue(r *http.Request, repl *caddy.Replacer, override caddy.ReplacerFunc) (any, error) {
 	_, single, err := placeholder.ParseSingle(h.Value)
 	if err != nil {
 		return nil, err
 	}
 	if single {
-		repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+		if repl == nil {
+			repl = r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+		}
 		value, _, err := repl.ResolvePlaceholder(h.Value, override)
 		return value, err
 	}

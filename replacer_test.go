@@ -826,3 +826,47 @@ func TestResolvePlaceholderContextOverrides(t *testing.T) {
 		t.Fatalf("unused branch evaluated: (%v,%v,%v)", value, keys, err)
 	}
 }
+
+func TestReplacerReferenceAllocations(t *testing.T) {
+	r := NewEmptyReplacer()
+	r.Set("present", "value")
+	for _, tc := range []struct{ input, want string }{
+		{strings.Repeat("{unknown}", 1000), strings.Repeat("{unknown}", 1000)},
+		{strings.Repeat("{", 1000) + "unknown}", strings.Repeat("{", 1000) + "unknown}"},
+		{strings.Repeat("{missing:-{present}}", 1000), strings.Repeat("value", 1000)},
+	} {
+		if got := r.ReplaceKnown(tc.input, ""); got != tc.want {
+			t.Fatalf("replacement = %q, want %q", got, tc.want)
+		}
+		// Each replacement needs only the output buffer. In particular,
+		// legacy nested opens must not allocate every suffix, and selecting
+		// a known fallback must not reconstruct unused source expressions.
+		allocs := testing.AllocsPerRun(10, func() { r.ReplaceKnown(tc.input, "") })
+		if allocs > 2 {
+			t.Fatalf("replacement allocated %.0f times; want at most 2", allocs)
+		}
+	}
+}
+
+func BenchmarkReplacerScaling(b *testing.B) {
+	r := NewEmptyReplacer()
+	r.Set("present", "value")
+	for _, count := range []int{100, 1000, 10000} {
+		for _, tc := range []struct{ name, input string }{
+			{"known", strings.Repeat("{present}", count)},
+			{"unknown", strings.Repeat("{unknown}", count)},
+			{"nested-unknown", strings.Repeat("{", count) + "unknown}"},
+			{"unclosed", strings.Repeat("{", count)},
+			{"defaults", strings.Repeat("{missing:-{present}}", count)},
+			{"unclosed-default", "{missing:-" + strings.Repeat("x", count)},
+		} {
+			b.Run(fmt.Sprintf("%s/%d", tc.name, count), func(b *testing.B) {
+				b.ReportAllocs()
+				b.SetBytes(int64(len(tc.input)))
+				for b.Loop() {
+					r.ReplaceKnown(tc.input, "")
+				}
+			})
+		}
+	}
+}

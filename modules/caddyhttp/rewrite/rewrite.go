@@ -173,7 +173,7 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 	loop:
 		for i := 0; i < len(uri); i++ {
 			ch := uri[i]
-			if ch == '{' {
+			if ch == '{' && (i == 0 || uri[i-1] != '\\') {
 				_, n, err := placeholder.Parse(uri[i:])
 				if err == nil && n > 0 {
 					if pathStart < 0 && qsStart < 0 {

@@ -3,6 +3,7 @@ package integration
 import (
 	"net/http"
 	"net/url"
+	"os"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2/caddytest"
@@ -918,4 +919,34 @@ func TestPlaceholderDefaults(t *testing.T) {
 			t.Errorf("response header=%q; want %q", got, tc.want)
 		}
 	}
+}
+
+func TestPlaceholderDefaultDocumentationExamples(t *testing.T) {
+	t.Setenv("CADDY_DEFAULT_DOC_ENV", "")
+	t.Setenv("CADDY_DEFAULT_DOC_UNSET", "")
+	if err := os.Unsetenv("CADDY_DEFAULT_DOC_UNSET"); err != nil {
+		t.Fatal(err)
+	}
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`
+	{
+		admin localhost:2999
+		http_port 9080
+		grace_period 1ns
+	}
+	http://localhost:9080 {
+		handle /literal {
+			respond "{missing:-\{literal\}}"
+		}
+		handle /environment-empty {
+			respond "{$CADDY_DEFAULT_DOC_ENV:config-default}|{env.CADDY_DEFAULT_DOC_ENV:-runtime-default}"
+		}
+		handle /environment-unset {
+			respond "{$CADDY_DEFAULT_DOC_UNSET:config-default}|{env.CADDY_DEFAULT_DOC_UNSET:-runtime-default}"
+		}
+	}
+	`, "caddyfile")
+	tester.AssertGetResponse("http://localhost:9080/literal", http.StatusOK, "{literal}")
+	tester.AssertGetResponse("http://localhost:9080/environment-empty", http.StatusOK, "|runtime-default")
+	tester.AssertGetResponse("http://localhost:9080/environment-unset", http.StatusOK, "config-default|runtime-default")
 }
