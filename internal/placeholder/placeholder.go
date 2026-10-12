@@ -21,6 +21,21 @@ type Reference struct {
 	HasDefault bool
 }
 
+// String returns the reference's syntax, preserving its key and default text.
+func (ref Reference) String() string {
+	if ref.HasDefault {
+		return "{" + ref.Key + ":-" + ref.Default + "}"
+	}
+	return "{" + ref.Key + "}"
+}
+
+// ParseSingle reads exactly one complete reference. A non-reference or input
+// with trailing text returns false; malformed defaults return an error.
+func ParseSingle(input string) (Reference, bool, error) {
+	ref, n, err := Parse(input)
+	return ref, n > 0 && n == len(input), err
+}
+
 // Parse reads a reference at the start of input and returns its byte length.
 // A non-reference or unclosed ordinary reference returns zero length without an
 // error. Ordinary references retain the legacy first-closing-brace convention.
@@ -96,16 +111,44 @@ func UnescapeKey(key string) string {
 // text and escape sequences are preserved byte for byte.
 func RewriteKeys(input string, rewrite func(string) string) (string, error) {
 	return rewriteInput(input, func(raw string, ref Reference) (string, error) {
-		key := rewrite(ref.Key)
-		if !ref.HasDefault {
-			return "{" + key + "}", nil
+		ref.Key = rewrite(ref.Key)
+		if ref.HasDefault {
+			fallback, err := RewriteKeys(ref.Default, rewrite)
+			if err != nil {
+				return "", err
+			}
+			ref.Default = fallback
 		}
-		fallback, err := RewriteKeys(ref.Default, rewrite)
-		if err != nil {
-			return "", err
-		}
-		return "{" + key + ":-" + fallback + "}", nil
+		return ref.String(), nil
 	})
+}
+
+// Walk visits references in source order, including references inside defaults.
+// Escaped references are skipped. Legacy spans containing nested opening braces
+// are scanned for their inner references, as with RewriteTokens.
+func Walk(input string, visit func(Reference) error) error {
+	return scanInput(input, func(_, _ int, ref Reference) error {
+		if err := visit(ref); err != nil {
+			return err
+		}
+		if ref.HasDefault {
+			return Walk(ref.Default, visit)
+		}
+		return nil
+	})
+}
+
+// Names returns each visited reference's normalized provider key in source order.
+func Names(input string) ([]string, error) {
+	var names []string
+	err := Walk(input, func(ref Reference) error {
+		names = append(names, UnescapeKey(ref.Key))
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return names, nil
 }
 
 // RewriteTokens rewrites each complete reference. The callback receives the raw
@@ -121,6 +164,29 @@ func RewriteTokens(input string, rewrite func(string) string) (string, error) {
 func rewriteInput(input string, rewrite func(string, Reference) (string, error)) (string, error) {
 	var out strings.Builder
 	last := 0
+	err := scanInput(input, func(start, end int, ref Reference) error {
+		replacement, err := rewrite(input[start:end], ref)
+		if err != nil {
+			return err
+		}
+		out.WriteString(input[last:start])
+		out.WriteString(replacement)
+		last = end
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	if last == 0 {
+		return input, nil
+	}
+	out.WriteString(input[last:])
+	return out.String(), nil
+}
+
+// scanInput supplies complete references and their byte spans without allocating
+// replacement text. All syntax visitors share this scanner.
+func scanInput(input string, visit func(int, int, Reference) error) error {
 	for i := 0; i < len(input); i++ {
 		if input[i] == '\\' && i+1 < len(input) && strings.ContainsRune("{}\\", rune(input[i+1])) {
 			i++
@@ -131,7 +197,7 @@ func rewriteInput(input string, rewrite func(string, Reference) (string, error))
 		}
 		ref, n, err := Parse(input[i:])
 		if err != nil {
-			return "", err
+			return err
 		}
 		if n == 0 {
 			// Parse examined the remaining suffix. Avoid repeatedly scanning
@@ -167,18 +233,10 @@ func rewriteInput(input string, rewrite func(string, Reference) (string, error))
 				continue
 			}
 		}
-		replacement, err := rewrite(input[i:i+n], ref)
-		if err != nil {
-			return "", err
+		if err := visit(i, i+n, ref); err != nil {
+			return err
 		}
-		out.WriteString(input[last:i])
-		out.WriteString(replacement)
 		i += n - 1
-		last = i + 1
 	}
-	if last == 0 {
-		return input, nil
-	}
-	out.WriteString(input[last:])
-	return out.String(), nil
+	return nil
 }

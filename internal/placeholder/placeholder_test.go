@@ -1,9 +1,57 @@
 package placeholder
 
 import (
+	"errors"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestParseSingleAndString(t *testing.T) {
+	for _, input := range []string{
+		"{}", "{key}", `{a\:-b}`, "{a:-}", "{a:-{b:-c}}", `{a:-\{literal\}}`,
+	} {
+		ref, ok, err := ParseSingle(input)
+		if err != nil || !ok || ref.String() != input {
+			t.Fatalf("ParseSingle(%q) = (%+v, %v, %v), serialized %q", input, ref, ok, err, ref.String())
+		}
+	}
+	for _, input := range []string{"", "literal", "{unclosed", "{key} trailing", "{a}{b}"} {
+		if _, ok, err := ParseSingle(input); ok || err != nil {
+			t.Fatalf("ParseSingle(%q) = (ok %v, error %v)", input, ok, err)
+		}
+	}
+	if _, ok, err := ParseSingle("{a:-unclosed"); ok || err == nil {
+		t.Fatalf("malformed default = (ok %v, error %v)", ok, err)
+	}
+}
+
+func TestNamesAndWalk(t *testing.T) {
+	input := `{"message":"{a\:-key:-prefix {b:-{c}} \{ignored\}}"} {d} \{escaped\}`
+	want := []string{"a:-key", "b", "c", "d"}
+	names, err := Names(input)
+	if err != nil || !reflect.DeepEqual(names, want) {
+		t.Fatalf("Names = %v, %v; want %v", names, err, want)
+	}
+	var visited []string
+	marker := errors.New("stop walking")
+	err = Walk(input, func(ref Reference) error {
+		visited = append(visited, UnescapeKey(ref.Key))
+		if ref.Key == "b" {
+			return marker
+		}
+		return nil
+	})
+	if err != marker || !reflect.DeepEqual(visited, want[:2]) {
+		t.Fatalf("Walk = %v, visited %v", err, visited)
+	}
+	if names, err := Names("{a} {b:-unclosed"); err == nil || names != nil {
+		t.Fatalf("malformed discovery = %v, %v", names, err)
+	}
+	if _, err := Names(strings.Repeat("{a:-", MaxDepth+1) + "x" + strings.Repeat("}", MaxDepth+1)); err == nil {
+		t.Fatal("discovery accepted excessive depth")
+	}
+}
 
 func TestParse(t *testing.T) {
 	for _, tc := range []struct {
@@ -124,10 +172,14 @@ func FuzzParse(f *testing.F) {
 		f.Add(seed)
 	}
 	f.Fuzz(func(t *testing.T, input string) {
-		_, n, err := Parse(input)
+		ref, n, err := Parse(input)
 		if n < 0 || n > len(input) || (err != nil && n != 0) {
 			t.Fatalf("invalid result: n=%d err=%v input=%q", n, err, input)
 		}
+		if n > 0 && ref.String() != input[:n] {
+			t.Fatalf("serialization changed reference %q to %q", input[:n], ref.String())
+		}
+		_, _ = Names(input)
 		out, err := RewriteTokens(input, func(raw string) string { return raw })
 		if err == nil && out != input {
 			t.Fatalf("identity rewrite changed %q to %q", input, out)

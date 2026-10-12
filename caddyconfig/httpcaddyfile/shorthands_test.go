@@ -1,8 +1,9 @@
 package httpcaddyfile
 
 import (
-	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"testing"
+
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
 func TestShorthandDefaults(t *testing.T) {
@@ -12,6 +13,14 @@ func TestShorthandDefaults(t *testing.T) {
 		{`{vars.name:-{re.route.1:-{host}}}`, `{http.vars.name:-{http.regexp.route.1:-{http.request.host}}}`},
 		{`{path:-a:b}`, `{http.request.uri.path:-a:b}`},
 		{`{"message":"literal:-value"}`, `{"message":"literal:-value"}`},
+		{`{http.request.header.X-User:-header.X-User}`, `{http.request.header.X-User:-header.X-User}`},
+		{`{prefixheader.X-User:-{query.user}}`, `{prefixheader.X-User:-{http.request.uri.query.user}}`},
+		{`{query.user.suffix:-{vars.name}}`, `{query.user.suffix:-{http.vars.name}}`},
+		{`{hostsuffix:-host}`, `{hostsuffix:-host}`},
+		{`{missing:-header.X-User query.user host}`, `{missing:-header.X-User query.user host}`},
+		{`{missing:-\{host\}}`, `{missing:-\{host\}}`},
+		{`\{host}`, `\{http.request.host}`},
+		{`{"message":"{host}","fallback":"{query.user:-anonymous}"}`, `{"message":"{http.request.host}","fallback":"{http.request.uri.query.user:-anonymous}"}`},
 	} {
 		segment := caddyfile.Segment{{Text: tc.input}}
 		NewShorthandReplacer().ApplyToSegment(&segment)

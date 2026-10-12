@@ -7,6 +7,7 @@ package rewrite
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -62,6 +63,8 @@ func TestRewritePlaceholderDefaultPathDelimiters(t *testing.T) {
 		name, requestURI, rewriteURI, wantPath, wantQuery string
 	}{
 		{"composite path preserves escaped question mark", "/a%3Fb", "{missing:-/prefix{http.request.uri.path}}", "/prefix/a?b", ""},
+		{"composite path preserves all encoded delimiters", "/a%3Fb%23c%25d%26e%3Df?keep=me", "{missing:-/prefix{http.request.uri.path}}", "/prefix/a?b#c%d&e=f", "keep=me"},
+		{"nested path preserves encoded percent", "/a%252Fb?keep=me", "{missing:-{http.request.uri.path}}", "/a%2Fb", "keep=me"},
 		{"literal fallback sets query", "/orig", "{missing:-/home?lang=en}", "/home", "lang=en"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -73,5 +76,32 @@ func TestRewritePlaceholderDefaultPathDelimiters(t *testing.T) {
 				t.Fatalf("rewritten URL = %s; want path %q and query %q", req.URL, tc.wantPath, tc.wantQuery)
 			}
 		})
+	}
+}
+
+func TestRewriteDefaultsDoNotEvaluateProviderExpressions(t *testing.T) {
+	t.Setenv("CADDY_DEFAULT_AUDIT_SECRET", "default-audit-secret-canary")
+	for _, payload := range []string{
+		`{env.CADDY_DEFAULT_AUDIT_SECRET}`,
+		`/target?token={env.CADDY_DEFAULT_AUDIT_SECRET}`,
+		`/target?token={missing:-{env.CADDY_DEFAULT_AUDIT_SECRET}}`,
+		`/target?token=%7Benv.CADDY_DEFAULT_AUDIT_SECRET%7D`,
+	} {
+		for _, uri := range []string{
+			`{http.request.header.X-Audit:-/fallback}`,
+			`{missing:-{http.request.header.X-Audit}}`,
+			`{missing:-/prefix{http.request.header.X-Audit}suffix}`,
+			`/target?q={missing:-{http.request.header.X-Audit}}`,
+			`/target?{missing:-{http.request.header.X-Audit}}`,
+			`/target#{missing:-{http.request.header.X-Audit}}`,
+		} {
+			req := newRequest(t, http.MethodGet, "/orig")
+			req.Header.Set("X-Audit", payload)
+			repl := caddyhttp.NewTestReplacer(req)
+			Rewrite{URI: uri}.Rewrite(req, repl)
+			if strings.Contains(req.URL.String(), "default-audit-secret-canary") {
+				t.Fatalf("provider expression evaluated: URI %q, payload %q, result %s", uri, payload, req.URL)
+			}
+		}
 	}
 }

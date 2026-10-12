@@ -26,6 +26,8 @@ func TestFileMatcherDefaultGlobEscaping(t *testing.T) {
 	for _, tc := range []struct{ literal, decoy string }{
 		{"star*.txt", "star-decoy.txt"},
 		{"question?.txt", "questionX.txt"},
+		{"bracket[ab].txt", "bracketa.txt"},
+		{`slash\*.txt`, `slash\-decoy.txt`},
 	} {
 		t.Run(tc.literal, func(t *testing.T) {
 			root := t.TempDir()
@@ -66,5 +68,28 @@ func TestFileMatcherCELDefault(t *testing.T) {
 	caddyhttp.NewTestReplacer(req)
 	if matched, err := m.MatchWithError(req); err != nil || !matched {
 		t.Fatalf("match=(%v,%v); want (true,nil)", matched, err)
+	}
+}
+
+func TestFileMatcherDefaultsEscapeProviderGlobs(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not evaluate glob expressions")
+	}
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "private-decoy.txt"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, pattern := range []string{
+		`{http.request.header.X-File:-/fallback}`,
+		`{missing:-{http.request.header.X-File}}`,
+		`{missing:-/prefix/../{http.request.header.X-File}}`,
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set("X-File", "private*.txt")
+		caddyhttp.NewTestReplacer(req)
+		m := MatchFile{fsmap: &filesystems.FileSystemMap{}, Root: root, TryFiles: []string{pattern}}
+		if matched, err := m.MatchWithError(req); err != nil || matched {
+			t.Fatalf("provider wildcard matched decoy with %q: (%v, %v)", pattern, matched, err)
+		}
 	}
 }

@@ -14,8 +14,10 @@ type ComplexShorthandReplacer struct {
 }
 
 type ShorthandReplacer struct {
-	complex []ComplexShorthandReplacer
-	simple  *strings.Replacer
+	complex     []ComplexShorthandReplacer
+	simple      *strings.Replacer
+	names       map[string]string
+	nameComplex []ComplexShorthandReplacer
 }
 
 func NewShorthandReplacer() ShorthandReplacer {
@@ -27,24 +29,43 @@ func NewShorthandReplacer() ShorthandReplacer {
 	// these are placeholders that allow a user-defined final
 	// parameters, but we still want to provide a shorthand
 	// for those, so we use a regexp to replace
-	regexpReplacements := []ComplexShorthandReplacer{
-		{regexp.MustCompile(`{header\.([\w-]*)}`), "{http.request.header.$1}"},
-		{regexp.MustCompile(`{cookie\.([\w-]*)}`), "{http.request.cookie.$1}"},
-		{regexp.MustCompile(`{labels\.([\w-]*)}`), "{http.request.host.labels.$1}"},
-		{regexp.MustCompile(`{path\.([\w-]*)}`), "{http.request.uri.path.$1}"},
-		{regexp.MustCompile(`{file\.([\w-]*)}`), "{http.request.uri.path.file.$1}"},
-		{regexp.MustCompile(`{query\.([\w-]*)}`), "{http.request.uri.query.$1}"},
-		{regexp.MustCompile(`{re\.([\w-\.]*)}`), "{http.regexp.$1}"},
-		{regexp.MustCompile(`{vars\.([\w-]*)}`), "{http.vars.$1}"},
-		{regexp.MustCompile(`{rp\.([\w-\.]*)}`), "{http.reverse_proxy.$1}"},
-		{regexp.MustCompile(`{resp\.([\w-\.]*)}`), "{http.intercept.$1}"},
-		{regexp.MustCompile(`{err\.([\w-\.]*)}`), "{http.error.$1}"},
-		{regexp.MustCompile(`{file_match\.([\w-]*)}`), "{http.matchers.file.$1}"},
+	namePatterns := []struct{ search, replace string }{
+		{`header\.([\w-]*)`, "http.request.header.$1"},
+		{`cookie\.([\w-]*)`, "http.request.cookie.$1"},
+		{`labels\.([\w-]*)`, "http.request.host.labels.$1"},
+		{`path\.([\w-]*)`, "http.request.uri.path.$1"},
+		{`file\.([\w-]*)`, "http.request.uri.path.file.$1"},
+		{`query\.([\w-]*)`, "http.request.uri.query.$1"},
+		{`re\.([\w-\.]*)`, "http.regexp.$1"},
+		{`vars\.([\w-]*)`, "http.vars.$1"},
+		{`rp\.([\w-\.]*)`, "http.reverse_proxy.$1"},
+		{`resp\.([\w-\.]*)`, "http.intercept.$1"},
+		{`err\.([\w-\.]*)`, "http.error.$1"},
+		{`file_match\.([\w-]*)`, "http.matchers.file.$1"},
+	}
+	complex := make([]ComplexShorthandReplacer, 0, len(namePatterns))
+	nameComplex := make([]ComplexShorthandReplacer, 0, len(namePatterns))
+	for _, pattern := range namePatterns {
+		complex = append(complex, ComplexShorthandReplacer{
+			search:  regexp.MustCompile((placeholder.Reference{Key: pattern.search}).String()),
+			replace: (placeholder.Reference{Key: pattern.replace}).String(),
+		})
+		nameComplex = append(nameComplex, ComplexShorthandReplacer{
+			search:  regexp.MustCompile("^" + pattern.search + "$"),
+			replace: pattern.replace,
+		})
+	}
+	names := make(map[string]string)
+	aliases := placeholderShorthandNames()
+	for i := 0; i < len(aliases); i += 2 {
+		names[aliases[i]] = aliases[i+1]
 	}
 
 	return ShorthandReplacer{
-		complex: regexpReplacements,
-		simple:  replacer,
+		complex:     complex,
+		simple:      replacer,
+		names:       names,
+		nameComplex: nameComplex,
 	}
 }
 
@@ -52,42 +73,52 @@ func NewShorthandReplacer() ShorthandReplacer {
 // where the left of the pair is a placeholder shorthand that may
 // be used in the Caddyfile, and the right is the replacement.
 func placeholderShorthands() []string {
+	names := placeholderShorthandNames()
+	tokens := make([]string, len(names))
+	for i, name := range names {
+		tokens[i] = (placeholder.Reference{Key: name}).String()
+	}
+	return tokens
+}
+
+// placeholderShorthandNames returns pairs of shorthand and full names.
+func placeholderShorthandNames() []string {
 	return []string{
-		"{host}", "{http.request.host}",
-		"{hostport}", "{http.request.hostport}",
-		"{port}", "{http.request.port}",
-		"{orig_method}", "{http.request.orig_method}",
-		"{orig_uri}", "{http.request.orig_uri}",
-		"{orig_path}", "{http.request.orig_uri.path}",
-		"{orig_dir}", "{http.request.orig_uri.path.dir}",
-		"{orig_file}", "{http.request.orig_uri.path.file}",
-		"{orig_query}", "{http.request.orig_uri.query}",
-		"{orig_?query}", "{http.request.orig_uri.prefixed_query}",
-		"{method}", "{http.request.method}",
-		"{uri}", "{http.request.uri}",
-		"{%uri}", "{http.request.uri_escaped}",
-		"{path}", "{http.request.uri.path}",
-		"{%path}", "{http.request.uri.path_escaped}",
-		"{dir}", "{http.request.uri.path.dir}",
-		"{file}", "{http.request.uri.path.file}",
-		"{query}", "{http.request.uri.query}",
-		"{%query}", "{http.request.uri.query_escaped}",
-		"{?query}", "{http.request.uri.prefixed_query}",
-		"{remote}", "{http.request.remote}",
-		"{remote_host}", "{http.request.remote.host}",
-		"{remote_port}", "{http.request.remote.port}",
-		"{scheme}", "{http.request.scheme}",
-		"{uuid}", "{http.request.uuid}",
-		"{tls_cipher}", "{http.request.tls.cipher_suite}",
-		"{tls_version}", "{http.request.tls.version}",
-		"{tls_client_fingerprint}", "{http.request.tls.client.fingerprint}",
-		"{tls_client_issuer}", "{http.request.tls.client.issuer}",
-		"{tls_client_serial}", "{http.request.tls.client.serial}",
-		"{tls_client_subject}", "{http.request.tls.client.subject}",
-		"{tls_client_certificate_pem}", "{http.request.tls.client.certificate_pem}",
-		"{tls_client_certificate_der_base64}", "{http.request.tls.client.certificate_der_base64}",
-		"{upstream_hostport}", "{http.reverse_proxy.upstream.hostport}",
-		"{client_ip}", "{http.vars.client_ip}",
+		"host", "http.request.host",
+		"hostport", "http.request.hostport",
+		"port", "http.request.port",
+		"orig_method", "http.request.orig_method",
+		"orig_uri", "http.request.orig_uri",
+		"orig_path", "http.request.orig_uri.path",
+		"orig_dir", "http.request.orig_uri.path.dir",
+		"orig_file", "http.request.orig_uri.path.file",
+		"orig_query", "http.request.orig_uri.query",
+		"orig_?query", "http.request.orig_uri.prefixed_query",
+		"method", "http.request.method",
+		"uri", "http.request.uri",
+		"%uri", "http.request.uri_escaped",
+		"path", "http.request.uri.path",
+		"%path", "http.request.uri.path_escaped",
+		"dir", "http.request.uri.path.dir",
+		"file", "http.request.uri.path.file",
+		"query", "http.request.uri.query",
+		"%query", "http.request.uri.query_escaped",
+		"?query", "http.request.uri.prefixed_query",
+		"remote", "http.request.remote",
+		"remote_host", "http.request.remote.host",
+		"remote_port", "http.request.remote.port",
+		"scheme", "http.request.scheme",
+		"uuid", "http.request.uuid",
+		"tls_cipher", "http.request.tls.cipher_suite",
+		"tls_version", "http.request.tls.version",
+		"tls_client_fingerprint", "http.request.tls.client.fingerprint",
+		"tls_client_issuer", "http.request.tls.client.issuer",
+		"tls_client_serial", "http.request.tls.client.serial",
+		"tls_client_subject", "http.request.tls.client.subject",
+		"tls_client_certificate_pem", "http.request.tls.client.certificate_pem",
+		"tls_client_certificate_der_base64", "http.request.tls.client.certificate_der_base64",
+		"upstream_hostport", "http.reverse_proxy.upstream.hostport",
+		"client_ip", "http.vars.client_ip",
 	}
 }
 
@@ -107,11 +138,15 @@ func (s ShorthandReplacer) ApplyToSegment(segment *caddyfile.Segment) {
 				continue
 			}
 			if rewritten, err := placeholder.RewriteKeys((*segment)[i].Text, func(key string) string {
-				token := s.simple.Replace("{" + key + "}")
-				for _, r := range s.complex {
-					token = r.search.ReplaceAllString(token, r.replace)
+				if full, ok := s.names[key]; ok {
+					return full
 				}
-				return token[1 : len(token)-1]
+				for _, r := range s.nameComplex {
+					if r.search.MatchString(key) {
+						return r.search.ReplaceAllString(key, r.replace)
+					}
+				}
+				return key
 			}); err == nil {
 				(*segment)[i].Text = rewritten
 			}

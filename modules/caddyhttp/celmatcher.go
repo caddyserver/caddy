@@ -131,8 +131,26 @@ func (m *MatchExpression) Provision(ctx caddy.Context) error {
 	// Shield defaults from the legacy regex passes: nested references in a
 	// quoted function argument must not be rewritten into additional calls.
 	markerPrefix := "__caddy_placeholder_default"
-	for strings.Contains(m.Expr, markerPrefix) {
-		markerPrefix += "_"
+	// Find a collision-free prefix in one scan. Repeatedly appending an
+	// underscore and searching again is quadratic for long underscore runs.
+	maxSuffix := -1
+	for rest := m.Expr; ; {
+		pos := strings.Index(rest, markerPrefix)
+		if pos < 0 {
+			break
+		}
+		rest = rest[pos+len(markerPrefix):]
+		suffix := 0
+		for suffix < len(rest) && rest[suffix] == '_' {
+			suffix++
+		}
+		if suffix > maxSuffix {
+			maxSuffix = suffix
+		}
+		rest = rest[suffix:]
+	}
+	if maxSuffix >= 0 {
+		markerPrefix += strings.Repeat("_", maxSuffix+1)
 	}
 	var defaultCalls []string
 	// Existing CEL syntax uses two backslashes to keep a reference literal
@@ -175,8 +193,12 @@ func (m *MatchExpression) Provision(ctx caddy.Context) error {
 	// Strip escaping only in original expression text, before inserting
 	// safely quoted default arguments.
 	m.expandedExpr = escapedPlaceholderRegexp.ReplaceAllString(m.expandedExpr, escapedPlaceholderExpansion)
-	for i, call := range defaultCalls {
-		m.expandedExpr = strings.ReplaceAll(m.expandedExpr, markerPrefix+strconv.Itoa(i)+"__", call)
+	if len(defaultCalls) > 0 {
+		pairs := make([]string, 0, 2*len(defaultCalls))
+		for i, call := range defaultCalls {
+			pairs = append(pairs, markerPrefix+strconv.Itoa(i)+"__", call)
+		}
+		m.expandedExpr = strings.NewReplacer(pairs...).Replace(m.expandedExpr)
 	}
 
 	// our type adapter expands CEL's standard type support
@@ -828,10 +850,12 @@ func celPlaceholderNames(e ast.Expr) []string {
 			name = args[1].AsLiteral().Value().(string)
 		}
 		if e.AsCall().FunctionName() == CELPlaceholderDefaultFuncName {
-			_, _ = placeholder.RewriteKeys(name, func(key string) string {
-				names = append(names, placeholder.UnescapeKey(key))
-				return key
-			})
+			keys, err := placeholder.Names(name)
+			if err != nil {
+				names = append(names, "")
+				return
+			}
+			names = append(names, keys...)
 		} else {
 			names = append(names, name)
 		}

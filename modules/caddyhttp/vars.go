@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
-	"strings"
 
 	"cel.dev/cel-go/cel"
 	"cel.dev/cel-go/common/types/ref"
@@ -186,11 +185,11 @@ func (m VarsMatcher) MatchWithError(r *http.Request) (bool, error) {
 	var matcherValExpanded, varStr string
 	var varValue any
 	for key, vals := range m {
-		_, n, parseErr := placeholder.Parse(key)
-		if parseErr != nil && strings.HasPrefix(key, "{") {
+		_, single, parseErr := placeholder.ParseSingle(key)
+		if parseErr != nil {
 			return false, parseErr
 		}
-		if n > 0 && n == len(key) {
+		if single {
 			var err error
 			varValue, _, err = repl.ResolvePlaceholder(key)
 			if err != nil {
@@ -338,11 +337,11 @@ func (m MatchVarsRE) MatchWithError(r *http.Request) (bool, error) {
 	var varStr string
 	var varValue any
 	for key, val := range m {
-		_, n, parseErr := placeholder.Parse(key)
-		if parseErr != nil && strings.HasPrefix(key, "{") {
+		_, single, parseErr := placeholder.ParseSingle(key)
+		if parseErr != nil {
 			return false, parseErr
 		}
-		if n > 0 && n == len(key) {
+		if single {
 			var err error
 			varValue, _, err = repl.ResolvePlaceholder(key)
 			if err != nil {
