@@ -23,6 +23,7 @@ require (
 	github.com/mholt/acmez/v3 v3.1.7
 	github.com/prometheus/client_golang v1.24.1
 	github.com/quic-go/quic-go v0.63.0
+	github.com/quic-go/webtransport-go v0.13.0
 	github.com/smallstep/certificates v0.30.2
 	github.com/smallstep/nosql v0.8.0
 	github.com/smallstep/truststore v0.13.0
