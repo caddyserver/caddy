@@ -24,6 +24,14 @@ import (
 	"github.com/caddyserver/caddy/v2"
 )
 
+func TestBrowseOffsetPastEnd(t *testing.T) {
+	listing := browseTemplateContext{Items: []fileInfo{{Name: "a"}, {Name: "b"}}}
+	listing.applySortAndLimit(sortByName, sortOrderAsc, "1", "3")
+	if len(listing.Items) != 0 {
+		t.Errorf("got %d items past the end; want none", len(listing.Items))
+	}
+}
+
 func TestBreadcrumbs(t *testing.T) {
 	testdata := []struct {
 		path     string
