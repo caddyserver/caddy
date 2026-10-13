@@ -23,6 +23,7 @@ import (
 	"reflect"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -41,6 +42,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/internal/placeholder"
 )
 
 func init() {
@@ -126,11 +128,78 @@ func (m *MatchExpression) Provision(ctx caddy.Context) error {
 
 	// replace placeholders with a function call - this is just some
 	// light (and possibly naïve) syntactic sugar
-	m.expandedExpr = placeholderRegexp.ReplaceAllString(m.Expr, placeholderExpansion)
+	// Shield defaults from the legacy regex passes: nested references in a
+	// quoted function argument must not be rewritten into additional calls.
+	markerPrefix := "__caddy_placeholder_default"
+	// Find a collision-free prefix in one scan. Repeatedly appending an
+	// underscore and searching again is quadratic for long underscore runs.
+	maxSuffix := -1
+	for rest := m.Expr; ; {
+		pos := strings.Index(rest, markerPrefix)
+		if pos < 0 {
+			break
+		}
+		rest = rest[pos+len(markerPrefix):]
+		suffix := 0
+		for suffix < len(rest) && rest[suffix] == '_' {
+			suffix++
+		}
+		if suffix > maxSuffix {
+			maxSuffix = suffix
+		}
+		rest = rest[suffix:]
+	}
+	if maxSuffix >= 0 {
+		markerPrefix += strings.Repeat("_", maxSuffix+1)
+	}
+	var defaultCalls []string
+	// Existing CEL syntax uses two backslashes to keep a reference literal
+	// inside matcher arguments. Protect escaped defaults before scanning so
+	// their nested references are not expanded independently.
+	var shielded strings.Builder
+	last := 0
+	for i := 0; i+2 < len(m.Expr); i++ {
+		if m.Expr[i] != '\\' || m.Expr[i+1] != '\\' || m.Expr[i+2] != '{' {
+			continue
+		}
+		ref, n, err := placeholder.Parse(m.Expr[i+2:])
+		if err != nil {
+			return fmt.Errorf("parsing escaped placeholder default: %w", err)
+		}
+		if !ref.HasDefault {
+			continue
+		}
+		shielded.WriteString(m.Expr[last:i])
+		shielded.WriteString(markerPrefix + strconv.Itoa(len(defaultCalls)) + "__")
+		defaultCalls = append(defaultCalls, m.Expr[i+2:i+2+n])
+		i += n + 1
+		last = i + 1
+	}
+	shielded.WriteString(m.Expr[last:])
+	expanded, err := placeholder.RewriteTokens(shielded.String(), func(token string) string {
+		ref, _, _ := placeholder.Parse(token)
+		if !ref.HasDefault {
+			return token
+		}
+		marker := markerPrefix + strconv.Itoa(len(defaultCalls)) + "__"
+		defaultCalls = append(defaultCalls, CELPlaceholderFuncName+"(req, "+strconv.Quote(token[1:len(token)-1])+")")
+		return marker
+	})
+	if err != nil {
+		return fmt.Errorf("parsing placeholder defaults: %w", err)
+	}
+	m.expandedExpr = placeholderRegexp.ReplaceAllString(expanded, placeholderExpansion)
 
-	// as a second pass, we'll strip the escape character from an escaped
-	// placeholder, so that it can be used as an input to other CEL functions
+	// Strip escaping only in original expression text, before inserting
+	// safely quoted default arguments.
 	m.expandedExpr = escapedPlaceholderRegexp.ReplaceAllString(m.expandedExpr, escapedPlaceholderExpansion)
+	if len(defaultCalls) > 0 {
+		pairs := make([]string, 0, 2*len(defaultCalls))
+		for i, call := range defaultCalls {
+			pairs = append(pairs, markerPrefix+strconv.Itoa(i)+"__", call)
+		}
+		m.expandedExpr = strings.NewReplacer(pairs...).Replace(m.expandedExpr)
+	}
 
 	// our type adapter expands CEL's standard type support
 	m.ta = celTypeAdapter{}
@@ -270,7 +339,7 @@ func (m *MatchExpression) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 }
 
 // caddyPlaceholderFunc implements the custom CEL function that accesses the
-// Replacer on a request and gets values from it.
+// Replacer on a request and resolves values, including placeholder defaults.
 func (m MatchExpression) caddyPlaceholderFunc(lhs, rhs ref.Val) ref.Val {
 	celReq, ok := lhs.(celHTTPRequest)
 	if !ok {
@@ -290,8 +359,15 @@ func (m MatchExpression) caddyPlaceholderFunc(lhs, rhs ref.Val) ref.Val {
 	}
 
 	repl := celReq.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-	val, _ := repl.Get(string(phStr))
-
+	name := string(phStr)
+	if strings.Contains(name, ":-") {
+		val, _, err := repl.ResolvePlaceholder((placeholder.Reference{Key: name}).String())
+		if err != nil {
+			return types.NewErr("resolving placeholder: %v", err)
+		}
+		return m.ta.NativeToValue(val)
+	}
+	val, _ := repl.Get(name)
 	return m.ta.NativeToValue(val)
 }
 
@@ -756,7 +832,16 @@ func celPlaceholderNames(e ast.Expr) []string {
 		if args := e.AsCall().Args(); len(args) == 2 && isCELStringLiteral(args[1]) {
 			name = args[1].AsLiteral().Value().(string)
 		}
-		names = append(names, name)
+		if strings.Contains(name, ":-") {
+			keys, err := placeholder.Names((placeholder.Reference{Key: name}).String())
+			if err != nil {
+				names = append(names, "")
+				return
+			}
+			names = append(names, keys...)
+		} else {
+			names = append(names, name)
+		}
 	}))
 	return names
 }

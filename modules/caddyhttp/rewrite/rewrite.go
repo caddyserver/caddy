@@ -25,6 +25,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/internal/placeholder"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
@@ -170,7 +171,18 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 		pathStart, qsStart, fragStart := -1, -1, -1
 		pathEnd, qsEnd := -1, -1
 	loop:
-		for i, ch := range uri {
+		for i := 0; i < len(uri); i++ {
+			ch := uri[i]
+			if ch == '{' && (i == 0 || uri[i-1] != '\\') {
+				_, n, err := placeholder.Parse(uri[i:])
+				if err == nil && n > 0 {
+					if pathStart < 0 && qsStart < 0 {
+						pathStart = i
+					}
+					i += n - 1
+					continue
+				}
+			}
 			switch {
 			case ch == '?' && qsStart < 0:
 				pathEnd, qsStart = i, i+1
@@ -211,8 +223,7 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 		var newPath, newQuery, newFrag string
 
 		if path != "" {
-			path = escapePathPlaceholders(path, r, repl)
-			newPath = repl.ReplaceAll(path, "")
+			newPath = escapePathPlaceholders(path, r, repl)
 		}
 
 		// a fragment may have snuck into the path component during
@@ -335,24 +346,62 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 }
 
 func escapePathPlaceholders(path string, r *http.Request, repl *caddy.Replacer) string {
-	// Replace path-valued placeholders in escaped form before the URI is parsed,
-	// otherwise literal '?' and '%' bytes from the path can be interpreted as URI
-	// delimiters or percent-escape sequences during the rewrite.
-	pathPlaceholder := "{http.request.uri.path}"
-	if strings.Contains(path, pathPlaceholder) {
-		path = strings.ReplaceAll(path, pathPlaceholder, r.URL.EscapedPath())
+	if strings.Contains(path, ":-") {
+		// Escape path-valued leaves before composing a configured default.
+		// A final callback cannot distinguish those bytes from literal URI
+		// delimiters supplied by the operator in a composite default.
+		local := caddy.NewEmptyReplacer()
+		local.Map(func(key string) (any, bool) {
+			if key == "http.request.uri.path" {
+				return r.URL.EscapedPath(), true
+			}
+			val, found := repl.Get(key)
+			if key == "http.matchers.file.relative" && found {
+				if text, ok := val.(string); ok {
+					return escapePathPreservingSlashes(text), true
+				}
+			}
+			return val, found
+		})
+		return local.ReplaceAll(path, "")
 	}
+	// Resolve configured tokens once so path-valued results can be escaped
+	// without exposing provider text to a subsequent placeholder expansion.
+	escaped, err := repl.ReplaceFunc(path, func(name string, val any) (any, error) {
+		text := caddy.ToString(val)
+		switch name {
+		case "http.request.uri.path":
+			return r.URL.EscapedPath(), nil
+		case "http.matchers.file.relative":
+			return escapePathPreservingSlashes(text), nil
+		default:
+			return val, nil
+		}
+	})
+	if err != nil {
+		return ""
+	}
+	return escaped
+}
 
-	fileMatchRelativePlaceholder := "{http.matchers.file.relative}"
-	if strings.Contains(path, fileMatchRelativePlaceholder) {
-		if val, ok := repl.Get("http.matchers.file.relative"); ok {
-			if relativePath, ok := val.(string); ok {
-				path = strings.ReplaceAll(path, fileMatchRelativePlaceholder, escapePathPreservingSlashes(relativePath))
+// queryComponentEnd finds the next configured separator outside references.
+func queryComponentEnd(input string, wroteVal bool) (int, bool) {
+	for i := 0; i < len(input); i++ {
+		if input[i] == '{' && (i == 0 || input[i-1] != '\\') {
+			_, n, err := placeholder.Parse(input[i:])
+			if err == nil && n > 0 {
+				i += n - 1
+				continue
 			}
 		}
+		if input[i] == '&' {
+			return i, true
+		}
+		if input[i] == '=' && wroteVal {
+			return i, false
+		}
 	}
-
-	return path
+	return len(input), false
 }
 
 func escapePathPreservingSlashes(path string) string {
@@ -371,22 +420,9 @@ func buildQueryString(qs string, repl *caddy.Replacer) string {
 	wroteVal := true
 
 	for len(qs) > 0 {
-		// determine the end of this component, which will be at
-		// the next equal sign or ampersand, whichever comes first
-		nextEq, nextAmp := strings.Index(qs, "="), strings.Index(qs, "&")
-		if !wroteVal {
-			// we are consuming a value, and '=' only delimits a key from
-			// its value; any further '=' bytes are literal data, such as
-			// base64 padding in a signature. only '&' ends a value.
-			nextEq = -1
-		}
-		ampIsNext := nextAmp >= 0 && (nextAmp < nextEq || nextEq < 0)
-		end := len(qs) // assume no delimiter remains...
-		if ampIsNext {
-			end = nextAmp // ...unless ampersand is first...
-		} else if nextEq >= 0 && (nextEq < nextAmp || nextAmp < 0) {
-			end = nextEq // ...or unless equal is first.
-		}
+		// Delimiters in configured defaults are part of the value, not
+		// separators between query components. Parse before selecting values.
+		end, ampIsNext := queryComponentEnd(qs, wroteVal)
 
 		// consume the component and write the result
 		comp := qs[:end]

@@ -19,6 +19,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -622,5 +623,69 @@ func TestMatchExpressionUnmarshalCaddyfileRepeated(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "repeated expression matchers are not supported") {
 			t.Errorf("UnmarshalCaddyfile() error = %v, want repeated expression error (expression: %s)", err, m.Expr)
 		}
+	}
+}
+
+func TestMatchExpressionPlaceholderDefaults(t *testing.T) {
+	for _, tc := range []struct {
+		name, expr string
+		values     map[string]any
+		wantErr    bool
+	}{
+		{"unknown", `{missing:-fallback} == 'fallback'`, nil, false},
+		{"nested typed integer", `{missing:-{answer}} == 42`, map[string]any{"answer": int64(42)}, false},
+		{"typed false", `{flag:-fallback} == false`, map[string]any{"flag": false}, false},
+		{"typed zero", `{zero:-fallback} == 0`, map[string]any{"zero": 0}, false},
+		{"quoted literal default", `{missing:-a"b} == 'a"b'`, nil, false},
+		{"provider text stays literal", `{missing:-{source}} == ('{' + 'env.SECRET}')`, map[string]any{"source": "{env.SECRET}"}, false},
+		{"ph literal default", `ph(req, 'key:-literal') == 'literal'`, nil, false},
+		{"ph nested typed default", `ph(req, 'missing:-\{answer}') == 42`, map[string]any{"answer": int64(42)}, false},
+		{"ph escaped operator keeps exact key", `ph(req, 'key\\:-literal') == 'exact'`, map[string]any{"key:-literal": "exact"}, false},
+		{"error value survives composite fallback", `{missing:-prefix{failure}} == 'fallback'`, map[string]any{"failure": errors.New("provider failed")}, true},
+		{"error value survives fallback", `{missing:-{failure}} == 'fallback'`, map[string]any{"failure": errors.New("provider failed")}, true},
+		{"escaped default matcher key", `vars({'\\{missing:-fallback}': ['fallback']})`, nil, false},
+		{"escaped nested default matcher key", `vars({'\\{missing:-{answer}}': ['42']})`, map[string]any{"answer": 42}, false},
+		{"default as map value", `vars({'answer': [{missing:-42}]})`, map[string]any{"answer": 42}, false},
+		{"default in matcher macro", `path({missing:-/default})`, nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			caddyCtx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+			defer cancel()
+			m := MatchExpression{Expr: tc.expr}
+			if err := m.Provision(caddyCtx); err != nil {
+				t.Fatal(err)
+			}
+			req, repl := newVarsTestRequest(t, "https://example.com/default", nil, nil)
+			for k, v := range tc.values {
+				repl.Set(k, v)
+				req.Context().Value(VarsCtxKey).(map[string]any)[k] = v
+			}
+			got, err := m.MatchWithError(req)
+			if tc.wantErr {
+				if err == nil || got {
+					t.Fatalf("expected provider error, got %v, %v", got, err)
+				}
+				return
+			}
+			if err != nil || !got {
+				t.Fatalf("expression %q: got %v, %v; expanded %s", tc.expr, got, err, m.expandedExpr)
+			}
+		})
+	}
+}
+
+func TestMatchExpressionCompositeDefaultBodyError(t *testing.T) {
+	caddyCtx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+	m := MatchExpression{Expr: `{missing:-prefix{limited}} == 'fallback'`}
+	if err := m.Provision(caddyCtx); err != nil {
+		t.Fatal(err)
+	}
+	req, repl := newVarsTestRequest(t, "", nil, nil)
+	repl.Set("limited", RequestBodyLimitError{Err: &http.MaxBytesError{Limit: 1}})
+	matched, err := m.MatchWithError(req)
+	var marker RequestBodyLimitError
+	if matched || !errors.As(err, &marker) {
+		t.Fatalf("expected selected body error identity, got %v, %v", matched, err)
 	}
 }

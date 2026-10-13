@@ -19,6 +19,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
@@ -158,6 +159,7 @@ func TestMatchVarsREDoesNotExpandResolvedValues(t *testing.T) {
 		})
 	}
 }
+
 // TestVarsMatchersTreatErrorsByType verifies the error handling split in the
 // vars matchers: only the request-body limit marker aborts request handling,
 // while unrelated errors are matched on their text exactly like before.
@@ -223,4 +225,62 @@ func TestVarsMatchersTreatErrorsByType(t *testing.T) {
 			t.Error("no regexp match should happen when the marker aborts")
 		}
 	})
+}
+
+func TestVarsMatchersPlaceholderDefaults(t *testing.T) {
+	for _, tc := range []struct {
+		name, key, want string
+		values          map[string]any
+	}{
+		{"unknown", "{missing:-fallback}", "fallback", nil},
+		{"cookie", "{http.request.cookie.missing:-fallback}", "fallback", nil},
+		{"nested", "{missing:-{other:-fallback}}", "fallback", nil},
+		{"zero remains a value", "{zero:-fallback}", "0", map[string]any{"zero": 0}},
+		{"false remains a value", "{flag:-fallback}", "false", map[string]any{"flag": false}},
+		{"provider text is literal", "{missing:-{other}}", "{env.SECRET}", map[string]any{"other": "{env.SECRET}"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req, repl := newVarsTestRequest(t, "", nil, nil)
+			for k, v := range tc.values {
+				repl.Set(k, v)
+			}
+			matched, err := (VarsMatcher{tc.key: []string{tc.want}}).MatchWithError(req)
+			// Escape braces in expected configured text, which is intentionally expanded.
+			if tc.name == "provider text is literal" {
+				matched, err = (VarsMatcher{tc.key: []string{`\{env.SECRET\}`}}).MatchWithError(req)
+			}
+			if err != nil || !matched {
+				t.Fatalf("vars match = %v, %v", matched, err)
+			}
+			re := MatchVarsRE{tc.key: &MatchRegexp{Pattern: "^" + regexp.QuoteMeta(tc.want) + "$"}}
+			if err := re.Provision(caddy.Context{}); err != nil {
+				t.Fatal(err)
+			}
+			matched, err = re.MatchWithError(req)
+			if err != nil || !matched {
+				t.Fatalf("vars regexp match = %v, %v", matched, err)
+			}
+		})
+	}
+}
+
+func TestVarsDefaultsPreserveErrorValues(t *testing.T) {
+	req, repl := newVarsTestRequest(t, "", nil, nil)
+	bodyLimit := RequestBodyLimitError{Err: &http.MaxBytesError{Limit: 10}}
+	repl.Set("limited", bodyLimit)
+	for _, key := range []string{"{limited:-fallback}", "{missing:-{limited}}", "{missing:-prefix{limited}}"} {
+		matched, err := (VarsMatcher{key: []string{"fallback"}}).MatchWithError(req)
+		var marker RequestBodyLimitError
+		if matched || !errors.As(err, &marker) {
+			t.Fatalf("%s: got %v, %v", key, matched, err)
+		}
+		re := MatchVarsRE{key: &MatchRegexp{Pattern: ".*"}}
+		if err := re.Provision(caddy.Context{}); err != nil {
+			t.Fatal(err)
+		}
+		matched, err = re.MatchWithError(req)
+		if matched || !errors.As(err, &marker) {
+			t.Fatalf("regexp %s: got %v, %v", key, matched, err)
+		}
+	}
 }

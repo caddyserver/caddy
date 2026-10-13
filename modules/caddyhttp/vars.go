@@ -20,13 +20,13 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
-	"strings"
 
 	"cel.dev/cel-go/cel"
 	"cel.dev/cel-go/common/types/ref"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/internal/placeholder"
 )
 
 var stringSliceType = reflect.TypeFor[[]string]()
@@ -185,10 +185,16 @@ func (m VarsMatcher) MatchWithError(r *http.Request) (bool, error) {
 	var matcherValExpanded, varStr string
 	var varValue any
 	for key, vals := range m {
-		if strings.HasPrefix(key, "{") &&
-			strings.HasSuffix(key, "}") &&
-			strings.Count(key, "{") == 1 {
-			varValue, _ = repl.Get(strings.Trim(key, "{}"))
+		_, single, parseErr := placeholder.ParseSingle(key)
+		if parseErr != nil {
+			return false, parseErr
+		}
+		if single {
+			var err error
+			varValue, _, err = repl.ResolvePlaceholder(key)
+			if err != nil {
+				return false, err
+			}
 		} else {
 			varValue = vars[key]
 		}
@@ -331,10 +337,16 @@ func (m MatchVarsRE) MatchWithError(r *http.Request) (bool, error) {
 	var varStr string
 	var varValue any
 	for key, val := range m {
-		if strings.HasPrefix(key, "{") &&
-			strings.HasSuffix(key, "}") &&
-			strings.Count(key, "{") == 1 {
-			varValue, _ = repl.Get(strings.Trim(key, "{}"))
+		_, single, parseErr := placeholder.ParseSingle(key)
+		if parseErr != nil {
+			return false, parseErr
+		}
+		if single {
+			var err error
+			varValue, _, err = repl.ResolvePlaceholder(key)
+			if err != nil {
+				return false, err
+			}
 		} else {
 			varValue = vars[key]
 		}

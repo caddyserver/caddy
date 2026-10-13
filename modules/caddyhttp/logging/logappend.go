@@ -17,12 +17,13 @@ package logging
 import (
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"net/http"
-	"strings"
 
 	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/internal/placeholder"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
@@ -61,110 +62,181 @@ func (LogAppend) CaddyModule() caddy.ModuleInfo {
 }
 
 func (h LogAppend) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	// Determine if we need to add the log field early.
-	// We do if the Early flag is set, or for convenience,
-	// if the value is a special placeholder for the request body.
-	needsEarly := h.Early || h.Value == placeholderRequestBody || h.Value == placeholderRequestBodyBase64
+	_, single, fieldErr := placeholder.ParseSingle(h.Value)
+	needsEarly := h.Early
+	needsResponseBody := false
+	if single && fieldErr == nil {
+		var names []string
+		names, fieldErr = placeholder.Names(h.Value)
+		for _, name := range names {
+			switch name {
+			case placeholderRequestBody, placeholderRequestBodyBase64:
+				needsEarly = true
+			case placeholderResponseBody, placeholderResponseBodyBase64:
+				needsResponseBody = true
+			}
+		}
+	}
 
-	// Check if we need to buffer the response for special placeholders
-	needsResponseBody := h.Value == placeholderResponseBody || h.Value == placeholderResponseBodyBase64
+	// A response-body selection spans a probe and a final resolution. Freeze
+	// regular provider values at the first applicable phase (early or final
+	// response headers), including unknown and empty results. Response-body
+	// overrides remain live so a pending probe can become the captured body.
+	var logRepl *caddy.Replacer
+	if needsResponseBody {
+		original := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+		type result struct {
+			value any
+			found bool
+		}
+		values := make(map[string]result)
+		logRepl = caddy.NewEmptyReplacer()
+		logRepl.Map(func(key string) (any, bool) {
+			if cached, ok := values[key]; ok {
+				return cached.value, cached.found
+			}
+			value, found := original.Get(key)
+			values[key] = result{value: value, found: found}
+			return value, found
+		})
+	}
+	resolve := func(override caddy.ReplacerFunc) (any, error) {
+		return h.resolveLogValue(r, logRepl, override)
+	}
 
-	if needsEarly && !needsResponseBody {
-		// Add the log field before calling the next handler
-		// (but not if we need the response body, which isn't available yet)
-		h.addLogField(r, nil)
+	var selected any
+	selectedSet := false
+	fieldAdded := false
+	if needsEarly && fieldErr == nil {
+		// Resolve only the selected branch before downstream handlers consume
+		// the request body. Response-body branches wait until the response is
+		// available; any request-body fallback then sees its current contents.
+		selected, fieldErr = resolve(responseBodyProvider(nil, needsResponseBody))
+		if fieldErr == nil && !isResponseBodyPending(selected) {
+			selectedSet = true
+			fieldErr = h.appendLogValue(r, selected)
+			fieldAdded = fieldErr == nil
+		}
+	}
+	if needsEarly && fieldErr != nil {
+		return fieldErr
 	}
 
 	var rec caddyhttp.ResponseRecorder
 	var buf *bytes.Buffer
-
-	if needsResponseBody {
-		// Wrap the response writer with a recorder to capture the response body
+	if needsResponseBody && !fieldAdded && fieldErr == nil {
 		buf = new(bytes.Buffer)
-		rec = caddyhttp.NewResponseRecorder(w, buf, func(status int, header http.Header) bool {
-			// Always buffer the response when we need to log the body
-			return true
+		rec = caddyhttp.NewResponseRecorder(w, buf, func(status int, _ http.Header) bool {
+			if status >= 100 && status <= 199 && status != http.StatusSwitchingProtocols {
+				return false
+			}
+			// Select the branch when final response headers are written. A
+			// non-body result is frozen at this point: streaming it prevents
+			// a later change from selecting a body we did not capture.
+			selected, fieldErr = resolve(responseBodyProvider(nil, true))
+			selectedSet = fieldErr == nil && !isResponseBodyPending(selected)
+			return fieldErr == nil && isResponseBodyPending(selected)
 		})
 		w = rec
 	}
 
-	// Run the next handler in the chain.
-	// If an error occurs, we still want to add
-	// any extra log fields that we can, so we
-	// hold onto the error and return it later.
 	handlerErr := next.ServeHTTP(w, r)
-
-	if needsResponseBody {
-		// Write the buffered response to the client
-		if rec.Buffered() {
-			h.addLogField(r, buf)
-			err := rec.WriteResponse()
-			if err != nil {
-				return err
-			}
+	if !fieldAdded && fieldErr == nil {
+		if !selectedSet {
+			// This also handles downstream handlers which never wrote a
+			// response: the body is empty, so its default can be selected.
+			selected, fieldErr = resolve(responseBodyProvider(buf, false))
 		}
+		if fieldErr == nil {
+			fieldErr = h.appendLogValue(r, selected)
+		}
+	}
+	// A late request-body fallback can carry a 413 while the response is
+	// still buffered. Leave that response uncommitted so the error handler
+	// can render the selected error's status instead of a success status.
+	if handlerErr == nil && fieldErr != nil && rec != nil && rec.Buffered() {
+		return fieldErr
+	}
+	var writeErr error
+	if rec != nil && rec.Status() != 0 && rec.Buffered() {
+		writeErr = rec.WriteResponse()
+	}
+	if handlerErr != nil {
 		return handlerErr
 	}
-
-	if !h.Early {
-		// Add the log field after the handler completes
-		h.addLogField(r, buf)
+	if writeErr != nil {
+		return writeErr
 	}
-
-	return handlerErr
+	return fieldErr
 }
 
-// addLogField adds the log field to the request's extra log fields.
-// If buf is not nil, it contains the buffered response body for special
-// response body placeholders.
-func (h LogAppend) addLogField(r *http.Request, buf *bytes.Buffer) {
-	ctx := r.Context()
-
-	vars := ctx.Value(caddyhttp.VarsCtxKey).(map[string]any)
-	repl := ctx.Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-	extra := ctx.Value(caddyhttp.ExtraLogFieldsCtxKey).(*caddyhttp.ExtraLogFields)
-
-	var varValue any
-
-	// Handle special case placeholders for response body
-	if h.Value == placeholderResponseBody {
-		if buf != nil {
-			varValue = buf.String()
-		} else {
-			varValue = ""
-		}
-	} else if h.Value == placeholderResponseBodyBase64 {
-		if buf != nil {
-			varValue = base64.StdEncoding.EncodeToString(buf.Bytes())
-		} else {
-			varValue = ""
-		}
-	} else if strings.HasPrefix(h.Value, "{") &&
-		strings.HasSuffix(h.Value, "}") &&
-		strings.Count(h.Value, "{") == 1 {
-		// the value looks like a placeholder, so get its value
-		varValue, _ = repl.Get(strings.Trim(h.Value, "{}"))
-	} else if val, ok := vars[h.Value]; ok {
-		// the value is a key in the vars map
-		varValue = val
-	} else {
-		// the value is a constant string
-		varValue = h.Value
+func (h LogAppend) resolveLogValue(r *http.Request, repl *caddy.Replacer, override caddy.ReplacerFunc) (any, error) {
+	_, single, err := placeholder.ParseSingle(h.Value)
+	if err != nil {
+		return nil, err
 	}
-
-	// Add the field to the extra log fields.
-	// We use zap.Any because it will reflect
-	// to the correct type for us.
-	extra.Add(zap.Any(h.Key, varValue))
+	if single {
+		if repl == nil {
+			repl = r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+		}
+		value, _, err := repl.ResolvePlaceholder(h.Value, override)
+		return value, err
+	}
+	vars := r.Context().Value(caddyhttp.VarsCtxKey).(map[string]any)
+	if value, ok := vars[h.Value]; ok {
+		return value, nil
+	}
+	return h.Value, nil
 }
+
+func (h LogAppend) appendLogValue(r *http.Request, value any) error {
+	// A selected body-limit error is control flow, not a printable log value.
+	if err, ok := value.(error); ok {
+		if bodyLimit, ok := errors.AsType[caddyhttp.RequestBodyLimitError](err); ok {
+			return caddyhttp.HandlerError{Err: bodyLimit, StatusCode: bodyLimit.StatusCode()}
+		}
+	}
+	extra := r.Context().Value(caddyhttp.ExtraLogFieldsCtxKey).(*caddyhttp.ExtraLogFields)
+	extra.Add(zap.Any(h.Key, value))
+	return nil
+}
+
+// responseBodyProvider provides handler-local values without mutating the
+// request replacer. An error sentinel keeps selected composite defaults from
+// stringifying the unavailable body during the buffering decision.
+func responseBodyProvider(buf *bytes.Buffer, probe bool) caddy.ReplacerFunc {
+	return func(key string) (any, bool) {
+		switch key {
+		case placeholderResponseBody, placeholderResponseBodyBase64:
+			if probe {
+				return errResponseBodyPending, true
+			}
+			if buf == nil {
+				return "", true
+			}
+			if key == placeholderResponseBodyBase64 {
+				return base64.StdEncoding.EncodeToString(buf.Bytes()), true
+			}
+			return buf.String(), true
+		default:
+			return nil, false
+		}
+	}
+}
+
+func isResponseBodyPending(value any) bool {
+	err, ok := value.(error)
+	return ok && errors.Is(err, errResponseBodyPending)
+}
+
+var errResponseBodyPending = errors.New("response body is not available yet")
 
 const (
-	// Special placeholder values that are handled by log_append
-	// rather than by the replacer.
-	placeholderRequestBody        = "{http.request.body}"
-	placeholderRequestBodyBase64  = "{http.request.body_base64}"
-	placeholderResponseBody       = "{http.response.body}"
-	placeholderResponseBodyBase64 = "{http.response.body_base64}"
+	// Provider keys whose lifetime needs special handling by log_append.
+	placeholderRequestBody        = "http.request.body"
+	placeholderRequestBodyBase64  = "http.request.body_base64"
+	placeholderResponseBody       = "http.response.body"
+	placeholderResponseBodyBase64 = "http.response.body_base64"
 )
 
 // Interface guards
