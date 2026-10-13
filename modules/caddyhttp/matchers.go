@@ -662,6 +662,18 @@ var windowsEscapedPathSeparatorRepl = strings.NewReplacer(
 	"%5C", "%2f",
 )
 
+// NormalizedPath returns a decoded request path in the form the path matchers
+// evaluate it: rewritten the way the Windows filesystem resolves it (a no-op on
+// other platforms), then cleaned. Consumers that act on a path a matcher has
+// already judged should derive it with this, so the two cannot disagree about
+// which resource a request names. An empty path is returned unchanged.
+func NormalizedPath(p string, mergeSlashes bool) string {
+	if p == "" {
+		return ""
+	}
+	return CleanPath(normalizeWindowsPath(p), mergeSlashes)
+}
+
 // normalizeWindowsPath rewrites a decoded request path the way the Windows
 // filesystem resolves it, so that path matchers (both `path` and `path_regexp`)
 // cannot be bypassed on Windows: backslashes are treated as path separators,
