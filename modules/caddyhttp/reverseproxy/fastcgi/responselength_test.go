@@ -273,10 +273,13 @@ func TestResponseSurplusIsBounded(t *testing.T) {
 // the response, which it does by panicking with http.ErrAbortHandler.
 func fastcgiProxy(t *testing.T, addr string, http2 bool) (*httptest.Server, *observer.ObservedLogs, func() bool) {
 	t.Helper()
-	ctx, err := caddy.ProvisionContext(&caddy.Config{})
+	cfgCtx, err := caddy.ProvisionContext(&caddy.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
+	cfgCtx.Context = t.Context() // keeps the config, which Handler.Provision needs
+	ctx, cancel := caddy.NewContext(cfgCtx)
+	t.Cleanup(cancel)
 	h := &reverseproxy.Handler{
 		TransportRaw: caddyconfig.JSONModuleObject(Transport{Root: "/", ReadTimeout: caddy.Duration(5 * time.Second)}, "protocol", "fastcgi", nil),
 		Upstreams:    reverseproxy.UpstreamPool{{Dial: addr}},
@@ -316,11 +319,9 @@ func fastcgiProxy(t *testing.T, addr string, http2 bool) (*httptest.Server, *obs
 }
 
 // TestProxyResponseBody checks what clients of the proxy receive over HTTP/1.1
-// and HTTP/2. The subtests run one at a time because provisioning writes
-// package-level state in caddy and reverseproxy.
+// and HTTP/2. It and its subtests run one at a time because provisioning
+// writes package-level state in caddy and reverseproxy.
 func TestProxyResponseBody(t *testing.T) {
-	t.Parallel()
-
 	for _, proto := range []string{"HTTP/1.1", "HTTP/2.0"} {
 		for _, tc := range []struct {
 			name     string
@@ -337,7 +338,11 @@ func TestProxyResponseBody(t *testing.T) {
 				addr, closed := fcgiResponder(t, sendRecords(stdout(tc.response)))
 				srv, logs, aborted := fastcgiProxy(t, addr, proto == "HTTP/2.0")
 
-				resp, err := srv.Client().Get(srv.URL + "/index.php")
+				req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL+"/index.php", nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				resp, err := srv.Client().Do(req)
 				if err != nil {
 					t.Fatal(err)
 				}
