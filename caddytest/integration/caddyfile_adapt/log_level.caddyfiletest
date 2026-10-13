@@ -1,0 +1,42 @@
+:80
+
+log_level debug
+log_level INFO
+log_level warn
+log_level ERROR
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "vars",
+									"log_level": "debug"
+								},
+								{
+									"handler": "vars",
+									"log_level": "info"
+								},
+								{
+									"handler": "vars",
+									"log_level": "warn"
+								},
+								{
+									"handler": "vars",
+									"log_level": "error"
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

@@ -1694,3 +1694,43 @@ func TestHTTP3ServerForListenerOmitsWebTransportSettingsWhenListenerLacksSupport
 		t.Errorf("expected fallback warning to be logged, got logs: %v", logs.All())
 	}
 }
+
+func TestServerLogLevel(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		level   any
+		status  int
+		minimum zapcore.Level
+		want    zapcore.Level
+		skip    bool
+		count   int
+	}{
+		{"default info", nil, 200, zapcore.DebugLevel, zapcore.InfoLevel, false, 1},
+		{"default error", nil, 500, zapcore.DebugLevel, zapcore.ErrorLevel, false, 1},
+		{"debug", "debug", 200, zapcore.DebugLevel, zapcore.DebugLevel, false, 1},
+		{"warn", "WARN", 200, zapcore.DebugLevel, zapcore.WarnLevel, false, 1},
+		{"error", "ERROR", 200, zapcore.DebugLevel, zapcore.ErrorLevel, false, 1},
+		{"override error", "INFO", 500, zapcore.DebugLevel, zapcore.InfoLevel, false, 1},
+		{"invalid", "invalid", 500, zapcore.DebugLevel, zapcore.ErrorLevel, false, 1},
+		{"unsafe level", "FATAL", 200, zapcore.DebugLevel, zapcore.InfoLevel, false, 1},
+		{"wrong type", 2, 200, zapcore.DebugLevel, zapcore.InfoLevel, false, 1},
+		{"filtered", "INFO", 200, zapcore.WarnLevel, zapcore.InfoLevel, false, 0},
+		{"promoted", "WARN", 200, zapcore.WarnLevel, zapcore.WarnLevel, false, 1},
+		{"skipped", "ERROR", 200, zapcore.DebugLevel, zapcore.ErrorLevel, true, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			core, logs := observer.New(tc.minimum)
+			ctx := context.WithValue(context.Background(), ExtraLogFieldsCtxKey, new(ExtraLogFields))
+			ctx = context.WithValue(ctx, VarsCtxKey, map[string]any{LogLevelVar: tc.level, LogSkipVar: tc.skip})
+			req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
+			rec := NewResponseRecorder(httptest.NewRecorder(), nil, nil)
+			rec.WriteHeader(tc.status)
+			duration := time.Millisecond
+			(&Server{}).logRequest(zap.New(core), req, rec, &duration, nil, NewTestReplacer(req), nil, false)
+			require.Equal(t, tc.count, logs.Len())
+			if tc.count > 0 {
+				assert.Equal(t, tc.want, logs.All()[0].Level)
+			}
+		})
+	}
+}
