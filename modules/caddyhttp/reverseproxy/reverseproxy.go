@@ -1657,27 +1657,27 @@ func (h Handler) provisionUpstream(upstream *Upstream, dynamic bool) {
 // (which it shouldn't be), this function returns its input; i.e. is a no-op, for safety.
 // Otherwise, it returns bodyReadCloser, the original body will be closed and body will be nil
 // if it's explicitly configured to buffer all or EOF is reached when reading.
-// TODO: the error during reading is discarded if the limit is negative, should the error be propagated
-// to upstream/downstream?
+// If reading fails, the body is returned as partially buffered, so the read error
+// is not hidden from the caller.
 func (h Handler) bufferedBody(originalBody io.ReadCloser, limit int64) (io.ReadCloser, int64) {
 	if limit == 0 {
 		return originalBody, 0
 	}
 	var written int64
+	var err error
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	if limit > 0 {
-		var err error
 		written, err = io.CopyN(buf, originalBody, limit)
-		if (err != nil && err != io.EOF) || written == limit {
-			return bodyReadCloser{
-				Reader: io.MultiReader(buf, originalBody),
-				buf:    buf,
-				body:   originalBody,
-			}, written
-		}
 	} else {
-		written, _ = io.Copy(buf, originalBody)
+		written, err = io.Copy(buf, originalBody)
+	}
+	if (err != nil && err != io.EOF) || written == limit {
+		return bodyReadCloser{
+			Reader: io.MultiReader(buf, originalBody),
+			buf:    buf,
+			body:   originalBody,
+		}, written
 	}
 	originalBody.Close() // no point in keeping it open
 	return bodyReadCloser{
