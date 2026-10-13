@@ -174,38 +174,40 @@ func (m *MatchFile) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 func (MatchFile) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 	requestType := cel.ObjectType("http.Request")
 
-	matcherFactory := func(data ref.Val) (caddyhttp.RequestMatcherWithError, error) {
-		values, err := caddyhttp.CELValueToMapStrList(data)
+	matcherFactory := caddyhttp.CELLiteralMatcherFactory(func(data ref.Val) (caddyhttp.RequestMatcherWithError, error) {
+		entries, err := caddyhttp.CELMatcherStringMap(data)
 		if err != nil {
 			return nil, err
 		}
-
-		var root string
+		values := make(map[string][]caddyhttp.CELMatcherString, len(entries))
+		for _, entry := range entries {
+			values[entry.Key.Value()] = entry.Values
+		}
+		var m MatchFile
 		if len(values["root"]) > 0 {
-			root = values["root"][0]
+			m.Root = values["root"][0].Template()
 		}
-
-		var fsName string
 		if len(values["fs"]) > 0 {
-			fsName = values["fs"][0]
+			m.FileSystem = values["fs"][0].Template()
 		}
-
-		var try_policy string
 		if len(values["try_policy"]) > 0 {
-			try_policy = values["try_policy"][0]
+			m.TryPolicy = values["try_policy"][0].Value()
 		}
-
-		m := MatchFile{
-			Root:       root,
-			TryFiles:   values["try_files"],
-			TryPolicy:  try_policy,
-			SplitPath:  values["split_path"],
-			FileSystem: fsName,
+		if files, exists := values["try_files"]; exists {
+			m.TryFiles = make([]string, len(files))
+			for i, file := range files {
+				m.TryFiles[i] = file.Template()
+			}
 		}
-
+		if splits, exists := values["split_path"]; exists {
+			m.SplitPath = make([]string, len(splits))
+			for i, split := range splits {
+				m.SplitPath[i] = split.Value()
+			}
+		}
 		err = m.Provision(ctx)
 		return m, err
-	}
+	})
 
 	envOptions := []cel.EnvOption{
 		cel.Macros(parser.NewGlobalVarArgMacro("file", celFileMatcherMacroExpander())),
@@ -227,7 +229,7 @@ func celFileMatcherMacroExpander() parser.MacroExpander {
 		if len(args) == 0 {
 			return eh.NewCall("file",
 				eh.NewIdent(caddyhttp.CELRequestVarName),
-				eh.NewMap(),
+				caddyhttp.CELMatcherLiteralArguments(eh, eh.NewMap()),
 			), nil
 		}
 		if len(args) == 1 {
@@ -235,15 +237,15 @@ func celFileMatcherMacroExpander() parser.MacroExpander {
 			if isCELStringLiteral(arg) || isCELCaddyPlaceholderCall(arg) {
 				return eh.NewCall("file",
 					eh.NewIdent(caddyhttp.CELRequestVarName),
-					eh.NewMap(eh.NewMapEntry(
+					caddyhttp.CELMatcherLiteralArguments(eh, eh.NewMap(eh.NewMapEntry(
 						eh.NewLiteral(types.String("try_files")),
 						eh.NewList(arg),
 						false,
-					)),
+					))),
 				), nil
 			}
 			if isCELTryFilesLiteral(arg) {
-				return eh.NewCall("file", eh.NewIdent(caddyhttp.CELRequestVarName), arg), nil
+				return eh.NewCall("file", eh.NewIdent(caddyhttp.CELRequestVarName), caddyhttp.CELMatcherLiteralArguments(eh, arg)), nil
 			}
 			return nil, &common.Error{
 				Location: eh.OffsetLocation(arg.ID()),
@@ -261,11 +263,11 @@ func celFileMatcherMacroExpander() parser.MacroExpander {
 		}
 		return eh.NewCall("file",
 			eh.NewIdent(caddyhttp.CELRequestVarName),
-			eh.NewMap(eh.NewMapEntry(
+			caddyhttp.CELMatcherLiteralArguments(eh, eh.NewMap(eh.NewMapEntry(
 				eh.NewLiteral(types.String("try_files")),
 				eh.NewList(args...),
 				false,
-			)),
+			))),
 		), nil
 	}
 }
