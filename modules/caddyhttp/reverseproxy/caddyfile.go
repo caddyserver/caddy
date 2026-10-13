@@ -957,6 +957,10 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if commonScheme == "http" && te.TLSEnabled() {
 				return d.Errf("upstream address scheme is HTTP but transport is configured for HTTP+TLS (HTTPS)")
 			}
+			// h2c is cleartext HTTP/2; TLS options such as tls_insecure_skip_verify contradict it
+			if commonScheme == "h2c" && te.TLSEnabled() {
+				return d.Errf("cannot use TLS options with h2c:// upstreams: h2c is cleartext HTTP/2; remove tls_insecure_skip_verify or other TLS options")
+			}
 			if h2ct, ok := transport.(H2CTransport); ok && commonScheme == "h2c" {
 				err := h2ct.EnableH2C()
 				if err != nil {
