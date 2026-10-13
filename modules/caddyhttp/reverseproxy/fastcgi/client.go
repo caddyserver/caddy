@@ -253,6 +253,8 @@ func (c *client) Request(p map[string]string, req io.Reader) (resp *http.Respons
 		if statusIsCut {
 			resp.Status = statusInfo
 		}
+	} else if resp.Header.Get("Location") != "" {
+		resp.StatusCode = http.StatusFound
 	} else {
 		resp.StatusCode = http.StatusOK
 	}
