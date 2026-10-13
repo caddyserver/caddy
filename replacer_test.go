@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -828,6 +829,23 @@ func TestResolvePlaceholderContextOverrides(t *testing.T) {
 }
 
 func TestReplacerReferenceAllocations(t *testing.T) {
+	// AllocsPerRun measures process-wide allocations. Other tests can leave
+	// background goroutines running, so measure in a fresh process which runs
+	// only this test, retaining the race and coverage instrumentation.
+	const childEnv = "CADDY_REPLACER_ALLOCATION_TEST_CHILD"
+	if os.Getenv(childEnv) != "1" {
+		executable, err := os.Executable()
+		if err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command(executable, "-test.run=^TestReplacerReferenceAllocations$", "-test.count=1", "-test.timeout=1m")
+		cmd.Env = append(os.Environ(), childEnv+"=1")
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("isolated allocation test failed: %v\n%s", err, output)
+		}
+		return
+	}
+
 	r := NewEmptyReplacer()
 	r.Set("present", "value")
 	for _, tc := range []struct {
