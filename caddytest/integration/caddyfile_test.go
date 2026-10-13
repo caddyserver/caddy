@@ -853,6 +853,44 @@ func TestHandleErrorSubHandlers(t *testing.T) {
 	tester.AssertGetResponse("http://localhost:9080/en/internalerr", 500, "English error")
 }
 
+func TestHeaderDefaults(t *testing.T) {
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`{
+		admin localhost:2999
+		http_port     9080
+	}
+	localhost:9080 {
+		header Cache-Control "no-store"
+		header {
+			?Cache-Control "max-age=60"
+			?X-Frame-Options "DENY"
+		}
+		header {
+			match status 404
+			?X-Robots-Tag "noindex"
+		}
+		respond /missing 404
+		respond "ok"
+	}
+	`, "caddyfile")
+
+	resp, _ := tester.AssertGetResponse("http://localhost:9080/", 200, "ok")
+	if got := resp.Header.Get("Cache-Control"); got != "no-store" {
+		t.Errorf("Cache-Control = %q, want %q", got, "no-store")
+	}
+	if got := resp.Header.Get("X-Frame-Options"); got != "DENY" {
+		t.Errorf("X-Frame-Options = %q, want %q", got, "DENY")
+	}
+	if got := resp.Header.Get("X-Robots-Tag"); got != "" {
+		t.Errorf("X-Robots-Tag on a 200 = %q, want none", got)
+	}
+
+	resp, _ = tester.AssertGetResponse("http://localhost:9080/missing", 404, "")
+	if got := resp.Header.Get("X-Robots-Tag"); got != "noindex" {
+		t.Errorf("X-Robots-Tag on a 404 = %q, want %q", got, "noindex")
+	}
+}
+
 func TestInvalidSiteAddressesAsDirectives(t *testing.T) {
 	type testCase struct {
 		config, expectedError string
