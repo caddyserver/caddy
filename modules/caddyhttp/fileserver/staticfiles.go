@@ -473,6 +473,8 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	}
 
 	var file fs.File
+	var sidecarEncoding string
+	var sidecarSize int64
 	respHeader := w.Header()
 
 	// etag is usually unset, but if the user knows what they're doing, let them override it
@@ -517,15 +519,12 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			continue
 		}
 		defer file.Close()
-		respHeader.Set("Content-Encoding", ae)
 
-		// stdlib won't set Content-Length for non-range requests if Content-Encoding is set.
-		// see: https://github.com/caddyserver/caddy/issues/7040
-		// Setting the Range header manually will result in 206 Partial Content.
-		// see: https://github.com/caddyserver/caddy/issues/7250
-		if r.Header.Get("Range") == "" {
-			respHeader.Set("Content-Length", strconv.FormatInt(compressedInfo.Size(), 10))
-		}
+		// remember the sidecar's encoding and size, but don't set the
+		// headers until we can no longer return an error, or they would
+		// end up on the error response
+		sidecarEncoding = ae
+		sidecarSize = compressedInfo.Size()
 
 		// try to get the etag from pre computed files if an etag suffix list was provided
 		if etag == "" && fsrv.EtagFileExtensions != nil {
@@ -622,6 +621,20 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		statusCodeOverride, err = strconv.Atoi(repl.ReplaceAll(codeStr, ""))
 		if err != nil {
 			return caddyhttp.Error(http.StatusInternalServerError, err)
+		}
+	}
+
+	// there are no more error returns below this point, so it is now safe
+	// to describe the precompressed sidecar we are about to serve
+	if sidecarEncoding != "" {
+		respHeader.Set("Content-Encoding", sidecarEncoding)
+
+		// stdlib won't set Content-Length for non-range requests if Content-Encoding is set.
+		// see: https://github.com/caddyserver/caddy/issues/7040
+		// Setting the Range header manually will result in 206 Partial Content.
+		// see: https://github.com/caddyserver/caddy/issues/7250
+		if r.Header.Get("Range") == "" {
+			respHeader.Set("Content-Length", strconv.FormatInt(sidecarSize, 10))
 		}
 	}
 

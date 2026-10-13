@@ -407,6 +407,96 @@ func TestPrecompressedRangeResponse(t *testing.T) {
 	})
 }
 
+// Once a precompressed sidecar is chosen, every error the handler can
+// still return must not carry the sidecar's Content-Encoding and
+// Content-Length, since the error response has a different body.
+func TestPrecompressedErrorResponseHeaders(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		method       string
+		target       string
+		etagFileDir  bool
+		statusCode   caddyhttp.WeakString
+		wantHTTPCode int // 0 if the error is not a HandlerError
+	}{
+		{
+			name:         "method not allowed",
+			method:       http.MethodPost,
+			target:       "/f.txt",
+			wantHTTPCode: http.StatusMethodNotAllowed,
+		},
+		{
+			name:        "unreadable etag file for sidecar",
+			method:      http.MethodGet,
+			target:      "/f.txt",
+			etagFileDir: true,
+		},
+		{
+			name:         "invalid status code",
+			method:       http.MethodGet,
+			target:       "/f.txt?code=abc",
+			statusCode:   "{http.request.uri.query.code}",
+			wantHTTPCode: http.StatusInternalServerError,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			body := []byte("original response body")
+			if err := os.WriteFile(filepath.Join(root, "f.txt"), body, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, "f.txt.gz"), gzipBytes(t, body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			var etagExts []string
+			if tc.etagFileDir {
+				// a directory where the etag file should be makes reading it fail
+				if err := os.Mkdir(filepath.Join(root, "f.txt.gz.etag"), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				etagExts = []string{".etag"}
+			}
+
+			fsrv := FileServer{
+				Root:               root,
+				CanonicalURIs:      new(bool),
+				PrecompressedOrder: []string{"gzip"},
+				EtagFileExtensions: etagExts,
+				StatusCode:         tc.statusCode,
+			}
+			ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+			if err := fsrv.Provision(ctx); err != nil {
+				t.Fatal(err)
+			}
+			fsrv.precompressors = map[string]encode.Precompressed{
+				"gzip": testPrecompressed{encoding: "gzip", suffix: ".gz"},
+			}
+
+			r := httptest.NewRequest(tc.method, tc.target, nil)
+			repl := caddyhttp.NewTestReplacer(r)
+			r = r.WithContext(context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl))
+			r.Header.Set("Accept-Encoding", "gzip")
+			w := httptest.NewRecorder()
+
+			err := fsrv.ServeHTTP(w, r, nil)
+			if err == nil {
+				t.Fatal("expected an error")
+			}
+			if tc.wantHTTPCode != 0 {
+				var herr caddyhttp.HandlerError
+				if !errors.As(err, &herr) || herr.StatusCode != tc.wantHTTPCode {
+					t.Fatalf("error = %v, want HTTP %d", err, tc.wantHTTPCode)
+				}
+			}
+			for _, field := range []string{"Content-Encoding", "Content-Length"} {
+				if got := w.Header().Get(field); got != "" {
+					t.Errorf("%s = %q on the error response, want it unset", field, got)
+				}
+			}
+		})
+	}
+}
+
 func gzipBytes(t *testing.T, data []byte) []byte {
 	t.Helper()
 
