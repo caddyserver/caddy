@@ -336,58 +336,93 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			wantErr: true,
 		},
 		{
-			name: "tls(true) matches when handshake is complete (MatchTLS)",
+			name: "tls('complete') matches when handshake is complete (MatchTLS)",
 			expression: &MatchExpression{
-				Expr: `tls(true)`,
+				Expr: `tls('complete')`,
 			},
 			urlTarget:            "https://example.com",
 			tlsHandshakeComplete: boolPtr(true),
 			wantResult:           true,
 		},
 		{
-			name: "tls(true) does not match when handshake is incomplete (MatchTLS)",
+			name: "tls('complete') does not match when handshake is incomplete (MatchTLS)",
 			expression: &MatchExpression{
-				Expr: `tls(true)`,
+				Expr: `tls('complete')`,
 			},
 			urlTarget:            "https://example.com",
 			tlsHandshakeComplete: boolPtr(false),
 			wantResult:           false,
 		},
 		{
-			name: "tls(false) matches an incomplete handshake (MatchTLS)",
+			name: "tls('early_data') matches an incomplete handshake (MatchTLS)",
 			expression: &MatchExpression{
-				Expr: `tls(false)`,
+				Expr: `tls('early_data')`,
 			},
 			urlTarget:            "https://example.com",
 			tlsHandshakeComplete: boolPtr(false),
 			wantResult:           true,
 		},
 		{
-			name: "tls invocation error no args (MatchTLS)",
+			name: "tls('early_data') does not match a complete handshake (MatchTLS)",
+			expression: &MatchExpression{
+				Expr: `tls('early_data')`,
+			},
+			urlTarget:            "https://example.com",
+			tlsHandshakeComplete: boolPtr(true),
+			wantResult:           false,
+		},
+		{
+			name: "tls() matches any TLS connection regardless of handshake state, complete (MatchTLS)",
 			expression: &MatchExpression{
 				Expr: `tls()`,
 			},
-			wantErr: true,
+			urlTarget:            "https://example.com",
+			tlsHandshakeComplete: boolPtr(true),
+			wantResult:           true,
+		},
+		{
+			name: "tls() matches any TLS connection regardless of handshake state, incomplete (MatchTLS)",
+			expression: &MatchExpression{
+				Expr: `tls()`,
+			},
+			urlTarget:            "https://example.com",
+			tlsHandshakeComplete: boolPtr(false),
+			wantResult:           true,
 		},
 		{
 			name: "tls invocation error wrong arg type (MatchTLS)",
 			expression: &MatchExpression{
-				Expr: `tls('true')`,
+				Expr: `tls(true)`,
 			},
 			wantErr: true,
 		},
 		{
-			name: "tls(false) does not match a plain non-TLS request (MatchTLS)",
+			name: "tls invocation error unrecognized string value (MatchTLS)",
 			expression: &MatchExpression{
-				Expr: `tls(false)`,
+				Expr: `tls('bogus')`,
+			},
+			wantErr: true,
+		},
+		{
+			name: "tls('early_data') does not match a plain non-TLS request (MatchTLS)",
+			expression: &MatchExpression{
+				Expr: `tls('early_data')`,
 			},
 			urlTarget:  "http://example.com",
 			wantResult: false,
 		},
 		{
-			name: "tls(true) does not match a plain non-TLS request (MatchTLS)",
+			name: "tls('complete') does not match a plain non-TLS request (MatchTLS)",
 			expression: &MatchExpression{
-				Expr: `tls(true)`,
+				Expr: `tls('complete')`,
+			},
+			urlTarget:  "http://example.com",
+			wantResult: false,
+		},
+		{
+			name: "tls() does not match a plain non-TLS request (MatchTLS)",
+			expression: &MatchExpression{
+				Expr: `tls()`,
 			},
 			urlTarget:  "http://example.com",
 			wantResult: false,
