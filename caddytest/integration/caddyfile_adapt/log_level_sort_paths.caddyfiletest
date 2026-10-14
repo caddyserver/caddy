@@ -1,0 +1,75 @@
+:80
+
+log_level /foobar ERROR
+log_level /foo WARN
+log_level /foo* DEBUG
+log_level INFO
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "vars",
+									"log_level": "info"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"path": [
+										"/foo*"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "vars",
+									"log_level": "debug"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"path": [
+										"/foo"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "vars",
+									"log_level": "warn"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"path": [
+										"/foobar"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "vars",
+									"log_level": "error"
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

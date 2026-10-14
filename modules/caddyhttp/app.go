@@ -242,6 +242,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 
 		// only enable access logs if configured
 		if srv.Logs != nil {
+			srv.Logs.normalizeLoggerNames()
 			srv.accessLogger = app.logger.Named("log.access")
 			if srv.Logs.Trace {
 				srv.traceLogger = app.logger.Named("log.trace")
@@ -814,11 +815,35 @@ func (app *App) stop(exiting bool) error {
 			}
 		}
 
+		// ServeQUICConn connections are not in the HTTP/3 server's set, so
+		// Shutdown does not wait for them and, with none tracked, it closes
+		// the server immediately. webtransport.Server.Close would do that
+		// too. waitWebTransportConns keeps the sockets up until the accept
+		// loops finish. GracePeriod 0 is eternal: the wait ends when the
+		// peer leaves, and the session is not force-closed. A finite grace
+		// period closes sessions at the deadline, while the sockets are
+		// still up, so the close capsule can reach the client.
+		// The close below is for a session whose loop already returned.
+		// Fallback HTTP/3 servers are drained at the same time so an
+		// active request on a reused non-WebTransport listener gets this
+		// grace period instead of dying when the packet conn closes.
+		fbErr := make(chan error, 1)
+		go func() {
+			fbErr <- server.shutdownFallbackHTTP3(ctx)
+		}()
+		server.waitWebTransportConns(ctx)
+		server.closeWebTransportSessions()
+
 		if err := server.h3server.Shutdown(ctx); err != nil {
 			if cause := context.Cause(ctx); cause != nil && errors.Is(err, context.DeadlineExceeded) {
 				err = cause
 			}
 			app.logger.Error("HTTP/3 server shutdown",
+				zap.Error(err),
+				zap.Strings("addresses", server.Listen))
+		}
+		if err := <-fbErr; err != nil {
+			app.logger.Error("HTTP/3 fallback shutdown",
 				zap.Error(err),
 				zap.Strings("addresses", server.Listen))
 		}

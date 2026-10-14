@@ -23,6 +23,7 @@ require (
 	github.com/mholt/acmez/v3 v3.1.7
 	github.com/prometheus/client_golang v1.24.1
 	github.com/quic-go/quic-go v0.63.0
+	github.com/quic-go/webtransport-go v0.13.0
 	github.com/smallstep/certificates v0.30.2
 	github.com/smallstep/nosql v0.8.0
 	github.com/smallstep/truststore v0.13.0
@@ -45,7 +46,7 @@ require (
 	go.uber.org/zap/exp v0.3.0
 	golang.org/x/crypto v0.57.0
 	golang.org/x/crypto/x509roots/fallback v0.0.0-20260929172509-b39ff6d641ec
-	golang.org/x/net v0.59.0
+	golang.org/x/net v0.60.0
 	golang.org/x/sync v0.23.0
 	golang.org/x/term v0.46.0
 	golang.org/x/time v0.16.0

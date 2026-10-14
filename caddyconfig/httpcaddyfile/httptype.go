@@ -782,7 +782,12 @@ func (st *ServerType) serversFromPairings(
 			if cpVals, ok := sblock.Pile["tls.connection_policy"]; ok {
 				// tls connection policies
 				for _, cpVal := range cpVals {
-					cp := cpVal.Value.(*caddytls.ConnectionPolicy)
+					// Policies are parsed once per original server block. Each listener
+					// rewrites and consolidates them independently.
+					cp, err := cloneConnectionPolicy(cpVal.Value.(*caddytls.ConnectionPolicy))
+					if err != nil {
+						return nil, fmt.Errorf("cloning TLS connection policy: %v", err)
+					}
 
 					// make sure the policy covers all hostnames from the block
 					for _, h := range hosts {
@@ -924,10 +929,7 @@ func (st *ServerType) serversFromPairings(
 				}
 				sort.SliceStable(errorSubrouteVals, func(i, j int) bool {
 					sri, srj := errorSubrouteVals[i].Value.(*caddyhttp.Subroute), errorSubrouteVals[j].Value.(*caddyhttp.Subroute)
-					if len(sri.Routes[0].MatcherSetsRaw) == 0 && len(srj.Routes[0].MatcherSetsRaw) != 0 {
-						return false
-					}
-					return true
+					return len(sri.Routes[0].MatcherSetsRaw) != 0 && len(srj.Routes[0].MatcherSetsRaw) == 0
 				})
 				errorsSubroute := &caddyhttp.Subroute{}
 				for _, val := range errorSubrouteVals {
@@ -1105,6 +1107,19 @@ func (st *ServerType) serversFromPairings(
 	}
 
 	return servers, nil
+}
+
+func cloneConnectionPolicy(cp *caddytls.ConnectionPolicy) (*caddytls.ConnectionPolicy, error) {
+	encoded, err := json.Marshal(cp)
+	if err != nil {
+		return nil, err
+	}
+
+	cloned := new(caddytls.ConnectionPolicy)
+	if err := json.Unmarshal(encoded, cloned); err != nil {
+		return nil, err
+	}
+	return cloned, nil
 }
 
 // sniNames returns the server names a connection policy's sni matcher matches.
