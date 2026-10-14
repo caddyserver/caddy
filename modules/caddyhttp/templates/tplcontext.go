@@ -490,7 +490,7 @@ func (c TemplateContext) funcHTTPError(statusCode int) (bool, error) {
 func (c TemplateContext) funcHumanize(formatType, data string) (string, error) {
 	// The format type can optionally be followed
 	// by a colon to provide arguments for the format
-	parts := strings.Split(formatType, ":")
+	parts := strings.SplitN(formatType, ":", 2)
 
 	switch parts[0] {
 	case "size":
