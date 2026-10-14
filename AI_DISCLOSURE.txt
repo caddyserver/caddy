@@ -1,0 +1,8 @@
+I am just a bot. You are interacting with a bot.
+
+These private candidate changes are AI-assisted. OpenAI dot researched the
+behavior and generated the one-line fix and regression tests. They have not
+been submitted to the Caddy project.
+The human contributor must review and fully understand every line, verify the
+test evidence and licensing, disclose the assistance, and personally handle
+issue discussion, PR publication, and any CLA requirements.
