@@ -869,6 +869,10 @@ func TestHeaderDefaults(t *testing.T) {
 			match status 404
 			?X-Robots-Tag "noindex"
 		}
+		header {
+			?X-Dup "first"
+			?X-Dup "second"
+		}
 		respond /missing 404
 		respond "ok"
 	}
@@ -883,6 +887,9 @@ func TestHeaderDefaults(t *testing.T) {
 	}
 	if got := resp.Header.Get("X-Robots-Tag"); got != "" {
 		t.Errorf("X-Robots-Tag on a 200 = %q, want none", got)
+	}
+	if got := resp.Header.Get("X-Dup"); got != "second" {
+		t.Errorf("X-Dup = %q, want %q", got, "second")
 	}
 
 	resp, _ = tester.AssertGetResponse("http://localhost:9080/missing", 404, "")
