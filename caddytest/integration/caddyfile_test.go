@@ -891,6 +891,20 @@ func TestHeaderDefaults(t *testing.T) {
 	}
 }
 
+func TestHeaderDefaultMatcherSameField(t *testing.T) {
+	caddytest.AssertLoadError(t, `{
+		admin localhost:2999
+		http_port     9080
+	}
+	localhost:9080 {
+		header {
+			match header X-Frame-Options SAMEORIGIN
+			?x-frame-options "DENY"
+		}
+	}
+	`, "caddyfile", "cannot match on response header X-Frame-Options and also set a default for it")
+}
+
 func TestInvalidSiteAddressesAsDirectives(t *testing.T) {
 	type testCase struct {
 		config, expectedError string
