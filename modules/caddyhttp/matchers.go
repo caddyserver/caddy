@@ -31,8 +31,11 @@ import (
 	"strings"
 
 	"cel.dev/cel-go/cel"
+	"cel.dev/cel-go/common"
+	"cel.dev/cel-go/common/ast"
 	"cel.dev/cel-go/common/types"
 	"cel.dev/cel-go/common/types/ref"
+	"cel.dev/cel-go/parser"
 	"golang.org/x/net/idna"
 
 	"github.com/caddyserver/caddy/v2"
@@ -1495,25 +1498,54 @@ func (m *MatchTLS) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 }
 
 // CELLibrary produces options that expose this matcher for use in CEL
-// expression matchers.
+// expression matchers. It mirrors the three states the Caddyfile `tls`
+// matcher itself supports: bare `tls` (any TLS connection, regardless of
+// handshake completion), `tls early_data` (handshake not yet complete), and
+// the otherwise-implicit "handshake complete" case.
 //
 // Example:
 //
-//	expression tls(true)
+//	expression tls() && !tls('early_data')
 func (MatchTLS) CELLibrary(ctx caddy.Context) (cel.Library, error) {
-	return CELMatcherImpl(
-		"tls",
-		"tls_request_bool",
-		[]*cel.Type{cel.BoolType},
-		func(data ref.Val) (RequestMatcherWithError, error) {
-			b, ok := data.(types.Bool)
-			if !ok {
-				return nil, errors.New("tls argument was not a bool")
-			}
-			complete := bool(b)
+	const funcName = "tls_request_string"
+	factory := func(data ref.Val) (RequestMatcherWithError, error) {
+		str, ok := data.(types.String)
+		if !ok {
+			return nil, errors.New("tls argument was not a string")
+		}
+		switch string(str) {
+		case "any":
+			return MatchTLS{}, nil
+		case "complete":
+			complete := true
 			return MatchTLS{HandshakeComplete: &complete}, nil
-		},
-	)
+		case "early_data":
+			complete := false
+			return MatchTLS{HandshakeComplete: &complete}, nil
+		default:
+			return nil, fmt.Errorf("tls argument must be 'complete' or 'early_data', got %q", str)
+		}
+	}
+
+	// tls() is sugar for tls('any'): it expands to the same 2-arg call the
+	// one-argument form produces, just with the argument injected by the
+	// macro itself instead of typed out by the caller.
+	zeroArgMacro := parser.NewGlobalMacro("tls", 0,
+		func(eh cel.MacroExprFactory, target ast.Expr, args []ast.Expr) (ast.Expr, *common.Error) {
+			return eh.NewCall(funcName, eh.NewIdent(CELRequestVarName), eh.NewLiteral(types.String("any"))), nil
+		})
+	oneArgMacro := parser.NewGlobalMacro("tls", 1, celMatcherStringMacroExpander(funcName))
+
+	envOptions := []cel.EnvOption{
+		cel.Macros(zeroArgMacro, oneArgMacro),
+		cel.Function(funcName,
+			cel.Overload(funcName, []*cel.Type{cel.ObjectType("http.Request"), cel.StringType}, cel.BoolType),
+			cel.SingletonBinaryBinding(CELMatcherRuntimeFunction(funcName, factory))),
+	}
+	programOptions := []cel.ProgramOption{
+		cel.CustomDecorator(CELMatcherDecorator(funcName, factory)),
+	}
+	return NewMatcherCELLibrary(envOptions, programOptions), nil
 }
 
 // CaddyModule returns the Caddy module information.
