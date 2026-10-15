@@ -1743,13 +1743,15 @@ func (h *Handler) recordUpstreamRoundTrip(di DialInfo, repl *caddy.Replacer, sta
 	}
 
 	if h.HealthChecks != nil && h.HealthChecks.Passive != nil {
-		for _, badStatus := range h.HealthChecks.Passive.UnhealthyStatus {
-			if caddyhttp.StatusCodeMatches(status, badStatus) {
-				h.countFailure(di.Upstream)
-			}
+		// a request is only one failure, however many criteria it matches
+		unhealthy := h.HealthChecks.Passive.UnhealthyLatency > 0 &&
+			duration >= time.Duration(h.HealthChecks.Passive.UnhealthyLatency)
+		if !unhealthy {
+			unhealthy = slices.ContainsFunc(h.HealthChecks.Passive.UnhealthyStatus, func(badStatus int) bool {
+				return caddyhttp.StatusCodeMatches(status, badStatus)
+			})
 		}
-		if h.HealthChecks.Passive.UnhealthyLatency > 0 &&
-			duration >= time.Duration(h.HealthChecks.Passive.UnhealthyLatency) {
+		if unhealthy {
 			h.countFailure(di.Upstream)
 		}
 	}

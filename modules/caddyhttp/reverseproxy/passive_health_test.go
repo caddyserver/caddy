@@ -19,6 +19,8 @@ import (
 	"testing"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/caddyserver/caddy/v2"
 )
 
@@ -430,4 +432,36 @@ func TestDynamicUpstreamMaxRequestsFromUnhealthyRequestCount(t *testing.T) {
 	if !u.Full() {
 		t.Error("upstream should be full at UnhealthyRequestCount concurrent requests")
 	}
+}
+
+// TestRecordUpstreamRoundTripCountsRequestOnce verifies that a single
+// request is counted as one failure even if it matches several of the
+// passive health check criteria.
+func TestRecordUpstreamRoundTripCountsRequestOnce(t *testing.T) {
+	resetDynamicHosts()
+	h, cancel := newPassiveHandler(t, 2, time.Minute)
+	defer cancel()
+	h.HealthChecks.Passive.UnhealthyStatus = []int{5, 503}
+	h.HealthChecks.Passive.UnhealthyLatency = caddy.Duration(time.Millisecond)
+	u := &Upstream{Dial: "10.1.0.6:80", Host: new(Host)}
+
+	// matches both status entries and the latency threshold
+	h.recordUpstreamRoundTrip(DialInfo{Upstream: u}, caddy.NewReplacer(), 503, 5*time.Millisecond)
+
+	if got := u.Host.Fails(); got != 1 {
+		t.Errorf("expected 1 fail for a single request, got %d", got)
+	}
+}
+
+// TestCountFailureWithoutActiveHealthChecks verifies that error handling in
+// countFailure does not depend on active health checks being configured.
+func TestCountFailureWithoutActiveHealthChecks(t *testing.T) {
+	resetDynamicHosts()
+	h, cancel := newPassiveHandler(t, 2, time.Minute)
+	defer cancel()
+	h.HealthChecks.Passive.logger = zap.NewNop()
+	u := &Upstream{Dial: "10.1.0.7:80", Host: new(Host)}
+	u.Host.fails.Store(-5) // force the "count below 0" error path
+
+	h.countFailure(u) // must not panic
 }
