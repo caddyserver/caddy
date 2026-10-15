@@ -519,18 +519,12 @@ func (t *TLS) publishECHConfigs(ctx context.Context, logger *zap.Logger) error {
 					zap.Uint8s("config_ids", configIDs))
 
 				for _, cfg := range echCfgList {
-					if cfg.meta.Publications == nil {
-						cfg.meta.Publications = make(publicationHistory)
-					}
-					if _, ok := cfg.meta.Publications[publisherKey]; !ok {
-						cfg.meta.Publications[publisherKey] = make(map[string]time.Time)
-					}
-					for _, name := range successNames {
-						cfg.meta.Publications[publisherKey][name] = pubTime
-					}
-					metaBytes, err := json.Marshal(cfg.meta)
+					metaBytes, ok, err := t.EncryptedClientHello.recordPublication(cfg.ConfigID, publisherKey, successNames, pubTime)
 					if err != nil {
 						return fmt.Errorf("marshaling ECH config metadata: %v", err)
+					}
+					if !ok {
+						continue // config was rotated out in the meantime
 					}
 					if err := t.ctx.Storage().Store(t.ctx, echMetaKey(cfg.ConfigID), metaBytes); err != nil {
 						return fmt.Errorf("storing updated ECH config metadata: %v", err)
@@ -546,6 +540,38 @@ func (t *TLS) publishECHConfigs(ctx context.Context, logger *zap.Logger) error {
 	}
 
 	return nil
+}
+
+// recordPublication notes in the in-memory ECH config with the given ID that
+// the config was published by the publisher with the given key for names at
+// pubTime, and returns the config's updated metadata, encoded for storage. The
+// state must be recorded on the live config (not a copy of it) so that later
+// publication passes know what has already been published. It returns false if
+// no config with that ID exists anymore.
+func (ech *ECH) recordPublication(configID uint8, publisherKey string, names []string, pubTime time.Time) ([]byte, bool, error) {
+	ech.configsMu.Lock()
+	defer ech.configsMu.Unlock()
+
+	for _, cfgs := range ech.configs {
+		for i := range cfgs {
+			if cfgs[i].ConfigID != configID {
+				continue
+			}
+			meta := &cfgs[i].meta
+			if meta.Publications == nil {
+				meta.Publications = make(publicationHistory)
+			}
+			if meta.Publications[publisherKey] == nil {
+				meta.Publications[publisherKey] = make(map[string]time.Time)
+			}
+			for _, name := range names {
+				meta.Publications[publisherKey][name] = pubTime
+			}
+			metaBytes, err := json.Marshal(meta)
+			return metaBytes, err == nil, err
+		}
+	}
+	return nil, false, nil
 }
 
 // loadECHConfig loads the config from storage with the given configID.
