@@ -873,6 +873,10 @@ func TestHeaderDefaults(t *testing.T) {
 			?X-Dup "first"
 			?X-Dup "second"
 		}
+		header {
+			match header !X-Absent
+			?X-Absent "fallback"
+		}
 		respond /missing 404
 		respond "ok"
 	}
@@ -890,6 +894,9 @@ func TestHeaderDefaults(t *testing.T) {
 	}
 	if got := resp.Header.Get("X-Dup"); got != "second" {
 		t.Errorf("X-Dup = %q, want %q", got, "second")
+	}
+	if got := resp.Header.Get("X-Absent"); got != "fallback" {
+		t.Errorf("X-Absent = %q, want %q", got, "fallback")
 	}
 
 	resp, _ = tester.AssertGetResponse("http://localhost:9080/missing", 404, "")

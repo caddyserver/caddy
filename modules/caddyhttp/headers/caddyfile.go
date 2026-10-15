@@ -141,7 +141,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 	}
 
 	// the response matcher also applies to the defaults; a default already
-	// requires its own field to be absent, so the matcher can't test that field
+	// requires its own field to be absent, so the matcher can only ask the same
 	if responseMatcher != nil {
 		handler.Response.Require = responseMatcher
 		for _, defaultHandler := range defaultHandlers {
@@ -149,6 +149,9 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 			require.StatusCode = responseMatcher.StatusCode
 			for field, vals := range responseMatcher.Headers {
 				if _, ok := defaultHandler.Response.Set[http.CanonicalHeaderKey(field)]; ok {
+					if vals == nil {
+						continue
+					}
 					return nil, h.Errf("cannot match on response header %s and also set a default for it", http.CanonicalHeaderKey(field))
 				}
 				require.Headers[field] = vals
