@@ -506,6 +506,27 @@ func TestDirMode_FromFile(t *testing.T) {
 	if got := st2.Mode().Perm(); got != 0o700 {
 		t.Fatalf("dir perm = %o, want 0700", got)
 	}
+
+	dir3 := filepath.Join(base, "logs3")
+	fw3 := &FileWriter{
+		Filename: filepath.Join(dir3, "app.log"),
+		DirMode:  "from_file",
+		// no Mode: the file is created 0600 => dir 0700
+		Roll: func() *bool { f := false; return &f }(),
+	}
+	w3, err := fw3.OpenWriter()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = w3.Close()
+
+	st3, err := os.Stat(dir3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := st3.Mode().Perm(); got != 0o700 {
+		t.Fatalf("dir perm = %o, want 0700", got)
+	}
 }
 
 func TestDirMode_ExplicitOctal(t *testing.T) {
