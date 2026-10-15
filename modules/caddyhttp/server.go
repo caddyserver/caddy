@@ -382,6 +382,21 @@ type Server struct {
 	// don't perform a retry, so disabling 0-RTT can smooth it out.
 	Allow0RTT *bool `json:"allow_0rtt,omitempty"`
 
+	// The initial packet size (in bytes) to use for QUIC connections.
+	// Operators should use this only after packet or qlog evidence
+	// indicates that default path MTU discovery is failing or overshooting,
+	// as this setting affects new QUIC connections for every client on this
+	// server. Values below 1200 are invalid.
+	InitialPacketSize uint16 `json:"initial_packet_size,omitempty"`
+
+	// Disables path MTU discovery for QUIC connections.
+	// Operators should use this only after packet or qlog evidence
+	// indicates that path MTU discovery is failing or overshooting,
+	// as this setting affects new QUIC connections for every client on this
+	// server. Only disabling PMTUD prevents packet size growth beyond
+	// InitialPacketSize.
+	DisablePathMTUDiscovery bool `json:"disable_pmtud,omitempty"`
+
 	// If set, metrics observations will be enabled.
 	// This setting is EXPERIMENTAL and subject to change.
 	// DEPRECATED: Use the app-level `metrics` field.
@@ -1113,10 +1128,12 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 	}
 	addr.Network = h3net
 	h3ln, err := addr.ListenQUIC(s.ctx, 0, net.ListenConfig{}, caddy.ListenQUICOptions{
-		TLSConfig:          tlsCfg,
-		PacketConnWrappers: s.packetConnWrappers,
-		Allow0RTT:          s.Allow0RTT,
-		EnableWebTransport: s.webTransportEnabled(),
+		TLSConfig:               tlsCfg,
+		PacketConnWrappers:      s.packetConnWrappers,
+		Allow0RTT:               s.Allow0RTT,
+		EnableWebTransport:      s.webTransportEnabled(),
+		InitialPacketSize:       s.InitialPacketSize,
+		DisablePathMTUDiscovery: s.DisablePathMTUDiscovery,
 	})
 	if err != nil {
 		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
@@ -1230,6 +1247,12 @@ func (s *Server) buildHTTP3ServerWithWebTransport(tlsCfg *tls.Config, enableWT b
 		Versions:          []quic.Version{quic.Version1, quic.Version2},
 		InitialPacketSize: 1200,
 		Tracer:            h3qlog.DefaultConnectionTracer,
+	}
+	if s.InitialPacketSize > 0 {
+		qc.InitialPacketSize = s.InitialPacketSize
+	}
+	if s.DisablePathMTUDiscovery {
+		qc.DisablePathMTUDiscovery = true
 	}
 	h3 := &http3.Server{
 		Handler:        s,

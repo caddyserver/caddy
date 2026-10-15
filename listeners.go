@@ -432,10 +432,12 @@ func JoinNetworkAddress(network, host, port string) string {
 //
 // NOTE: This API is EXPERIMENTAL and may be changed or removed.
 type ListenQUICOptions struct {
-	TLSConfig          *tls.Config
-	PacketConnWrappers []PacketConnWrapper
-	Allow0RTT          *bool
-	EnableWebTransport bool
+	TLSConfig               *tls.Config
+	PacketConnWrappers      []PacketConnWrapper
+	Allow0RTT               *bool
+	EnableWebTransport      bool
+	InitialPacketSize       uint16
+	DisablePathMTUDiscovery bool
 }
 
 // ListenQUIC returns a http3.QUICEarlyListener suitable for use in a Caddy module.
@@ -448,7 +450,7 @@ type ListenQUICOptions struct {
 // parameters are passed in opts.
 //
 // The underlying listener is pooled per address: the first creator's configuration
-// (Allow0RTT, WebTransport capabilities) wins; subsequent callers reuse that listener.
+// (Allow0RTT, WebTransport capabilities, InitialPacketSize, DisablePathMTUDiscovery) wins; subsequent callers reuse that listener.
 //
 // NOTE: This API is EXPERIMENTAL and may be changed or removed.
 // NOTE: user should close the returned listener twice, once to stop accepting new connections, the second time to free up the packet conn.
@@ -500,15 +502,22 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 		}
 		// EnableDatagrams and EnableStreamResetPartialDelivery are required by
 		// WebTransport; only enable them when WebTransport support is requested.
+		quicConfig := &quic.Config{
+			InitialPacketSize:                1200,
+			Allow0RTT:                        allow0rtt,
+			Tracer:                           h3qlog.DefaultConnectionTracer,
+			EnableDatagrams:                  opts.EnableWebTransport,
+			EnableStreamResetPartialDelivery: opts.EnableWebTransport,
+		}
+		if opts.InitialPacketSize > 0 {
+			quicConfig.InitialPacketSize = opts.InitialPacketSize
+		}
+		if opts.DisablePathMTUDiscovery {
+			quicConfig.DisablePathMTUDiscovery = true
+		}
 		earlyLn, err := tr.ListenEarly(
 			http3.ConfigureTLSConfig(quicTlsConfig),
-			&quic.Config{
-				InitialPacketSize:                1200,
-				Allow0RTT:                        allow0rtt,
-				Tracer:                           h3qlog.DefaultConnectionTracer,
-				EnableDatagrams:                  opts.EnableWebTransport,
-				EnableStreamResetPartialDelivery: opts.EnableWebTransport,
-			},
+			quicConfig,
 		)
 		if err != nil {
 			return nil, err

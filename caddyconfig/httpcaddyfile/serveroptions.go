@@ -68,6 +68,12 @@ type serverOptions struct {
 	// If set, overrides whether QUIC listeners allow 0-RTT (early data).
 	// If nil, the default behavior is used (currently allowed).
 	Allow0RTT *bool
+
+	// The initial packet size (in bytes) to use for QUIC connections.
+	InitialPacketSize uint16
+
+	// Disables path MTU discovery for QUIC connections.
+	DisablePathMTUDiscovery bool
 }
 
 func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
@@ -401,6 +407,54 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 			boolVal := false
 			serverOpts.Allow0RTT = &boolVal
 
+		case "initial_packet_size":
+			var sizeStr string
+			if !d.AllArgs(&sizeStr) {
+				return nil, d.ArgErr()
+			}
+			size, err := humanize.ParseBytes(sizeStr)
+			if err != nil {
+				return nil, d.Errf("parsing initial_packet_size: %v", err)
+			}
+			if size < 1200 || size > 65535 {
+				return nil, d.Errf("initial_packet_size must be between 1200 and 65535 bytes")
+			}
+			serverOpts.InitialPacketSize = uint16(size)
+
+		case "disable_pmtud":
+			if d.NextArg() {
+				return nil, d.ArgErr()
+			}
+			serverOpts.DisablePathMTUDiscovery = true
+
+		case "quic":
+			for nesting := d.Nesting(); d.NextBlock(nesting); {
+				switch d.Val() {
+				case "initial_packet_size":
+					var sizeStr string
+					if !d.AllArgs(&sizeStr) {
+						return nil, d.ArgErr()
+					}
+					size, err := humanize.ParseBytes(sizeStr)
+					if err != nil {
+						return nil, d.Errf("parsing initial_packet_size: %v", err)
+					}
+					if size < 1200 || size > 65535 {
+						return nil, d.Errf("initial_packet_size must be between 1200 and 65535 bytes")
+					}
+					serverOpts.InitialPacketSize = uint16(size)
+
+				case "disable_pmtud":
+					if d.NextArg() {
+						return nil, d.ArgErr()
+					}
+					serverOpts.DisablePathMTUDiscovery = true
+
+				default:
+					return nil, d.Errf("unrecognized quic option '%s'", d.Val())
+				}
+			}
+
 		default:
 			return nil, d.Errf("unrecognized servers option '%s'", d.Val())
 		}
@@ -474,6 +528,8 @@ func applyServerOptions(
 		server.TrustedProxiesUnix = opts.TrustedProxiesUnix
 		server.Metrics = opts.Metrics
 		server.Allow0RTT = opts.Allow0RTT
+		server.InitialPacketSize = opts.InitialPacketSize
+		server.DisablePathMTUDiscovery = opts.DisablePathMTUDiscovery
 		if opts.ShouldLogCredentials {
 			if server.Logs == nil {
 				server.Logs = new(caddyhttp.ServerLogConfig)

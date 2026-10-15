@@ -736,6 +736,30 @@ func TestListenQUICOptions_ZeroValueAllows0RTT(t *testing.T) {
 	}
 }
 
+// TestListenQUICOptions_PacketSizeAndPMTUD checks that ListenQUIC accepts
+// InitialPacketSize and DisablePathMTUDiscovery options without error.
+func TestListenQUICOptions_PacketSizeAndPMTUD(t *testing.T) {
+	na, err := ParseNetworkAddress("udp/127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("ParseNetworkAddress: %v", err)
+	}
+
+	ln, err := na.ListenQUIC(context.Background(), 0, net.ListenConfig{}, ListenQUICOptions{
+		TLSConfig:               &tls.Config{}, //nolint:gosec // test listener; no client handshake
+		InitialPacketSize:       1350,
+		DisablePathMTUDiscovery: true,
+	})
+	if err != nil {
+		t.Fatalf("ListenQUIC: %v", err)
+	}
+	if err := ln.Close(); err != nil {
+		t.Errorf("first Close: %v", err)
+	}
+	if err := ln.Close(); err != nil {
+		t.Errorf("second Close: %v", err)
+	}
+}
+
 // TestListenQUICWebTransportCapability verifies that WebTransport QUIC
 // capabilities are fixed by the first creator of a pooled QUIC listener.
 func TestListenQUICWebTransportCapability(t *testing.T) {

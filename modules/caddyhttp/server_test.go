@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -1620,6 +1621,39 @@ func TestServer_BuildHTTP3ServerAppliesHandlerAndTLS(t *testing.T) {
 	assert.Same(t, s, h3.Handler, "http3.Server.Handler should be the caddyhttp.Server itself")
 	assert.Same(t, tlsCfg, h3.TLSConfig, "http3.Server.TLSConfig should be the config passed in")
 	assert.Equal(t, 4096, h3.MaxHeaderBytes)
+}
+
+func TestServer_BuildHTTP3ServerQUICPacketSizeAndPMTUD(t *testing.T) {
+	// Defaults when options are unset
+	sDefault := &Server{}
+	h3Default := sDefault.buildHTTP3Server(&tls.Config{})
+	assert.NotNil(t, h3Default.QUICConfig)
+	assert.Equal(t, uint16(1200), h3Default.QUICConfig.InitialPacketSize)
+	assert.False(t, h3Default.QUICConfig.DisablePathMTUDiscovery)
+
+	// Explicit options set
+	sCustom := &Server{
+		InitialPacketSize:       1350,
+		DisablePathMTUDiscovery: true,
+	}
+	h3Custom := sCustom.buildHTTP3Server(&tls.Config{})
+	assert.NotNil(t, h3Custom.QUICConfig)
+	assert.Equal(t, uint16(1350), h3Custom.QUICConfig.InitialPacketSize)
+	assert.True(t, h3Custom.QUICConfig.DisablePathMTUDiscovery)
+}
+
+func TestServer_QUICOptionsJSON(t *testing.T) {
+	rawJSON := `{"initial_packet_size": 1350, "disable_pmtud": true}`
+	var s Server
+	err := json.Unmarshal([]byte(rawJSON), &s)
+	assert.NoError(t, err)
+	assert.Equal(t, uint16(1350), s.InitialPacketSize)
+	assert.True(t, s.DisablePathMTUDiscovery)
+
+	encoded, err := json.Marshal(s)
+	assert.NoError(t, err)
+	assert.Contains(t, string(encoded), `"initial_packet_size":1350`)
+	assert.Contains(t, string(encoded), `"disable_pmtud":true`)
 }
 
 // TestServer_WebTransportServerNilUntilH3 asserts the accessor returns nil
