@@ -453,3 +453,36 @@ type testAddr string
 
 func (testAddr) Network() string   { return "tcp" }
 func (ta testAddr) String() string { return string(ta) }
+
+func TestIPMatchersIgnoreIPv6Zone(t *testing.T) {
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+
+	// a link-local address as reported by the OS carries a zone ("%eth0"),
+	// which must not stop it from matching (or being excluded by) a range
+	chi := &tls.ClientHelloInfo{Conn: testConn{addr: testAddr("[fe80::1%eth0]:12345")}}
+
+	remote := MatchRemoteIP{Ranges: []string{"fe80::/10"}}
+	if err := remote.Provision(ctx); err != nil {
+		t.Fatalf("Provision failed: %v", err)
+	}
+	if !remote.Match(chi) {
+		t.Error("remote_ip: expected zoned address to match its range")
+	}
+
+	remoteNot := MatchRemoteIP{NotRanges: []string{"fe80::/10"}}
+	if err := remoteNot.Provision(ctx); err != nil {
+		t.Fatalf("Provision failed: %v", err)
+	}
+	if remoteNot.Match(chi) {
+		t.Error("remote_ip: expected zoned address to be excluded by not_ranges")
+	}
+
+	local := MatchLocalIP{Ranges: []string{"fe80::/10"}}
+	if err := local.Provision(ctx); err != nil {
+		t.Fatalf("Provision failed: %v", err)
+	}
+	if !local.Match(chi) {
+		t.Error("local_ip: expected zoned address to match its range")
+	}
+}

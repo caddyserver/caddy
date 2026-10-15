@@ -366,6 +366,7 @@ func (m MatchRemoteIP) Match(hello *tls.ClientHelloInfo) bool {
 		}
 		return false
 	}
+	ipAddr = ipAddr.WithZone("") // prefixes never contain zoned addresses
 	return (len(m.cidrs) == 0 || m.matches(ipAddr, m.cidrs)) &&
 		(len(m.notCidrs) == 0 || !m.matches(ipAddr, m.notCidrs))
 }
@@ -482,6 +483,7 @@ func (m MatchLocalIP) Match(hello *tls.ClientHelloInfo) bool {
 		}
 		return false
 	}
+	ipAddr = ipAddr.WithZone("") // prefixes never contain zoned addresses
 	return (len(m.cidrs) == 0 || m.matches(ipAddr, m.cidrs))
 }
 
