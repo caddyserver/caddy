@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
@@ -482,9 +483,6 @@ func TestConnectionPoliciesSNIIndexKeepsPolicyOrder(t *testing.T) {
 }
 
 func TestConnectionPolicyRejectsUnknownSettings(t *testing.T) {
-	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
-	defer cancel()
-
 	for i, tc := range []struct {
 		policy  ConnectionPolicy
 		wantErr bool
@@ -495,12 +493,37 @@ func TestConnectionPolicyRejectsUnknownSettings(t *testing.T) {
 		{policy: ConnectionPolicy{ProtocolMax: "tls1.4"}, wantErr: true},
 		{policy: ConnectionPolicy{Curves: []string{"x25519", "not-a-curve"}}, wantErr: true},
 	} {
-		err := tc.policy.buildStandardTLSConfig(ctx)
+		err := tc.policy.checkSettings()
 		if tc.wantErr && err == nil {
 			t.Errorf("Test %d: expected error but got none", i)
 		}
 		if !tc.wantErr && err != nil {
 			t.Errorf("Test %d: unexpected error: %v", i, err)
 		}
+	}
+}
+
+func TestTLSConfigServerNameOverride(t *testing.T) {
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+
+	tc := &TLSConfig{ServerName: "backend.example.com"}
+	cfg, err := tc.makeTLSClientConfig(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg == nil || cfg.ServerName != "backend.example.com" {
+		t.Fatalf("expected server_name to be applied to the client config, got %+v", cfg)
+	}
+}
+
+func TestTLSConfigRenegotiationErrorShowsValue(t *testing.T) {
+	var tc TLSConfig
+	d := caddyfile.NewTestDispenser(`{
+		renegotiation sometimes
+	}`)
+	err := tc.unmarshalCaddyfile(d)
+	if err == nil || !strings.Contains(err.Error(), "sometimes") {
+		t.Fatalf("expected error naming the bad level, got: %v", err)
 	}
 }

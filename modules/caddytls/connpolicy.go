@@ -314,7 +314,29 @@ type HandshakeContext interface {
 	HandshakeContext(*tls.ClientHelloInfo) (context.Context, error)
 }
 
+// checkSettings returns an error if p names a curve or protocol version
+// that is not supported, rather than letting it silently fall back to a
+// zero value (which means "default").
+func (p *ConnectionPolicy) checkSettings() error {
+	for _, curveName := range p.Curves {
+		if _, ok := SupportedCurves[curveName]; !ok {
+			return fmt.Errorf("unsupported curve: %s", curveName)
+		}
+	}
+	if _, ok := SupportedProtocols[p.ProtocolMin]; p.ProtocolMin != "" && !ok {
+		return fmt.Errorf("unsupported protocol_min: %s", p.ProtocolMin)
+	}
+	if _, ok := SupportedProtocols[p.ProtocolMax]; p.ProtocolMax != "" && !ok {
+		return fmt.Errorf("unsupported protocol_max: %s", p.ProtocolMax)
+	}
+	return nil
+}
+
 func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
+	if err := p.checkSettings(); err != nil {
+		return err
+	}
+
 	tlsAppIface, err := ctx.App("tls")
 	if err != nil {
 		return fmt.Errorf("getting tls app: %v", err)
@@ -401,10 +423,7 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 	// add all the curve preferences in order, without duplicates
 	curvesAdded := make(map[tls.CurveID]struct{})
 	for _, curveName := range p.Curves {
-		curveID, ok := SupportedCurves[curveName]
-		if !ok {
-			return fmt.Errorf("unsupported curve: %s", curveName)
-		}
+		curveID := SupportedCurves[curveName]
 		if _, ok := curvesAdded[curveID]; !ok {
 			curvesAdded[curveID] = struct{}{}
 			cfg.CurvePreferences = append(cfg.CurvePreferences, curveID)
@@ -422,18 +441,10 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 		return fmt.Errorf("protocol min (%x) cannot be greater than protocol max (%x)", p.ProtocolMin, p.ProtocolMax)
 	}
 	if p.ProtocolMin != "" {
-		minVersion, ok := SupportedProtocols[p.ProtocolMin]
-		if !ok {
-			return fmt.Errorf("unsupported protocol_min: %s", p.ProtocolMin)
-		}
-		cfg.MinVersion = minVersion
+		cfg.MinVersion = SupportedProtocols[p.ProtocolMin]
 	}
 	if p.ProtocolMax != "" {
-		maxVersion, ok := SupportedProtocols[p.ProtocolMax]
-		if !ok {
-			return fmt.Errorf("unsupported protocol_max: %s", p.ProtocolMax)
-		}
-		cfg.MaxVersion = maxVersion
+		cfg.MaxVersion = SupportedProtocols[p.ProtocolMax]
 	}
 
 	// client authentication

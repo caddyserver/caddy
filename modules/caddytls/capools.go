@@ -577,8 +577,9 @@ func (t *TLSConfig) unmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			case "never", "once", "freely":
 				continue
 			default:
+				level := t.Renegotiation
 				t.Renegotiation = ""
-				return d.Errf("unrecognized renegotiation level: %s", t.Renegotiation)
+				return d.Errf("unrecognized renegotiation level: %s", level)
 			}
 		default:
 			return d.Errf("unrecognized directive: %s", d.Val())
@@ -618,7 +619,7 @@ func (t *TLSConfig) makeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) 
 	}
 
 	// override for the server name used verify the TLS handshake
-	cfg.ServerName = repl.ReplaceKnown(cfg.ServerName, "")
+	cfg.ServerName = repl.ReplaceKnown(t.ServerName, "")
 
 	// throw all security out the window
 	cfg.InsecureSkipVerify = t.InsecureSkipVerify
