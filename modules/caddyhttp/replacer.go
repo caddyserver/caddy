@@ -172,6 +172,10 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 				}
 				return host, true
 			case "http.request.remote.port":
+				if req.TLS != nil && !req.TLS.HandshakeComplete {
+					// without a complete handshake (QUIC "early data") we can't trust the remote IP address to not be spoofed
+					return nil, true
+				}
 				_, port, _ := net.SplitHostPort(req.RemoteAddr)
 				if portNum, err := strconv.Atoi(port); err == nil {
 					return portNum, true
@@ -282,6 +286,10 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 			// syntax: "/V4,V6" where V4 = IPv4 bits, and V6 = IPv6 bits; if no comma, then same bit length used for both
 			// (EXPERIMENTAL)
 			if strings.HasPrefix(key, "http.request.remote.host/") {
+				if req.TLS != nil && !req.TLS.HandshakeComplete {
+					// without a complete handshake (QUIC "early data") we can't trust the remote IP address to not be spoofed
+					return nil, true
+				}
 				host, _, err := net.SplitHostPort(req.RemoteAddr)
 				if err != nil {
 					host = req.RemoteAddr // assume no port, I guess?

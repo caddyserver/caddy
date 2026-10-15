@@ -462,3 +462,34 @@ func TestRequestBodyPlaceholderErrorScoping(t *testing.T) {
 		})
 	}
 }
+
+// TestHTTPVarReplacementRemoteAddrEarlyData verifies that no form of the remote
+// address placeholder yields an address before the TLS handshake completes
+// (e.g. QUIC early data), since it cannot be trusted at that point.
+func TestHTTPVarReplacementRemoteAddrEarlyData(t *testing.T) {
+	newRepl := func(handshakeComplete bool) *caddy.Replacer {
+		req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+		repl := caddy.NewReplacer()
+		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+		req = req.WithContext(ctx)
+		req.RemoteAddr = "192.168.159.32:1234"
+		req.TLS = &tls.ConnectionState{HandshakeComplete: handshakeComplete}
+		addHTTPVarsToReplacer(repl, req, nil)
+		return repl
+	}
+
+	for _, key := range []string{
+		"http.request.remote",
+		"http.request.remote.host",
+		"http.request.remote.host/24",
+		"http.request.remote.host/24,64",
+		"http.request.remote.port",
+	} {
+		if got := newRepl(false).ReplaceKnown("{"+key+"}", "UNSET"); got != "UNSET" {
+			t.Errorf("%s before handshake completed = %q, want it to be unset", key, got)
+		}
+		if got := newRepl(true).ReplaceKnown("{"+key+"}", "UNSET"); got == "UNSET" || got == "" {
+			t.Errorf("%s after handshake completed = %q, want a value", key, got)
+		}
+	}
+}
