@@ -378,30 +378,7 @@ func (t *TLS) publishECHConfigs(ctx context.Context, logger *zap.Logger) error {
 	// publish with it, and figure out which inner names to publish
 	// to/for, then publish
 	for _, publication := range publicationList {
-		t.EncryptedClientHello.configsMu.RLock()
-		// this publication is either configured for specific ECH configs,
-		// or we just use an implied default of all ECH configs
-		var echCfgList echConfigList
-		var configIDs []uint8 // TODO: use IDs or the outer names?
-		if publication.Configs == nil {
-			// by default, publish all configs
-			for _, configs := range t.EncryptedClientHello.configs {
-				echCfgList = append(echCfgList, configs...)
-				for _, c := range configs {
-					configIDs = append(configIDs, c.ConfigID)
-				}
-			}
-		} else {
-			for _, cfgOuterName := range publication.Configs {
-				if cfgList, ok := t.EncryptedClientHello.configs[cfgOuterName]; ok {
-					echCfgList = append(echCfgList, cfgList...)
-					for _, c := range cfgList {
-						configIDs = append(configIDs, c.ConfigID)
-					}
-				}
-			}
-		}
-		t.EncryptedClientHello.configsMu.RUnlock()
+		echCfgList, configIDs := t.EncryptedClientHello.configsToPublish(publication.Configs)
 
 		// marshal the ECH config list as binary for publication
 		echCfgListBin, err := echCfgList.MarshalBinary()
@@ -540,6 +517,36 @@ func (t *TLS) publishECHConfigs(ctx context.Context, logger *zap.Logger) error {
 	}
 
 	return nil
+}
+
+// configsToPublish returns the ECH configs (and their IDs) identified by the
+// given public names, or all configs if names is nil. Names are matched
+// case-insensitively, as configs are stored under their lowercase public name.
+func (ech *ECH) configsToPublish(names []string) (echConfigList, []uint8) {
+	ech.configsMu.RLock()
+	defer ech.configsMu.RUnlock()
+
+	var echCfgList echConfigList
+	var configIDs []uint8 // TODO: use IDs or the outer names?
+	add := func(configs []echConfig) {
+		echCfgList = append(echCfgList, configs...)
+		for _, c := range configs {
+			configIDs = append(configIDs, c.ConfigID)
+		}
+	}
+	if names == nil {
+		// by default, publish all configs
+		for _, configs := range ech.configs {
+			add(configs)
+		}
+		return echCfgList, configIDs
+	}
+	for _, name := range names {
+		if configs, ok := ech.configs[strings.ToLower(strings.TrimSpace(name))]; ok {
+			add(configs)
+		}
+	}
+	return echCfgList, configIDs
 }
 
 // recordPublication notes in the in-memory ECH config with the given ID that

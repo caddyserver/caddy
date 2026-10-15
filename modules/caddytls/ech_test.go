@@ -62,3 +62,31 @@ func TestECHRecordPublicationUpdatesLiveConfig(t *testing.T) {
 		t.Errorf("expected ok=false for unknown config, got ok=%v err=%v", ok, err)
 	}
 }
+
+func TestECHConfigsToPublishMatchesNamesCaseInsensitively(t *testing.T) {
+	ech := &ECH{
+		configsMu: new(sync.RWMutex),
+		configs: map[string][]echConfig{
+			"public.example": {{ConfigID: 1}},
+			"other.example":  {{ConfigID: 2}, {ConfigID: 3}},
+		},
+	}
+
+	for i, tc := range []struct {
+		names   []string
+		wantIDs int
+	}{
+		{names: nil, wantIDs: 3},
+		{names: []string{"public.example"}, wantIDs: 1},
+		{names: []string{"Public.Example"}, wantIDs: 1},
+		{names: []string{" PUBLIC.example "}, wantIDs: 1},
+		{names: []string{"public.example", "OTHER.example"}, wantIDs: 3},
+		{names: []string{"missing.example"}, wantIDs: 0},
+		{names: []string{}, wantIDs: 0},
+	} {
+		list, ids := ech.configsToPublish(tc.names)
+		if len(ids) != tc.wantIDs || len(list) != tc.wantIDs {
+			t.Errorf("Test %d: names %q: got %d configs / %d IDs, want %d", i, tc.names, len(list), len(ids), tc.wantIDs)
+		}
+	}
+}
