@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sort"
+	"sync"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
@@ -106,4 +107,56 @@ func accountUsernames(hba HTTPBasicAuth) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+func newCachedBasicAuth(t *testing.T) HTTPBasicAuth {
+	t.Helper()
+	hba := HTTPBasicAuth{
+		AccountList: []Account{{Username: "alice", Password: testBasicAuthHash}},
+		HashCache:   new(Cache),
+	}
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	t.Cleanup(cancel)
+	if err := hba.Provision(ctx); err != nil {
+		t.Fatalf("provisioning failed: %v", err)
+	}
+	return hba
+}
+
+func TestBasicAuthHashCacheDoesNotModifyStoredHash(t *testing.T) {
+	hba := newCachedBasicAuth(t)
+	account := hba.Accounts["alice"]
+
+	// inspect the full backing array, including any spare capacity
+	before := append([]byte(nil), account.password[:cap(account.password)]...)
+
+	if _, err := hba.correctPassword(account, []byte("abcd")); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	after := account.password[:cap(account.password)]
+	if string(before) != string(after) {
+		t.Fatalf("stored password hash buffer was modified while building the cache key")
+	}
+}
+
+func TestBasicAuthHashCacheConcurrentRequests(t *testing.T) {
+	hba := newCachedBasicAuth(t)
+
+	passwords := []string{"correct horse", "aaa", "bbb", "ccc"}
+	var wg sync.WaitGroup
+	for i := range 64 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			pw := passwords[i%len(passwords)]
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.SetBasicAuth("alice", pw)
+			_, ok, _ := hba.Authenticate(httptest.NewRecorder(), req)
+			if want := pw == "correct horse"; ok != want {
+				t.Errorf("password %q: authenticated=%v, want %v", pw, ok, want)
+			}
+		}()
+	}
+	wg.Wait()
 }
