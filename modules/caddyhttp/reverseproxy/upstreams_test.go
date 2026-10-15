@@ -53,3 +53,14 @@ func TestResolveIpVersion(t *testing.T) {
 		}
 	}
 }
+
+func TestUpstreamResolverRequiresAddresses(t *testing.T) {
+	// with no addresses there is nothing to dial, and picking one
+	// at random later would panic
+	if err := (&UpstreamResolver{}).ParseAddresses(); err == nil {
+		t.Error("expected an error for a resolver with no addresses")
+	}
+	if err := (&UpstreamResolver{Addresses: []string{"127.0.0.1"}}).ParseAddresses(); err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
