@@ -743,3 +743,75 @@ func TestLiteralGlobNameMatchesOnlyAsFallback(t *testing.T) {
 		}
 	}
 }
+
+func TestSizeTryPoliciesWithEmptyFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("globs are not evaluated on Windows")
+	}
+
+	root := t.TempDir()
+	for name, content := range map[string]string{"empty.txt": "", "big.txt": "some content"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for i, tc := range []struct {
+		policy       string
+		tryFiles     []string
+		matched      bool
+		expectedPath string
+	}{
+		{policy: tryPolicySmallestSize, tryFiles: []string{"empty.txt", "big.txt"}, matched: true, expectedPath: "/empty.txt"},
+		{policy: tryPolicySmallestSize, tryFiles: []string{"big.txt", "empty.txt"}, matched: true, expectedPath: "/empty.txt"},
+		{policy: tryPolicySmallestSize, tryFiles: []string{"big.txt"}, matched: true, expectedPath: "/big.txt"},
+		{policy: tryPolicyLargestSize, tryFiles: []string{"empty.txt", "big.txt"}, matched: true, expectedPath: "/big.txt"},
+		{policy: tryPolicyLargestSize, tryFiles: []string{"empty.txt"}, matched: true, expectedPath: "/empty.txt"},
+		{policy: tryPolicyLargestSize, tryFiles: []string{"missing.txt"}, matched: false},
+		{policy: tryPolicySmallestSize, tryFiles: []string{"missing.txt"}, matched: false},
+	} {
+		m := &MatchFile{
+			fsmap:     &filesystems.FileSystemMap{},
+			Root:      root,
+			TryFiles:  tc.tryFiles,
+			TryPolicy: tc.policy,
+		}
+
+		req := &http.Request{URL: &url.URL{Path: "/"}}
+		repl := caddyhttp.NewTestReplacer(req)
+
+		result, err := m.MatchWithError(req)
+		if err != nil {
+			t.Fatalf("Test %d: unexpected error: %v", i, err)
+		}
+		if result != tc.matched {
+			t.Errorf("Test %d (%s %v): expected match=%t, got %t", i, tc.policy, tc.tryFiles, tc.matched, result)
+			continue
+		}
+		if !result {
+			continue
+		}
+		if rel, _ := repl.Get("http.matchers.file.relative"); rel != tc.expectedPath {
+			t.Errorf("Test %d (%s %v): actual path: %v, expected: %v", i, tc.policy, tc.tryFiles, rel, tc.expectedPath)
+		}
+	}
+}
+
+func TestIndexFold(t *testing.T) {
+	for i, tc := range []struct {
+		haystack, needle string
+		expected         int
+	}{
+		{"index.php", ".php", 5},
+		{"index.PHP/x", ".php", 5},
+		{"index.php", "php", 6},
+		{"index.php", "index.php", 0},
+		{"index.php", "z", -1},
+		{"ab", "abc", -1},
+		{"a", "a", 0},
+	} {
+		if got := indexFold(tc.haystack, tc.needle); got != tc.expected {
+			t.Errorf("Test %d: indexFold(%q, %q) = %d, want %d", i, tc.haystack, tc.needle, got, tc.expected)
+		}
+	}
+}

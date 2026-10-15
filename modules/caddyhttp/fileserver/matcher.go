@@ -498,7 +498,7 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 			candidates := makeCandidates(pattern)
 			for _, c := range candidates {
 				info, err := fs.Stat(fileSystem, c.fullpath)
-				if err == nil && info.Size() > largestSize {
+				if err == nil && (largestInfo == nil || info.Size() > largestSize) {
 					largestSize = info.Size()
 					largest = c
 					largestInfo = info
@@ -519,7 +519,7 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 			candidates := makeCandidates(pattern)
 			for _, c := range candidates {
 				info, err := fs.Stat(fileSystem, c.fullpath)
-				if err == nil && (smallestSize == 0 || info.Size() < smallestSize) {
+				if err == nil && (smallestInfo == nil || info.Size() < smallestSize) {
 					smallestSize = info.Size()
 					smallest = c
 					smallestInfo = info
@@ -624,7 +624,7 @@ func (m MatchFile) firstSplit(path string) (splitPart, remainder string) {
 // substring search (as of Go 1.14).
 func indexFold(haystack, needle string) int {
 	nlen := len(needle)
-	for i := 0; i+nlen < len(haystack); i++ {
+	for i := 0; i+nlen <= len(haystack); i++ {
 		if strings.EqualFold(haystack[i:i+nlen], needle) {
 			return i
 		}
