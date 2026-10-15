@@ -418,3 +418,89 @@ func TestParseCaddyfileNestedMatcherSet(t *testing.T) {
 		}
 	}
 }
+
+// TestConnectionPoliciesSNIIndexKeepsPolicyOrder ensures that the SNI index
+// used when there are many policies does not skip earlier policies that
+// would have matched first: the first matching policy must always win.
+func TestConnectionPoliciesSNIIndexKeepsPolicyOrder(t *testing.T) {
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+
+	exactPolicies := func(first *ConnectionPolicy) ConnectionPolicies {
+		policies := ConnectionPolicies{first}
+		for i := 0; i < 40; i++ {
+			policies = append(policies, &ConnectionPolicy{
+				matchers:  []ConnectionMatcher{MatchServerName{fmt.Sprintf("host-%d.example.localhost", i)}},
+				TLSConfig: &tls.Config{},
+			})
+		}
+		return policies
+	}
+
+	for _, tc := range []struct {
+		name  string
+		first *ConnectionPolicy
+	}{
+		{"wildcard policy listed first", &ConnectionPolicy{
+			matchers:  []ConnectionMatcher{MatchServerName{"*.example.localhost"}},
+			TLSConfig: &tls.Config{ClientAuth: tls.RequireAnyClientCert},
+		}},
+		{"policy without SNI matcher listed first", &ConnectionPolicy{
+			TLSConfig: &tls.Config{ClientAuth: tls.RequireAnyClientCert},
+		}},
+		{"placeholder SNI policy listed first", &ConnectionPolicy{
+			matchers:  []ConnectionMatcher{MatchServerName{"{env.NO_SUCH_VAR}host-5.example.localhost"}},
+			TLSConfig: &tls.Config{ClientAuth: tls.RequireAnyClientCert},
+		}},
+	} {
+		policies := exactPolicies(tc.first)
+		tlsConfig := policies.TLSConfig(ctx)
+
+		got, err := tlsConfig.GetConfigForClient(&tls.ClientHelloInfo{ServerName: "host-5.example.localhost"})
+		if err != nil {
+			t.Fatalf("%s: GetConfigForClient() error = %v", tc.name, err)
+		}
+		if got != tc.first.TLSConfig {
+			t.Errorf("%s: expected the first matching policy to be used", tc.name)
+		}
+
+		// a name only matched by a later exact policy must still resolve to it
+		got, err = tlsConfig.GetConfigForClient(&tls.ClientHelloInfo{ServerName: "host-7.example.localhost"})
+		if err != nil {
+			t.Fatalf("%s: GetConfigForClient() error = %v", tc.name, err)
+		}
+		if tc.name == "placeholder SNI policy listed first" && got == tc.first.TLSConfig {
+			t.Errorf("%s: policy for a different name must not match", tc.name)
+		}
+	}
+
+	// the dropping policy case: an earlier drop policy must still apply
+	dropFirst := exactPolicies(&ConnectionPolicy{Drop: true})
+	if _, err := dropFirst.TLSConfig(ctx).GetConfigForClient(&tls.ClientHelloInfo{ServerName: "host-5.example.localhost"}); err == nil {
+		t.Error("expected earlier drop policy to be applied")
+	}
+}
+
+func TestConnectionPolicyRejectsUnknownSettings(t *testing.T) {
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+
+	for i, tc := range []struct {
+		policy  ConnectionPolicy
+		wantErr bool
+	}{
+		{policy: ConnectionPolicy{}, wantErr: false},
+		{policy: ConnectionPolicy{ProtocolMin: "tls1.2", ProtocolMax: "tls1.3", Curves: []string{"x25519"}}, wantErr: false},
+		{policy: ConnectionPolicy{ProtocolMin: "tls13"}, wantErr: true},
+		{policy: ConnectionPolicy{ProtocolMax: "tls1.4"}, wantErr: true},
+		{policy: ConnectionPolicy{Curves: []string{"x25519", "not-a-curve"}}, wantErr: true},
+	} {
+		err := tc.policy.buildStandardTLSConfig(ctx)
+		if tc.wantErr && err == nil {
+			t.Errorf("Test %d: expected error but got none", i)
+		}
+		if !tc.wantErr && err != nil {
+			t.Errorf("Test %d: unexpected error: %v", i, err)
+		}
+	}
+}
