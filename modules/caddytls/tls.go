@@ -197,6 +197,16 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		t.dns = dnsMod
 	}
 
+	// initialize the automation config before installing the certificate
+	// cache options below: the GetConfigForCert callback closes over t and
+	// may be invoked by the shared cache's maintenance goroutine (for
+	// example during a config reload) before the rest of Provision runs,
+	// so it must never observe a nil Automation; the getters used by the
+	// callback still nil-guard regardless, since Provision can re-enter
+	if t.Automation == nil {
+		t.Automation = new(AutomationConfig)
+	}
+
 	// set up a new certificate cache; this (re)loads all certificates
 	cacheOpts := certmagic.CacheOptions{
 		GetConfigForCert: func(cert certmagic.Certificate) (*certmagic.Config, error) {
@@ -291,10 +301,8 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		t.Automation.OnDemand.permission = val.(OnDemandPermission)
 	}
 
-	// automation/management policies
-	if t.Automation == nil {
-		t.Automation = new(AutomationConfig)
-	}
+	// automation/management policies (t.Automation was initialized
+	// above, before the certificate cache options were installed)
 	t.Automation.defaultPublicAutomationPolicy = new(AutomationPolicy)
 	err = t.Automation.defaultPublicAutomationPolicy.Provision(t)
 	if err != nil {
@@ -896,14 +904,24 @@ func (t *TLS) AddAutomationPolicy(ap *AutomationPolicy) error {
 
 func (t *TLS) getConfigForName(name string) *certmagic.Config {
 	ap := t.getAutomationPolicyForName(name)
+	if ap == nil {
+		// no automation policy exists yet (e.g. Provision has not
+		// finished initializing policies); certmagic treats a nil
+		// config as an error and continues, instead of panicking
+		return nil
+	}
 	return ap.magic
 }
 
 // getAutomationPolicyForName returns the first matching automation policy
 // for the given subject name. If no matching policy can be found, the
 // default policy is used, depending on whether the name qualifies for a
-// public certificate or not.
+// public certificate or not. It returns nil if the automation config has
+// not been initialized yet (see Provision); callers must handle that.
 func (t *TLS) getAutomationPolicyForName(name string) *AutomationPolicy {
+	if t.Automation == nil {
+		return nil
+	}
 	for _, ap := range t.Automation.Policies {
 		if len(ap.subjects) == 0 {
 			return ap // no host filter is an automatic match
