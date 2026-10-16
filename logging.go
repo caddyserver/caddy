@@ -550,7 +550,12 @@ func (cl *CustomLog) loggerAllowed(name string, isModule bool) bool {
 		for _, namespace := range cl.Include {
 			var hasPrefix bool
 			if isModule {
-				hasPrefix = strings.HasPrefix(namespace+".", name)
+				// the namespace is the module or one of its
+				// sub-loggers (e.g. "http.log.access" for "http")
+				hasPrefix = strings.HasPrefix(namespace+".", name) ||
+					// the namespace is a parent of the module (e.g.
+					// "http.handlers" for "http.handlers.file_server")
+					strings.HasPrefix(name, namespace+".")
 			} else {
 				hasPrefix = strings.HasPrefix(name, namespace+".")
 			}

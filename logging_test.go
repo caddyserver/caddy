@@ -88,6 +88,18 @@ func TestCustomLog_loggerAllowed(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "include module from parent",
+			fields: fields{
+				Include: []string{"foo"},
+				Exclude: []string{},
+			},
+			args: args{
+				name:     "foo.bar",
+				isModule: true,
+			},
+			want: true,
+		},
+		{
 			name: "excluded module is not printed",
 			fields: fields{
 				Include: []string{"admin.api.load"},
