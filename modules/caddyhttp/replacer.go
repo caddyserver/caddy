@@ -495,15 +495,24 @@ func getTLSReplacement(state *tls.ConnectionState, key string) (any, bool) {
 
 	field := strings.ToLower(key[len(reqTLSReplPrefix):])
 
+	var cert *x509.Certificate
+	var subfield string
 	if strings.HasPrefix(field, "client.") {
-		cert := getTLSPeerCert(state)
+		cert = getTLSPeerCert(state)
+		subfield = field[len("client."):]
+	} else if strings.HasPrefix(field, "server.") {
+		cert = getTLSServerCert(state)
+		subfield = field[len("server."):]
+	}
+
+	if subfield != "" {
 		if cert == nil {
 			// Instead of returning (nil, false) here, we set it to a dummy
-			// value to fix #7530. This way, even if there is no client cert,
+			// value to fix #7530. This way, even if there is no client/server cert,
 			// evaluating placeholders with ReplaceKnown() will still remove
 			// the placeholder, which would be expected. It is not expected
 			// for the placeholder to sometimes get removed based on whether
-			// the client presented a cert. We also do not return true here
+			// a cert was presented. We also do not return true here
 			// because we probably should remain accurate about whether a
 			// placeholder is, in fact, known or not.
 			// (This allocation may be slightly inefficient.)
@@ -511,39 +520,39 @@ func getTLSReplacement(state *tls.ConnectionState, key string) (any, bool) {
 		}
 
 		// subject alternate names (SANs)
-		if strings.HasPrefix(field, "client.san.") {
-			field = field[len("client.san."):]
+		if strings.HasPrefix(subfield, "san.") {
+			subfield = subfield[len("san."):]
 			var fieldName string
 			var fieldValue any
 			switch {
-			case strings.HasPrefix(field, "dns_names"):
+			case strings.HasPrefix(subfield, "dns_names"):
 				fieldName = "dns_names"
 				fieldValue = cert.DNSNames
-			case strings.HasPrefix(field, "emails"):
+			case strings.HasPrefix(subfield, "emails"):
 				fieldName = "emails"
 				fieldValue = cert.EmailAddresses
-			case strings.HasPrefix(field, "ips"):
+			case strings.HasPrefix(subfield, "ips"):
 				fieldName = "ips"
 				fieldValue = cert.IPAddresses
-			case strings.HasPrefix(field, "uris"):
+			case strings.HasPrefix(subfield, "uris"):
 				fieldName = "uris"
 				fieldValue = cert.URIs
 			default:
 				return nil, false
 			}
-			field = field[len(fieldName):]
+			subfield = subfield[len(fieldName):]
 
 			// if no index was specified, return the whole list
-			if field == "" {
+			if subfield == "" {
 				return fieldValue, true
 			}
-			if len(field) < 2 || field[0] != '.' {
+			if len(subfield) < 2 || subfield[0] != '.' {
 				return nil, false
 			}
-			field = field[1:] // trim '.' between field name and index
+			subfield = subfield[1:] // trim '.' between field name and index
 
 			// get the numeric index
-			idx, err := strconv.Atoi(field)
+			idx, err := strconv.Atoi(subfield)
 			if err != nil || idx < 0 {
 				return nil, false
 			}
@@ -568,10 +577,13 @@ func getTLSReplacement(state *tls.ConnectionState, key string) (any, bool) {
 			}
 		}
 
-		switch field {
-		case "client.fingerprint":
+		switch subfield {
+		case "fingerprint":
+			if len(cert.Raw) == 0 {
+				return nil, true
+			}
 			return fmt.Sprintf("%x", sha256.Sum256(cert.Raw)), true
-		case "client.public_key", "client.public_key_sha256":
+		case "public_key", "public_key_sha256":
 			if cert.PublicKey == nil {
 				return nil, true
 			}
@@ -579,20 +591,26 @@ func getTLSReplacement(state *tls.ConnectionState, key string) (any, bool) {
 			if err != nil {
 				return nil, true
 			}
-			if strings.HasSuffix(field, "_sha256") {
+			if strings.HasSuffix(subfield, "_sha256") {
 				return fmt.Sprintf("%x", sha256.Sum256(pubKeyBytes)), true
 			}
 			return fmt.Sprintf("%x", pubKeyBytes), true
-		case "client.issuer":
+		case "issuer":
 			return cert.Issuer, true
-		case "client.serial":
+		case "serial":
 			return cert.SerialNumber, true
-		case "client.subject":
+		case "subject":
 			return cert.Subject, true
-		case "client.certificate_pem":
+		case "certificate_pem":
+			if len(cert.Raw) == 0 {
+				return nil, true
+			}
 			block := pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw}
 			return pem.EncodeToMemory(&block), true
-		case "client.certificate_der_base64":
+		case "certificate_der_base64":
+			if len(cert.Raw) == 0 {
+				return nil, true
+			}
 			return base64.StdEncoding.EncodeToString(cert.Raw), true
 		default:
 			return nil, false

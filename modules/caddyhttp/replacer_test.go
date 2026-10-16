@@ -52,6 +52,10 @@ func TestTLSPlaceholdersWithoutTLS(t *testing.T) {
 		"client.issuer", "client.serial", "client.subject", "client.certificate_pem", "client.certificate_der_base64",
 		"client.san.dns_names", "client.san.emails", "client.san.ips", "client.san.uris",
 		"client.san.dns_names.0", "client.san.emails.0", "client.san.ips.0", "client.san.uris.0",
+		"server.fingerprint", "server.public_key", "server.public_key_sha256",
+		"server.issuer", "server.serial", "server.subject", "server.certificate_pem", "server.certificate_der_base64",
+		"server.san.dns_names", "server.san.emails", "server.san.ips", "server.san.uris",
+		"server.san.dns_names.0", "server.san.emails.0", "server.san.ips.0", "server.san.uris.0",
 	} {
 		t.Run(field, func(t *testing.T) {
 			key := "http.request.tls." + field
@@ -75,6 +79,8 @@ func TestUnknownTLSPlaceholdersRemainLiteral(t *testing.T) {
 		for _, field := range []string{
 			"unknown", "client.unknown", "client.san.unknown",
 			"client.san.dns_names_extra", "client.san.dns_names.-1", "client.san.dns_names.nope",
+			"server.unknown", "server.san.unknown",
+			"server.san.dns_names_extra", "server.san.dns_names.-1", "server.san.dns_names.nope",
 		} {
 			input := "{http.request.tls." + field + "}"
 			if got := repl.ReplaceKnown(input, ""); got != input {
