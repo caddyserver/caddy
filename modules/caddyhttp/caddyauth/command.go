@@ -17,7 +17,9 @@ package caddyauth
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 
@@ -126,12 +128,16 @@ func cmdHashPassword(fs caddycmd.Flags) (int, error) {
 			}
 		} else {
 			rd := bufio.NewReader(os.Stdin)
-			plaintext, err = rd.ReadBytes('\n')
-			if err != nil {
+			line, err := rd.ReadBytes('\n')
+			if err != nil && !errors.Is(err, io.EOF) {
 				return caddy.ExitCodeFailedStartup, err
 			}
 
-			plaintext = plaintext[:len(plaintext)-1] // Trailing newline
+			// drop the line ending (\n or \r\n), if any; a lone trailing \r is kept
+			if trimmed, ok := bytes.CutSuffix(line, []byte("\n")); ok {
+				line = bytes.TrimSuffix(trimmed, []byte("\r"))
+			}
+			plaintext = line
 		}
 
 		if len(plaintext) == 0 {
