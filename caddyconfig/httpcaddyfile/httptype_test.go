@@ -403,3 +403,22 @@ func TestTLSConnectionPoliciesAreIsolatedAcrossListeners(t *testing.T) {
 		}
 	}
 }
+
+func TestPlaceholderShorthandsTLSServer(t *testing.T) {
+	for _, tc := range []struct {
+		shorthand string
+		expected  string
+	}{
+		{"{tls_server_fingerprint}", "{http.request.tls.server.fingerprint}"},
+		{"{tls_server_issuer}", "{http.request.tls.server.issuer}"},
+		{"{tls_server_serial}", "{http.request.tls.server.serial}"},
+		{"{tls_server_subject}", "{http.request.tls.server.subject}"},
+		{"{tls_server_certificate_pem}", "{http.request.tls.server.certificate_pem}"},
+		{"{tls_server_certificate_der_base64}", "{http.request.tls.server.certificate_der_base64}"},
+	} {
+		replaced := WasReplacedPlaceholderShorthand(tc.expected)
+		if replaced != tc.shorthand {
+			t.Errorf("WasReplacedPlaceholderShorthand(%q) = %q, want %q", tc.expected, replaced, tc.shorthand)
+		}
+	}
+}

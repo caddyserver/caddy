@@ -107,6 +107,18 @@ func init() {
 // `{http.request.tls.client.san.emails.*}` | SAN email addresses (index optional)
 // `{http.request.tls.client.san.ips.*}` | SAN IP addresses (index optional)
 // `{http.request.tls.client.san.uris.*}` | SAN URIs (index optional)
+// `{http.request.tls.server.fingerprint}` | The SHA256 checksum of the server certificate
+// `{http.request.tls.server.public_key}` | The public key of the server certificate.
+// `{http.request.tls.server.public_key_sha256}` | The SHA256 checksum of the server's public key.
+// `{http.request.tls.server.certificate_pem}` | The PEM-encoded value of the server certificate.
+// `{http.request.tls.server.certificate_der_base64}` | The base64-encoded value of the server certificate.
+// `{http.request.tls.server.issuer}` | The issuer DN of the server certificate
+// `{http.request.tls.server.serial}` | The serial number of the server certificate
+// `{http.request.tls.server.subject}` | The subject DN of the server certificate
+// `{http.request.tls.server.san.dns_names.*}` | SAN DNS names (index optional)
+// `{http.request.tls.server.san.emails.*}` | SAN email addresses (index optional)
+// `{http.request.tls.server.san.ips.*}` | SAN IP addresses (index optional)
+// `{http.request.tls.server.san.uris.*}` | SAN URIs (index optional)
 // `{http.request.uri}` | The full request URI
 // `{http.request.uri_escaped}` | The full request URI with query-style URL encoding applied (using url.QueryEscape)
 // `{http.request.uri.path}` | The path component of the request URI
