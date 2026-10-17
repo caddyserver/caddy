@@ -19,7 +19,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"regexp"
 	"strings"
 	"unicode"
 )
@@ -255,7 +254,7 @@ func (l *lexer) next() (bool, error) {
 				}
 
 				heredocMarker = string(val[2:])
-				if !heredocMarkerRegexp.Match([]byte(heredocMarker)) {
+				if !isHeredocMarker(heredocMarker) {
 					return false, fmt.Errorf("heredoc marker on line #%d must contain only alphanumeric characters, dashes and underscores; got '%s'", l.line, heredocMarker)
 				}
 
@@ -612,7 +611,23 @@ func (t Token) Clone() Token {
 	}
 }
 
-var heredocMarkerRegexp = regexp.MustCompile("^[A-Za-z0-9_-]+$")
+// isHeredocMarker reports whether marker is a valid heredoc marker, made of
+// one or more ASCII letters, digits, dashes and underscores. It scans bytes
+// instead of matching a regexp because regexp matching of a long string is
+// quadratic under libFuzzer instrumentation.
+func isHeredocMarker(marker string) bool {
+	if len(marker) == 0 {
+		return false
+	}
+	for i := range len(marker) {
+		c := marker[i]
+		isAlnum := 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9'
+		if !isAlnum && c != '_' && c != '-' {
+			return false
+		}
+	}
+	return true
+}
 
 // isNextOnNewLine tests whether t2 is on a different line from t1
 func isNextOnNewLine(t1, t2 Token) bool {
