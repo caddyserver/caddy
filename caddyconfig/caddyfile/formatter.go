@@ -153,7 +153,7 @@ func Format(input []byte) []byte {
 
 		if heredoc == heredocOpening {
 			if ch == '\n' {
-				if len(heredocMarker) > 0 && heredocMarkerRegexp.MatchString(string(heredocMarker)) {
+				if len(heredocMarker) > 0 && isHeredocMarker(string(heredocMarker)) {
 					heredoc = heredocOpened
 				} else {
 					heredocMarker = nil
