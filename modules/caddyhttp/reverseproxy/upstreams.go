@@ -7,6 +7,8 @@ import (
 	weakrand "math/rand/v2"
 	"net"
 	"net/http"
+	"slices"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -76,6 +78,11 @@ type SRVUpstreams struct {
 
 	resolver *net.Resolver
 
+	// resolverKey identifies resolver for the shared DNS cache, so two SRV
+	// sources that look up the same record with different resolvers do not
+	// share a cache entry. Empty for the default resolver.
+	resolverKey string
+
 	logger *zap.Logger
 }
 
@@ -114,6 +121,7 @@ func (su *SRVUpstreams) Provision(ctx caddy.Context) error {
 	if su.resolver == nil {
 		su.resolver = net.DefaultResolver
 	}
+	su.resolverKey = resolverCacheKey(su.Resolver)
 
 	return nil
 }
@@ -124,7 +132,7 @@ func (su *SRVUpstreams) ResetCache(r *http.Request) error {
 		return nil
 	}
 	_, service, proto, name := su.expandedAddr(r)
-	network.ResetSRV(service, proto, name)
+	network.ResetSRV(su.resolverKey, service, proto, name)
 	return nil
 }
 
@@ -132,7 +140,7 @@ func (su SRVUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 	_, service, proto, name := su.expandedAddr(r)
 
 	targets, err := network.SRV(r.Context(), su.resolver.LookupSRV,
-		service, proto, name,
+		su.resolverKey, service, proto, name,
 		time.Duration(su.Refresh), time.Duration(su.GracePeriod), su.logger)
 	if err != nil {
 		return nil, err
@@ -231,6 +239,10 @@ type AUpstreams struct {
 
 	resolver *net.Resolver
 
+	// resolverKey identifies resolver for the shared DNS cache; see the same
+	// field on SRVUpstreams. Empty for the default resolver.
+	resolverKey string
+
 	logger *zap.Logger
 }
 
@@ -272,6 +284,7 @@ func (au *AUpstreams) Provision(ctx caddy.Context) error {
 	if au.resolver == nil {
 		au.resolver = net.DefaultResolver
 	}
+	au.resolverKey = resolverCacheKey(au.Resolver)
 
 	return nil
 }
@@ -284,7 +297,7 @@ func (au AUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 	port := repl.ReplaceAll(au.Port, "")
 
 	targets, err := network.A(r.Context(), au.resolver.LookupIP,
-		ipVersion, name, port, time.Duration(au.Refresh), au.logger)
+		au.resolverKey, ipVersion, name, port, time.Duration(au.Refresh), au.logger)
 	if err != nil {
 		return nil, err
 	}
@@ -403,6 +416,20 @@ func (u *UpstreamResolver) ParseAddresses() error {
 		u.netAddrs = append(u.netAddrs, addr)
 	}
 	return nil
+}
+
+// resolverCacheKey returns a stable identity for the configured resolver, used
+// to key the shared DNS cache so that two upstream sources looking up the same
+// name with different resolvers do not share a cache entry. The default
+// resolver (no Resolver configured) yields "". Addresses are sorted so that the
+// same set in a different order maps to the same key.
+func resolverCacheKey(r *UpstreamResolver) string {
+	if r == nil || len(r.Addresses) == 0 {
+		return ""
+	}
+	addrs := slices.Clone(r.Addresses)
+	slices.Sort(addrs)
+	return strings.Join(addrs, ",")
 }
 
 // Interface guards
