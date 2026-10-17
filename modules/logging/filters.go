@@ -408,7 +408,13 @@ func (m QueryFilter) Filter(in zapcore.Field) zapcore.Field {
 }
 
 func (m QueryFilter) processQueryString(s string) string {
-	u, err := url.Parse(s)
+	parse := url.Parse
+	if strings.HasPrefix(s, "/") {
+		// parse a request-target like the server does: it has no
+		// fragment, so a '#' belongs to the query
+		parse = url.ParseRequestURI
+	}
+	u, err := parse(s)
 	if err != nil {
 		return s
 	}
