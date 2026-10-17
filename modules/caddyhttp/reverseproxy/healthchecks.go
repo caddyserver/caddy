@@ -98,7 +98,9 @@ type ActiveHealthChecks struct {
 	// The body to send with the health check request.
 	Body string `json:"body,omitempty"`
 
-	// Whether to follow HTTP redirects in response to active health checks (default off).
+	// Whether to follow same-origin HTTP redirects in response to active health checks (default off).
+	// Cross-origin redirects are rejected because the health-check transport may contain
+	// credentials which cannot be safely removed from arbitrary transport modules.
 	FollowRedirects bool `json:"follow_redirects,omitempty"`
 
 	// How frequently to perform active health checks (default 30s).
@@ -181,6 +183,10 @@ func (a *ActiveHealthChecks) Provision(ctx caddy.Context, h *Handler) error {
 			if !a.FollowRedirects {
 				return http.ErrUseLastResponse
 			}
+			if !sameURLOrigin(via[0].URL, req.URL) {
+				return fmt.Errorf("cross-origin active health check redirect from %s://%s to %s://%s is not allowed",
+					via[0].URL.Scheme, via[0].URL.Host, req.URL.Scheme, req.URL.Host)
+			}
 			return nil
 		},
 	}
@@ -219,6 +225,26 @@ func (a *ActiveHealthChecks) Provision(ctx caddy.Context, h *Handler) error {
 	}
 
 	return nil
+}
+
+func sameURLOrigin(a, b *url.URL) bool {
+	return strings.EqualFold(a.Scheme, b.Scheme) &&
+		strings.EqualFold(a.Hostname(), b.Hostname()) &&
+		effectiveURLPort(a) == effectiveURLPort(b)
+}
+
+func effectiveURLPort(u *url.URL) string {
+	if port := u.Port(); port != "" {
+		return port
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http":
+		return "80"
+	case "https":
+		return "443"
+	default:
+		return ""
+	}
 }
 
 // IsEnabled checks if the active health checks have
