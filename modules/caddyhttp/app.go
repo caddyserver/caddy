@@ -500,8 +500,9 @@ func (app *App) Start() error {
 					})
 					ctx = context.WithValue(ctx, tlsConnectionStateFuncCtxKey, getTlsConStateFunc)
 				}
-				return ctx
+				return srv.newConns.connContext(ctx, c)
 			},
+			ConnState: srv.newConns.connState,
 		}
 
 		// disable HTTP/2, which we enabled by default during provisioning
@@ -628,8 +629,7 @@ func (app *App) Start() error {
 
 					srv.listeners = append(srv.listeners, ln)
 
-					//nolint:errcheck
-					go srv.server.Serve(ln)
+					srv.serve(ln)
 				}
 
 				if h2ok && !useTLS {
@@ -787,6 +787,15 @@ func (app *App) stop(exiting bool) error {
 		// possible if server failed to Start
 		if server.server == nil {
 			return
+		}
+
+		// net/http closes, without a response, an HTTP/1 request it reads
+		// once Shutdown has begun; so first stop accepting, and wait for
+		// the connections already accepted to send a request (shutdown.go)
+		if err := server.stopAccepting(ctx); err != nil {
+			app.logger.Error("server listener close",
+				zap.Error(err),
+				zap.Strings("addresses", server.Listen))
 		}
 
 		if err := server.server.Shutdown(ctx); err != nil {

@@ -394,6 +394,9 @@ type Server struct {
 	listenerWrappers    []caddy.ListenerWrapper
 	packetConnWrappers  []caddy.PacketConnWrapper
 	listeners           []net.Listener
+	serveListeners      []*onceCloseListener // listeners, as served by server
+	serveLoops          sync.WaitGroup       // the server.Serve goroutines
+	newConns            newConnTracker
 	quicListeners       []http3.QUICListener // http3 now leave the quic.Listener management to us
 
 	tlsApp       *caddytls.TLS
@@ -597,6 +600,9 @@ var (
 // ServeHTTP is the entry point for all HTTP requests.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
+
+	// net/http's shutdown check is behind us (see shutdown.go)
+	s.newConns.requestSeen(r)
 
 	// Count HTTP/3 requests on connections ServeQUICConn owns. http3.Server
 	// does not track those, so shutdown uses this to tell an idle keepalive
