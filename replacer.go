@@ -192,6 +192,12 @@ func (r *Replacer) replace(input, empty string,
 	// fail fast if too many placeholders are unclosed
 	var unclosedCount int
 
+	// {file.*} placeholders hit the disk; cache by key and cap the number of
+	// distinct reads per call so repeated/numerous file placeholders in the
+	// input can't force unbounded syscalls (issue found via OSS-Fuzz timeout)
+	var fileReadCache map[string]any
+	var fileReadCount int
+
 scan:
 	for i := 0; i < len(input); i++ {
 		// check for escaped braces
@@ -236,7 +242,25 @@ scan:
 		key := input[i+1 : end]
 
 		// try to get a value for this key, handle empty values accordingly
-		val, found := r.Get(key)
+		var val any
+		var found bool
+		if strings.HasPrefix(key, filePrefix) {
+			if fileReadCache == nil {
+				fileReadCache = make(map[string]any)
+			}
+			if cached, ok := fileReadCache[key]; ok {
+				val, found = cached, true
+			} else if fileReadCount < maxFileReadsPerReplace {
+				fileReadCount++
+				val, found = r.Get(key)
+				fileReadCache[key] = val
+			} else {
+				// too many distinct file reads for one input; treat the rest as empty
+				val, found = nil, true
+			}
+		} else {
+			val, found = r.Get(key)
+		}
 		if !found {
 			// placeholder is unknown (unrecognized); handle accordingly
 			if errOnUnknown {
@@ -453,3 +477,7 @@ const ReplacerCtxKey CtxKey = "replacer"
 const phOpen, phClose, phEscape = '{', '}', '\\'
 
 const filePrefix = "file."
+
+// maxFileReadsPerReplace bounds how many distinct {file.*} placeholders
+// are actually read from disk during a single replace() call.
+const maxFileReadsPerReplace = 1000
