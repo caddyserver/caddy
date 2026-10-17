@@ -31,6 +31,28 @@ func TestIPMaskSingleValue(t *testing.T) {
 	}
 }
 
+func TestIPMaskInvalidCIDR(t *testing.T) {
+	for _, f := range []IPMaskFilter{
+		{IPv4MaskRaw: 33},
+		{IPv4MaskRaw: -1},
+		{IPv6MaskRaw: 129},
+		{IPv6MaskRaw: -8},
+	} {
+		if err := f.Provision(caddy.Context{}); err == nil {
+			t.Errorf("expected error for ipv4=%d ipv6=%d", f.IPv4MaskRaw, f.IPv6MaskRaw)
+		}
+	}
+
+	f := IPMaskFilter{IPv4MaskRaw: 32, IPv6MaskRaw: 128}
+	if err := f.Provision(caddy.Context{}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := f.Filter(zapcore.Field{String: "1.2.3.4, 2001:db8::1"})
+	if out.String != "1.2.3.4, 2001:db8::1" {
+		t.Fatalf("field changed with full masks: %s", out.String)
+	}
+}
+
 func TestIPMaskCommaValue(t *testing.T) {
 	f := IPMaskFilter{IPv4MaskRaw: 16, IPv6MaskRaw: 32}
 	f.Provision(caddy.Context{})
