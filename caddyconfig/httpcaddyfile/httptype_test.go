@@ -2,6 +2,7 @@ package httpcaddyfile
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -401,5 +402,107 @@ func TestTLSConnectionPoliciesAreIsolatedAcrossListeners(t *testing.T) {
 		if !slices.Equal(names, expectedNames) {
 			t.Errorf("Expected client authentication for %v on %s, got %v", expectedNames, listener, names)
 		}
+	}
+}
+
+func TestWildcardClientAuthenticationInheritance(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		exactTLS        string
+		wantFirstSNI    string
+		wantClientAuth  bool
+		wantPolicyCount int
+	}{
+		{
+			name:            "implicit TLS inherits wildcard client authentication",
+			wantFirstSNI:    "*.example.com",
+			wantClientAuth:  true,
+			wantPolicyCount: 2,
+		},
+		{
+			name:            "explicit TLS clears wildcard client authentication",
+			exactTLS:        "tls {\n\t\t\t\t\t\tclient_auth {\n\t\t\t\t\t\t\tmode off\n\t\t\t\t\t\t}\n\t\t\t\t\t}",
+			wantFirstSNI:    "test.example.com",
+			wantPolicyCount: 3,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := fmt.Sprintf(`
+				*.example.com {
+					tls {
+						client_auth {
+							mode require
+						}
+					}
+				}
+				test.example.com {
+					%s
+				}
+			`, tc.exactTLS)
+
+			adapter := caddyfile.Adapter{ServerType: ServerType{}}
+			result, _, err := adapter.Adapt([]byte(input), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			var config struct {
+				Apps struct {
+					HTTP struct {
+						Servers map[string]*caddyhttp.Server `json:"servers"`
+					} `json:"http"`
+				} `json:"apps"`
+			}
+			if err := json.Unmarshal(result, &config); err != nil {
+				t.Fatal(err)
+			}
+
+			server := config.Apps.HTTP.Servers["srv0"]
+			if server == nil {
+				t.Fatal("server srv0 was not created")
+			}
+			if len(server.TLSConnPolicies) != tc.wantPolicyCount {
+				t.Fatalf("got %d TLS connection policies, want %d\n%s", len(server.TLSConnPolicies), tc.wantPolicyCount, result)
+			}
+			firstPolicy := server.TLSConnPolicies[0]
+			var names []string
+			if err := json.Unmarshal(firstPolicy.MatchersRaw["sni"], &names); err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(names, []string{tc.wantFirstSNI}) {
+				t.Fatalf("first policy SNI = %v, want %q\n%s", names, tc.wantFirstSNI, result)
+			}
+			if got := firstPolicy.ClientAuthentication != nil; got != tc.wantClientAuth {
+				t.Fatalf("client authentication = %t, want %t\n%s", got, tc.wantClientAuth, result)
+			}
+		})
+	}
+}
+
+func TestClientAuthOffValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		input   string
+		wantErr string
+	}{
+		{
+			name:    "naked tls",
+			input:   "example.com {\n\ttls\n}",
+			wantErr: "wrong argument count",
+		},
+		{
+			name:    "off with authentication options",
+			input:   "example.com {\n\ttls {\n\t\tclient_auth {\n\t\t\tmode off\n\t\t\ttrusted_leaf_cert AA==\n\t\t}\n\t}\n}",
+			wantErr: "client_auth mode off cannot be combined with other client authentication options",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			adapter := caddyfile.Adapter{ServerType: ServerType{}}
+			if _, _, err := adapter.Adapt([]byte(tc.input), nil); err == nil {
+				t.Fatal("expected adaptation to fail")
+			} else if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("error %q does not contain %q", err, tc.wantErr)
+			}
+		})
 	}
 }
