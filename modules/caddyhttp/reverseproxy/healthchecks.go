@@ -181,13 +181,6 @@ func (a *ActiveHealthChecks) Provision(ctx caddy.Context, h *Handler) error {
 			if !a.FollowRedirects {
 				return http.ErrUseLastResponse
 			}
-			if req.URL.Scheme != via[0].URL.Scheme || !strings.EqualFold(req.URL.Host, via[0].URL.Host) {
-				// Mask the initial upstream's dial override so the transport
-				// connects to the redirect URL instead. Compare with the first
-				// request so redirects back retain the original override.
-				ctx := context.WithValue(req.Context(), dialInfoCtxKey, struct{}{})
-				*req = *req.WithContext(ctx)
-			}
 			return nil
 		},
 	}
