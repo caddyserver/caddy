@@ -49,6 +49,8 @@ func (runner) Execute(args []string, request <-chan svc.ChangeRequest, status ch
 
 	for {
 		req := <-request
+		// Unsupported service controls are ignored.
+		//exhaustive:ignore
 		switch req.Cmd {
 		case svc.Interrogate:
 			status <- req.CurrentStatus
