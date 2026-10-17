@@ -498,9 +498,12 @@ func trimPathSuffix(escapedPath, suffix string) string {
 
 		// if escapedPath uses a percent-encoding that ends at this position but
 		// the suffix pattern does not encode this position, decode escapedPath's
-		// escape so the comparison happens in normalized/unescaped space
+		// escape so the comparison happens in normalized/unescaped space.
+		// Walking right-to-left, the suffix is inside one of its own escapes
+		// either when an escape ends here (a '%' two bytes back) or when the
+		// cursor has reached that escape's introducing '%' itself.
 		pathHasEscape := iPath >= 3 && escapedPath[iPath-3] == '%'
-		suffixHasEscape := iSuffix >= 3 && suffix[iSuffix-3] == '%'
+		suffixHasEscape := (iSuffix >= 3 && suffix[iSuffix-3] == '%') || suffixCh == '%'
 		if pathHasEscape && !suffixHasEscape {
 			decoded, err := url.PathUnescape(escapedPath[iPath-3 : iPath])
 			if err != nil {
