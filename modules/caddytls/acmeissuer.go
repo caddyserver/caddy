@@ -208,8 +208,8 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 			// no locally configured DNS challenge provider, but if there is
 			// a global DNS module configured with the TLS app, use that
 			tlsApp := tlsAppIface.(*TLS)
-			if tlsApp.dns != nil {
-				prov = tlsApp.dns.(certmagic.DNSProvider)
+			if tlsApp.Dns != nil {
+				prov = tlsApp.Dns.(certmagic.DNSProvider)
 			}
 		}
 		if prov == nil {
