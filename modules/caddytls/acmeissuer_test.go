@@ -6,6 +6,34 @@ import (
 	"testing"
 )
 
+func TestLetsEncryptProfileDefault(t *testing.T) {
+	advertised := map[string]string{letsEncryptShortlivedProfile: "6 day certs"}
+	if got := letsEncryptProfile("", "", "", advertised, advertised); got != letsEncryptShortlivedProfile {
+		t.Fatalf("default Let's Encrypt endpoints: got %q, want %q", got, letsEncryptShortlivedProfile)
+	}
+	if got := letsEncryptProfile(letsEncryptProductionDirectory, "", "", advertised, advertised); got != letsEncryptShortlivedProfile {
+		t.Fatalf("production directory: got %q, want %q", got, letsEncryptShortlivedProfile)
+	}
+	if got := letsEncryptProfile(letsEncryptStagingDirectory, letsEncryptStagingDirectory, "", advertised, advertised); got != letsEncryptShortlivedProfile {
+		t.Fatalf("staging directory: got %q, want %q", got, letsEncryptShortlivedProfile)
+	}
+	if got := letsEncryptProfile("", "", "", map[string]string{}, advertised); got != "" {
+		t.Fatalf("shortlived not advertised by the CA: got %q, want empty", got)
+	}
+	if got := letsEncryptProfile("", "", "", advertised, map[string]string{"classic": "90 day certs"}); got != "" {
+		t.Fatalf("shortlived not advertised by the test CA: got %q, want empty", got)
+	}
+	if got := letsEncryptProfile("", "", "classic", map[string]string{}, map[string]string{}); got != "classic" {
+		t.Fatalf("explicit profile: got %q, want classic", got)
+	}
+	if got := letsEncryptProfile("https://acme.example.com/directory", "", "", advertised, advertised); got != "" {
+		t.Fatalf("other CA: got %q, want empty", got)
+	}
+	if got := letsEncryptProfile("", "https://acme.example.com/directory", "", advertised, advertised); got != "" {
+		t.Fatalf("custom TestCA: got %q, want empty", got)
+	}
+}
+
 func TestACMEIssuerExpandPlaceholders(t *testing.T) {
 	t.Setenv("CADDY_TEST_CA_URL", "https://acme.example.com/directory")
 	t.Setenv("CADDY_TEST_TEST_CA_URL", "https://acme2.example.com/directory")
