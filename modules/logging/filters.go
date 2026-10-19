@@ -224,6 +224,13 @@ func (m *IPMaskFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Provision parses m's IP masks, from integers.
 func (m *IPMaskFilter) Provision(ctx caddy.Context) error {
+	if m.IPv4MaskRaw < 0 || m.IPv4MaskRaw > 32 {
+		return fmt.Errorf("invalid IPv4 mask: %d (must be between 0 and 32)", m.IPv4MaskRaw)
+	}
+	if m.IPv6MaskRaw < 0 || m.IPv6MaskRaw > 128 {
+		return fmt.Errorf("invalid IPv6 mask: %d (must be between 0 and 128)", m.IPv6MaskRaw)
+	}
+
 	parseRawToMask := func(rawField int, bitLen int) net.IPMask {
 		if rawField == 0 {
 			return nil
