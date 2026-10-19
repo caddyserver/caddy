@@ -62,8 +62,6 @@ linters:
         - fmt.*
         - (go.uber.org/zap/zapcore.ObjectEncoder).AddObject
         - (go.uber.org/zap/zapcore.ObjectEncoder).AddArray
-    exhaustive:
-      ignore-enum-types: reflect.Kind|svc.Cmd
   exclusions:
     generated: lax
     presets:
