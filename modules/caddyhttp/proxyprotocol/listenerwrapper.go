@@ -103,34 +103,40 @@ func (pp *ListenerWrapper) Provision(ctx caddy.Context) error {
 	}
 
 	pp.policy = func(options goproxy.ConnPolicyOptions) (goproxy.Policy, error) {
-		// trust unix sockets
-		if network := options.Upstream.Network(); caddy.IsUnixNetwork(network) || caddy.IsFdNetwork(network) {
-			return goproxy.USE, nil
-		}
-		ret := pp.FallbackPolicy
-		host, _, err := net.SplitHostPort(options.Upstream.String())
-		if err != nil {
-			return goproxy.REJECT, err
-		}
-
-		ip, err := netip.ParseAddr(host)
-		if err != nil {
-			return goproxy.REJECT, err
-		}
-		for _, ipnet := range pp.deny {
-			if ipnet.Contains(ip) {
-				return goproxy.REJECT, nil
-			}
-		}
-		for _, ipnet := range pp.allow {
-			if ipnet.Contains(ip) {
-				ret = PolicyUSE
-				break
-			}
-		}
-		return policyToGoProxyPolicy[ret], nil
+		return upstreamPolicy(options.Upstream, pp.allow, pp.deny, pp.FallbackPolicy)
 	}
 	return nil
+}
+
+// upstreamPolicy decides how to treat PROXY headers sent by the given upstream
+// (the peer that connects to Caddy, usually a load balancer).
+func upstreamPolicy(upstream net.Addr, allow, deny []netip.Prefix, fallback Policy) (goproxy.Policy, error) {
+	// trust unix sockets
+	if network := upstream.Network(); caddy.IsUnixNetwork(network) || caddy.IsFdNetwork(network) {
+		return goproxy.USE, nil
+	}
+	ret := fallback
+	host, _, err := net.SplitHostPort(upstream.String())
+	if err != nil {
+		return goproxy.REJECT, err
+	}
+
+	ip, err := netip.ParseAddr(host)
+	if err != nil {
+		return goproxy.REJECT, err
+	}
+	for _, ipnet := range deny {
+		if ipnet.Contains(ip) {
+			return goproxy.REJECT, nil
+		}
+	}
+	for _, ipnet := range allow {
+		if ipnet.Contains(ip) {
+			ret = PolicyUSE
+			break
+		}
+	}
+	return policyToGoProxyPolicy[ret], nil
 }
 
 // WrapListener adds PROXY protocol support to the listener.

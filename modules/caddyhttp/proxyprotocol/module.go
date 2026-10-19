@@ -21,6 +21,7 @@ import (
 
 func init() {
 	caddy.RegisterModule(ListenerWrapper{})
+	caddy.RegisterModule(PacketConnWrapper{})
 }
 
 func (ListenerWrapper) CaddyModule() caddy.ModuleInfo {
@@ -78,8 +79,46 @@ func (w *ListenerWrapper) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
+// UnmarshalCaddyfile sets up the packet conn wrapper from Caddyfile tokens. Syntax:
+//
+//	proxy_protocol {
+//		allow <IPs...>
+//		deny <IPs...>
+//		fallback_policy <policy>
+//	}
+func (w *PacketConnWrapper) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	d.Next() // consume wrapper name
+
+	// No same-line options are supported
+	if d.NextArg() {
+		return d.ArgErr()
+	}
+
+	for d.NextBlock(0) {
+		switch d.Val() {
+		case "allow":
+			w.Allow = append(w.Allow, d.RemainingArgs()...)
+		case "deny":
+			w.Deny = append(w.Deny, d.RemainingArgs()...)
+		case "fallback_policy":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			p, err := parsePolicy(d.Val())
+			if err != nil {
+				return d.WrapErr(err)
+			}
+			w.FallbackPolicy = p
+		default:
+			return d.ArgErr()
+		}
+	}
+	return nil
+}
+
 // Interface guards
 var (
+	_ caddyfile.Unmarshaler = (*PacketConnWrapper)(nil)
 	_ caddy.Provisioner     = (*ListenerWrapper)(nil)
 	_ caddy.Module          = (*ListenerWrapper)(nil)
 	_ caddy.ListenerWrapper = (*ListenerWrapper)(nil)

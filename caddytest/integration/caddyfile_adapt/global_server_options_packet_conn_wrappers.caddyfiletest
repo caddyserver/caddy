@@ -1,0 +1,52 @@
+{
+	servers {
+		packet_conn_wrappers {
+			proxy_protocol {
+				allow 10.0.0.0/8
+				deny 10.0.0.66/32
+				fallback_policy require
+			}
+		}
+	}
+}
+
+foo.com {
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"packet_conn_wrappers": [
+						{
+							"allow": [
+								"10.0.0.0/8"
+							],
+							"deny": [
+								"10.0.0.66/32"
+							],
+							"fallback_policy": "REQUIRE",
+							"wrapper": "proxy_protocol"
+						}
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"foo.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		}
+	}
+}
