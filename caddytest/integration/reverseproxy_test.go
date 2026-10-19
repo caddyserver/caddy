@@ -1103,3 +1103,53 @@ func TestReverseProxyResponseHandling(t *testing.T) {
 		}
 	}
 }
+
+// TestReverseProxyUnlimitedRequestBuffersRespectMaxSize verifies that a request
+// body cut short by request_body max_size is rejected with 413 instead of being
+// forwarded to the upstream as if it were complete.
+func TestReverseProxyUnlimitedRequestBuffersRespectMaxSize(t *testing.T) {
+	var forwarded atomic.Int32
+	srv := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if _, err := io.ReadAll(r.Body); err == nil {
+				forwarded.Add(1)
+			}
+		}),
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	go srv.Serve(ln)
+	t.Cleanup(func() { srv.Close(); ln.Close() })
+
+	tester := caddytest.NewTester(t)
+	tester.InitServer(fmt.Sprintf(`
+	{
+		skip_install_trust
+		admin localhost:2999
+		http_port 9080
+		https_port 9443
+		grace_period 1ns
+	}
+	http://localhost:9080 {
+		request_body {
+			max_size 10
+		}
+		reverse_proxy %s {
+			request_buffers unlimited
+		}
+	}
+	`, ln.Addr().String()), "caddyfile")
+
+	req, err := http.NewRequest(http.MethodPost, "http://localhost:9080/", strings.NewReader("abcdefghijklm"))
+	if err != nil {
+		t.Fatalf("creating request: %v", err)
+	}
+	res := tester.AssertResponseCode(req, http.StatusRequestEntityTooLarge)
+	res.Body.Close()
+
+	if n := forwarded.Load(); n != 0 {
+		t.Errorf("upstream received %d complete request bodies, want 0", n)
+	}
+}

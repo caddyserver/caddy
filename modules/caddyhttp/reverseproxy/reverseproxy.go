@@ -862,12 +862,13 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 		return true, nil
 	}
 
-	// if the roundtrip was successful, don't retry the request or
-	// ding the health status of the upstream (an error can still
-	// occur after the roundtrip if, for example, a response handler
-	// after the roundtrip returns an error)
-	if succ, ok := proxyErr.(roundtripSucceededError); ok {
-		return true, succ.error
+	// if the handler has already committed a client-visible response
+	// (e.g. a successful roundtrip whose handle_response route errored,
+	// or a WebTransport upgrade that flushed 200 OK and hijacked the
+	// stream), don't retry against another upstream and don't ding the
+	// upstream's health status
+	if term, ok := proxyErr.(terminalError); ok {
+		return true, term.error
 	}
 
 	// remember this failure (if enabled); response-based retries
@@ -917,6 +918,7 @@ func normalizeWebsocketHeaders(header http.Header) {
 // proxying) regardless of proxy retries. This assumes that no mutations
 // of the cloned request are performed by h during or after proxying.
 func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.Request, error) {
+	origReq := req
 	req = cloneRequest(req)
 
 	// if enabled, perform rewrites on the cloned request; if
@@ -928,6 +930,17 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 			req.ContentLength = 0
 			req.Body = nil
 		}
+	}
+
+	if req.Body != nil {
+		// net/http fills in the incoming trailers only when Body.Read reaches
+		// EOF. Keep an independent map, but update it in that same Read before
+		// the transport writes the trailers. Install this before buffering,
+		// which may itself consume the body to EOF before the round trip.
+		if req.Trailer == nil {
+			req.Trailer = make(http.Header)
+		}
+		req.Body = &requestBodyWithTrailers{ReadCloser: req.Body, original: origReq, trailer: req.Trailer}
 	}
 
 	// Fully buffering the request is incompatible with incremental forwarding.
@@ -954,6 +967,15 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 			req.ContentLength = readBytes
 			req.Header.Set("Content-Length", strconv.FormatInt(req.ContentLength, 10))
 		}
+	}
+
+	// HTTP/1 upstreams require chunked framing to carry trailers, including
+	// when buffering has made the body length known (or the body is empty).
+	// Length-required transports such as FastCGI need the buffered length and
+	// do not carry HTTP trailers.
+	if len(req.Trailer) > 0 && req.Body != nil && !h.transportRequiresContentLength() {
+		req.ContentLength = -1
+		req.Header.Del("Content-Length")
 	}
 
 	if req.ContentLength == 0 {
@@ -1170,6 +1192,18 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	server := req.Context().Value(caddyhttp.ServerCtxKey).(*caddyhttp.Server)
 	shouldLogCredentials := server.Logs != nil && server.Logs.ShouldLogCredentials
 
+	// WebTransport: Extended CONNECT :protocol=webtransport can't flow
+	// through the normal HTTP round-trip — the session hosts many QUIC
+	// streams and datagrams that need bidirectional pumping. Swap
+	// RoundTrip for a small hijack helper. Upstream dial failures
+	// surface as DialError so the loop can retry across upstreams;
+	// pre-upgrade misconfig and post-upgrade failures return
+	// terminalError because the response is already committed to the
+	// client or no upstream can fix the condition.
+	if isWebTransportExtendedConnect(origReq) {
+		return h.webTransportHijack(rw, req, origReq, repl, di, server)
+	}
+
 	// Forward 1xx status codes, backported from https://github.com/golang/go/pull/53164
 	var (
 		roundTripMutex sync.Mutex
@@ -1245,30 +1279,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 		)
 	}
 
-	// duration until upstream wrote response headers (roundtrip duration)
-	repl.Set("http.reverse_proxy.upstream.latency", duration)
-	repl.Set("http.reverse_proxy.upstream.latency_ms", duration.Seconds()*1e3) // multiply seconds to preserve decimal (see #4666)
-
-	// update circuit breaker on current conditions
-	if di.Upstream.cb != nil {
-		di.Upstream.cb.RecordMetric(res.StatusCode, duration)
-	}
-
-	// perform passive health checks (if enabled)
-	if h.HealthChecks != nil && h.HealthChecks.Passive != nil {
-		// strike if the status code matches one that is "bad"
-		for _, badStatus := range h.HealthChecks.Passive.UnhealthyStatus {
-			if caddyhttp.StatusCodeMatches(res.StatusCode, badStatus) {
-				h.countFailure(di.Upstream)
-			}
-		}
-
-		// strike if the roundtrip took too long
-		if h.HealthChecks.Passive.UnhealthyLatency > 0 &&
-			duration >= time.Duration(h.HealthChecks.Passive.UnhealthyLatency) {
-			h.countFailure(di.Upstream)
-		}
-	}
+	h.recordUpstreamRoundTrip(di, repl, res.StatusCode, duration)
 
 	// if enabled, buffer the response body
 	if h.ResponseBuffers != 0 && !caddyhttp.IsIncremental(res.Header) {
@@ -1364,10 +1375,10 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 			res.Body.Close()
 		}
 
-		// wrap any route error in roundtripSucceededError so caller knows that
-		// the roundtrip was successful and to not retry
+		// wrap any route error in terminalError so the outer loop knows
+		// the response is committed and must not be retried
 		if routeErr != nil {
-			return roundtripSucceededError{routeErr}
+			return terminalError{routeErr}
 		}
 
 		// we're done handling the response, and we don't want to
@@ -1431,7 +1442,7 @@ func (h *Handler) finalizeResponse(
 	if responseHasContent(req, res) && h.ResponseBuffers != 0 &&
 		(responseWasIncremental || caddyhttp.IsIncremental(res.Header)) {
 		res.Body.Close()
-		return roundtripSucceededError{h.refuseIncremental(rw, res.Header)}
+		return terminalError{h.refuseIncremental(rw, res.Header)}
 	}
 
 	copyHeader(rw.Header(), res.Header)
@@ -1701,33 +1712,53 @@ func (h Handler) provisionUpstream(upstream *Upstream, dynamic bool) {
 // (which it shouldn't be), this function returns its input; i.e. is a no-op, for safety.
 // Otherwise, it returns bodyReadCloser, the original body will be closed and body will be nil
 // if it's explicitly configured to buffer all or EOF is reached when reading.
-// TODO: the error during reading is discarded if the limit is negative, should the error be propagated
-// to upstream/downstream?
+// If reading fails, the body is returned as partially buffered, so the read error
+// is not hidden from the caller.
 func (h Handler) bufferedBody(originalBody io.ReadCloser, limit int64) (io.ReadCloser, int64) {
 	if limit == 0 {
 		return originalBody, 0
 	}
 	var written int64
+	var err error
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	if limit > 0 {
-		var err error
 		written, err = io.CopyN(buf, originalBody, limit)
-		if (err != nil && err != io.EOF) || written == limit {
-			return bodyReadCloser{
-				Reader: io.MultiReader(buf, originalBody),
-				buf:    buf,
-				body:   originalBody,
-			}, written
-		}
 	} else {
-		written, _ = io.Copy(buf, originalBody)
+		written, err = io.Copy(buf, originalBody)
+	}
+	if (err != nil && err != io.EOF) || written == limit {
+		return bodyReadCloser{
+			Reader: io.MultiReader(buf, originalBody),
+			buf:    buf,
+			body:   originalBody,
+		}, written
 	}
 	originalBody.Close() // no point in keeping it open
 	return bodyReadCloser{
 		Reader: buf,
 		buf:    buf,
 	}, written
+}
+
+// requestBodyWithTrailers publishes a snapshot of the incoming trailers at EOF.
+// Close only closes the underlying body; it must not read or publish trailers.
+type requestBodyWithTrailers struct {
+	io.ReadCloser
+	original *http.Request
+	trailer  http.Header
+}
+
+func (b *requestBodyWithTrailers) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if err == io.EOF && b.original != nil {
+		clear(b.trailer)
+		for k, vv := range b.original.Trailer {
+			b.trailer[k] = slices.Clone(vv)
+		}
+		b.original = nil // repeated EOF reads must not recopy or append values
+	}
+	return n, err
 }
 
 // cloneRequest makes a semi-deep clone of origReq.
@@ -1770,6 +1801,31 @@ func copyHeader(dst, src http.Header) {
 	for k, vv := range src {
 		for _, v := range vv {
 			dst.Add(k, v)
+		}
+	}
+}
+
+// recordUpstreamRoundTrip publishes latency placeholders, records circuit
+// breaker metrics, and applies passive health-check strikes for one
+// completed upstream attempt. Used by both the HTTP round-trip path and
+// the WebTransport hijack path.
+func (h *Handler) recordUpstreamRoundTrip(di DialInfo, repl *caddy.Replacer, status int, duration time.Duration) {
+	repl.Set("http.reverse_proxy.upstream.latency", duration)
+	repl.Set("http.reverse_proxy.upstream.latency_ms", duration.Seconds()*1e3) // multiply seconds to preserve decimal (see #4666)
+
+	if di.Upstream != nil && di.Upstream.cb != nil {
+		di.Upstream.cb.RecordMetric(status, duration)
+	}
+
+	if h.HealthChecks != nil && h.HealthChecks.Passive != nil {
+		for _, badStatus := range h.HealthChecks.Passive.UnhealthyStatus {
+			if caddyhttp.StatusCodeMatches(status, badStatus) {
+				h.countFailure(di.Upstream)
+			}
+		}
+		if h.HealthChecks.Passive.UnhealthyLatency > 0 &&
+			duration >= time.Duration(h.HealthChecks.Passive.UnhealthyLatency) {
+			h.countFailure(di.Upstream)
 		}
 	}
 }
@@ -2205,9 +2261,16 @@ func matcherSetReferencesResponse(matcherSet caddyhttp.MatcherSet) bool {
 	return false
 }
 
-// roundtripSucceededError is an error type that is returned if the
-// roundtrip succeeded, but an error occurred after-the-fact.
-type roundtripSucceededError struct{ error }
+// terminalError signals that the proxy loop must stop and the wrapped
+// error must be propagated unchanged. It is emitted in any situation
+// where the handler has committed enough client-visible state that
+// retrying against another upstream would be unsafe — for example, a
+// handle_response route that ran after a successful round-trip, or a
+// WebTransport upgrade that already flushed 200 OK and hijacked the
+// stream. The inner error may be nil to signal terminal success.
+type terminalError struct{ error }
+
+func (e terminalError) Unwrap() error { return e.error }
 
 // retryableResponseError is returned when the upstream response matched
 // a retry_match entry, indicating the request should be retried with the

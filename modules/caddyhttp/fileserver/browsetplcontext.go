@@ -264,8 +264,8 @@ func (l *browseTemplateContext) applySortAndLimit(sortParam, orderParam, limitPa
 
 	if offsetParam != "" {
 		offset, _ := strconv.Atoi(offsetParam)
-		if offset > 0 && offset <= len(l.Items) {
-			l.Items = l.Items[offset:]
+		if offset > 0 {
+			l.Items = l.Items[min(offset, len(l.Items)):]
 			l.Offset = offset
 		}
 	}
