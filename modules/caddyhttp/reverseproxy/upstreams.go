@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -423,13 +424,25 @@ func (u *UpstreamResolver) ParseAddresses() error {
 // name with different resolvers do not share a cache entry. The default
 // resolver (no Resolver configured) yields "". Addresses are sorted so that the
 // same set in a different order maps to the same key.
+//
+// Each address is length-prefixed ("<len>:<addr>") rather than joined with a
+// separator, so the encoding is unambiguous even when an address itself
+// contains the separator — e.g. a Unix-socket resolver path with a comma.
+// Without this, {"a,b"} and {"a", "b"} would collide, defeating the very
+// isolation this key provides.
 func resolverCacheKey(r *UpstreamResolver) string {
 	if r == nil || len(r.Addresses) == 0 {
 		return ""
 	}
 	addrs := slices.Clone(r.Addresses)
 	slices.Sort(addrs)
-	return strings.Join(addrs, ",")
+	var b strings.Builder
+	for _, a := range addrs {
+		b.WriteString(strconv.Itoa(len(a)))
+		b.WriteByte(':')
+		b.WriteString(a)
+	}
+	return b.String()
 }
 
 // Interface guards
