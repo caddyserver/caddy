@@ -410,8 +410,10 @@ func (m QueryFilter) Filter(in zapcore.Field) zapcore.Field {
 func (m QueryFilter) processQueryString(s string) string {
 	parse := url.Parse
 	if strings.HasPrefix(s, "/") {
-		// parse a request-target like the server does: it has no
-		// fragment, so a '#' belongs to the query
+		// parse a request-target like the server does. Browsers and most
+		// clients strip a #fragment before sending, but a client that
+		// sends a raw '#' has it kept in the query by the server
+		// (url.ParseRequestURI does not split it off), so filter it too
 		parse = url.ParseRequestURI
 	}
 	u, err := parse(s)
