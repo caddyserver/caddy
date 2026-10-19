@@ -127,6 +127,23 @@ func TestQueryFilterSingleValue(t *testing.T) {
 	}
 }
 
+func TestQueryFilterHashInRequestURI(t *testing.T) {
+	f := QueryFilter{[]queryFilterAction{
+		{replaceAction, "token", "REDACTED"},
+	}}
+
+	// A request-target has no fragment, so '#' is part of the query.
+	for uri, expected := range map[string]string{
+		"/path?x=1#&token=secret": "/path?token=REDACTED&x=1%23",
+		"/path?token=secret#%zz":  "/path",
+	} {
+		out := f.Filter(zapcore.Field{String: uri})
+		if out.String != expected {
+			t.Errorf("filtering %q: got %q, expected %q", uri, out.String, expected)
+		}
+	}
+}
+
 func TestQueryFilterMultiValue(t *testing.T) {
 	f := QueryFilter{
 		Actions: []queryFilterAction{
