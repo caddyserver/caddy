@@ -918,6 +918,12 @@ func (clientauth *ClientAuthentication) verifyConnection(cs tls.ConnectionState)
 			return err
 		}
 	}
+
+	// crypto/tls has already enforced whether the mode requires a
+	// certificate, so the verifiers only check one that was presented
+	if len(rawCerts) == 0 {
+		return nil
+	}
 	for _, verifier := range clientauth.verifiers {
 		if err := verifier.VerifyClientCertificate(rawCerts, cs.VerifiedChains); err != nil {
 			return err
@@ -1082,7 +1088,8 @@ type LeafCertificateLoader interface {
 }
 
 // ClientCertificateVerifier is a type which verifies client certificates.
-// It is called during verifyPeerCertificate in the TLS handshake.
+// It is called during verifyConnection in the TLS handshake, only when
+// the client presented a certificate.
 type ClientCertificateVerifier interface {
 	VerifyClientCertificate(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error
 }
