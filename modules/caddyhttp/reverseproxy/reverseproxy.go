@@ -1211,7 +1211,9 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 			}
 			h := rw.Header()
 			ownHeaders := h.Clone()
-			copyHeader(h, http.Header(header))
+			upstreamHeaders := http.Header(header).Clone()
+			stripHopByHopHeaders(upstreamHeaders)
+			copyHeader(h, upstreamHeaders)
 			rw.WriteHeader(code)
 
 			// Clear headers coming from the backend, keeping our own
@@ -1399,10 +1401,7 @@ func (h *Handler) finalizeResponse(
 	// and restore it with a canonical Connection header.
 	upgradeVal := res.Header.Get("Upgrade")
 
-	removeConnectionHeaders(res.Header)
-	for _, h := range hopHeaders {
-		res.Header.Del(h)
-	}
+	stripHopByHopHeaders(res.Header)
 
 	if res.StatusCode == http.StatusSwitchingProtocols && upgradeVal != "" {
 		res.Header.Set("Upgrade", upgradeVal)
@@ -1848,6 +1847,16 @@ func removeConnectionHeaders(h http.Header) {
 				h.Del(sf)
 			}
 		}
+	}
+}
+
+// stripHopByHopHeaders removes hop-by-hop headers from h, including any
+// headers nominated by the Connection header.
+// See RFC 7230, section 6.1.
+func stripHopByHopHeaders(h http.Header) {
+	removeConnectionHeaders(h)
+	for _, hop := range hopHeaders {
+		h.Del(hop)
 	}
 }
 
