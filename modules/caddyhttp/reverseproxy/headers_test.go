@@ -185,3 +185,77 @@ func TestInformationalResponseKeepsHandlerHeaders(t *testing.T) {
 		t.Errorf("Link from the 103 leaked into the final response: %q", got)
 	}
 }
+
+// TestInformationalResponseStripsHopByHopHeaders verifies that hop-by-hop
+// headers from a 1xx response are not forwarded to the client, including
+// headers nominated by the Connection header.
+func TestInformationalResponseStripsHopByHopHeaders(t *testing.T) {
+	hopByHop := map[string]string{
+		"Alt-Svc":            `h2="attacker.example:443"; ma=86400`,
+		"Keep-Alive":         "timeout=999",
+		"Proxy-Authenticate": `Basic realm="phish"`,
+		"X-Internal":         "secret",
+	}
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Link", "</style.css>; rel=preload")
+		for k, v := range hopByHop {
+			w.Header().Set(k, v)
+		}
+		w.Header().Set("Connection", "X-Internal")
+		w.WriteHeader(http.StatusEarlyHints)
+		for k := range hopByHop {
+			w.Header().Del(k)
+		}
+		w.Header().Del("Link")
+		w.Header().Del("Connection")
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(backend.Close)
+
+	h := minimalHandler(0, &Upstream{Host: new(Host), Dial: backend.Listener.Addr().String()})
+
+	front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = h.ServeHTTP(w, prepareTestRequest(r), caddyhttp.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
+			return nil
+		}))
+	}))
+	t.Cleanup(front.Close)
+
+	var earlyHints []textproto.MIMEHeader
+	trace := &httptrace.ClientTrace{
+		Got1xxResponse: func(code int, header textproto.MIMEHeader) error {
+			if code == http.StatusEarlyHints {
+				earlyHints = append(earlyHints, header)
+			}
+			return nil
+		},
+	}
+	req, err := http.NewRequestWithContext(httptrace.WithClientTrace(context.Background(), trace), http.MethodGet, front.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	resp.Body.Close()
+
+	if len(earlyHints) != 1 {
+		t.Fatalf("103 responses: got %d, want 1", len(earlyHints))
+	}
+	if got := earlyHints[0].Get("Link"); got != "</style.css>; rel=preload" {
+		t.Errorf("Link on the 103: got %q, want %q", got, "</style.css>; rel=preload")
+	}
+	for k := range hopByHop {
+		if got := earlyHints[0].Get(k); got != "" {
+			t.Errorf("hop-by-hop header %s on the 103: got %q, want it stripped", k, got)
+		}
+	}
+	if got := earlyHints[0].Get("Connection"); got != "" {
+		t.Errorf("Connection on the 103: got %q, want it stripped", got)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+}
