@@ -124,6 +124,9 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 		t.Fatalf("failed to decode PEM certificate: %v", err)
 	}
 
+	ctx = context.WithValue(ctx, ServerCertCtxKey, cert)
+	req = req.WithContext(ctx)
+
 	req.TLS = &tls.ConnectionState{
 		Version:                    tls.VersionTLS13,
 		HandshakeComplete:          true,
@@ -317,6 +320,46 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 		{
 			get:    "http.request.tls.client.certificate_pem",
 			expect: string(clientCert) + "\n", // returned value comes with a newline appended to it
+		},
+		{
+			get:    "http.request.tls.server.fingerprint",
+			expect: "9f57b7b497cceacc5459b76ac1c3afedbc12b300e728071f55f84168ff0f7702",
+		},
+		{
+			get:    "http.request.tls.server.issuer",
+			expect: "CN=Caddy Test CA",
+		},
+		{
+			get:    "http.request.tls.server.serial",
+			expect: "2",
+		},
+		{
+			get:    "http.request.tls.server.subject",
+			expect: "CN=client.localdomain",
+		},
+		{
+			get:    "http.request.tls.server.san.dns_names",
+			expect: "[localhost]",
+		},
+		{
+			get:    "http.request.tls.server.san.dns_names.0",
+			expect: "localhost",
+		},
+		{
+			get:    "http.request.tls.server.san.dns_names.1",
+			expect: "",
+		},
+		{
+			get:    "http.request.tls.server.san.ips",
+			expect: "[127.0.0.1]",
+		},
+		{
+			get:    "http.request.tls.server.san.ips.0",
+			expect: "127.0.0.1",
+		},
+		{
+			get:    "http.request.tls.server.certificate_pem",
+			expect: string(clientCert) + "\n",
 		},
 	} {
 		actual, got := repl.GetString(tc.get)

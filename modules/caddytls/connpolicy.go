@@ -23,6 +23,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"reflect"
 	"slices"
@@ -132,6 +133,11 @@ func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) *tls.Config {
 			}
 			if pol.Drop {
 				return nil, fmt.Errorf("dropping connection")
+			}
+			if pol.TLSConfig != nil && pol.TLSConfig.GetCertificate != nil {
+				if cert, _ := pol.TLSConfig.GetCertificate(hello); cert != nil {
+					recordServerCert(hello.Conn, cert)
+				}
 			}
 			return pol.TLSConfig, nil
 		}
@@ -324,7 +330,12 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 				}
 			}
 
-			return cfg.GetCertificateWithContext(ctx, hello)
+			cert, err := cfg.GetCertificateWithContext(ctx, hello)
+			if err != nil {
+				return nil, err
+			}
+			recordServerCert(hello.Conn, cert)
+			return cert, nil
 		},
 		MinVersion: tls.VersionTLS12,
 		MaxVersion: tls.VersionTLS13,
@@ -939,6 +950,41 @@ func decodeBase64DERCert(certStr string) (*x509.Certificate, error) {
 		return nil, err
 	}
 	return x509.ParseCertificate(derBytes)
+}
+
+type serverCertificateRecorder interface {
+	SetServerCertificate(*x509.Certificate)
+}
+
+// recordServerCert records the leaf server certificate on the underlying connection
+// if it implements serverCertificateRecorder, allowing Caddy to track the selected
+// certificate for placeholders across both fresh and resumed TLS handshakes.
+func recordServerCert(conn net.Conn, cert *tls.Certificate) {
+	if conn == nil || cert == nil {
+		return
+	}
+	var leaf *x509.Certificate
+	if cert.Leaf != nil {
+		leaf = cert.Leaf
+	} else if len(cert.Certificate) > 0 {
+		leaf, _ = x509.ParseCertificate(cert.Certificate[0])
+	}
+	if leaf == nil {
+		return
+	}
+	for conn != nil {
+		if r, ok := conn.(serverCertificateRecorder); ok {
+			r.SetServerCertificate(leaf)
+			return
+		}
+		if u, ok := conn.(interface{ Unwrap() net.Conn }); ok {
+			conn = u.Unwrap()
+		} else if u, ok := conn.(interface{ NetConn() net.Conn }); ok {
+			conn = u.NetConn()
+		} else {
+			break
+		}
+	}
 }
 
 // setDefaultTLSParams sets the default TLS cipher suites, protocol versions,

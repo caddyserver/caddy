@@ -479,7 +479,7 @@ func getReqTLSReplacement(req *http.Request, key string) (any, bool) {
 	if state == nil {
 		state = new(tls.ConnectionState)
 	}
-	value, known := getTLSReplacement(state, key)
+	value, known := getTLSReplacement(state, getTLSServerCert(req), key)
 	if req.TLS == nil {
 		// Use the same field parser to recognise valid placeholders but
 		// do not substitute values from the empty state for a plain HTTP request.
@@ -488,7 +488,7 @@ func getReqTLSReplacement(req *http.Request, key string) (any, bool) {
 	return value, known
 }
 
-func getTLSReplacement(state *tls.ConnectionState, key string) (any, bool) {
+func getTLSReplacement(state *tls.ConnectionState, serverCert *x509.Certificate, key string) (any, bool) {
 	if len(key) < len(reqTLSReplPrefix) {
 		return nil, false
 	}
@@ -501,7 +501,7 @@ func getTLSReplacement(state *tls.ConnectionState, key string) (any, bool) {
 		cert = getTLSPeerCert(state)
 		subfield = field[len("client."):]
 	} else if strings.HasPrefix(field, "server.") {
-		cert = getTLSServerCert(state)
+		cert = serverCert
 		subfield = field[len("server."):]
 	}
 
@@ -661,6 +661,21 @@ func getTLSPeerCert(cs *tls.ConnectionState) *x509.Certificate {
 		return nil
 	}
 	return cs.PeerCertificates[0]
+}
+
+// getTLSServerCert retrieves the server certificate from the request context.
+// Returns nil if no server cert is in use or available.
+func getTLSServerCert(req *http.Request) *x509.Certificate {
+	if req == nil {
+		return nil
+	}
+	if cert, ok := req.Context().Value(ServerCertCtxKey).(*x509.Certificate); ok {
+		return cert
+	}
+	if getter, ok := req.Context().Value(ServerCertCtxKey).(func() *x509.Certificate); ok {
+		return getter()
+	}
+	return nil
 }
 
 type requestID struct {

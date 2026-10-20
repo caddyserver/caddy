@@ -512,6 +512,9 @@ func (app *App) Start() error {
 					})
 					ctx = context.WithValue(ctx, tlsConnectionStateFuncCtxKey, getTlsConStateFunc)
 				}
+				if holder := findServerCertHolder(c); holder != nil {
+					ctx = context.WithValue(ctx, ServerCertCtxKey, holder.ServerCertificate)
+				}
 				return ctx
 			},
 		}
@@ -607,6 +610,8 @@ func (app *App) Start() error {
 					}
 
 					if useTLS {
+						// track server certificate selected during TLS handshake
+						ln = &tlsServerCertListener{Listener: ln}
 						// create TLS listener - this enables and terminates TLS
 						ln = tls.NewListener(ln, tlsCfg)
 					}
