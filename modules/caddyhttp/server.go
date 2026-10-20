@@ -321,9 +321,13 @@ type Server struct {
 	// this value. Use N > 1 when there are proxies in front of
 	// the trusted ones whose addresses are not known, such as a
 	// WAF in front of a load balancer. Only untrusted values are
-	// counted. If a header has fewer such values, the left-most
-	// of them is used; if it has none, the next header is tried,
-	// then the remote address. If zero,
+	// counted. If a header has some untrusted values but fewer
+	// than N, the request did not come through the expected
+	// proxies, so the direct remote address is used; if it has
+	// none, the next header is tried, then the remote address.
+	// N > 1 is safe only if clients cannot reach the trusted
+	// proxies without going through the untrusted ones, and the
+	// outermost proxy controls the incoming header value. If zero,
 	// the ClientIPHeaders will be parsed from left to right,
 	// and the first value that is a valid IP address will be
 	// used as client IP.
@@ -1948,13 +1952,13 @@ func trustedRealClientIP(r *http.Request, headers []string, clientIP string) str
 
 // strictUntrustedClientIp iterates through the list of client IP headers,
 // parses them from right-to-left, and returns the count-th valid IP address
-// that is untrusted, or the left-most one if a header has fewer. If no valid
-// untrusted IP address is found, then the direct remote address is returned.
+// that is untrusted. If a header has fewer untrusted addresses than count, or
+// no valid untrusted IP address is found, then the direct remote address is
+// returned.
 func strictUntrustedClientIp(r *http.Request, headers []string, trusted []netip.Prefix, clientIP string, count int) string {
 	for _, headerName := range headers {
 		parts := strings.Split(strings.Join(r.Header.Values(headerName), ","), ",")
 
-		var untrusted string
 		seen := 0
 		for _, part := range slices.Backward(parts) {
 			// Some proxies may retain the port number, so split if possible
@@ -1974,14 +1978,15 @@ func strictUntrustedClientIp(r *http.Request, headers []string, trusted []netip.
 			if isTrustedClientIP(ipAddr, trusted) {
 				continue
 			}
-			untrusted = ipAddr.String()
 			seen++
 			if seen >= count {
-				return untrusted
+				return ipAddr.String()
 			}
 		}
-		if untrusted != "" {
-			return untrusted
+		if seen > 0 {
+			// Fewer untrusted hops than configured: the request
+			// bypassed part of the expected proxy chain.
+			return clientIP
 		}
 	}
 

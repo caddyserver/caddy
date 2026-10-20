@@ -1405,9 +1405,12 @@ func TestServer_DetermineTrustedProxy_MatchRightMostUntrustedCount(t *testing.T)
 		{count: 3, xff: "30.30.30.30, 45.54.45.54, 20.20.20.20", want: "30.30.30.30"},
 		// trusted and invalid values are not counted
 		{count: 2, xff: "45.54.45.54, 10.0.0.5, bad, 20.20.20.20, 10.0.0.4", want: "45.54.45.54"},
-		// fewer untrusted values than the count: the left-most one
-		{count: 3, xff: "45.54.45.54, 20.20.20.20", want: "45.54.45.54"},
+		// fewer untrusted values than the count: the remote address
+		{count: 3, xff: "45.54.45.54, 20.20.20.20", want: "10.0.0.1"},
 		{count: 2, xff: "10.0.0.5, 10.0.0.4", want: "10.0.0.1"},
+		// a client that skipped the WAF and reached the load balancer directly
+		{count: 2, xff: "45.54.45.54", want: "10.0.0.1"},
+		{count: 2, xff: "45.54.45.54, 10.0.0.5", want: "10.0.0.1"},
 	} {
 		server := &Server{
 			trustedProxies: &StaticIPRange{
