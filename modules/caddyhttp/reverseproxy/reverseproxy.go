@@ -909,6 +909,7 @@ func normalizeWebsocketHeaders(header http.Header) {
 // proxying) regardless of proxy retries. This assumes that no mutations
 // of the cloned request are performed by h during or after proxying.
 func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.Request, error) {
+	origReq := req
 	req = cloneRequest(req)
 
 	// if enabled, perform rewrites on the cloned request; if
@@ -920,6 +921,17 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 			req.ContentLength = 0
 			req.Body = nil
 		}
+	}
+
+	if req.Body != nil {
+		// net/http fills in the incoming trailers only when Body.Read reaches
+		// EOF. Keep an independent map, but update it in that same Read before
+		// the transport writes the trailers. Install this before buffering,
+		// which may itself consume the body to EOF before the round trip.
+		if req.Trailer == nil {
+			req.Trailer = make(http.Header)
+		}
+		req.Body = &requestBodyWithTrailers{ReadCloser: req.Body, original: origReq, trailer: req.Trailer}
 	}
 
 	// Fully buffering the request is incompatible with incremental forwarding.
@@ -946,6 +958,15 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 			req.ContentLength = readBytes
 			req.Header.Set("Content-Length", strconv.FormatInt(req.ContentLength, 10))
 		}
+	}
+
+	// HTTP/1 upstreams require chunked framing to carry trailers, including
+	// when buffering has made the body length known (or the body is empty).
+	// Length-required transports such as FastCGI need the buffered length and
+	// do not carry HTTP trailers.
+	if len(req.Trailer) > 0 && req.Body != nil && !h.transportRequiresContentLength() {
+		req.ContentLength = -1
+		req.Header.Del("Content-Length")
 	}
 
 	if req.ContentLength == 0 {
@@ -1190,7 +1211,9 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 			}
 			h := rw.Header()
 			ownHeaders := h.Clone()
-			copyHeader(h, http.Header(header))
+			upstreamHeaders := http.Header(header).Clone()
+			stripHopByHopHeaders(upstreamHeaders)
+			copyHeader(h, upstreamHeaders)
 			rw.WriteHeader(code)
 
 			// Clear headers coming from the backend, keeping our own
@@ -1378,10 +1401,7 @@ func (h *Handler) finalizeResponse(
 	// and restore it with a canonical Connection header.
 	upgradeVal := res.Header.Get("Upgrade")
 
-	removeConnectionHeaders(res.Header)
-	for _, h := range hopHeaders {
-		res.Header.Del(h)
-	}
+	stripHopByHopHeaders(res.Header)
 
 	if res.StatusCode == http.StatusSwitchingProtocols && upgradeVal != "" {
 		res.Header.Set("Upgrade", upgradeVal)
@@ -1686,6 +1706,26 @@ func (h Handler) bufferedBody(originalBody io.ReadCloser, limit int64) (io.ReadC
 	}, written
 }
 
+// requestBodyWithTrailers publishes a snapshot of the incoming trailers at EOF.
+// Close only closes the underlying body; it must not read or publish trailers.
+type requestBodyWithTrailers struct {
+	io.ReadCloser
+	original *http.Request
+	trailer  http.Header
+}
+
+func (b *requestBodyWithTrailers) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if err == io.EOF && b.original != nil {
+		clear(b.trailer)
+		for k, vv := range b.original.Trailer {
+			b.trailer[k] = slices.Clone(vv)
+		}
+		b.original = nil // repeated EOF reads must not recopy or append values
+	}
+	return n, err
+}
+
 // cloneRequest makes a semi-deep clone of origReq.
 //
 // Most of this code is borrowed from the Go stdlib reverse proxy,
@@ -1807,6 +1847,16 @@ func removeConnectionHeaders(h http.Header) {
 				h.Del(sf)
 			}
 		}
+	}
+}
+
+// stripHopByHopHeaders removes hop-by-hop headers from h, including any
+// headers nominated by the Connection header.
+// See RFC 7230, section 6.1.
+func stripHopByHopHeaders(h http.Header) {
+	removeConnectionHeaders(h)
+	for _, hop := range hopHeaders {
+		h.Del(hop)
 	}
 }
 
