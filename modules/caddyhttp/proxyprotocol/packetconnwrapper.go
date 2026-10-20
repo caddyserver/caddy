@@ -194,6 +194,10 @@ func (c *packetConn) remember(client *net.UDPAddr, proxy net.Addr) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	_, known := c.peers[key]
+	// TODO: this doesn't cap concurrent active clients, since peers are only
+	// dropped after proxiedPeerTTL, and a full map checks every peer. An LRU
+	// would enforce it, but could drop replies on a busy server; see how this
+	// behaves under real load first.
 	if !known && len(c.peers) >= maxProxiedPeers || now.Sub(c.lastPrune) >= proxiedPeerTTL {
 		for k, peer := range c.peers {
 			if now.Sub(peer.lastSeen) > proxiedPeerTTL {
@@ -224,29 +228,26 @@ func (c *packetConn) WriteTo(p []byte, addr net.Addr) (int, error) {
 // SetReadBuffer and SetWriteBuffer let quic-go size the socket buffers
 // of the underlying socket, as it does when no wrapper is configured.
 func (c *packetConn) SetReadBuffer(bytes int) error {
-	if conn, ok := underlying[interface{ SetReadBuffer(int) error }](c.PacketConn); ok {
+	if conn, ok := c.socket().(interface{ SetReadBuffer(int) error }); ok {
 		return conn.SetReadBuffer(bytes)
 	}
 	return errors.ErrUnsupported
 }
 
 func (c *packetConn) SetWriteBuffer(bytes int) error {
-	if conn, ok := underlying[interface{ SetWriteBuffer(int) error }](c.PacketConn); ok {
+	if conn, ok := c.socket().(interface{ SetWriteBuffer(int) error }); ok {
 		return conn.SetWriteBuffer(bytes)
 	}
 	return errors.ErrUnsupported
 }
 
-// underlying returns the first conn in the Unwrap chain that implements T.
-func underlying[T any](pc net.PacketConn) (T, bool) {
+// socket returns the underlying socket of the wrapped conn.
+func (c *packetConn) socket() net.PacketConn {
+	pc := c.PacketConn
 	for {
-		if conn, ok := pc.(T); ok {
-			return conn, true
-		}
 		unwrapper, ok := pc.(interface{ Unwrap() net.PacketConn })
 		if !ok {
-			var zero T
-			return zero, false
+			return pc
 		}
 		pc = unwrapper.Unwrap()
 	}
