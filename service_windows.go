@@ -44,8 +44,9 @@ func init() {
 type runner struct{}
 
 func (runner) Execute(args []string, request <-chan svc.ChangeRequest, status chan<- svc.Status) (bool, uint32) {
+	// SetGlobalStatus publishes the initial status: StartPending, or
+	// the latest status Caddy reported before the service started.
 	notify.SetGlobalStatus(status)
-	status <- svc.Status{State: svc.StartPending}
 
 	for {
 		req := <-request
