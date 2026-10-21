@@ -216,7 +216,7 @@ func BenchmarkDirectoryListingAndSort(b *testing.B) {
 		b.Run(fmt.Sprintf("entries=%d", n), func(b *testing.B) {
 			benchmarkDirectoryListingAndSort(b, n, func(fsrv *FileServer, ctx context.Context, fileSystem fs.FS, entries []fs.DirEntry, root string) *browseTemplateContext {
 				listing := fsrv.directoryListing(ctx, fileSystem, time.Time{}, entries, true, root, "/", caddy.NewReplacer())
-				listing.applySortAndLimit(sortByNameDirFirst, sortOrderAsc, "", "")
+				listing.applySortAndLimit(sortByNameDirFirst, sortOrderAsc, sortMethodLexicographic, "", "")
 				return listing
 			})
 		})
