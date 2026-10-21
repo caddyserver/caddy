@@ -1552,9 +1552,12 @@ func (lb LoadBalancing) tryAgain(ctx caddy.Context, start time.Time, retries int
 	// could not even be established to the upstream), then it
 	// should be safe to retry, since without a connection, no
 	// HTTP request can be transmitted; but if the error is not
-	// specifically a dialer error, we need to be careful
+	// specifically a dialer error, we need to be careful; the
+	// dial error may be wrapped, e.g. net/http wraps it in a
+	// *net.OpError ("proxyconnect") when a forward proxy is used
 	if proxyErr != nil {
-		_, isDialError := proxyErr.(DialError)
+		var dialErr DialError
+		isDialError := errors.As(proxyErr, &dialErr)
 		_, isRetryableResponse := proxyErr.(retryableResponseError)
 		herr, isHandlerError := proxyErr.(caddyhttp.HandlerError)
 
