@@ -449,13 +449,14 @@ type ListenQUICOptions struct {
 //
 // The underlying listener is pooled per address: the first creator's configuration
 // (Allow0RTT, WebTransport capabilities) wins; subsequent callers reuse that listener.
+// Packet conn wrappers follow the active config, if the first creator had any.
 //
 // NOTE: This API is EXPERIMENTAL and may be changed or removed.
 // NOTE: user should close the returned listener twice, once to stop accepting new connections, the second time to free up the packet conn.
 func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config net.ListenConfig, opts ListenQUICOptions) (http3.QUICListener, error) {
 	lnKey := listenerKey("quic"+na.Network, na.JoinHostPort(portOffset))
 
-	sharedEarlyListener, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
+	sharedEarlyListener, loaded, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
 		lnAny, err := na.Listen(ctx, portOffset, config)
 		if err != nil {
 			return nil, err
@@ -463,24 +464,18 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 
 		ln := lnAny.(net.PacketConn)
 
-		h3ln := ln
+		sqs := newSharedQUICState(opts.TLSConfig)
+		var h3ln net.PacketConn
 		if len(opts.PacketConnWrappers) == 0 {
-			for {
-				// retrieve the underlying socket, so quic-go can optimize.
-				if unwrapper, ok := h3ln.(interface{ Unwrap() net.PacketConn }); ok {
-					h3ln = unwrapper.Unwrap()
-				} else {
-					break
-				}
-			}
+			// retrieve the underlying socket, so quic-go can optimize.
+			h3ln = unwrapPacketConn(ln)
 		} else {
-			// wrap packet conn before QUIC
-			for _, pcWrapper := range opts.PacketConnWrappers {
-				h3ln = pcWrapper.WrapPacketConn(h3ln)
-			}
+			// wrap packet conn before QUIC; each config gets its own wrapped
+			// conn, so changed wrappers take over on reload like tls.Configs do
+			sqs.addPacketConn(opts.TLSConfig, ln, opts.PacketConnWrappers)
+			h3ln = &switchingPacketConn{PacketConn: ln, sqs: sqs}
 		}
 
-		sqs := newSharedQUICState(opts.TLSConfig)
 		// http3.ConfigureTLSConfig only uses this field and tls App sets this field as well
 		//nolint:gosec
 		quicTlsConfig := &tls.Config{
@@ -521,6 +516,7 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 			sqs:                  sqs,
 			key:                  lnKey,
 			supportsWebTransport: opts.EnableWebTransport,
+			wrapsPacketConn:      len(opts.PacketConnWrappers) > 0,
 		}, nil
 	})
 	if err != nil {
@@ -528,6 +524,14 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 	}
 
 	sql := sharedEarlyListener.(*sharedQuicListener)
+	if loaded {
+		if sql.wrapsPacketConn {
+			sql.sqs.addPacketConn(opts.TLSConfig, sql.packetConn, opts.PacketConnWrappers)
+		} else if len(opts.PacketConnWrappers) > 0 {
+			Log().Warn("QUIC listener was created without packet conn wrappers; they take effect after a restart",
+				zap.String("address", lnKey))
+		}
+	}
 	// add current tls.Config to sqs, so GetConfigForClient will always return the latest tls.Config in case of context cancellation
 	ctx, cancel := sql.sqs.addState(opts.TLSConfig)
 
@@ -556,6 +560,11 @@ type sharedQUICState struct {
 	rmu           sync.RWMutex
 	tlsConfs      map[*tls.Config]contextAndCancelFunc
 	activeTlsConf *tls.Config
+
+	// packet conns wrapped for each tls.Config, if the listener uses
+	// packet conn wrappers; the active one follows activeTlsConf
+	packetConns      map[*tls.Config]net.PacketConn
+	activePacketConn atomic.Pointer[net.PacketConn]
 }
 
 // newSharedQUICState creates a new sharedQUICState
@@ -563,6 +572,7 @@ func newSharedQUICState(tlsConfig *tls.Config) *sharedQUICState {
 	sqtc := &sharedQUICState{
 		tlsConfs:      make(map[*tls.Config]contextAndCancelFunc),
 		activeTlsConf: tlsConfig,
+		packetConns:   make(map[*tls.Config]net.PacketConn),
 	}
 	sqtc.addState(tlsConfig)
 	return sqtc
@@ -603,11 +613,15 @@ func (sqs *sharedQUICState) addState(tlsConfig *tls.Config) (context.Context, co
 		defer sqs.rmu.Unlock()
 
 		delete(sqs.tlsConfs, tlsConfig)
+		delete(sqs.packetConns, tlsConfig)
 		if sqs.activeTlsConf == tlsConfig {
 			// select another tls.Config, if there is none,
 			// related sharedQuicListener will be destroyed anyway
 			for tc := range sqs.tlsConfs {
 				sqs.activeTlsConf = tc
+				if pc, ok := sqs.packetConns[tc]; ok {
+					sqs.activePacketConn.Store(&pc)
+				}
 				break
 			}
 		}
@@ -620,6 +634,69 @@ func (sqs *sharedQUICState) addState(tlsConfig *tls.Config) (context.Context, co
 	return ctx, wrappedCancel
 }
 
+// addPacketConn wraps pc with the packet conn wrappers of tlsConfig's
+// config, unless that config has its wrapped conn already. The wrapped
+// conn is used while tlsConfig is the active tls.Config.
+func (sqs *sharedQUICState) addPacketConn(tlsConfig *tls.Config, pc net.PacketConn, wrappers []PacketConnWrapper) {
+	sqs.rmu.Lock()
+	defer sqs.rmu.Unlock()
+
+	if _, ok := sqs.packetConns[tlsConfig]; ok {
+		return
+	}
+	for _, pcWrapper := range wrappers {
+		pc = pcWrapper.WrapPacketConn(pc)
+	}
+	sqs.packetConns[tlsConfig] = pc
+	if sqs.activeTlsConf == tlsConfig {
+		sqs.activePacketConn.Store(&pc)
+	}
+}
+
+// switchingPacketConn is the packet conn quic-go uses when packet conn
+// wrappers are configured. Reads and writes go to the conn wrapped for
+// the active tls.Config, so a reload that changes the wrappers applies
+// once the old config stops, without closing the shared socket.
+type switchingPacketConn struct {
+	net.PacketConn
+	sqs *sharedQUICState
+}
+
+func (c *switchingPacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
+	return (*c.sqs.activePacketConn.Load()).ReadFrom(p)
+}
+
+func (c *switchingPacketConn) WriteTo(p []byte, addr net.Addr) (int, error) {
+	return (*c.sqs.activePacketConn.Load()).WriteTo(p, addr)
+}
+
+// SetReadBuffer and SetWriteBuffer let quic-go size the buffers of the
+// underlying socket, as it does when no wrapper is configured.
+func (c *switchingPacketConn) SetReadBuffer(bytes int) error {
+	if conn, ok := unwrapPacketConn(c.PacketConn).(interface{ SetReadBuffer(int) error }); ok {
+		return conn.SetReadBuffer(bytes)
+	}
+	return errors.ErrUnsupported
+}
+
+func (c *switchingPacketConn) SetWriteBuffer(bytes int) error {
+	if conn, ok := unwrapPacketConn(c.PacketConn).(interface{ SetWriteBuffer(int) error }); ok {
+		return conn.SetWriteBuffer(bytes)
+	}
+	return errors.ErrUnsupported
+}
+
+// unwrapPacketConn returns the underlying socket of pc.
+func unwrapPacketConn(pc net.PacketConn) net.PacketConn {
+	for {
+		unwrapper, ok := pc.(interface{ Unwrap() net.PacketConn })
+		if !ok {
+			return pc
+		}
+		pc = unwrapper.Unwrap()
+	}
+}
+
 // sharedQuicListener is like sharedListener, but for quic.EarlyListeners.
 type sharedQuicListener struct {
 	*quic.EarlyListener
@@ -627,6 +704,7 @@ type sharedQuicListener struct {
 	sqs                  *sharedQUICState
 	key                  string
 	supportsWebTransport bool // set by the first creator; subsequent pool reuses keep this value
+	wrapsPacketConn      bool // set by the first creator; packet conn wrappers apply only if it had some
 }
 
 // SupportsWebTransport reports whether the shared QUIC listener was created

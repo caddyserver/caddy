@@ -235,6 +235,53 @@ func TestSharedQUICStateGetEncryptedClientHelloKeys(t *testing.T) {
 	}
 }
 
+// taggingPacketConnWrapper wraps a packet conn so reads report its tag.
+type taggingPacketConnWrapper string
+
+func (w taggingPacketConnWrapper) WrapPacketConn(pc net.PacketConn) net.PacketConn {
+	return taggedPacketConn{pc, string(w)}
+}
+
+type taggedPacketConn struct {
+	net.PacketConn
+	tag string
+}
+
+func (c taggedPacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
+	return copy(p, c.tag), nil, nil
+}
+
+func TestSharedQUICStateSwitchesPacketConns(t *testing.T) {
+	oldConfig, newConfig := &tls.Config{}, &tls.Config{}
+	sqs := newSharedQUICState(oldConfig)
+	sqs.addPacketConn(oldConfig, nil, []PacketConnWrapper{taggingPacketConnWrapper("old")})
+	pc := &switchingPacketConn{sqs: sqs}
+
+	read := func() string {
+		t.Helper()
+		buf := make([]byte, 8)
+		n, _, err := pc.ReadFrom(buf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(buf[:n])
+	}
+
+	// a reload adds the new config's wrappers; the old ones stay in use
+	// until the old config stops, as with its tls.Config
+	sqs.addPacketConn(newConfig, nil, []PacketConnWrapper{taggingPacketConnWrapper("new")})
+	_, cancelNew := sqs.addState(newConfig)
+	if got := read(); got != "old" {
+		t.Fatalf("read through %q wrapper before the old config stopped, want old", got)
+	}
+	_, cancelOld := sqs.addState(oldConfig)
+	cancelOld(nil)
+	if got := read(); got != "new" {
+		t.Fatalf("read through %q wrapper after the old config stopped, want new", got)
+	}
+	cancelNew(nil)
+}
+
 func TestParseNetworkAddress(t *testing.T) {
 	for i, tc := range []struct {
 		input          string

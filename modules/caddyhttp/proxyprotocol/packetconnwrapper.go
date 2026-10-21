@@ -63,6 +63,8 @@ type PacketConnWrapper struct {
 	//
 	// Default: IGNORE
 	FallbackPolicy Policy `json:"fallback_policy,omitempty"`
+
+	peerTables []*peerTable // guarded by peerTablesMu
 }
 
 // CaddyModule returns the Caddy module information.
@@ -94,11 +96,26 @@ func (pp *PacketConnWrapper) Provision(ctx caddy.Context) error {
 
 // WrapPacketConn adds PROXY protocol support to the packet conn.
 func (pp *PacketConnWrapper) WrapPacketConn(pc net.PacketConn) net.PacketConn {
+	peerTablesMu.Lock()
+	defer peerTablesMu.Unlock()
+	peers := acquirePeerTable(socket(pc))
+	pp.peerTables = append(pp.peerTables, peers)
 	return &packetConn{
 		PacketConn: pc,
 		wrapper:    pp,
-		peers:      make(map[netip.AddrPort]proxiedPeer),
+		peers:      peers,
 	}
+}
+
+// Cleanup releases the client addresses remembered for this config.
+func (pp *PacketConnWrapper) Cleanup() error {
+	peerTablesMu.Lock()
+	defer peerTablesMu.Unlock()
+	for _, peers := range pp.peerTables {
+		peers.release()
+	}
+	pp.peerTables = nil
+	return nil
 }
 
 const (
@@ -109,78 +126,124 @@ const (
 	// maxProxiedPeers bounds the client addresses remembered at once, so
 	// datagrams with forged source addresses cannot grow the map forever.
 	maxProxiedPeers = 1 << 16
+
+	// maxDatagramSize fits any UDP datagram, so a full-size QUIC packet
+	// and its PROXY header are read whole before the header is stripped.
+	maxDatagramSize = 1<<16 - 1
 )
+
+var datagramPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, maxDatagramSize)
+		return &b
+	},
+}
 
 type proxiedPeer struct {
 	proxy    net.Addr
 	lastSeen time.Time
 }
 
-type packetConn struct {
-	net.PacketConn
-	wrapper *PacketConnWrapper
+// peerTable remembers which proxy each client address came through. The
+// wrappers of every config loaded on the same socket share it, so after
+// a reload replies to clients that are already connected still go back
+// through their proxy.
+type peerTable struct {
+	socket net.PacketConn
+	refs   int
 
 	mu        sync.Mutex
 	peers     map[netip.AddrPort]proxiedPeer
 	lastPrune time.Time
 }
 
+// peerTables holds the table of each socket, and peerTablesMu guards it
+// along with the refs of every table.
+var (
+	peerTables   = make(map[net.PacketConn]*peerTable)
+	peerTablesMu sync.Mutex
+)
+
+func acquirePeerTable(socket net.PacketConn) *peerTable {
+	t, ok := peerTables[socket]
+	if !ok {
+		t = &peerTable{socket: socket, peers: make(map[netip.AddrPort]proxiedPeer)}
+		peerTables[socket] = t
+	}
+	t.refs++
+	return t
+}
+
+func (t *peerTable) release() {
+	t.refs--
+	if t.refs == 0 {
+		delete(peerTables, t.socket)
+	}
+}
+
+type packetConn struct {
+	net.PacketConn
+	wrapper *PacketConnWrapper
+	peers   *peerTable
+}
+
 // ReadFrom reads the next datagram that passes the policy, with its
 // PROXY header removed.
 func (c *packetConn) ReadFrom(p []byte) (int, net.Addr, error) {
+	buf := datagramPool.Get().(*[]byte)
+	defer datagramPool.Put(buf)
 	for {
-		n, addr, err := c.PacketConn.ReadFrom(p)
+		n, addr, err := c.PacketConn.ReadFrom(*buf)
 		if err != nil {
-			return n, addr, err
+			return 0, addr, err
 		}
-		n, src, ok := c.process(p[:n], addr)
+		payload, src, ok := c.process((*buf)[:n], addr)
 		if ok {
-			return n, src, nil
+			return copy(p, payload), src, nil
 		}
 	}
 }
 
-// process strips the PROXY header from the datagram in p and returns the
-// payload length and the address to report, or ok=false to drop it.
-func (c *packetConn) process(p []byte, upstream net.Addr) (n int, src net.Addr, ok bool) {
+// process strips the PROXY header from the datagram and returns the
+// payload and the address to report, or ok=false to drop it.
+func (c *packetConn) process(datagram []byte, upstream net.Addr) (payload []byte, src net.Addr, ok bool) {
 	// an unbound unixgram sender has no address to apply a policy to
 	if upstream == nil {
-		return len(p), upstream, true
+		return datagram, upstream, true
 	}
 	policy, err := upstreamPolicy(upstream, c.wrapper.allow, c.wrapper.deny, c.wrapper.FallbackPolicy)
 	if err != nil {
-		return 0, nil, false
+		return nil, nil, false
 	}
 	if policy == goproxy.SKIP {
-		return len(p), upstream, true
+		return datagram, upstream, true
 	}
 
-	header, payload, err := goproxy.ParseUDPDatagram(p)
+	header, payload, err := goproxy.ParseUDPDatagram(datagram)
 	if errors.Is(err, goproxy.ErrNoProxyProtocol) {
 		if policy == goproxy.REQUIRE {
-			return 0, nil, false
+			return nil, nil, false
 		}
-		return len(p), upstream, true
+		return datagram, upstream, true
 	}
 	if err != nil || policy == goproxy.REJECT {
-		return 0, nil, false
+		return nil, nil, false
 	}
-
-	n = copy(p, payload)
-	if policy == goproxy.IGNORE || header.Command.IsLocal() {
-		return n, upstream, true
+	if header.Command.IsLocal() {
+		return payload, upstream, true
 	}
-	var client *net.UDPAddr
-	switch addr := header.SourceAddr.(type) {
-	case *net.UDPAddr:
-		client = addr
-	case *net.TCPAddr:
-		client = &net.UDPAddr{IP: addr.IP, Port: addr.Port, Zone: addr.Zone}
-	default:
-		return n, upstream, true
+	// a PROXY command on a UDP listener must describe a UDP client
+	client, _, ok := header.UDPAddrs()
+	if !ok {
+		return nil, nil, false
 	}
-	c.remember(client, upstream)
-	return n, client, true
+	if policy == goproxy.IGNORE {
+		return payload, upstream, true
+	}
+	if !c.peers.remember(client, upstream) {
+		return nil, nil, false
+	}
+	return payload, client, true
 }
 
 func peerKey(addr *net.UDPAddr) netip.AddrPort {
@@ -188,62 +251,52 @@ func peerKey(addr *net.UDPAddr) netip.AddrPort {
 	return netip.AddrPortFrom(ap.Addr().Unmap(), ap.Port())
 }
 
-func (c *packetConn) remember(client *net.UDPAddr, proxy net.Addr) {
+// remember stores the proxy that replies to client go through. It
+// reports false if the table is full and client is not in it.
+func (t *peerTable) remember(client *net.UDPAddr, proxy net.Addr) bool {
 	key := peerKey(client)
 	now := time.Now()
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	_, known := c.peers[key]
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	_, known := t.peers[key]
 	// TODO: this doesn't cap concurrent active clients, since peers are only
 	// dropped after proxiedPeerTTL, and a full map checks every peer. An LRU
 	// would enforce it, but could drop replies on a busy server; see how this
 	// behaves under real load first.
-	if !known && len(c.peers) >= maxProxiedPeers || now.Sub(c.lastPrune) >= proxiedPeerTTL {
-		for k, peer := range c.peers {
+	if !known && len(t.peers) >= maxProxiedPeers || now.Sub(t.lastPrune) >= proxiedPeerTTL {
+		for k, peer := range t.peers {
 			if now.Sub(peer.lastSeen) > proxiedPeerTTL {
-				delete(c.peers, k)
+				delete(t.peers, k)
 			}
 		}
-		c.lastPrune = now
+		t.lastPrune = now
 	}
-	if !known && len(c.peers) >= maxProxiedPeers {
-		return
+	if !known && len(t.peers) >= maxProxiedPeers {
+		return false
 	}
-	c.peers[key] = proxiedPeer{proxy: proxy, lastSeen: now}
+	t.peers[key] = proxiedPeer{proxy: proxy, lastSeen: now}
+	return true
+}
+
+func (t *peerTable) proxy(client *net.UDPAddr) (net.Addr, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	peer, ok := t.peers[peerKey(client)]
+	return peer.proxy, ok
 }
 
 // WriteTo sends replies for a proxied client to the proxy it came through.
 func (c *packetConn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	if udpAddr, ok := addr.(*net.UDPAddr); ok {
-		c.mu.Lock()
-		peer, ok := c.peers[peerKey(udpAddr)]
-		c.mu.Unlock()
-		if ok {
-			addr = peer.proxy
+		if proxy, ok := c.peers.proxy(udpAddr); ok {
+			addr = proxy
 		}
 	}
 	return c.PacketConn.WriteTo(p, addr)
 }
 
-// SetReadBuffer and SetWriteBuffer let quic-go size the socket buffers
-// of the underlying socket, as it does when no wrapper is configured.
-func (c *packetConn) SetReadBuffer(bytes int) error {
-	if conn, ok := c.socket().(interface{ SetReadBuffer(int) error }); ok {
-		return conn.SetReadBuffer(bytes)
-	}
-	return errors.ErrUnsupported
-}
-
-func (c *packetConn) SetWriteBuffer(bytes int) error {
-	if conn, ok := c.socket().(interface{ SetWriteBuffer(int) error }); ok {
-		return conn.SetWriteBuffer(bytes)
-	}
-	return errors.ErrUnsupported
-}
-
-// socket returns the underlying socket of the wrapped conn.
-func (c *packetConn) socket() net.PacketConn {
-	pc := c.PacketConn
+// socket returns the underlying socket of pc.
+func socket(pc net.PacketConn) net.PacketConn {
 	for {
 		unwrapper, ok := pc.(interface{ Unwrap() net.PacketConn })
 		if !ok {
@@ -255,6 +308,7 @@ func (c *packetConn) socket() net.PacketConn {
 
 // Interface guards
 var (
+	_ caddy.CleanerUpper      = (*PacketConnWrapper)(nil)
 	_ caddy.Provisioner       = (*PacketConnWrapper)(nil)
 	_ caddy.Module            = (*PacketConnWrapper)(nil)
 	_ caddy.PacketConnWrapper = (*PacketConnWrapper)(nil)

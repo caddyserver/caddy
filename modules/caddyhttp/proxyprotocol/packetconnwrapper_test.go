@@ -1,6 +1,7 @@
 package proxyprotocol
 
 import (
+	"bytes"
 	"io"
 	"net"
 	"net/netip"
@@ -43,21 +44,25 @@ var (
 
 func proxied(t *testing.T, command goproxy.ProtocolVersionAndCommand, payload string) []byte {
 	t.Helper()
-	header := &goproxy.Header{
+	return formatDatagram(t, &goproxy.Header{
 		Version:           2,
 		Command:           command,
 		TransportProtocol: goproxy.UDPv4,
 		SourceAddr:        testClient,
 		DestinationAddr:   testServer,
-	}
-	b, err := header.FormatUDPDatagram([]byte(payload))
+	}, []byte(payload))
+}
+
+func formatDatagram(t *testing.T, header *goproxy.Header, payload []byte) []byte {
+	t.Helper()
+	b, err := header.FormatUDPDatagram(payload)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return b
 }
 
-func wrapForTest(t *testing.T, w *PacketConnWrapper, in ...datagram) (net.PacketConn, *fakePacketConn) {
+func provisionForTest(t *testing.T, w *PacketConnWrapper) {
 	t.Helper()
 	for _, cidr := range w.Allow {
 		w.allow = append(w.allow, netip.MustParsePrefix(cidr))
@@ -65,6 +70,12 @@ func wrapForTest(t *testing.T, w *PacketConnWrapper, in ...datagram) (net.Packet
 	for _, cidr := range w.Deny {
 		w.deny = append(w.deny, netip.MustParsePrefix(cidr))
 	}
+	t.Cleanup(func() { _ = w.Cleanup() })
+}
+
+func wrapForTest(t *testing.T, w *PacketConnWrapper, in ...datagram) (net.PacketConn, *fakePacketConn) {
+	t.Helper()
+	provisionForTest(t, w)
 	fake := &fakePacketConn{in: in}
 	return w.WrapPacketConn(fake), fake
 }
@@ -91,6 +102,14 @@ func TestPacketConnWrapperPolicies(t *testing.T) {
 	withHeader := datagram{proxied(t, goproxy.PROXY, "quic"), testProxy}
 	local := datagram{proxied(t, goproxy.LOCAL, "health"), testProxy}
 	malformed := datagram{append([]byte("\r\n\r\n\x00\r\nQUIT\n"), 0x21, 0x99), testProxy}
+	tcpHeader := datagram{formatDatagram(t, &goproxy.Header{
+		Version:           2,
+		Command:           goproxy.PROXY,
+		TransportProtocol: goproxy.TCPv4,
+		SourceAddr:        &net.TCPAddr{IP: testClient.IP, Port: testClient.Port},
+		DestinationAddr:   &net.TCPAddr{IP: testServer.IP, Port: testServer.Port},
+	}, []byte("tcp")), testProxy}
+	v1Header := datagram{append([]byte("PROXY TCP4 203.0.113.7 10.0.0.2 4433 443\r\n"), "v1"...), testProxy}
 
 	tests := []struct {
 		name    string
@@ -140,6 +159,18 @@ func TestPacketConnWrapperPolicies(t *testing.T) {
 			in:      []datagram{local},
 			want:    []string{"health from 10.0.0.1:40000"},
 		},
+		{
+			name:    "header for a TCP client is dropped",
+			wrapper: PacketConnWrapper{Allow: []string{"10.0.0.0/8"}},
+			in:      []datagram{tcpHeader, v1Header, plain},
+			want:    []string{"plain from 10.0.0.1:40000"},
+		},
+		{
+			name:    "header for a TCP client is dropped under IGNORE",
+			wrapper: PacketConnWrapper{},
+			in:      []datagram{tcpHeader, v1Header, plain},
+			want:    []string{"plain from 10.0.0.1:40000"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -188,20 +219,88 @@ func TestPacketConnWrapperPassesDatagramsWithoutSender(t *testing.T) {
 	}
 }
 
+func TestPacketConnWrapperReadsFullSizeDatagrams(t *testing.T) {
+	// quic-go reads into a buffer of its maximum packet size
+	const quicBufferSize = 1452
+	payload := bytes.Repeat([]byte{0xAB}, quicBufferSize)
+	v6Client := &net.UDPAddr{IP: net.ParseIP("2001:db8::7"), Port: 4433}
+	v6Server := &net.UDPAddr{IP: net.ParseIP("2001:db8::2"), Port: 443}
+	for name, header := range map[string]*goproxy.Header{
+		"IPv4": {Version: 2, Command: goproxy.PROXY, TransportProtocol: goproxy.UDPv4, SourceAddr: testClient, DestinationAddr: testServer},
+		"IPv6": {Version: 2, Command: goproxy.PROXY, TransportProtocol: goproxy.UDPv6, SourceAddr: v6Client, DestinationAddr: v6Server},
+	} {
+		t.Run(name, func(t *testing.T) {
+			pc, _ := wrapForTest(t, &PacketConnWrapper{Allow: []string{"10.0.0.0/8"}},
+				datagram{formatDatagram(t, header, payload), testProxy})
+			buf := make([]byte, quicBufferSize)
+			n, addr, err := pc.ReadFrom(buf)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(buf[:n], payload) {
+				t.Fatalf("read %d bytes, want the %d-byte payload intact", n, len(payload))
+			}
+			if addr.String() != header.SourceAddr.String() {
+				t.Fatalf("reported %v, want %v", addr, header.SourceAddr)
+			}
+		})
+	}
+}
+
 func TestPacketConnWrapperBoundsRememberedClients(t *testing.T) {
 	pc, fake := wrapForTest(t, &PacketConnWrapper{Allow: []string{"10.0.0.0/8"}})
 	conn := pc.(*packetConn)
 	for i := 0; i < maxProxiedPeers; i++ {
-		conn.remember(&net.UDPAddr{IP: net.IPv4(198, 18, byte(i>>8), byte(i)), Port: 1}, testProxy)
+		if !conn.peers.remember(&net.UDPAddr{IP: net.IPv4(198, 18, byte(i>>8), byte(i)), Port: 1}, testProxy) {
+			t.Fatalf("client %d was not remembered", i)
+		}
 	}
-	conn.remember(testClient, testProxy)
-	if len(conn.peers) != maxProxiedPeers {
-		t.Fatalf("remembered %d clients, want at most %d", len(conn.peers), maxProxiedPeers)
+
+	// a new client cannot be remembered, so its datagram is dropped
+	// instead of being reported with a reply path that goes nowhere
+	fake.in = []datagram{{proxied(t, goproxy.PROXY, "quic"), testProxy}}
+	if got := readAll(t, pc); len(got) != 0 {
+		t.Fatalf("got %v, want the datagram dropped", got)
+	}
+	if len(conn.peers.peers) != maxProxiedPeers {
+		t.Fatalf("remembered %d clients, want at most %d", len(conn.peers.peers), maxProxiedPeers)
 	}
 	if _, err := pc.WriteTo([]byte("reply"), testClient); err != nil {
 		t.Fatal(err)
 	}
 	if fake.out[0].addr.String() != testClient.String() {
 		t.Fatalf("reply to an unremembered client went to %v", fake.out[0].addr)
+	}
+}
+
+func TestPacketConnWrapperReloadKeepsRememberedClients(t *testing.T) {
+	old := &PacketConnWrapper{Allow: []string{"10.0.0.0/8"}}
+	oldConn, fake := wrapForTest(t, old, datagram{proxied(t, goproxy.PROXY, "quic"), testProxy})
+	if got := readAll(t, oldConn); len(got) != 1 {
+		t.Fatalf("got %d datagrams, want 1", len(got))
+	}
+
+	// the reloaded config wraps the same socket and denies the proxy
+	reloaded := &PacketConnWrapper{Deny: []string{"10.0.0.0/8"}}
+	provisionForTest(t, reloaded)
+	newConn := reloaded.WrapPacketConn(fake)
+	_ = old.Cleanup()
+
+	if _, err := newConn.WriteTo([]byte("reply"), testClient); err != nil {
+		t.Fatal(err)
+	}
+	if fake.out[0].addr.String() != testProxy.String() {
+		t.Fatalf("reply after reload went to %v, want %v", fake.out[0].addr, testProxy)
+	}
+	fake.in = []datagram{{proxied(t, goproxy.PROXY, "quic"), testProxy}}
+	if got := readAll(t, newConn); len(got) != 0 {
+		t.Fatalf("got %v, want the reloaded deny list to drop it", got)
+	}
+
+	_ = reloaded.Cleanup()
+	peerTablesMu.Lock()
+	defer peerTablesMu.Unlock()
+	if _, ok := peerTables[net.PacketConn(fake)]; ok {
+		t.Fatal("remembered clients were kept after every config was cleaned up")
 	}
 }
