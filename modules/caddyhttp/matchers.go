@@ -1501,7 +1501,8 @@ func (m *MatchTLS) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // expression matchers. It mirrors the three states the Caddyfile `tls`
 // matcher itself supports: bare `tls` (any TLS connection, regardless of
 // handshake completion), `tls early_data` (handshake not yet complete), and
-// the otherwise-implicit "handshake complete" case.
+// the otherwise-implicit "handshake complete" case. `tls()` is sugar for
+// `tls('any')`; both spellings are equivalent and supported.
 //
 // Example:
 //
@@ -1515,6 +1516,8 @@ func (MatchTLS) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		}
 		switch string(str) {
 		case "any":
+			// Also reachable directly as tls('any'), not just via the
+			// zero-arg tls() macro below -- both are valid and equivalent.
 			return MatchTLS{}, nil
 		case "complete":
 			complete := true
@@ -1523,7 +1526,7 @@ func (MatchTLS) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 			complete := false
 			return MatchTLS{HandshakeComplete: &complete}, nil
 		default:
-			return nil, fmt.Errorf("tls argument must be 'complete' or 'early_data', got %q", str)
+			return nil, fmt.Errorf("tls argument must be 'any', 'complete', or 'early_data', got %q", str)
 		}
 	}
 

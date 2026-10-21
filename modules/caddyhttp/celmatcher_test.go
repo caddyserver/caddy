@@ -390,6 +390,24 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			wantResult:           true,
 		},
 		{
+			name: "tls('any') is equivalent to tls(), complete (MatchTLS)",
+			expression: &MatchExpression{
+				Expr: `tls('any')`,
+			},
+			urlTarget:            "https://example.com",
+			tlsHandshakeComplete: boolPtr(true),
+			wantResult:           true,
+		},
+		{
+			name: "tls('any') is equivalent to tls(), incomplete (MatchTLS)",
+			expression: &MatchExpression{
+				Expr: `tls('any')`,
+			},
+			urlTarget:            "https://example.com",
+			tlsHandshakeComplete: boolPtr(false),
+			wantResult:           true,
+		},
+		{
 			name: "tls invocation error wrong arg type (MatchTLS)",
 			expression: &MatchExpression{
 				Expr: `tls(true)`,
@@ -423,6 +441,14 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			name: "tls() does not match a plain non-TLS request (MatchTLS)",
 			expression: &MatchExpression{
 				Expr: `tls()`,
+			},
+			urlTarget:  "http://example.com",
+			wantResult: false,
+		},
+		{
+			name: "tls('any') does not match a plain non-TLS request (MatchTLS)",
+			expression: &MatchExpression{
+				Expr: `tls('any')`,
 			},
 			urlTarget:  "http://example.com",
 			wantResult: false,
