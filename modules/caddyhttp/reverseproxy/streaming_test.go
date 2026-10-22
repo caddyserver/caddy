@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"go.uber.org/zap"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/caddyserver/caddy/v2"
@@ -780,4 +781,44 @@ func TestUpgradeDetachmentRequiresWriterSupport(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUpgradeResponseCleanupOnFailure(t *testing.T) {
+	body := &closeTrackingBody{Buffer: bytes.NewBufferString("test body")}
+
+	res := &http.Response{
+		StatusCode: http.StatusSwitchingProtocols,
+		Header:     make(http.Header),
+		Body:       body,
+	}
+	res.Header.Set("Upgrade", "websocket")
+	res.Header.Set("Connection", "Upgrade")
+
+	// Request with mismatched upgrade type -> should fail check and close body
+	req, err := http.NewRequest("GET", "http://example.com", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Upgrade", "something-else")
+	req.Header.Set("Connection", "Upgrade")
+
+	recorder := httptest.NewRecorder()
+	h := &Handler{}
+	logger := zap.NewNop()
+
+	h.handleUpgradeResponse(logger, recorder, req, res, "127.0.0.1:8080")
+
+	if !body.closed {
+		t.Errorf("expected backend response body to be closed on upgrade protocol mismatch, but it was not")
+	}
+}
+
+type closeTrackingBody struct {
+	*bytes.Buffer
+	closed bool
+}
+
+func (c *closeTrackingBody) Close() error {
+	c.closed = true
+	return nil
 }
