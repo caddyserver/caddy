@@ -380,7 +380,6 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 	}
 
 	// min and max protocol versions
-	// min and max protocol versions; empty values keep the defaults
 	if p.ProtocolMin != "" {
 		minVersion, ok := SupportedProtocols[p.ProtocolMin]
 		if !ok {
