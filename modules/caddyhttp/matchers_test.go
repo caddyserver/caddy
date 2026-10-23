@@ -15,16 +15,21 @@
 package caddyhttp
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"runtime"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
 func TestHostMatcher(t *testing.T) {
@@ -1347,15 +1352,21 @@ func TestMethodMatcher(t *testing.T) {
 			expect:   true,
 		},
 		{
-			scenario: "match lowercase get after Provision uppercases it",
-			match:    MatchMethod{"get"},
-			input:    http.MethodGet,
+			scenario: "match lowercase extension method",
+			match:    MatchMethod{"foo"},
+			input:    "foo",
 			expect:   true,
 		},
 		{
-			scenario: "match mixed case Post after Provision uppercases it",
-			match:    MatchMethod{"Post"},
-			input:    http.MethodPost,
+			scenario: "do not fold lowercase extension method",
+			match:    MatchMethod{"foo"},
+			input:    "FOO",
+			expect:   false,
+		},
+		{
+			scenario: "match mixed case extension method",
+			match:    MatchMethod{"MiXeD"},
+			input:    "MiXeD",
 			expect:   true,
 		},
 		{
@@ -1366,15 +1377,13 @@ func TestMethodMatcher(t *testing.T) {
 		},
 		{
 			scenario: "match one of multiple methods",
-			match:    MatchMethod{"get", "post"},
-			input:    http.MethodPost,
+			match:    MatchMethod{"GET", "foo"},
+			input:    "foo",
 			expect:   true,
 		},
 	} {
 		req := &http.Request{Method: tc.input}
-		if err := tc.match.Provision(caddy.Context{}); err != nil {
-			t.Errorf("Test %d %v: provisioning failed: %v", i, tc.scenario, err)
-		}
+		tc.match = provisionMethodMatcher(t, tc.match)
 		actual, err := tc.match.MatchWithError(req)
 		if err != nil {
 			t.Errorf("Test %d %v: matching failed: %v", i, tc.scenario, err)
@@ -1384,6 +1393,63 @@ func TestMethodMatcher(t *testing.T) {
 			continue
 		}
 	}
+}
+
+func TestMethodMatcherConfigurationPreservesCase(t *testing.T) {
+	want := MatchMethod{"GET", "foo", "MiXeD"}
+	for _, tc := range []struct {
+		name string
+		load func(*testing.T) MatchMethod
+	}{
+		{
+			name: "native JSON",
+			load: func(t *testing.T) MatchMethod {
+				var matcher MatchMethod
+				if err := json.Unmarshal([]byte(`["GET","foo","MiXeD"]`), &matcher); err != nil {
+					t.Fatal(err)
+				}
+				return matcher
+			},
+		},
+		{
+			name: "Caddyfile",
+			load: func(t *testing.T) MatchMethod {
+				var matcher MatchMethod
+				if err := matcher.UnmarshalCaddyfile(caddyfile.NewTestDispenser("method GET foo MiXeD")); err != nil {
+					t.Fatal(err)
+				}
+				return matcher
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := provisionMethodMatcher(t, tc.load(t))
+			if !slices.Equal(got, want) {
+				t.Errorf("configured methods = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestMethodMatcherPreservesWireCase(t *testing.T) {
+	req, err := http.ReadRequest(bufio.NewReader(strings.NewReader("foo / HTTP/1.1\r\nHost: example.com\r\n\r\n")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer req.Body.Close()
+
+	matcher := provisionMethodMatcher(t, MatchMethod{"foo"})
+	if matched, err := matcher.MatchWithError(req); err != nil || !matched {
+		t.Fatalf("matching lower-case wire method: matched=%t, error=%v", matched, err)
+	}
+}
+
+func provisionMethodMatcher(t *testing.T, matcher MatchMethod) MatchMethod {
+	t.Helper()
+	if err := matcher.Provision(caddy.Context{}); err != nil {
+		t.Fatalf("provisioning method matcher: %v", err)
+	}
+	return matcher
 }
 
 func BenchmarkLargeHostMatcher(b *testing.B) {
