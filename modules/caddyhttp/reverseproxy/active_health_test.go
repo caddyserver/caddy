@@ -19,6 +19,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -216,5 +217,130 @@ func TestActiveHealthCheckBodyStillReplacesKnownPlaceholders(t *testing.T) {
 
 	if got, want := gotBody.Load(), `{"token":"s3cret"}`; got != want {
 		t.Errorf("health check body = %q, want %q", got, want)
+	}
+}
+
+func TestActiveHealthCheckFollowsSameOriginRedirect(t *testing.T) {
+	resetDynamicHosts()
+	defer drainHostsPool()
+
+	var readyHits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" {
+			http.Redirect(w, r, "/ready", http.StatusFound)
+			return
+		}
+		if r.URL.Path != "/ready" {
+			t.Errorf("redirect path = %q, want /ready", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		readyHits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	addr := strings.TrimPrefix(srv.URL, "http://")
+
+	h, u, cancel := newActiveHandler(t, addr, "/health", 1)
+	defer cancel()
+	h.HealthChecks.Active.FollowRedirects = true
+
+	runActiveHealthCheck(t, h, u)
+
+	if !u.Healthy() {
+		t.Error("same-origin redirect marked the upstream unhealthy")
+	}
+	if got := readyHits.Load(); got != 1 {
+		t.Errorf("redirect target requests = %d, want 1", got)
+	}
+}
+
+func TestActiveHealthCheckRejectsCrossOriginRedirect(t *testing.T) {
+	resetDynamicHosts()
+	defer drainHostsPool()
+
+	var sameOriginHits, targetHits, misdirectedHits atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		targetHits.Add(1)
+		if token := r.Header.Get("X-Health-Token"); token != "" {
+			t.Errorf("cross-origin redirect forwarded health token %q", token)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/health":
+			http.Redirect(w, r, "/redirect", http.StatusFound)
+			return
+		case "/redirect":
+			sameOriginHits.Add(1)
+			http.Redirect(w, r, target.URL+"/ready", http.StatusFound)
+			return
+		}
+		misdirectedHits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer origin.Close()
+	addr := strings.TrimPrefix(origin.URL, "http://")
+
+	h, u, cancel := newActiveHandler(t, addr, "/health", 1)
+	defer cancel()
+	transport := new(HTTPTransport)
+	if err := transport.Provision(h.ctx); err != nil {
+		t.Fatalf("provisioning HTTP transport: %v", err)
+	}
+	defer transport.Cleanup()
+	transport.Transport.Proxy = nil
+	h.HealthChecks.Active.httpClient.Transport = transport
+	h.HealthChecks.Active.FollowRedirects = true
+	h.HealthChecks.Active.Headers = http.Header{"X-Health-Token": {"secret"}}
+
+	runActiveHealthCheck(t, h, u)
+
+	if u.Healthy() {
+		t.Error("cross-origin redirect left the upstream healthy")
+	}
+	if got := sameOriginHits.Load(); got != 1 {
+		t.Errorf("same-origin redirect requests = %d, want 1", got)
+	}
+	if got := targetHits.Load(); got != 0 {
+		t.Errorf("cross-origin redirect target requests = %d, want 0", got)
+	}
+	if got := misdirectedHits.Load(); got != 0 {
+		t.Errorf("redirect requests sent to the original backend = %d, want 0", got)
+	}
+}
+
+func TestSameURLOrigin(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		first  string
+		second string
+		want   bool
+	}{
+		{name: "same origin", first: "http://example.com/path", second: "http://example.com/other", want: true},
+		{name: "host case", first: "http://EXAMPLE.com", second: "http://example.com", want: true},
+		{name: "implicit HTTP port", first: "http://example.com", second: "http://example.com:80", want: true},
+		{name: "implicit HTTPS port", first: "https://example.com", second: "https://example.com:443", want: true},
+		{name: "IPv6", first: "http://[::1]", second: "http://[::1]:80", want: true},
+		{name: "different scheme", first: "http://example.com", second: "https://example.com"},
+		{name: "different host", first: "http://example.com", second: "http://other.example.com"},
+		{name: "different port", first: "http://example.com:80", second: "http://example.com:8080"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			first, err := url.Parse(tc.first)
+			if err != nil {
+				t.Fatal(err)
+			}
+			second, err := url.Parse(tc.second)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := sameURLOrigin(first, second); got != tc.want {
+				t.Errorf("sameURLOrigin(%q, %q) = %t, want %t", tc.first, tc.second, got, tc.want)
+			}
+		})
 	}
 }
