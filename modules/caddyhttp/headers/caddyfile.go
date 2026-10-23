@@ -61,7 +61,19 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 			},
 		}
 	}
-	handler, handlerWithRequire := makeHandler(), makeHandler()
+	handler := makeHandler()
+
+	// one handler per '?' default, each requiring only its own field to be absent
+	var defaultHandlers []Handler
+	applyOp := func(field, value string, replacement *string) error {
+		if !strings.HasPrefix(field, "?") {
+			return applyHeaderOp(handler.Response.HeaderOps, handler.Response, field, value, replacement)
+		}
+		defaultHandler := makeHandler()
+		defaultHandlers = append(defaultHandlers, defaultHandler)
+		return applyHeaderOp(defaultHandler.Response.HeaderOps, defaultHandler.Response, field, value, replacement)
+	}
+	var responseMatcher *caddyhttp.ResponseMatcher
 
 	// first see if headers are in the initial line
 	var hasArgs bool
@@ -77,13 +89,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 			arg := h.Val()
 			replacement = &arg
 		}
-		err := applyHeaderOp(
-			handler.Response.HeaderOps,
-			handler.Response,
-			field,
-			value,
-			replacement,
-		)
+		err := applyOp(field, value, replacement)
 		if err != nil {
 			return nil, h.Err(err.Error())
 		}
@@ -106,7 +112,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 				return nil, err
 			}
 			matcher := responseMatchers["match"]
-			handler.Response.Require = &matcher
+			responseMatcher = &matcher
 			continue
 		}
 		if hasArgs {
@@ -128,20 +134,28 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 			replacement = &arg
 		}
 
-		handlerToUse := handler
-		if strings.HasPrefix(field, "?") {
-			handlerToUse = handlerWithRequire
-		}
-
-		err := applyHeaderOp(
-			handlerToUse.Response.HeaderOps,
-			handlerToUse.Response,
-			field,
-			value,
-			replacement,
-		)
+		err := applyOp(field, value, replacement)
 		if err != nil {
 			return nil, h.Err(err.Error())
+		}
+	}
+
+	// the response matcher also applies to the defaults; a default already
+	// requires its own field to be absent, so the matcher can only ask the same
+	if responseMatcher != nil {
+		handler.Response.Require = responseMatcher
+		for _, defaultHandler := range defaultHandlers {
+			require := defaultHandler.Response.Require
+			require.StatusCode = responseMatcher.StatusCode
+			for field, vals := range responseMatcher.Headers {
+				if _, ok := defaultHandler.Response.Set[http.CanonicalHeaderKey(field)]; ok {
+					if vals == nil {
+						continue
+					}
+					return nil, h.Errf("cannot match on response header %s and also set a default for it", http.CanonicalHeaderKey(field))
+				}
+				require.Headers[field] = vals
+			}
 		}
 	}
 
@@ -149,8 +163,8 @@ func parseCaddyfile(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error)
 	if !reflect.DeepEqual(handler, makeHandler()) {
 		configValues = append(configValues, h.NewRoute(matcherSet, handler)...)
 	}
-	if !reflect.DeepEqual(handlerWithRequire, makeHandler()) {
-		configValues = append(configValues, h.NewRoute(matcherSet, handlerWithRequire)...)
+	for _, defaultHandler := range defaultHandlers {
+		configValues = append(configValues, h.NewRoute(matcherSet, defaultHandler)...)
 	}
 
 	return configValues, nil

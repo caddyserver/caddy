@@ -293,7 +293,15 @@ func (t Transport) buildEnv(r *http.Request) (envVars, error) {
 		}
 	}
 
-	fpath := r.URL.Path
+	// Derive the script from the same path model the matchers judged: Windows
+	// separators and per-component trailing dots/spaces normalized, then cleaned
+	// (mirroring MatchPath and MatchURLPattern). Caddy does not rewrite
+	// r.URL.Path itself, and the rewrite route php_fastcgi relies on to normalize
+	// it can fail to match, so the transport must establish this invariant rather
+	// than inherit it. Without this, /admin.php/../../other.php (or, on Windows,
+	// /admin.php\..\other.php) is judged by every path matcher as /other.php
+	// while SCRIPT_FILENAME resolves to /admin.php.
+	fpath := caddyhttp.NormalizedPath(r.URL.Path, true)
 	scriptName := fpath
 
 	docURI := fpath
