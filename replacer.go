@@ -16,6 +16,7 @@ package caddy
 
 import (
 	"bytes"
+	"container/list"
 	"fmt"
 	"io"
 	"net/http"
@@ -192,11 +193,8 @@ func (r *Replacer) replace(input, empty string,
 	// fail fast if too many placeholders are unclosed
 	var unclosedCount int
 
-	// {file.*} placeholders hit the disk; cache by key and cap the number of
-	// distinct reads per call so repeated/numerous file placeholders in the
-	// input can't force unbounded syscalls (issue found via OSS-Fuzz timeout)
-	var fileReadCache map[string]any
-	var fileReadCount int
+	// {file.*} lookups hit the disk, so repeats within one call are memoized
+	var files *fileCache
 
 scan:
 	for i := 0; i < len(input); i++ {
@@ -244,20 +242,12 @@ scan:
 		// try to get a value for this key, handle empty values accordingly
 		var val any
 		var found bool
-		if strings.HasPrefix(key, filePrefix) {
-			if fileReadCache == nil {
-				fileReadCache = make(map[string]any)
-			}
-			if cached, ok := fileReadCache[key]; ok {
-				val, found = cached, true
-			} else if fileReadCount < maxFileReadsPerReplace {
-				fileReadCount++
-				val, found = r.Get(key)
-				fileReadCache[key] = val
-			} else {
-				// too many distinct file reads for one input; treat the rest as empty
-				val, found = nil, true
-			}
+		isFileKey := strings.HasPrefix(key, filePrefix)
+		if files == nil && isFileKey && r.hasFileProvider() {
+			files = new(fileCache)
+		}
+		if files != nil && isFileKey {
+			val, found = files.get(key, r.Get)
 		} else {
 			val, found = r.Get(key)
 		}
@@ -396,6 +386,69 @@ func (f fileReplacementProvider) replace(key string) (any, bool) {
 	return string(body), true
 }
 
+func (r *Replacer) hasFileProvider() bool {
+	for _, p := range r.providers {
+		if _, ok := p.(fileReplacementProvider); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// fileCache memoizes {file.*} lookups for one replace call. Contents live in a
+// byte-bounded LRU; misses and empty results cost no more than their key.
+type fileCache struct {
+	lru          *list.List
+	entries      map[string]*list.Element
+	size         int
+	emptyResults map[string]any
+}
+
+type fileCacheEntry struct {
+	key  string
+	val  any
+	size int
+}
+
+func (c *fileCache) get(key string, load func(string) (any, bool)) (any, bool) {
+	if el, ok := c.entries[key]; ok {
+		c.lru.MoveToFront(el)
+		return el.Value.(*fileCacheEntry).val, true
+	}
+	if val, ok := c.emptyResults[key]; ok {
+		return val, true
+	}
+
+	val, found := load(key)
+	if !found {
+		return val, found
+	}
+	switch s, isStr := val.(string); {
+	case val == nil || (isStr && s == ""):
+		if c.emptyResults == nil {
+			c.emptyResults = make(map[string]any)
+		}
+		c.emptyResults[key] = val
+	case isStr && len(s) <= maxFileCacheBytes:
+		c.add(key, val, len(s))
+	}
+	return val, found
+}
+
+func (c *fileCache) add(key string, val any, size int) {
+	if c.lru == nil {
+		c.lru = list.New()
+		c.entries = make(map[string]*list.Element)
+	}
+	for c.size+size > maxFileCacheBytes {
+		evicted := c.lru.Remove(c.lru.Back()).(*fileCacheEntry)
+		delete(c.entries, evicted.key)
+		c.size -= evicted.size
+	}
+	c.entries[key] = c.lru.PushFront(&fileCacheEntry{key: key, val: val, size: size})
+	c.size += size
+}
+
 // globalDefaultReplacementProvider handles replacements
 // that can be used in any context, such as system variables,
 // time, or environment variables.
@@ -478,6 +531,5 @@ const phOpen, phClose, phEscape = '{', '}', '\\'
 
 const filePrefix = "file."
 
-// maxFileReadsPerReplace bounds how many distinct {file.*} placeholders
-// are actually read from disk during a single replace() call.
-const maxFileReadsPerReplace = 1000
+// maxFileCacheBytes bounds the memoized file contents to 8 MiB (8,388,608 bytes) per replace call.
+const maxFileCacheBytes = 8 << 20
