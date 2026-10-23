@@ -91,7 +91,7 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 //	    ciphers   <cipher_suites...>
 //	    curves    <curves...>
 //	    client_auth {
-//	        mode                   [request|require|verify_if_given|require_and_verify]
+//	        mode                   [off|request|require|verify_if_given|require_and_verify]
 //	        trust_pool             <module_name> [...]
 //	        trusted_leaf_cert      <base64_der>
 //	        trusted_leaf_cert_file <filename>
@@ -242,10 +242,19 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			}
 
 		case "client_auth":
-			cp.ClientAuthentication = &caddytls.ClientAuthentication{}
-			if err := cp.ClientAuthentication.UnmarshalCaddyfile(h.NewFromNextSegment()); err != nil {
+			segment := h.NewFromNextSegment()
+			clientAuth := new(caddytls.ClientAuthentication)
+			if err := clientAuth.UnmarshalCaddyfile(segment); err != nil {
 				return nil, err
 			}
+			if clientAuth.Mode == "off" {
+				clientAuth.Mode = ""
+				if clientAuth.Active() {
+					return nil, segment.Err("client_auth mode off cannot be combined with other client authentication options")
+				}
+				break
+			}
+			cp.ClientAuthentication = clientAuth
 		case "alpn":
 			args := h.RemainingArgs()
 			if len(args) == 0 {
