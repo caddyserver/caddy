@@ -59,46 +59,17 @@ func (rwc extendedConnectReadWriteCloser) Write(p []byte) (n int, err error) {
 	return n, nil
 }
 
-// onceCloseConn makes closure safe across setup, tunnel, and tracker cleanup.
-// Preserve optional half-close support so clean EOFs can still drain.
-func onceCloseConn(conn io.ReadWriteCloser) io.ReadWriteCloser {
-	wrapped := &onceCloseReadWriteCloser{ReadWriteCloser: conn}
-	if wc, ok := conn.(closeWriter); ok {
-		return struct {
-			*onceCloseReadWriteCloser
-			closeWriter
-		}{wrapped, wc}
-	}
-	return wrapped
-}
-
-type closeWriter interface {
-	CloseWrite() error
-}
-
-type onceCloseReadWriteCloser struct {
-	io.ReadWriteCloser
-	once sync.Once
-	err  error
-}
-
-func (c *onceCloseReadWriteCloser) Close() error {
-	c.once.Do(func() { c.err = c.ReadWriteCloser.Close() })
-	return c.err
-}
-
 func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWriter, req *http.Request, res *http.Response, upstreamAddr string) {
 	// Until the tunnel takes ownership, every setup failure must close the
 	// backend body and any hijacked client connection. net/http no longer
 	// owns the client socket after a successful hijack.
-	var frontConn io.ReadWriteCloser
-	var backendBody io.Closer = res.Body
+	var conn io.ReadWriteCloser
 	tunnelOwnsConnections := false
 	defer func() {
 		if !tunnelOwnsConnections {
-			backendBody.Close()
-			if frontConn != nil {
-				frontConn.Close()
+			res.Body.Close()
+			if conn != nil {
+				conn.Close()
 			}
 		}
 	}()
@@ -129,9 +100,6 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 		return
 	}
 
-	backConn = onceCloseConn(backConn)
-	backendBody = backConn
-
 	// write header first, response headers should not be counted in size
 	// like the rest of handler chain.
 	copyHeader(rw.Header(), res.Header)
@@ -145,7 +113,6 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 	streamTimeout := time.Duration(h.StreamTimeout)
 
 	var (
-		conn     io.ReadWriteCloser
 		brw      *bufio.ReadWriter
 		detached bool
 	)
@@ -175,8 +142,7 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 			}
 			return
 		}
-		conn = onceCloseConn(extendedConnectReadWriteCloser{req.Body, rw})
-		frontConn = conn
+		conn = extendedConnectReadWriteCloser{req.Body, rw}
 		// bufio is not needed, use minimal buffer
 		brw = bufio.NewReadWriter(bufio.NewReaderSize(conn, 1), bufio.NewWriterSize(conn, 1))
 	} else {
@@ -201,10 +167,6 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 		var hijackErr error
 		//nolint:bodyclose
 		conn, brw, hijackErr = http.NewResponseController(rw).Hijack()
-		if conn != nil {
-			conn = onceCloseConn(conn)
-			frontConn = conn
-		}
 		if errors.Is(hijackErr, http.ErrNotSupported) {
 			if c := h.logger.Check(zap.ErrorLevel, "can't switch protocols using non-Hijacker ResponseWriter"); c != nil {
 				c.Write(zap.String("type", fmt.Sprintf("%T", rw)))

@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"go.uber.org/zap"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -811,6 +811,116 @@ func TestUpgradeResponseCleanupOnFailure(t *testing.T) {
 	if !body.closed {
 		t.Errorf("expected backend response body to be closed on upgrade protocol mismatch, but it was not")
 	}
+}
+
+func TestUpgradeResponseCleanupAfterHijack(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		flushFailure bool
+	}{
+		{name: "handshake flush failure", flushFailure: true},
+		{name: "buffered backend write failure"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			front, client := net.Pipe()
+			back, backend := net.Pipe()
+			for _, conn := range []net.Conn{front, client, back, backend} {
+				t.Cleanup(func() { conn.Close() })
+			}
+
+			writeFailure := &upgradeWriteErrorConn{writeErr: errors.New("upgrade setup write failed")}
+			reader := bufio.NewReader(strings.NewReader(""))
+			writer := bufio.NewWriter(front)
+			var body io.ReadWriteCloser = back
+			var wantWrite string
+			if tc.flushFailure {
+				writeFailure.Conn = front
+				writer = bufio.NewWriter(writeFailure)
+				wantWrite = "HTTP/1.1 101 Switching Protocols\r\n\r\n"
+				// Flush must have pending bytes; flushing an empty writer
+				// never reaches the failing connection's Write method.
+				if _, err := writer.WriteString(wantWrite); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				writeFailure.Conn = back
+				body = writeFailure
+				wantWrite = "buffered client data"
+				reader = bufio.NewReader(strings.NewReader(wantWrite))
+				// Buffered() must be nonzero before the handler checks it.
+				if _, err := reader.Peek(len(wantWrite)); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			rw := &upgradeFailureHijacker{
+				ResponseRecorder: httptest.NewRecorder(),
+				conn:             front,
+				brw:              bufio.NewReadWriter(reader, writer),
+			}
+			req := prepareTestRequest(httptest.NewRequest(http.MethodGet, "/upgrade", nil))
+			req.Header.Set("Connection", "Upgrade")
+			req.Header.Set("Upgrade", "test-stream")
+			res := &http.Response{StatusCode: http.StatusSwitchingProtocols, Header: req.Header.Clone(), Body: body}
+			logger := zap.NewNop()
+			h := &Handler{logger: logger, tunnelTracker: newTunnelTracker(logger, 0)}
+			for _, peer := range []net.Conn{client, backend} {
+				if err := peer.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			h.handleUpgradeResponse(logger, rw, req, res, "cleanup-test")
+
+			if !rw.hijacked {
+				t.Fatal("setup failed before successful client hijack")
+			}
+			if writeFailure.writeCalls != 1 || string(writeFailure.written) != wantWrite {
+				t.Fatalf("failure injection: got %d writes of %q, want one write of %q",
+					writeFailure.writeCalls, writeFailure.written, wantWrite)
+			}
+			for _, peer := range []struct {
+				name string
+				conn net.Conn
+			}{
+				{name: "client", conn: client},
+				{name: "backend", conn: backend},
+			} {
+				var data [1]byte
+				if n, err := peer.conn.Read(data[:]); n != 0 || !errors.Is(err, io.EOF) {
+					t.Errorf("%s peer read = (%d, %v), want (0, EOF) after setup failure", peer.name, n, err)
+				}
+			}
+			if remaining := len(h.tunnelTracker.connections); remaining != 0 {
+				t.Errorf("setup failure registered %d tunnel connections", remaining)
+			}
+		})
+	}
+}
+
+type upgradeFailureHijacker struct {
+	*httptest.ResponseRecorder
+	conn     net.Conn
+	brw      *bufio.ReadWriter
+	hijacked bool
+}
+
+func (w *upgradeFailureHijacker) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	w.hijacked = true
+	return w.conn, w.brw, nil
+}
+
+type upgradeWriteErrorConn struct {
+	net.Conn
+	writeErr   error
+	writeCalls int
+	written    []byte
+}
+
+func (c *upgradeWriteErrorConn) Write(p []byte) (int, error) {
+	c.writeCalls++
+	c.written = append(c.written, p...)
+	return 0, c.writeErr
 }
 
 type closeTrackingBody struct {
