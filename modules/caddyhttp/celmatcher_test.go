@@ -44,14 +44,15 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 -----END CERTIFICATE-----`)
 
 	matcherTests = []struct {
-		name              string
-		expression        *MatchExpression
-		urlTarget         string
-		httpMethod        string
-		httpHeader        *http.Header
-		wantErr           bool
-		wantResult        bool
-		clientCertificate []byte
+		name                 string
+		expression           *MatchExpression
+		urlTarget            string
+		httpMethod           string
+		httpHeader           *http.Header
+		wantErr              bool
+		wantResult           bool
+		clientCertificate    []byte
+		tlsHandshakeComplete *bool
 	}{
 		{
 			name: "boolean matches succeed for placeholder http.request.tls.client.subject",
@@ -335,6 +336,124 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			wantErr: true,
 		},
 		{
+			name: "tls('complete') matches when handshake is complete (MatchTLS)",
+			expression: &MatchExpression{
+				Expr: `tls('complete')`,
+			},
+			urlTarget:            "https://example.com",
+			tlsHandshakeComplete: boolPtr(true),
+			wantResult:           true,
+		},
+		{
+			name: "tls('complete') does not match when handshake is incomplete (MatchTLS)",
+			expression: &MatchExpression{
+				Expr: `tls('complete')`,
+			},
+			urlTarget:            "https://example.com",
+			tlsHandshakeComplete: boolPtr(false),
+			wantResult:           false,
+		},
+		{
+			name: "tls('early_data') matches an incomplete handshake (MatchTLS)",
+			expression: &MatchExpression{
+				Expr: `tls('early_data')`,
+			},
+			urlTarget:            "https://example.com",
+			tlsHandshakeComplete: boolPtr(false),
+			wantResult:           true,
+		},
+		{
+			name: "tls('early_data') does not match a complete handshake (MatchTLS)",
+			expression: &MatchExpression{
+				Expr: `tls('early_data')`,
+			},
+			urlTarget:            "https://example.com",
+			tlsHandshakeComplete: boolPtr(true),
+			wantResult:           false,
+		},
+		{
+			name: "tls() matches any TLS connection regardless of handshake state, complete (MatchTLS)",
+			expression: &MatchExpression{
+				Expr: `tls()`,
+			},
+			urlTarget:            "https://example.com",
+			tlsHandshakeComplete: boolPtr(true),
+			wantResult:           true,
+		},
+		{
+			name: "tls() matches any TLS connection regardless of handshake state, incomplete (MatchTLS)",
+			expression: &MatchExpression{
+				Expr: `tls()`,
+			},
+			urlTarget:            "https://example.com",
+			tlsHandshakeComplete: boolPtr(false),
+			wantResult:           true,
+		},
+		{
+			name: "tls('any') is equivalent to tls(), complete (MatchTLS)",
+			expression: &MatchExpression{
+				Expr: `tls('any')`,
+			},
+			urlTarget:            "https://example.com",
+			tlsHandshakeComplete: boolPtr(true),
+			wantResult:           true,
+		},
+		{
+			name: "tls('any') is equivalent to tls(), incomplete (MatchTLS)",
+			expression: &MatchExpression{
+				Expr: `tls('any')`,
+			},
+			urlTarget:            "https://example.com",
+			tlsHandshakeComplete: boolPtr(false),
+			wantResult:           true,
+		},
+		{
+			name: "tls invocation error wrong arg type (MatchTLS)",
+			expression: &MatchExpression{
+				Expr: `tls(true)`,
+			},
+			wantErr: true,
+		},
+		{
+			name: "tls invocation error unrecognized string value (MatchTLS)",
+			expression: &MatchExpression{
+				Expr: `tls('bogus')`,
+			},
+			wantErr: true,
+		},
+		{
+			name: "tls('early_data') does not match a plain non-TLS request (MatchTLS)",
+			expression: &MatchExpression{
+				Expr: `tls('early_data')`,
+			},
+			urlTarget:  "http://example.com",
+			wantResult: false,
+		},
+		{
+			name: "tls('complete') does not match a plain non-TLS request (MatchTLS)",
+			expression: &MatchExpression{
+				Expr: `tls('complete')`,
+			},
+			urlTarget:  "http://example.com",
+			wantResult: false,
+		},
+		{
+			name: "tls() does not match a plain non-TLS request (MatchTLS)",
+			expression: &MatchExpression{
+				Expr: `tls()`,
+			},
+			urlTarget:  "http://example.com",
+			wantResult: false,
+		},
+		{
+			name: "tls('any') does not match a plain non-TLS request (MatchTLS)",
+			expression: &MatchExpression{
+				Expr: `tls('any')`,
+			},
+			urlTarget:  "http://example.com",
+			wantResult: false,
+		},
+		{
 			name: "query does not match against a specific value (MatchQuery)",
 			expression: &MatchExpression{
 				Expr: `query({"debug": "1"})`,
@@ -523,6 +642,13 @@ func TestMatchExpressionMatch(t *testing.T) {
 				}
 			}
 
+			if tc.tlsHandshakeComplete != nil {
+				if req.TLS == nil {
+					req.TLS = &tls.ConnectionState{}
+				}
+				req.TLS.HandshakeComplete = *tc.tlsHandshakeComplete
+			}
+
 			matches, err := tc.expression.MatchWithError(req)
 			if err != nil {
 				t.Errorf("MatchExpression.Match() error = %v", err)
@@ -567,6 +693,12 @@ func BenchmarkMatchExpressionMatch(b *testing.B) {
 				req.TLS = &tls.ConnectionState{
 					PeerCertificates: []*x509.Certificate{cert},
 				}
+			}
+			if tc.tlsHandshakeComplete != nil {
+				if req.TLS == nil {
+					req.TLS = &tls.ConnectionState{}
+				}
+				req.TLS.HandshakeComplete = *tc.tlsHandshakeComplete
 			}
 			b.ResetTimer()
 			for b.Loop() {
@@ -624,3 +756,5 @@ func TestMatchExpressionUnmarshalCaddyfileRepeated(t *testing.T) {
 		}
 	}
 }
+
+func boolPtr(b bool) *bool { return &b }
