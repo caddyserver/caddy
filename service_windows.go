@@ -44,21 +44,24 @@ func init() {
 type runner struct{}
 
 func (runner) Execute(args []string, request <-chan svc.ChangeRequest, status chan<- svc.Status) (bool, uint32) {
-	// SetGlobalStatus publishes the initial status: StartPending, or
-	// the latest status Caddy reported before the service started.
+	// All status updates go through notify, which publishes the current
+	// status now: StartPending, or whatever Caddy reported before the
+	// service started. Detach before returning, since the dispatcher
+	// stops receiving status updates once Execute returns.
 	notify.SetGlobalStatus(status)
+	defer notify.SetGlobalStatus(nil)
 
-	for {
-		req := <-request
+	for req := range request {
 		// Unsupported service controls are ignored.
 		//exhaustive:ignore
 		switch req.Cmd {
 		case svc.Interrogate:
-			status <- req.CurrentStatus
+			notify.Interrogate()
 		case svc.Stop, svc.Shutdown:
-			status <- svc.Status{State: svc.StopPending}
+			_ = notify.Stopping()
 			exitProcessFromSignal("SIGINT")
 			return false, 0
 		}
 	}
+	return false, 0
 }

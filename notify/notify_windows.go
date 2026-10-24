@@ -22,60 +22,76 @@ import (
 	"golang.org/x/sys/windows/svc"
 )
 
-var (
-	// statusMu serializes access to globalStatus and pendingStatus,
-	// and is held while sending so updates reach the SCM in order.
-	// The receiver (the svc package's dispatcher loop) never takes
-	// this lock, so holding it during the send cannot deadlock.
-	statusMu sync.Mutex
+// statusMu guards the service status below. It is held while sending
+// to globalStatus so that every update reaches the SCM in order. The
+// receiver is the dispatcher loop in golang.org/x/sys/windows/svc,
+// which always accepts status updates and never takes this lock.
+var statusMu sync.Mutex
 
+var (
 	// globalStatus store windows service status, it can be
 	// use to notify caddy status.
 	globalStatus chan<- svc.Status
 
-	// pendingStatus is the latest status reported before
-	// globalStatus was attached, if any.
-	pendingStatus *svc.Status
+	// currentStatus is the authoritative service status. It is kept
+	// while no channel is attached, so a status reported before the
+	// service handler starts is not lost.
+	currentStatus = svc.Status{State: svc.StartPending}
+
+	// stopping is set once shutdown begins; after that, only stop
+	// states are accepted.
+	stopping bool
 )
 
 // SetGlobalStatus assigns the channel through which status updates
-// will be sent to the SCM. This is typically provided by the service
-// handler when the service starts.
-//
-// Caddy may finish loading its config before the service handler
-// starts, so SetGlobalStatus publishes the latest status reported
-// before attachment, or StartPending if there was none. Passing nil
-// detaches the channel and discards any retained status.
+// will be sent to the SCM and publishes the current status to it.
+// Passing nil detaches the channel and resets the status, which the
+// service handler does before it returns.
 func SetGlobalStatus(status chan<- svc.Status) {
 	statusMu.Lock()
 	defer statusMu.Unlock()
 	globalStatus = status
-	initial := svc.Status{State: svc.StartPending}
-	if pendingStatus != nil {
-		initial = *pendingStatus
-		pendingStatus = nil
+	if status == nil {
+		currentStatus = svc.Status{State: svc.StartPending}
+		stopping = false
+		return
 	}
-	if status != nil {
-		status <- initial
+	status <- currentStatus
+}
+
+// Interrogate republishes the current status, in response to the
+// SCM's Interrogate control request.
+func Interrogate() {
+	statusMu.Lock()
+	defer statusMu.Unlock()
+	if globalStatus != nil {
+		globalStatus <- currentStatus
 	}
 }
 
-// send publishes s to the SCM, or retains it for SetGlobalStatus
-// if no channel is attached yet.
-func send(s svc.Status) {
+// setStatus makes s the current status and publishes it if a channel
+// is attached. Once shutdown has begun, statuses other than StopPending
+// and Stopped are ignored, so a late Ready cannot undo it.
+func setStatus(s svc.Status) {
 	statusMu.Lock()
 	defer statusMu.Unlock()
-	if globalStatus == nil {
-		pendingStatus = &s
+	setStatusLocked(s)
+}
+
+func setStatusLocked(s svc.Status) {
+	if stopping && s.State != svc.StopPending && s.State != svc.Stopped {
 		return
 	}
-	globalStatus <- s
+	currentStatus = s
+	if globalStatus != nil {
+		globalStatus <- s
+	}
 }
 
 // Ready notifies the SCM that the service is fully running and ready
 // to accept stop or shutdown control requests.
 func Ready() error {
-	send(svc.Status{
+	setStatus(svc.Status{
 		State:   svc.Running,
 		Accepts: svc.AcceptStop | svc.AcceptShutdown,
 	})
@@ -85,14 +101,17 @@ func Ready() error {
 // Reloading notifies the SCM that the service is entering a transitional
 // state.
 func Reloading() error {
-	send(svc.Status{State: svc.StartPending})
+	setStatus(svc.Status{State: svc.StartPending})
 	return nil
 }
 
 // Stopping notifies the SCM that the service is in the process of stopping.
 // This allows Windows to track the shutdown transition properly.
 func Stopping() error {
-	send(svc.Status{State: svc.StopPending})
+	statusMu.Lock()
+	defer statusMu.Unlock()
+	stopping = true
+	setStatusLocked(svc.Status{State: svc.StopPending})
 	return nil
 }
 
@@ -126,14 +145,14 @@ func Status(name string) error {
 		return nil
 	}
 
-	send(svc.Status{State: state, Accepts: accepts})
+	setStatus(svc.Status{State: state, Accepts: accepts})
 	return nil
 }
 
 // Error notifies the SCM that the service is stopping due to a failure,
 // including a service-specific exit code.
 func Error(err error, code int) error {
-	send(svc.Status{
+	setStatus(svc.Status{
 		State:                   svc.StopPending,
 		ServiceSpecificExitCode: uint32(code),
 	})
