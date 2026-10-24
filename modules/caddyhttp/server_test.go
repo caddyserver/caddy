@@ -1734,3 +1734,173 @@ func TestServerLogLevel(t *testing.T) {
 		})
 	}
 }
+
+// TestServer_ClosedRequestBodyDoesNotDesyncHTTP1 verifies that an early
+// response after a handler closes its request body cannot leave the unread
+// body bytes to be parsed as the next request. This models a reverse proxy
+// transport which receives an early upstream response and then closes the
+// downstream request body.
+func TestServer_ClosedRequestBodyDoesNotDesyncHTTP1(t *testing.T) {
+	const firstChunkSize = 1024
+
+	for _, tc := range []struct {
+		name    string
+		chunked bool
+		bodyLen int
+	}{
+		{name: "fixed length above drain limit", bodyLen: 1 << 20},
+		{name: "chunked above drain limit", chunked: true, bodyLen: 1 << 20},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			secondRequest := make(chan struct{}, 1)
+			server := &Server{
+				ReadIdleTimeout: caddy.Duration(time.Minute),
+				logger:          zap.NewNop(),
+				errorLogger:     zap.NewNop(),
+				primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+					switch r.URL.Path {
+					case "/early":
+						buf := make([]byte, firstChunkSize)
+						if _, err := io.ReadFull(r.Body, buf); err != nil {
+							return fmt.Errorf("read first request chunk: %w", err)
+						}
+						if err := r.Body.Close(); err != nil {
+							return fmt.Errorf("close first request body: %w", err)
+						}
+						w.Header().Set("Content-Length", "0")
+						w.WriteHeader(http.StatusLocked)
+					case "/second":
+						secondRequest <- struct{}{}
+						w.Header().Set("Content-Length", "0")
+						w.WriteHeader(http.StatusNoContent)
+					default:
+						return Error(http.StatusNotFound, nil)
+					}
+					return nil
+				}),
+			}
+			ts := httptest.NewServer(http.HandlerFunc(server.ServeHTTP))
+			t.Cleanup(ts.Close)
+
+			conn, err := net.DialTimeout("tcp", ts.Listener.Addr().String(), time.Second)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = conn.Close() })
+			require.NoError(t, conn.SetDeadline(time.Now().Add(5*time.Second)))
+
+			reader := bufio.NewReader(conn)
+			if tc.chunked {
+				_, err = fmt.Fprintf(conn, "PUT /early HTTP/1.1\r\nHost: %s\r\nTransfer-Encoding: chunked\r\n\r\n%x\r\n%s\r\n", ts.Listener.Addr(), firstChunkSize, bytes.Repeat([]byte{'a'}, firstChunkSize))
+			} else {
+				_, err = fmt.Fprintf(conn, "PUT /early HTTP/1.1\r\nHost: %s\r\nContent-Length: %d\r\n\r\n%s", ts.Listener.Addr(), tc.bodyLen, bytes.Repeat([]byte{'a'}, firstChunkSize))
+			}
+			require.NoError(t, err)
+
+			writerDone := make(chan struct{})
+			if tc.chunked {
+				go func() {
+					defer close(writerDone)
+					for sent := firstChunkSize; sent < tc.bodyLen; {
+						n := min(8<<10, tc.bodyLen-sent)
+						if _, err := fmt.Fprintf(conn, "%x\r\n%s\r\n", n, bytes.Repeat([]byte{'b'}, n)); err != nil {
+							return
+						}
+						sent += n
+						time.Sleep(time.Millisecond)
+					}
+					_, _ = io.WriteString(conn, "0\r\n\r\n")
+				}()
+			}
+
+			first, err := http.ReadResponse(reader, &http.Request{Method: http.MethodPut})
+			require.NoError(t, err)
+			require.Equal(t, http.StatusLocked, first.StatusCode)
+			require.NoError(t, first.Body.Close())
+
+			if tc.chunked {
+				<-writerDone
+			} else {
+				_, _ = conn.Write(bytes.Repeat([]byte{'b'}, tc.bodyLen-firstChunkSize))
+			}
+			_, _ = fmt.Fprintf(conn, "GET /second HTTP/1.1\r\nHost: %s\r\nConnection: keep-alive\r\n\r\n", ts.Listener.Addr())
+
+			second, err := http.ReadResponse(reader, &http.Request{Method: http.MethodGet})
+			if err != nil {
+				if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, net.ErrClosed) {
+					return // The server safely closed the connection after the early response.
+				}
+				var netErr net.Error
+				if errors.As(err, &netErr) && !netErr.Timeout() {
+					return // The peer reset the connection after the early response.
+				}
+				t.Fatalf("read second response: %v", err)
+			}
+			defer second.Body.Close()
+			if second.StatusCode != http.StatusNoContent {
+				t.Fatalf("second response status = %d, want %d or a closed connection", second.StatusCode, http.StatusNoContent)
+			}
+			select {
+			case <-secondRequest:
+			case <-time.After(time.Second):
+				t.Fatal("second request response was not produced by the handler")
+			}
+		})
+	}
+}
+
+func TestServer_FullyReadRequestBodyPreservesHTTP1Connection(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		chunked bool
+	}{
+		{name: "fixed length"},
+		{name: "chunked", chunked: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			remoteAddrs := make(chan string, 2)
+			server := &Server{
+				ReadIdleTimeout: caddy.Duration(time.Minute),
+				logger:          zap.NewNop(),
+				errorLogger:     zap.NewNop(),
+				primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+					remoteAddrs <- r.RemoteAddr
+					if r.URL.Path == "/first" {
+						if _, err := io.Copy(io.Discard, r.Body); err != nil {
+							return err
+						}
+					}
+					w.Header().Set("Content-Length", "0")
+					w.WriteHeader(http.StatusNoContent)
+					return nil
+				}),
+			}
+			ts := httptest.NewServer(http.HandlerFunc(server.ServeHTTP))
+			t.Cleanup(ts.Close)
+
+			conn, err := net.DialTimeout("tcp", ts.Listener.Addr().String(), time.Second)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = conn.Close() })
+			require.NoError(t, conn.SetDeadline(time.Now().Add(5*time.Second)))
+
+			if tc.chunked {
+				_, err = fmt.Fprintf(conn, "POST /first HTTP/1.1\r\nHost: %s\r\nTransfer-Encoding: chunked\r\n\r\n4\r\nbody\r\n0\r\n\r\n", ts.Listener.Addr())
+			} else {
+				_, err = fmt.Fprintf(conn, "POST /first HTTP/1.1\r\nHost: %s\r\nContent-Length: 4\r\n\r\nbody", ts.Listener.Addr())
+			}
+			require.NoError(t, err)
+			reader := bufio.NewReader(conn)
+			first, err := http.ReadResponse(reader, &http.Request{Method: http.MethodPost})
+			require.NoError(t, err)
+			require.Equal(t, http.StatusNoContent, first.StatusCode)
+			require.NoError(t, first.Body.Close())
+
+			_, err = fmt.Fprintf(conn, "GET /second HTTP/1.1\r\nHost: %s\r\n\r\n", ts.Listener.Addr())
+			require.NoError(t, err)
+			second, err := http.ReadResponse(reader, &http.Request{Method: http.MethodGet})
+			require.NoError(t, err)
+			require.Equal(t, http.StatusNoContent, second.StatusCode)
+			require.NoError(t, second.Body.Close())
+
+			assert.Equal(t, <-remoteAddrs, <-remoteAddrs)
+		})
+	}
+}
