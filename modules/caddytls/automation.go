@@ -252,9 +252,9 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 	if err != nil {
 		return err
 	}
-	certCacheMu.RLock()
-	ap.magic = certmagic.New(certCache, cfg)
-	certCacheMu.RUnlock()
+	// the app's own cache, not the published one: this policy belongs to
+	// a config that is not committed yet
+	ap.magic = certmagic.New(tlsApp.cache, cfg)
 
 	// give issuers a chance to see the config pointer
 	for _, issuer := range ap.magic.Issuers {
@@ -400,9 +400,7 @@ func (ap *AutomationPolicy) RebuildCertMagic(tlsApp *TLS) error {
 	if err != nil {
 		return err
 	}
-	certCacheMu.RLock()
-	ap.magic = certmagic.New(certCache, cfg)
-	certCacheMu.RUnlock()
+	ap.magic = certmagic.New(tlsApp.cache, cfg)
 
 	// sometimes issuers may need the parent certmagic.Config in
 	// order to function properly (for example, ACMEIssuer needs
