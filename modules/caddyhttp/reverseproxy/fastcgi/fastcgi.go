@@ -457,59 +457,55 @@ func (t Transport) buildEnv(r *http.Request) (envVars, error) {
 // example: if splitPath is [".php"]
 // "/path/to/script.php/some/path": ("/path/to/script.php", "/some/path")
 //
-// Matching is strictly ASCII case-insensitive. Bytes >= utf8.RuneSelf in path
-// never match any split entry: split strings are validated ASCII-only and
-// lower-cased in Provision(), so any Unicode equivalence (e.g. fullwidth or
-// mathematical letters folding to ASCII) would let an attacker upload a file
-// whose name contains such code points and have it served as PHP. See
-// FrankenPHP advisories GHSA-3g8v-8r37-cgjm and GHSA-v4h7-cj44-8fc8.
+// Matching relies on Provision having validated and lowercased ASCII split entries.
+// Only ASCII letters are case-folded; Unicode equivalents never match.
+// See FrankenPHP advisories GHSA-3g8v-8r37-cgjm and GHSA-v4h7-cj44-8fc8.
 //
 // Adapted from FrankenPHP's code (copyright 2026 Kévin Dunglas, MIT license)
 func (t Transport) splitPos(path string) int {
-	// TODO: from v1...
-	// if httpserver.CaseSensitivePath {
-	// 	return strings.Index(path, r.SplitPath)
-	// }
 	if len(t.SplitPath) == 0 {
 		return 0
 	}
-
-	pathLen := len(path)
-
 	for _, split := range t.SplitPath {
-		splitLen := len(split)
-		if splitLen == 0 || splitLen > pathLen {
+		n := len(split)
+		if n == 0 || n > len(path) {
 			continue
 		}
-
-		for i := 0; i <= pathLen-splitLen; i++ {
-			match := true
-			for j := range splitLen {
-				c := path[i+j]
-				if c >= utf8.RuneSelf {
-					match = false
-
-					break
-				}
-
-				if 'A' <= c && c <= 'Z' {
-					c += 'a' - 'A'
-				}
-
-				if c != split[j] {
-					match = false
-
-					break
-				}
-			}
-
-			if match {
-				return i + splitLen
+		first, mask := split[0], foldMask(split[0])
+		last := len(path) - n
+		i := 0
+		if mask == 0 {
+			if i = strings.IndexByte(path[:last+1], first); i < 0 {
+				continue
 			}
 		}
+		for ; i <= last; i++ {
+			if path[i]|mask != first || !hasFoldedPrefix(path[i+1:i+n], split[1:]) {
+				continue
+			}
+			return i + n
+		}
 	}
-
 	return -1
+}
+
+// foldMask lets c|mask == s match both cases of a lowercase ASCII letter.
+func foldMask(s byte) byte {
+	if 'a' <= s && s <= 'z' {
+		return 0x20
+	}
+	return 0
+}
+
+// hasFoldedPrefix compares a path prefix with a lowercase ASCII split marker.
+// The caller must ensure p is at least as long as split.
+func hasFoldedPrefix(p, split string) bool {
+	for j := 0; j < len(split); j++ {
+		if s := split[j]; p[j]|foldMask(s) != s {
+			return false
+		}
+	}
+	return true
 }
 
 type envVars map[string]string

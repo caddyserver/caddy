@@ -84,6 +84,42 @@ func TestSplitPos(t *testing.T) {
 		wantPos   int
 	}{
 		{
+			name:      "letter prefix",
+			path:      "/INDEX.PHP/info",
+			splitPath: []string{"php"},
+			wantPos:   10,
+		},
+		{
+			name:      "marker priority",
+			path:      "/a.txt/b.php",
+			splitPath: []string{".php", ".txt"},
+			wantPos:   12,
+		},
+		{
+			name:      "empty marker",
+			path:      "/a.PHP",
+			splitPath: []string{"", ".php"},
+			wantPos:   6,
+		},
+		{
+			name:      "oversized marker",
+			path:      "/a",
+			splitPath: []string{".php"},
+			wantPos:   -1,
+		},
+		{
+			name:      "punctuation is not folded",
+			path:      "/a{bc",
+			splitPath: []string{"[bc"},
+			wantPos:   -1,
+		},
+		{
+			name:      "partial match before valid match",
+			path:      "/a.phx/b.PHP",
+			splitPath: []string{".php"},
+			wantPos:   12,
+		},
+		{
 			name:      "simple php extension",
 			path:      "/path/to/script.php",
 			splitPath: []string{".php"},
@@ -573,4 +609,87 @@ func TestBuildEnvDotSegmentsCannotSelectAnotherScript(t *testing.T) {
 				"a pre-clean path component must never become the executed script")
 		})
 	}
+}
+
+func BenchmarkSplitPos(b *testing.B) {
+	cases := []struct {
+		name, path string
+		markers    []string
+	}{
+		{"short", "/index.php", []string{".php"}},
+		{"long", "/some/long/application/public/directory/routes/controller/index.php/path/info", []string{".php"}},
+		{"no_match", "/some/long/application/public/directory/assets/styles/main.css", []string{".php"}},
+		{"uppercase", "/INDEX.PHP/path", []string{".php"}},
+		{"many_dots", "/" + strings.Repeat(".", 64) + "/index.php", []string{".php"}},
+		{"partial_matches", "/" + strings.Repeat(".phx/", 16) + "index.php", []string{".php"}},
+		{"embedded_match", "/a.php.txt/b.php", []string{".php"}},
+		{"second_marker", "/index.phtml/info", []string{".php", ".phtml"}},
+		{"letter_prefix", "/INDEX.PHP/path", []string{"php"}},
+		{"unicode_path", "/приложение/публичный/index.PHP/info", []string{".php"}},
+		{"empty_path", "", []string{".php"}},
+		{"empty_markers", "/index.php", nil},
+	}
+	for _, tt := range cases {
+		b.Run(tt.name, func(b *testing.B) {
+			tr := Transport{SplitPath: tt.markers}
+			b.ReportAllocs()
+			for b.Loop() {
+				benchmarkSplitPosResult = tr.splitPos(tt.path)
+			}
+		})
+	}
+}
+
+var benchmarkSplitPosResult int
+
+func FuzzSplitPos(f *testing.F) {
+	for _, seed := range []struct{ path, markers string }{
+		{"/index.PHP/info", ".php"},
+		{"/a.php.txt/b.php", ".php\x00.txt"},
+		{"/index.phtml", ".php\x00.phtml"},
+		{"/INDEX.PHP", "php"},
+		{"/shell.ｐhp.php", ".php"},
+		{"/\xff.PHP", ".php"},
+		{"/a[bc", "[\x00{"},
+		{"", ""},
+	} {
+		f.Add(seed.path, seed.markers)
+	}
+	f.Fuzz(func(t *testing.T, path, rawMarkers string) {
+		// Model the ASCII-only, lowercase markers produced by Provision.
+		markers := []byte(rawMarkers)
+		for i, c := range markers {
+			markers[i] = c & 0x7f
+			if 'A' <= markers[i] && markers[i] <= 'Z' {
+				markers[i] += 'a' - 'A'
+			}
+		}
+		var splits []string
+		if len(markers) > 0 {
+			splits = strings.Split(string(markers), "\x00")
+		}
+		// A separate oracle folds the path once, then searches in marker order.
+		folded := []byte(path)
+		for i, c := range folded {
+			if 'A' <= c && c <= 'Z' {
+				folded[i] += 'a' - 'A'
+			}
+		}
+		want := -1
+		if len(splits) == 0 {
+			want = 0
+		}
+		for _, split := range splits {
+			if split == "" {
+				continue
+			}
+			if i := strings.Index(string(folded), split); i >= 0 {
+				want = i + len(split)
+				break
+			}
+		}
+		if got := (Transport{SplitPath: splits}).splitPos(path); got != want {
+			t.Fatalf("splitPos(%q, %q) = %d; want %d", path, splits, got, want)
+		}
+	})
 }
