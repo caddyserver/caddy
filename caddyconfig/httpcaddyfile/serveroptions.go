@@ -349,10 +349,17 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 			serverOpts.TrustedProxiesRaw = jsonSource
 
 		case "trusted_proxies_strict":
+			serverOpts.TrustedProxiesStrict = 1
+			if d.NextArg() {
+				count, err := strconv.Atoi(d.Val())
+				if err != nil || count < 1 {
+					return nil, d.Errf("trusted_proxies_strict count must be a positive integer: %s", d.Val())
+				}
+				serverOpts.TrustedProxiesStrict = count
+			}
 			if d.NextArg() {
 				return nil, d.ArgErr()
 			}
-			serverOpts.TrustedProxiesStrict = 1
 
 		case "trusted_proxies_unix":
 			if d.NextArg() {

@@ -316,8 +316,18 @@ type Server struct {
 	// If greater than zero, enables strict ClientIPHeaders
 	// (default X-Forwarded-For) parsing. If enabled, the
 	// ClientIPHeaders will be parsed from right to left, and
-	// the first value that is both valid and doesn't match the
-	// trusted proxy list will be used as client IP. If zero,
+	// the Nth value that is both valid and doesn't match the
+	// trusted proxy list will be used as client IP, where N is
+	// this value. Use N > 1 when there are proxies in front of
+	// the trusted ones whose addresses are not known, such as a
+	// WAF in front of a load balancer. Only untrusted values are
+	// counted. If a header has some untrusted values but fewer
+	// than N, the request did not come through the expected
+	// proxies, so the direct remote address is used; if it has
+	// none, the next header is tried, then the remote address.
+	// N > 1 is safe only if clients cannot reach the trusted
+	// proxies without going through the untrusted ones, and the
+	// outermost proxy controls the incoming header value. If zero,
 	// the ClientIPHeaders will be parsed from left to right,
 	// and the first value that is a valid IP address will be
 	// used as client IP.
@@ -1850,7 +1860,7 @@ func determineTrustedProxy(r *http.Request, s *Server) (bool, string) {
 			if s.trustedProxies != nil {
 				ipRanges = s.trustedProxies.GetIPRanges(r)
 			}
-			return true, strictUntrustedClientIp(r, s.ClientIPHeaders, ipRanges, "@")
+			return true, strictUntrustedClientIp(r, s.ClientIPHeaders, ipRanges, "@", s.TrustedProxiesStrict)
 		} else {
 			return true, trustedRealClientIP(r, s.ClientIPHeaders, "@")
 		}
@@ -1880,7 +1890,7 @@ func determineTrustedProxy(r *http.Request, s *Server) (bool, string) {
 
 	if isTrustedClientIP(ipAddr, s.trustedProxies.GetIPRanges(r)) {
 		if s.TrustedProxiesStrict > 0 {
-			return true, strictUntrustedClientIp(r, s.ClientIPHeaders, s.trustedProxies.GetIPRanges(r), ipAddr.String())
+			return true, strictUntrustedClientIp(r, s.ClientIPHeaders, s.trustedProxies.GetIPRanges(r), ipAddr.String(), s.TrustedProxiesStrict)
 		}
 		return true, trustedRealClientIP(r, s.ClientIPHeaders, ipAddr.String())
 	}
@@ -1941,13 +1951,15 @@ func trustedRealClientIP(r *http.Request, headers []string, clientIP string) str
 }
 
 // strictUntrustedClientIp iterates through the list of client IP headers,
-// parses them from right-to-left, and returns the first valid IP address
-// that is untrusted. If no valid IP address is found, then the direct
-// remote address is returned.
-func strictUntrustedClientIp(r *http.Request, headers []string, trusted []netip.Prefix, clientIP string) string {
+// parses them from right-to-left, and returns the count-th valid IP address
+// that is untrusted. If a header has fewer untrusted addresses than count, or
+// no valid untrusted IP address is found, then the direct remote address is
+// returned.
+func strictUntrustedClientIp(r *http.Request, headers []string, trusted []netip.Prefix, clientIP string, count int) string {
 	for _, headerName := range headers {
 		parts := strings.Split(strings.Join(r.Header.Values(headerName), ","), ",")
 
+		seen := 0
 		for _, part := range slices.Backward(parts) {
 			// Some proxies may retain the port number, so split if possible
 			host, _, err := net.SplitHostPort(part)
@@ -1963,9 +1975,18 @@ func strictUntrustedClientIp(r *http.Request, headers []string, trusted []netip.
 			if err != nil {
 				continue
 			}
-			if !isTrustedClientIP(ipAddr, trusted) {
+			if isTrustedClientIP(ipAddr, trusted) {
+				continue
+			}
+			seen++
+			if seen >= count {
 				return ipAddr.String()
 			}
+		}
+		if seen > 0 {
+			// Fewer untrusted hops than configured: the request
+			// bypassed part of the expected proxy chain.
+			return clientIP
 		}
 	}
 

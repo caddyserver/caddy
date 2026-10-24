@@ -1391,6 +1391,46 @@ func TestServer_DetermineTrustedProxy_MatchRightMostUntrustedFirst(t *testing.T)
 	assert.Equal(t, clientIP, "90.100.110.120")
 }
 
+func TestServer_DetermineTrustedProxy_MatchRightMostUntrustedCount(t *testing.T) {
+	localPrivatePrefix, _ := netip.ParsePrefix("10.0.0.0/8")
+
+	for _, tc := range []struct {
+		count int
+		xff   string
+		want  string
+	}{
+		// a WAF (20.20.20.20) in front of a trusted load balancer
+		{count: 1, xff: "30.30.30.30, 45.54.45.54, 20.20.20.20", want: "20.20.20.20"},
+		{count: 2, xff: "30.30.30.30, 45.54.45.54, 20.20.20.20", want: "45.54.45.54"},
+		{count: 3, xff: "30.30.30.30, 45.54.45.54, 20.20.20.20", want: "30.30.30.30"},
+		// trusted and invalid values are not counted
+		{count: 2, xff: "45.54.45.54, 10.0.0.5, bad, 20.20.20.20, 10.0.0.4", want: "45.54.45.54"},
+		// fewer untrusted values than the count: the remote address
+		{count: 3, xff: "45.54.45.54, 20.20.20.20", want: "10.0.0.1"},
+		{count: 2, xff: "10.0.0.5, 10.0.0.4", want: "10.0.0.1"},
+		// a client that skipped the WAF and reached the load balancer directly
+		{count: 2, xff: "45.54.45.54", want: "10.0.0.1"},
+		{count: 2, xff: "45.54.45.54, 10.0.0.5", want: "10.0.0.1"},
+	} {
+		server := &Server{
+			trustedProxies: &StaticIPRange{
+				ranges: []netip.Prefix{localPrivatePrefix},
+			},
+			ClientIPHeaders:      []string{"X-Forwarded-For"},
+			TrustedProxiesStrict: tc.count,
+		}
+
+		req := httptest.NewRequest("GET", "/", nil)
+		req.RemoteAddr = "10.0.0.1:12345"
+		req.Header.Set("X-Forwarded-For", tc.xff)
+
+		trusted, clientIP := determineTrustedProxy(req, server)
+
+		assert.True(t, trusted)
+		assert.Equal(t, tc.want, clientIP, "count %d, X-Forwarded-For %q", tc.count, tc.xff)
+	}
+}
+
 func TestServer_LogRequest_WithWriteError(t *testing.T) {
 	s := &Server{}
 	ctx := context.WithValue(context.Background(), ExtraLogFieldsCtxKey, new(ExtraLogFields))
