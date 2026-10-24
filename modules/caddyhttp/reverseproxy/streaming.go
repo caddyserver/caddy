@@ -60,6 +60,19 @@ func (rwc extendedConnectReadWriteCloser) Write(p []byte) (n int, err error) {
 }
 
 func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWriter, req *http.Request, res *http.Response, upstreamAddr string) {
+	// Until the tunnel takes ownership, every setup failure must close the
+	// backend body and any hijacked client connection. net/http no longer
+	// owns the client socket after a successful hijack.
+	var conn io.ReadWriteCloser
+	tunnelOwnsConnections := false
+	defer func() {
+		if !tunnelOwnsConnections {
+			res.Body.Close()
+			if conn != nil {
+				conn.Close()
+			}
+		}
+	}()
 	reqUpType := upgradeType(req.Header)
 	resUpType := upgradeType(res.Header)
 
@@ -100,7 +113,6 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 	streamTimeout := time.Duration(h.StreamTimeout)
 
 	var (
-		conn     io.ReadWriteCloser
 		brw      *bufio.ReadWriter
 		detached bool
 	)
@@ -219,6 +231,7 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 
 	start := time.Now()
 
+	tunnelOwnsConnections = true
 	if !detached {
 		handleUpgradeTunnel(
 			streamLogger,
