@@ -896,7 +896,10 @@ func (t *TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) 
 
 	curvesAdded := make(map[tls.CurveID]struct{})
 	for _, curveName := range t.Curves {
-		curveID := caddytls.SupportedCurves[curveName]
+		curveID, ok := caddytls.SupportedCurves[curveName]
+		if !ok {
+			return nil, fmt.Errorf("unsupported curve: %s", curveName)
+		}
 		if _, ok := curvesAdded[curveID]; !ok {
 			curvesAdded[curveID] = struct{}{}
 			cfg.CurvePreferences = append(cfg.CurvePreferences, curveID)
