@@ -98,6 +98,8 @@ func UnwrapResponseWriterAs[T any](w http.ResponseWriter) (T, bool) {
 
 func responseWriterPointer(w http.ResponseWriter) uintptr {
 	v := reflect.ValueOf(w)
+	// Only pointer-like kinds have stable identity.
+	//exhaustive:ignore
 	switch v.Kind() {
 	case reflect.Pointer, reflect.Map, reflect.Chan, reflect.Func, reflect.Slice, reflect.UnsafePointer:
 		if v.IsNil() {

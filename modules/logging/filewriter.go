@@ -206,7 +206,7 @@ func (fw FileWriter) OpenWriter() (io.WriteCloser, error) {
 			return nil, err
 		}
 	case "from_file":
-		if err := mkdirAllFromFile(dirPath, os.FileMode(fw.Mode)); err != nil {
+		if err := mkdirAllFromFile(dirPath, modeIfCreating); err != nil {
 			return nil, err
 		}
 	default:

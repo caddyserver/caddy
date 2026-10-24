@@ -410,7 +410,7 @@ func hasUnformattableToken(tokens []Token) bool {
 			continue
 		}
 		marker := raw[2:]
-		if !heredocMarkerRegexp.MatchString(marker) {
+		if !isHeredocMarker(marker) {
 			continue
 		}
 		if i+1 >= len(tokens) || fmtNextOnNewLine(tk, tokens[i+1]) {
