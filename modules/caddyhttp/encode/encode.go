@@ -570,7 +570,9 @@ func hasVaryValue(hdr http.Header, target string) bool {
 // encodings are not considered. See
 // http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html.
 func AcceptedEncodings(r *http.Request, preferredOrder []string) []string {
-	acceptEncHeader := r.Header.Get("Accept-Encoding")
+	// a client may split the list across several field lines; combine
+	// them as RFC 9110 section 5.3 describes instead of only reading the first
+	acceptEncHeader := strings.Join(r.Header.Values("Accept-Encoding"), ",")
 	if acceptEncHeader == "" {
 		return []string{}
 	}
