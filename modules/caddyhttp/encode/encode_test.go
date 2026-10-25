@@ -108,10 +108,11 @@ func TestIsSSE(t *testing.T) {
 
 func TestPreferOrder(t *testing.T) {
 	testCases := []struct {
-		name     string
-		accept   string
-		prefer   []string
-		expected []string
+		name        string
+		accept      string
+		acceptLines []string
+		prefer      []string
+		expected    []string
 	}{
 		{
 			name:     "PreferOrder(): 4 accept, 3 prefer",
@@ -142,6 +143,18 @@ func TestPreferOrder(t *testing.T) {
 			accept:   "deflate, gzip, br, br",
 			prefer:   []string{"br"},
 			expected: []string{"br", "br", "deflate", "gzip"},
+		},
+		{
+			name:        "PreferOrder(): multiple Accept-Encoding lines",
+			acceptLines: []string{"identity", "zstd"},
+			prefer:      []string{},
+			expected:    []string{"identity", "zstd"},
+		},
+		{
+			name:        "PreferOrder(): multiple Accept-Encoding lines with q-factor",
+			acceptLines: []string{"gzip;q=0", "zstd"},
+			prefer:      []string{},
+			expected:    []string{"zstd"},
 		},
 		{
 			name:     "PreferOrder(): empty accept, 0 prefer",
@@ -198,7 +211,9 @@ func TestPreferOrder(t *testing.T) {
 
 	for _, test := range testCases {
 		t.Run(test.name, func(t *testing.T) {
-			if test.accept == "" {
+			if test.acceptLines != nil {
+				r.Header["Accept-Encoding"] = test.acceptLines
+			} else if test.accept == "" {
 				r.Header.Del("Accept-Encoding")
 			} else {
 				r.Header.Set("Accept-Encoding", test.accept)
