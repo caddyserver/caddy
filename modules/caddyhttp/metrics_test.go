@@ -523,6 +523,56 @@ func TestMetricsInstrumentedRoute(t *testing.T) {
 	}
 }
 
+func TestMetricsProvisionOTLPDisabled(t *testing.T) {
+	ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+
+	m := &Metrics{OTLP: false}
+
+	if err := m.provisionOTLP(ctx); err != nil {
+		t.Fatalf("provisionOTLP returned unexpected error: %v", err)
+	}
+	if m.meterProvider != nil {
+		t.Fatalf("meterProvider should remain nil when OTLP is disabled")
+	}
+
+	// shutdown must be safe on a never-provisioned Metrics.
+	if err := m.shutdown(context.Background()); err != nil {
+		t.Fatalf("shutdown returned unexpected error: %v", err)
+	}
+}
+
+func TestMetricsProvisionOTLPNoopExporter(t *testing.T) {
+	// OTEL_METRICS_EXPORTER=none makes autoexport return its built-in
+	// no-op reader, which avoids any network I/O while still exercising
+	// the full provisionOTLP -> shutdown lifecycle.
+	t.Setenv("OTEL_METRICS_EXPORTER", "none")
+
+	ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+
+	m := &Metrics{OTLP: true}
+
+	if err := m.provisionOTLP(ctx); err != nil {
+		t.Fatalf("provisionOTLP returned unexpected error: %v", err)
+	}
+	if m.meterProvider == nil {
+		t.Fatalf("provisionOTLP did not create a MeterProvider")
+	}
+
+	if err := m.shutdown(context.Background()); err != nil {
+		t.Fatalf("shutdown returned unexpected error: %v", err)
+	}
+}
+
+// shutdown on a nil receiver is a convenience so App.Stop can call it
+// without guarding against app.Metrics being unset.
+func TestMetricsShutdownNilReceiver(t *testing.T) {
+	var m *Metrics
+
+	if err := m.shutdown(context.Background()); err != nil {
+		t.Fatalf("shutdown on nil Metrics returned unexpected error: %v", err)
+	}
+}
+
 func BenchmarkMetricsInstrumentedRoute(b *testing.B) {
 	ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
 	m := &Metrics{

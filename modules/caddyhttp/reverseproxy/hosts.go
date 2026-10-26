@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
 // UpstreamPool is a collection of upstreams.
@@ -62,7 +61,16 @@ type Upstream struct {
 	activeHealthCheckUpstream string
 	healthCheckPolicy         *PassiveHealthChecks
 	cb                        CircuitBreaker
-	unhealthy                 int32 // accessed atomically; status from active health checker
+
+	// state from the active health checker. It lives here rather than on
+	// the shared Host because the Host is keyed by dial address alone,
+	// while an active health check is configured per handler: two handlers
+	// dialing the same address with different health_uri or health_headers
+	// are checking distinct health targets, and must not push each other
+	// over their own consecutive pass/fail thresholds.
+	unhealthy    atomic.Int32
+	activePasses atomic.Int64
+	activeFails  atomic.Int64
 }
 
 // (pointer receiver necessary to avoid a race condition, since
@@ -174,36 +182,24 @@ func (u *Upstream) fillDynamicHost() {
 // Host is the basic, in-memory representation of the state of a remote host.
 // Its fields are accessed atomically and Host values must not be copied.
 type Host struct {
-	numRequests  int64 // must be 64-bit aligned on 32-bit systems (see https://golang.org/pkg/sync/atomic/#pkg-note-BUG)
-	fails        int64
-	activePasses int64
-	activeFails  int64
+	numRequests atomic.Int64
+	fails       atomic.Int64
 }
 
 // NumRequests returns the number of active requests to the upstream.
 func (h *Host) NumRequests() int {
-	return int(atomic.LoadInt64(&h.numRequests))
+	return int(h.numRequests.Load())
 }
 
 // Fails returns the number of recent failures with the upstream.
 func (h *Host) Fails() int {
-	return int(atomic.LoadInt64(&h.fails))
-}
-
-// activeHealthPasses returns the number of consecutive active health check passes with the upstream.
-func (h *Host) activeHealthPasses() int {
-	return int(atomic.LoadInt64(&h.activePasses))
-}
-
-// activeHealthFails returns the number of consecutive active health check failures with the upstream.
-func (h *Host) activeHealthFails() int {
-	return int(atomic.LoadInt64(&h.activeFails))
+	return int(h.fails.Load())
 }
 
 // countRequest mutates the active request count by
 // delta. It returns an error if the adjustment fails.
 func (h *Host) countRequest(delta int) error {
-	result := atomic.AddInt64(&h.numRequests, int64(delta))
+	result := h.numRequests.Add(int64(delta))
 	if result < 0 {
 		return fmt.Errorf("count below 0: %d", result)
 	}
@@ -213,17 +209,29 @@ func (h *Host) countRequest(delta int) error {
 // countFail mutates the recent failures count by
 // delta. It returns an error if the adjustment fails.
 func (h *Host) countFail(delta int) error {
-	result := atomic.AddInt64(&h.fails, int64(delta))
+	result := h.fails.Add(int64(delta))
 	if result < 0 {
 		return fmt.Errorf("count below 0: %d", result)
 	}
 	return nil
 }
 
+// activeHealthPasses returns the number of consecutive passing
+// active health checks observed by this upstream's checker.
+func (u *Upstream) activeHealthPasses() int {
+	return int(u.activePasses.Load())
+}
+
+// activeHealthFails returns the number of consecutive failing
+// active health checks observed by this upstream's checker.
+func (u *Upstream) activeHealthFails() int {
+	return int(u.activeFails.Load())
+}
+
 // countHealthPass mutates the recent passes count by
 // delta. It returns an error if the adjustment fails.
-func (h *Host) countHealthPass(delta int) error {
-	result := atomic.AddInt64(&h.activePasses, int64(delta))
+func (u *Upstream) countHealthPass(delta int) error {
+	result := u.activePasses.Add(int64(delta))
 	if result < 0 {
 		return fmt.Errorf("count below 0: %d", result)
 	}
@@ -232,8 +240,8 @@ func (h *Host) countHealthPass(delta int) error {
 
 // countHealthFail mutates the recent failures count by
 // delta. It returns an error if the adjustment fails.
-func (h *Host) countHealthFail(delta int) error {
-	result := atomic.AddInt64(&h.activeFails, int64(delta))
+func (u *Upstream) countHealthFail(delta int) error {
+	result := u.activeFails.Add(int64(delta))
 	if result < 0 {
 		return fmt.Errorf("count below 0: %d", result)
 	}
@@ -241,15 +249,15 @@ func (h *Host) countHealthFail(delta int) error {
 }
 
 // resetHealth resets the health check counters.
-func (h *Host) resetHealth() {
-	atomic.StoreInt64(&h.activePasses, 0)
-	atomic.StoreInt64(&h.activeFails, 0)
+func (u *Upstream) resetHealth() {
+	u.activePasses.Store(0)
+	u.activeFails.Store(0)
 }
 
 // healthy returns true if the upstream is not actively marked as unhealthy.
 // (This returns the status only from the "active" health checks.)
 func (u *Upstream) healthy() bool {
-	return atomic.LoadInt32(&u.unhealthy) == 0
+	return u.unhealthy.Load() == 0
 }
 
 // SetHealthy sets the upstream has healthy or unhealthy
@@ -260,7 +268,7 @@ func (u *Upstream) setHealthy(healthy bool) bool {
 	if healthy {
 		unhealthy, compare = 0, 1
 	}
-	return atomic.CompareAndSwapInt32(&u.unhealthy, compare, unhealthy)
+	return u.unhealthy.CompareAndSwap(compare, unhealthy)
 }
 
 // DialInfo contains information needed to dial a
@@ -297,7 +305,7 @@ func (di DialInfo) String() string {
 // GetDialInfo gets the upstream dialing info out of the context,
 // and returns true if there was a valid value; false otherwise.
 func GetDialInfo(ctx context.Context) (DialInfo, bool) {
-	dialInfo, ok := caddyhttp.GetVar(ctx, dialInfoVarKey).(DialInfo)
+	dialInfo, ok := ctx.Value(dialInfoCtxKey).(DialInfo)
 	return dialInfo, ok
 }
 
@@ -329,9 +337,9 @@ type dynamicHostEntry struct {
 	lastSeen time.Time
 }
 
-// dialInfoVarKey is the key used for the variable that holds
+// dialInfoCtxKey is the context key used for the variable that holds
 // the dial info for the upstream connection.
-const dialInfoVarKey = "reverse_proxy.dial_info"
+const dialInfoCtxKey caddy.CtxKey = "reverse_proxy.dial_info"
 
 // proxyProtocolInfoVarKey is the key used for the variable that holds
 // the proxy protocol info for the upstream connection.

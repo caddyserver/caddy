@@ -106,8 +106,8 @@ func (hba *HTTPBasicAuth) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("account %d: username is not unique: %s", i, acct.Username)
 		}
 
-		acct.Username = repl.ReplaceAll(acct.Username, "")
-		acct.Password = repl.ReplaceAll(acct.Password, "")
+		acct.Username = repl.ReplaceKnown(acct.Username, "")
+		acct.Password = repl.ReplaceKnown(acct.Password, "")
 
 		if acct.Username == "" || acct.Password == "" {
 			return fmt.Errorf("account %d: username and password are required", i)
@@ -212,7 +212,7 @@ func (hba HTTPBasicAuth) promptForCredentials(w http.ResponseWriter, err error) 
 	if realm == "" {
 		realm = "restricted"
 	}
-	w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Basic realm="%s"`, realm))
+	w.Header().Set("Www-Authenticate", fmt.Sprintf(`Basic realm="%s"`, realm))
 	return User{}, false, err
 }
 

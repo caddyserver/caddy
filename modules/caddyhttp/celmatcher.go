@@ -22,20 +22,21 @@ import (
 	"net/http"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
-	"github.com/google/cel-go/cel"
-	"github.com/google/cel-go/common"
-	"github.com/google/cel-go/common/ast"
-	"github.com/google/cel-go/common/operators"
-	"github.com/google/cel-go/common/types"
-	"github.com/google/cel-go/common/types/ref"
-	"github.com/google/cel-go/common/types/traits"
-	"github.com/google/cel-go/ext"
-	"github.com/google/cel-go/interpreter"
-	"github.com/google/cel-go/interpreter/functions"
-	"github.com/google/cel-go/parser"
+	"cel.dev/cel-go/cel"
+	"cel.dev/cel-go/common"
+	"cel.dev/cel-go/common/ast"
+	"cel.dev/cel-go/common/operators"
+	"cel.dev/cel-go/common/types"
+	"cel.dev/cel-go/common/types/ref"
+	"cel.dev/cel-go/common/types/traits"
+	"cel.dev/cel-go/ext"
+	"cel.dev/cel-go/interpreter"
+	"cel.dev/cel-go/interpreter/functions"
+	"cel.dev/cel-go/parser"
 	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
@@ -70,6 +71,7 @@ type MatchExpression struct {
 	Name string `json:"name,omitempty"`
 
 	expandedExpr string
+	placeholders []string
 	prg          cel.Program
 	ta           types.Adapter
 
@@ -108,7 +110,7 @@ func (m *MatchExpression) UnmarshalJSON(data []byte) error {
 		return json.Unmarshal(data, &m.Expr)
 	}
 	// otherwise, it's a full object, so unmarshal it,
-	// using an temp map to avoid infinite recursion
+	// using a temp map to avoid infinite recursion
 	var tmpJson map[string]any
 	err := json.Unmarshal(data, &tmpJson)
 	*m = MatchExpression{
@@ -118,7 +120,7 @@ func (m *MatchExpression) UnmarshalJSON(data []byte) error {
 	return err
 }
 
-// Provision sets ups m.
+// Provision sets up m.
 func (m *MatchExpression) Provision(ctx caddy.Context) error {
 	m.log = ctx.Logger()
 
@@ -192,12 +194,21 @@ func (m *MatchExpression) Provision(ctx caddy.Context) error {
 		return fmt.Errorf("CEL request matcher expects return type of bool, not %s", checked.OutputType())
 	}
 
+	m.placeholders = celPlaceholderNames(checked.NativeRep().Expr())
+
 	// compile the "program"
 	m.prg, err = env.Program(checked, cel.EvalOptions(cel.OptOptimize))
 	if err != nil {
 		return fmt.Errorf("compiling CEL program: %s", err)
 	}
 	return nil
+}
+
+// Placeholders returns the names of the placeholders the provisioned
+// expression reads. A name that is only known at evaluation time is
+// returned as an empty string.
+func (m MatchExpression) Placeholders() []string {
+	return slices.Clone(m.placeholders)
 }
 
 // Match returns true if r matches m.
@@ -232,24 +243,28 @@ func (m *MatchExpression) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	// CEL expression (e.g. strings) and we should retain that
 	if d.CountRemainingArgs() > 1 {
 		m.Expr = strings.Join(d.RemainingArgsRaw(), " ")
-		return nil
+	} else {
+		// there should at least be one arg
+		if !d.NextArg() {
+			return d.ArgErr()
+		}
+
+		// if there's only one token, then we can safely grab the
+		// cleaned token (no quotes) and use that as the expression
+		// because there's no valid CEL expression that is only a
+		// quoted string; commonly quotes are used in Caddyfile to
+		// define the expression
+		m.Expr = d.Val()
+
+		// use the named matcher's name, to fill regexp
+		// matchers names by default
+		m.Name = d.GetContextString(caddyfile.MatcherNameCtxKey)
 	}
 
-	// there should at least be one arg
-	if !d.NextArg() {
-		return d.ArgErr()
+	// a matcher set holds only one expression matcher
+	if d.Next() {
+		return d.Err("repeated expression matchers are not supported, combine them into one expression with &&")
 	}
-
-	// if there's only one token, then we can safely grab the
-	// cleaned token (no quotes) and use that as the expression
-	// because there's no valid CEL expression that is only a
-	// quoted string; commonly quotes are used in Caddyfile to
-	// define the expression
-	m.Expr = d.Val()
-
-	// use the named matcher's name, to fill regexp
-	// matchers names by default
-	m.Name = d.GetContextString(caddyfile.MatcherNameCtxKey)
 
 	return nil
 }
@@ -319,7 +334,7 @@ func (cr celHTTPRequest) Value() any  { return cr }
 
 var pkixNameCELType = cel.ObjectType("pkix.Name", traits.ReceiverType)
 
-// celPkixName wraps an pkix.Name with
+// celPkixName wraps a pkix.Name with
 // methods to satisfy the ref.Val interface.
 type celPkixName struct{ *pkix.Name }
 
@@ -503,7 +518,7 @@ func CELMatcherDecorator(funcName string, fac any) interpreter.InterpretableDeco
 			}
 			return interpreter.NewCall(
 				i.ID(), funcName, funcName+"_opt",
-				[]interpreter.Interpretable{reqAttr},
+				[]interpreter.InterpretableV2{reqAttr},
 				func(args ...ref.Val) ref.Val {
 					// The request value, guaranteed to be of type celHTTPRequest
 					celReq := args[0]
@@ -526,7 +541,7 @@ func CELMatcherDecorator(funcName string, fac any) interpreter.InterpretableDeco
 			}
 			return interpreter.NewCall(
 				i.ID(), funcName, funcName+"_opt",
-				[]interpreter.Interpretable{reqAttr},
+				[]interpreter.InterpretableV2{reqAttr},
 				func(args ...ref.Val) ref.Val {
 					// The request value, guaranteed to be of type celHTTPRequest
 					celReq := args[0]
@@ -727,6 +742,23 @@ func CELValueToMapStrList(data ref.Val) (map[string][]string, error) {
 		}
 	}
 	return mapStrListStr, nil
+}
+
+// celPlaceholderNames returns the name passed to each placeholder call in e,
+// or an empty string where the name is not a string literal.
+func celPlaceholderNames(e ast.Expr) []string {
+	var names []string
+	ast.PreOrderVisit(e, ast.NewExprVisitor(func(e ast.Expr) {
+		if !isCELCaddyPlaceholderCall(e) {
+			return
+		}
+		name := ""
+		if args := e.AsCall().Args(); len(args) == 2 && isCELStringLiteral(args[1]) {
+			name = args[1].AsLiteral().Value().(string)
+		}
+		names = append(names, name)
+	}))
+	return names
 }
 
 // isCELStringExpr indicates whether the expression is a supported string expression

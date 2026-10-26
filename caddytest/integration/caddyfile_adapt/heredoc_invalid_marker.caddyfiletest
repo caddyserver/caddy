@@ -6,4 +6,4 @@ handle {
     END!
 }
 ----------
-heredoc marker on line #4 must contain only alpha-numeric characters, dashes and underscores; got 'END!'
+heredoc marker on line #4 must contain only alphanumeric characters, dashes and underscores; got 'END!'

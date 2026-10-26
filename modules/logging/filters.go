@@ -24,12 +24,13 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/caddyserver/caddy/v2/internal"
 )
 
 func init() {
@@ -39,6 +40,7 @@ func init() {
 	caddy.RegisterModule(IPMaskFilter{})
 	caddy.RegisterModule(QueryFilter{})
 	caddy.RegisterModule(CookieFilter{})
+	caddy.RegisterModule(SetCookieFilter{})
 	caddy.RegisterModule(RegexpFilter{})
 	caddy.RegisterModule(RenameFilter{})
 	caddy.RegisterModule(MultiRegexpFilter{})
@@ -100,8 +102,8 @@ func (f *HashFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Filter filters the input field with the replacement value.
 func (f *HashFilter) Filter(in zapcore.Field) zapcore.Field {
-	if array, ok := in.Interface.(caddyhttp.LoggableStringArray); ok {
-		newArray := make(caddyhttp.LoggableStringArray, len(array))
+	if array, ok := in.Interface.(internal.LoggableStringArray); ok {
+		newArray := make(internal.LoggableStringArray, len(array))
 		for i, s := range array {
 			newArray[i] = hash(s)
 		}
@@ -149,10 +151,10 @@ func (f *ReplaceFilter) Filter(in zapcore.Field) zapcore.Field {
 // list of IP addresses, where all of the values
 // will be masked.
 type IPMaskFilter struct {
-	// The IPv4 mask, as an subnet size CIDR.
+	// The IPv4 mask, as a subnet size CIDR.
 	IPv4MaskRaw int `json:"ipv4_cidr,omitempty"`
 
-	// The IPv6 mask, as an subnet size CIDR.
+	// The IPv6 mask, as a subnet size CIDR.
 	IPv6MaskRaw int `json:"ipv6_cidr,omitempty"`
 
 	v4Mask net.IPMask
@@ -222,6 +224,13 @@ func (m *IPMaskFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Provision parses m's IP masks, from integers.
 func (m *IPMaskFilter) Provision(ctx caddy.Context) error {
+	if m.IPv4MaskRaw < 0 || m.IPv4MaskRaw > 32 {
+		return fmt.Errorf("invalid IPv4 mask: %d (must be between 0 and 32)", m.IPv4MaskRaw)
+	}
+	if m.IPv6MaskRaw < 0 || m.IPv6MaskRaw > 128 {
+		return fmt.Errorf("invalid IPv6 mask: %d (must be between 0 and 128)", m.IPv6MaskRaw)
+	}
+
 	parseRawToMask := func(rawField int, bitLen int) net.IPMask {
 		if rawField == 0 {
 			return nil
@@ -241,8 +250,8 @@ func (m *IPMaskFilter) Provision(ctx caddy.Context) error {
 
 // Filter filters the input field.
 func (m IPMaskFilter) Filter(in zapcore.Field) zapcore.Field {
-	if array, ok := in.Interface.(caddyhttp.LoggableStringArray); ok {
-		newArray := make(caddyhttp.LoggableStringArray, len(array))
+	if array, ok := in.Interface.(internal.LoggableStringArray); ok {
+		newArray := make(internal.LoggableStringArray, len(array))
 		for i, s := range array {
 			newArray[i] = m.mask(s)
 		}
@@ -392,8 +401,8 @@ func (m *QueryFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Filter filters the input field.
 func (m QueryFilter) Filter(in zapcore.Field) zapcore.Field {
-	if array, ok := in.Interface.(caddyhttp.LoggableStringArray); ok {
-		newArray := make(caddyhttp.LoggableStringArray, len(array))
+	if array, ok := in.Interface.(internal.LoggableStringArray); ok {
+		newArray := make(internal.LoggableStringArray, len(array))
 		for i, s := range array {
 			newArray[i] = m.processQueryString(s)
 		}
@@ -406,7 +415,15 @@ func (m QueryFilter) Filter(in zapcore.Field) zapcore.Field {
 }
 
 func (m QueryFilter) processQueryString(s string) string {
-	u, err := url.Parse(s)
+	parse := url.Parse
+	if strings.HasPrefix(s, "/") {
+		// parse a request-target like the server does. Browsers and most
+		// clients strip a #fragment before sending, but a client that
+		// sends a raw '#' has it kept in the query by the server
+		// (url.ParseRequestURI does not split it off), so filter it too
+		parse = url.ParseRequestURI
+	}
+	u, err := parse(s)
 	if err != nil {
 		return s
 	}
@@ -421,7 +438,7 @@ func (m QueryFilter) processQueryString(s string) string {
 
 		case hashAction:
 			for i := range q[a.Parameter] {
-				q[a.Parameter][i] = hash(a.Value)
+				q[a.Parameter][i] = hash(q[a.Parameter][i])
 			}
 
 		case deleteAction:
@@ -523,7 +540,7 @@ func (m *CookieFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Filter filters the input field.
 func (m CookieFilter) Filter(in zapcore.Field) zapcore.Field {
-	cookiesSlice, ok := in.Interface.(caddyhttp.LoggableStringArray)
+	cookiesSlice, ok := in.Interface.(internal.LoggableStringArray)
 	if !ok {
 		return in
 	}
@@ -559,9 +576,180 @@ OUTER:
 		transformedRequest.AddCookie(c)
 	}
 
-	in.Interface = caddyhttp.LoggableStringArray(transformedRequest.Header["Cookie"])
+	in.Interface = internal.LoggableStringArray(transformedRequest.Header["Cookie"])
 
 	return in
+}
+
+// SetCookieFilter is a Caddy log field filter that filters
+// Set-Cookie header values.
+//
+// This filter updates logged Set-Cookie header values to remove,
+// replace or hash cookies containing sensitive data while preserving
+// the original attribute suffix verbatim.
+//
+// It is typically used with access log fields such as
+// "resp_headers>Set-Cookie".
+//
+// If several actions are configured for the same cookie name, only the first
+// will be applied.
+type SetCookieFilter struct {
+	// A list of actions to apply to the Set-Cookie values.
+	Actions []cookieFilterAction `json:"actions"`
+}
+
+// Validate checks that action types are correct.
+func (f *SetCookieFilter) Validate() error {
+	for _, a := range f.Actions {
+		if err := a.Type.IsValid(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// CaddyModule returns the Caddy module information.
+func (SetCookieFilter) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "caddy.logging.encoders.filter.set_cookie",
+		New: func() caddy.Module { return new(SetCookieFilter) },
+	}
+}
+
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+func (m *SetCookieFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	d.Next() // consume filter name
+	for d.NextBlock(0) {
+		cfa := cookieFilterAction{}
+		switch d.Val() {
+		case "replace":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+
+			cfa.Type = replaceAction
+			cfa.Name = d.Val()
+
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			cfa.Value = d.Val()
+
+		case "hash":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+
+			cfa.Type = hashAction
+			cfa.Name = d.Val()
+
+		case "delete":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+
+			cfa.Type = deleteAction
+			cfa.Name = d.Val()
+
+		default:
+			return d.Errf("unrecognized subdirective %s", d.Val())
+		}
+
+		m.Actions = append(m.Actions, cfa)
+	}
+	return nil
+}
+
+// Filter filters the input field.
+func (m SetCookieFilter) Filter(in zapcore.Field) zapcore.Field {
+	setCookies, ok := in.Interface.(internal.LoggableStringArray)
+	if !ok {
+		return in
+	}
+
+	transformed := make(internal.LoggableStringArray, 0, len(setCookies))
+	for _, line := range setCookies {
+		filtered, keep := m.filterLine(line)
+		if keep {
+			transformed = append(transformed, filtered)
+		}
+	}
+
+	in.Interface = transformed
+
+	return in
+}
+
+func (m SetCookieFilter) filterLine(line string) (string, bool) {
+	cookie, err := http.ParseSetCookie(line)
+	if err != nil {
+		return line, true
+	}
+
+	for _, a := range m.Actions {
+		if cookie.Name != a.Name {
+			continue
+		}
+
+		switch a.Type {
+		case replaceAction:
+			return replaceSetCookieValue(line, cookie, a.Value), true
+
+		case hashAction:
+			// A Set-Cookie-based deletion may still have an empty value
+			// (for example with Max-Age=0). As with the existing hash filter,
+			// hashing an empty value yields the SHA-256 prefix "e3b0c442".
+			return replaceSetCookieValue(line, cookie, hash(cookie.Value)), true
+
+		case deleteAction:
+			return "", false
+		}
+	}
+
+	return line, true
+}
+
+// replaceSetCookieValue keeps the original Set-Cookie suffix verbatim and only
+// swaps out the leading cookie value after ParseSetCookie has identified it.
+func replaceSetCookieValue(line string, cookie *http.Cookie, newValue string) string {
+	// Only operate on the first Set-Cookie segment: "name=value".
+	headEnd := strings.IndexByte(line, ';')
+	if headEnd == -1 {
+		headEnd = len(line)
+	}
+
+	head := line[:headEnd]
+	eq := strings.IndexByte(head, '=')
+	if eq == -1 {
+		return line
+	}
+
+	name := strings.TrimSpace(head[:eq])
+	if name != cookie.Name {
+		return line
+	}
+
+	// Preserve the original spacing around the value so the logged header stays
+	// as close as possible to the original input.
+	rawValue := head[eq+1:]
+	trimmedValue := strings.TrimSpace(rawValue)
+	leadingWhitespaceLen := len(rawValue) - len(strings.TrimLeftFunc(rawValue, unicode.IsSpace))
+	trailingWhitespaceLen := len(rawValue) - len(strings.TrimRightFunc(rawValue, unicode.IsSpace))
+
+	replacement := newValue
+	// If the original cookie value was quoted, keep the replacement quoted too.
+	if cookie.Quoted && len(trimmedValue) >= 2 && trimmedValue[0] == '"' && trimmedValue[len(trimmedValue)-1] == '"' {
+		replacement = `"` + newValue + `"`
+	}
+
+	// Rebuild only the first "name=value" pair and keep the attribute suffix
+	// byte-for-byte unchanged.
+	return line[:eq+1] +
+		rawValue[:leadingWhitespaceLen] +
+		replacement +
+		rawValue[len(rawValue)-trailingWhitespaceLen:] +
+		line[headEnd:]
 }
 
 // RegexpFilter is a Caddy log field filter that
@@ -613,8 +801,8 @@ func (m *RegexpFilter) Provision(ctx caddy.Context) error {
 
 // Filter filters the input field with the replacement value if it matches the regexp.
 func (f *RegexpFilter) Filter(in zapcore.Field) zapcore.Field {
-	if array, ok := in.Interface.(caddyhttp.LoggableStringArray); ok {
-		newArray := make(caddyhttp.LoggableStringArray, len(array))
+	if array, ok := in.Interface.(internal.LoggableStringArray); ok {
+		newArray := make(internal.LoggableStringArray, len(array))
 		for i, s := range array {
 			newArray[i] = f.regexp.ReplaceAllString(s, f.Value)
 		}
@@ -783,8 +971,8 @@ func (f *MultiRegexpFilter) Validate() error {
 // Filter applies all regexp operations sequentially to the input field.
 // Input is sanitized and validated for security.
 func (f *MultiRegexpFilter) Filter(in zapcore.Field) zapcore.Field {
-	if array, ok := in.Interface.(caddyhttp.LoggableStringArray); ok {
-		newArray := make(caddyhttp.LoggableStringArray, len(array))
+	if array, ok := in.Interface.(internal.LoggableStringArray); ok {
+		newArray := make(internal.LoggableStringArray, len(array))
 		for i, s := range array {
 			newArray[i] = f.processString(s)
 		}
@@ -879,6 +1067,7 @@ var (
 	_ LogFieldFilter = (*IPMaskFilter)(nil)
 	_ LogFieldFilter = (*QueryFilter)(nil)
 	_ LogFieldFilter = (*CookieFilter)(nil)
+	_ LogFieldFilter = (*SetCookieFilter)(nil)
 	_ LogFieldFilter = (*RegexpFilter)(nil)
 	_ LogFieldFilter = (*RenameFilter)(nil)
 	_ LogFieldFilter = (*MultiRegexpFilter)(nil)
@@ -889,6 +1078,7 @@ var (
 	_ caddyfile.Unmarshaler = (*IPMaskFilter)(nil)
 	_ caddyfile.Unmarshaler = (*QueryFilter)(nil)
 	_ caddyfile.Unmarshaler = (*CookieFilter)(nil)
+	_ caddyfile.Unmarshaler = (*SetCookieFilter)(nil)
 	_ caddyfile.Unmarshaler = (*RegexpFilter)(nil)
 	_ caddyfile.Unmarshaler = (*RenameFilter)(nil)
 	_ caddyfile.Unmarshaler = (*MultiRegexpFilter)(nil)
@@ -898,5 +1088,6 @@ var (
 	_ caddy.Provisioner = (*MultiRegexpFilter)(nil)
 
 	_ caddy.Validator = (*QueryFilter)(nil)
+	_ caddy.Validator = (*SetCookieFilter)(nil)
 	_ caddy.Validator = (*MultiRegexpFilter)(nil)
 )

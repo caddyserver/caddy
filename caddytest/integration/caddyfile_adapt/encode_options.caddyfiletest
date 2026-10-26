@@ -18,7 +18,9 @@ encode gzip zstd {
 
 # Long way with a block for each encoding
 encode {
-	zstd
+	zstd {
+		disable_checksum
+	}
 	gzip 5
 }
 
@@ -71,7 +73,9 @@ encode
 										"gzip": {
 											"level": 5
 										},
-										"zstd": {}
+										"zstd": {
+											"checksum": false
+										}
 									},
 									"handler": "encode",
 									"prefer": [

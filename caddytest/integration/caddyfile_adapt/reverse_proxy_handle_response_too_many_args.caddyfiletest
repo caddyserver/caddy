@@ -1,0 +1,10 @@
+localhost:8884 {
+	reverse_proxy localhost:8000 {
+		handle_response header Foo {
+			respond "handled"
+		}
+	}
+}
+
+----------
+parsing caddyfile tokens for 'reverse_proxy': too many arguments for 'handle_response': only a single response matcher name is allowed, but got: [header Foo]

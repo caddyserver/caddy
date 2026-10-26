@@ -19,20 +19,30 @@ type tracerProvider struct {
 	tracerProvidersCounter int
 }
 
-// getTracerProvider create or return an existing global TracerProvider
-func (t *tracerProvider) getTracerProvider(opts ...sdktrace.TracerProviderOption) *sdktrace.TracerProvider {
+// getTracerProvider create or return an existing global TracerProvider.
+//
+// buildOpts is only invoked when a new provider must actually be created.
+// This matters because some options (notably sdktrace.WithBatcher) eagerly
+// start background goroutines when constructed. Building them unconditionally
+// and then discarding them on the reuse path would leak a BatchSpanProcessor
+// goroutine on every config reload.
+func (t *tracerProvider) getTracerProvider(buildOpts func() ([]sdktrace.TracerProviderOption, error)) (*sdktrace.TracerProvider, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	t.tracerProvidersCounter++
-
 	if t.tracerProvider == nil {
+		opts, err := buildOpts()
+		if err != nil {
+			return nil, err
+		}
 		t.tracerProvider = sdktrace.NewTracerProvider(
 			opts...,
 		)
 	}
 
-	return t.tracerProvider
+	t.tracerProvidersCounter++
+
+	return t.tracerProvider, nil
 }
 
 // cleanupTracerProvider gracefully shutdown a TracerProvider

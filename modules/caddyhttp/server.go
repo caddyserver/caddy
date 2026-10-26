@@ -29,12 +29,14 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/caddyserver/certmagic"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 	h3qlog "github.com/quic-go/quic-go/http3/qlog"
+	"github.com/quic-go/webtransport-go"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
@@ -69,10 +71,50 @@ type Server struct {
 	// Default is 1 minute.
 	ReadHeaderTimeout caddy.Duration `json:"read_header_timeout,omitempty"`
 
+	// How long to allow a read from a client's upload to stall before
+	// aborting the connection, reset on every successful read. Unlike
+	// ReadTimeout, which bounds the whole transfer with a single
+	// deadline, this only fires if the connection actually stalls, so
+	// it mitigates slowloris-style attacks without penalizing large
+	// uploads from legitimately slow clients. Combine with ReadTimeout
+	// for a hard ceiling on top.
+	// Default is 1 minute. A negative value disables it, for instance
+	// behind a proxy that already buffers request bodies.
+	ReadIdleTimeout caddy.Duration `json:"read_idle_timeout,omitempty"`
+
+	// ReadMinRate, if set, requires the client to sustain at least this
+	// many bytes/second, averaged from the start of the request body
+	// read, or the connection is aborted. Unlike ReadIdleTimeout alone,
+	// this also catches a trickle that sends just enough to never go
+	// idle, but never accumulates real throughput (a "MinRate" in
+	// Apache mod_reqtimeout terms). If zero, no rate is enforced and
+	// ReadIdleTimeout resets to a flat window on every read instead.
+	ReadMinRate int64 `json:"read_min_rate,omitempty"`
+
 	// WriteTimeout is how long to allow a write to a client. Note
 	// that setting this to a small value when serving large files
 	// may negatively affect legitimately slow clients.
 	WriteTimeout caddy.Duration `json:"write_timeout,omitempty"`
+
+	// How long to allow a write to a client to stall before aborting
+	// the connection, reset on every successful write, the same way
+	// ReadIdleTimeout works for reads. A handler that streams a large
+	// response, or pauses between writes (e.g. SSE), is unaffected as
+	// long as each individual write keeps making progress. Combine
+	// with WriteTimeout for a hard ceiling on top.
+	// Default is 1 minute. A negative value disables it, for instance
+	// behind a proxy that already times out slow clients.
+	WriteIdleTimeout caddy.Duration `json:"write_idle_timeout,omitempty"`
+
+	// WriteMinRate is like ReadMinRate, but for writes to the client.
+	WriteMinRate int64 `json:"write_min_rate,omitempty"`
+
+	// MaxWriteChunk bounds how many bytes a single underlying write
+	// operation is allowed to cover, so that WriteIdleTimeout/WriteMinRate
+	// can actually apply between chunks of a large response instead of
+	// being bounded by one deadline for the whole thing (nginx's
+	// sendfile_max_chunk exists for the same reason). Default: 64 KiB.
+	MaxWriteChunk int `json:"max_write_chunk,omitempty"`
 
 	// IdleTimeout is the maximum time to wait for the next request
 	// when keep-alives are enabled. If zero, a default timeout of
@@ -101,7 +143,7 @@ type Server struct {
 	KeepAliveCount int `json:"keepalive_count,omitempty"`
 
 	// MaxHeaderBytes is the maximum size to parse from a client's
-	// HTTP request headers.
+	// HTTP request headers. Default: 16 KiB.
 	MaxHeaderBytes int `json:"max_header_bytes,omitempty"`
 
 	// Enable full-duplex communication for HTTP/1 requests.
@@ -123,6 +165,83 @@ type Server struct {
 	//
 	// TODO: This is an EXPERIMENTAL feature. Subject to change or removal.
 	EnableFullDuplex bool `json:"enable_full_duplex,omitempty"`
+
+	// WebTransport, if non-nil, enables WebTransport (draft-ietf-webtrans-http3)
+	// on this server's HTTP/3 listener. When set, the HTTP/3 server
+	// advertises WebTransport in SETTINGS, enables HTTP/3 DATAGRAMs and
+	// QUIC stream-reset partial delivery, and dispatches each QUIC
+	// connection through webtransport.Server.ServeQUICConn so that
+	// handlers can upgrade Extended CONNECT requests with
+	// `:protocol=webtransport`. When nil, the HTTP/3 path is
+	// bit-for-bit identical to the pre-WebTransport behavior: clients
+	// that don't speak WebTransport see nothing new.
+	//
+	// The object is currently empty; it exists so future options can be
+	// added without renaming the config key. Specifying `{}` enables it.
+	//
+	// Requires HTTP/3.
+	//
+	// TODO: This is an EXPERIMENTAL feature. Subject to change or removal.
+	WebTransport *WebTransportConfig `json:"webtransport,omitempty"`
+
+	// A list of header field names containing underscores that should
+	// be preserved instead of being dropped. By default, Caddy drops
+	// ALL headers with underscores to prevent ambiguity with
+	// CGI/FastCGI backends that map hyphens to underscores
+	// (GHSA-f59h-q822-g45g). When this list is configured, only the
+	// specified headers are kept; their hyphenated variants are
+	// actively dropped to prevent confusion. Entries are
+	// case-insensitive. A trailing "*" acts as a prefix glob
+	// (e.g., "webhook_*" matches any header starting with
+	// "webhook_"). If an allowlisted header arrives with
+	// multiple values (repeated field), all values are dropped
+	// as a safeguard against header injection.
+	//
+	// If the same logical header name is also allowlisted (in dot form)
+	// in ExpectedDotHeaders, both spellings are kept independently. Only
+	// do this if you know your backend doesn't fold both forms onto the
+	// same variable name; PHP/CGI-style backends do (see
+	// ExpectedDotHeaders), so allowlisting both there reintroduces the
+	// ambiguity this filter exists to remove.
+	//
+	// A header name containing both an underscore and a dot (e.g.
+	// "webhook_user.id") is never matched by a prefix glob here, even
+	// one whose prefix matches, because the free-form suffix a glob
+	// allows can't be vetted for an embedded dot; only an exact (non-glob)
+	// entry for that literal spelling is honored.
+	//
+	// TODO: This is an EXPERIMENTAL feature. Subject to change or removal.
+	ExpectedUnderscoreHeaders []string `json:"expected_underscore_headers,omitempty"`
+
+	// A list of header field names containing dots that should be
+	// preserved instead of being dropped. By default, Caddy drops ALL
+	// headers with dots to prevent ambiguity with backends that fold
+	// dots to underscores when registering CGI-style variables, e.g.
+	// PHP's $_SERVER (GHSA-49wc-4hcv-v58q). When this list is
+	// configured, only the specified headers are kept; their
+	// hyphenated variants are actively dropped to prevent confusion.
+	// Entries are case-insensitive. A trailing "*" acts as a prefix
+	// glob (e.g., "webhook.*" matches any header starting with
+	// "webhook."). If an allowlisted header arrives with multiple
+	// values (repeated field), all values are dropped as a safeguard
+	// against header injection.
+	//
+	// Dotted headers are legal HTTP tokens and some non-CGI backends
+	// (e.g. Node.js, Go) use them as ordinary, unrelated header names.
+	// If your backend is one of those, this poses no risk. Only
+	// PHP/CGI/FastCGI-style backends fold '.', '_', and '-' onto the
+	// same variable name; avoid allowlisting both the dot and
+	// underscore form of the same logical name if such a backend is in
+	// the request path, since Caddy will not stop you and the backend
+	// may then see either value depending on map iteration order.
+	//
+	// A header name containing both a dot and an underscore is never
+	// matched by a prefix glob here, for the same reason described on
+	// ExpectedUnderscoreHeaders; only an exact (non-glob) entry for
+	// that literal spelling is honored.
+	//
+	// TODO: This is an EXPERIMENTAL feature. Subject to change or removal.
+	ExpectedDotHeaders []string `json:"expected_dot_headers,omitempty"`
 
 	// Routes describes how this server will handle requests.
 	// Routes are executed sequentially. First a route's matchers
@@ -287,12 +406,44 @@ type Server struct {
 
 	server    *http.Server
 	h3server  *http3.Server
+	wtServer  *webtransport.Server
 	addresses []caddy.NetworkAddress
+
+	// wtSessions are upgraded WebTransport sessions. A finite grace
+	// period closes them when the deadline passes, without closing the
+	// shared HTTP/3 server. Eternal grace leaves them until the peer
+	// ends the session. wtConns counts ServeQUICConn accept loops.
+	// wtStopping is set before waiting on wtConns so Add cannot race
+	// with Wait.
+	//
+	// rawConns are the QUIC connections passed to ServeQUICConn. reqs
+	// counts in-flight HTTP/3 requests on that connection, including a
+	// WebTransport extended CONNECT that is still inside ServeHTTP.
+	// Shutdown closes connections with no in-flight requests so an idle
+	// keepalive cannot retain the old config for the QUIC idle timeout.
+	// h3Fallbacks are plain HTTP/3 servers used when a pooled listener
+	// cannot offer WebTransport. Shutdown must drain them itself;
+	// s.h3server does not track their connections.
+	wtServeMu   sync.Mutex
+	wtStopping  bool
+	wtConns     sync.WaitGroup
+	wtSessions  map[io.Closer]struct{}
+	rawConns    map[*quic.Conn]*rawQUICConn
+	h3Fallbacks []*http3.Server
 
 	trustedProxies IPRangeSource
 
-	shutdownAt   time.Time
-	shutdownAtMu *sync.RWMutex
+	shutdownAt atomic.Pointer[time.Time]
+
+	// precomputed underscore header allowlist (built during provisioning)
+	underscoreExactAllow  map[string]struct{}
+	underscoreExactDrop   map[string]struct{}
+	underscorePrefixRules []aliasPrefixRule
+
+	// precomputed dot header allowlist (built during provisioning)
+	dotExactAllow  map[string]struct{}
+	dotExactDrop   map[string]struct{}
+	dotPrefixRules []aliasPrefixRule
 
 	// registered callback functions
 	connStateFuncs   []func(net.Conn, http.ConnState)
@@ -300,6 +451,143 @@ type Server struct {
 	onShutdownFuncs  []func()
 	onStopFuncs      []func(context.Context) error // TODO: Experimental (Nov. 2023)
 }
+
+// aliasPrefixRule pairs a canonical allowed prefix (underscore- or
+// dot-named) with its hyphenated counterpart. Used for prefix-glob
+// matching in the underscore/dot allowlists.
+type aliasPrefixRule struct {
+	allow string // canonical allowed form, e.g. "Webhook_" or "Webhook."
+	drop  string // canonical hyphenated form, e.g. "Webhook-"
+}
+
+// provisionHeaderAliasAllowlist validates entries for a header-alias
+// allowlist (ExpectedUnderscoreHeaders or ExpectedDotHeaders) and builds
+// the precomputed maps and prefix rules used by the hot-path filter in
+// serveHTTP. sep is the separator the entries must contain ('_' or '.');
+// directive is the Caddyfile/JSON name used in error messages.
+func provisionHeaderAliasAllowlist(entries []string, sep rune, directive string) (exactAllow, exactDrop map[string]struct{}, prefixRules []aliasPrefixRule, err error) {
+	exactAllow = make(map[string]struct{}, len(entries))
+	exactDrop = make(map[string]struct{}, len(entries))
+
+	for _, entry := range entries {
+		// Reject non-ASCII bytes: Go's HTTP parser returns 400 for
+		// non-ASCII header names, so such entries can never match.
+		for i := 0; i < len(entry); i++ {
+			if entry[i] >= 0x80 {
+				return nil, nil, nil, fmt.Errorf("%s: entry %q contains non-ASCII characters", directive, entry)
+			}
+		}
+
+		isGlob := strings.HasSuffix(entry, "*")
+		name := entry
+		if isGlob {
+			name = strings.TrimSuffix(entry, "*")
+		}
+
+		// Reject entries with '*' not at the trailing position.
+		if strings.ContainsRune(name, '*') {
+			return nil, nil, nil, fmt.Errorf("%s: entry %q has '*' in an invalid position (only a trailing '*' is allowed)", directive, entry)
+		}
+
+		// The name (without trailing '*') must contain at least one separator.
+		if !strings.ContainsRune(name, sep) {
+			return nil, nil, nil, fmt.Errorf("%s: entry %q does not contain a %q", directive, entry, sep)
+		}
+
+		canonAllow := http.CanonicalHeaderKey(name)
+		canonDrop := http.CanonicalHeaderKey(strings.ReplaceAll(name, string(sep), "-"))
+
+		if isGlob {
+			prefixRules = append(prefixRules, aliasPrefixRule{
+				allow: canonAllow,
+				drop:  canonDrop,
+			})
+		} else {
+			exactAllow[canonAllow] = struct{}{}
+			exactDrop[canonDrop] = struct{}{}
+		}
+	}
+
+	return exactAllow, exactDrop, prefixRules, nil
+}
+
+// provisionUnderscoreHeaders validates the ExpectedUnderscoreHeaders
+// entries and builds the precomputed maps and prefix rules used by
+// the hot-path filter in serveHTTP.
+func (s *Server) provisionUnderscoreHeaders() error {
+	if len(s.ExpectedUnderscoreHeaders) == 0 {
+		return nil
+	}
+	var err error
+	s.underscoreExactAllow, s.underscoreExactDrop, s.underscorePrefixRules, err = provisionHeaderAliasAllowlist(s.ExpectedUnderscoreHeaders, '_', "expected_underscore_headers")
+	return err
+}
+
+// provisionDotHeaders validates the ExpectedDotHeaders entries and
+// builds the precomputed maps and prefix rules used by the hot-path
+// filter in serveHTTP.
+func (s *Server) provisionDotHeaders() error {
+	if len(s.ExpectedDotHeaders) == 0 {
+		return nil
+	}
+	var err error
+	s.dotExactAllow, s.dotExactDrop, s.dotPrefixRules, err = provisionHeaderAliasAllowlist(s.ExpectedDotHeaders, '.', "expected_dot_headers")
+	return err
+}
+
+// isAllowedUnderscoreHeader reports whether key (a canonical header
+// name containing an underscore) is permitted by the allowlist.
+func (s *Server) isAllowedUnderscoreHeader(key string) bool {
+	if _, ok := s.underscoreExactAllow[key]; ok {
+		return true
+	}
+	for _, rule := range s.underscorePrefixRules {
+		if strings.HasPrefix(key, rule.allow) {
+			return true
+		}
+	}
+	return false
+}
+
+// isAllowedDotHeader reports whether key (a canonical header name
+// containing a dot) is permitted by the allowlist.
+func (s *Server) isAllowedDotHeader(key string) bool {
+	if _, ok := s.dotExactAllow[key]; ok {
+		return true
+	}
+	for _, rule := range s.dotPrefixRules {
+		if strings.HasPrefix(key, rule.allow) {
+			return true
+		}
+	}
+	return false
+}
+
+// isHyphenatedVariant reports whether key (a canonical header name
+// containing neither an underscore nor a dot) is the hyphenated variant
+// of an allowlisted underscore or dot header and should therefore be
+// dropped.
+func (s *Server) isHyphenatedVariant(key string) bool {
+	if _, ok := s.underscoreExactDrop[key]; ok {
+		return true
+	}
+	if _, ok := s.dotExactDrop[key]; ok {
+		return true
+	}
+	for _, rule := range s.underscorePrefixRules {
+		if strings.HasPrefix(key, rule.drop) {
+			return true
+		}
+	}
+	for _, rule := range s.dotPrefixRules {
+		if strings.HasPrefix(key, rule.drop) {
+			return true
+		}
+	}
+	return false
+}
+
+var defaultProtocols = []string{"h1", "h2", "h3"}
 
 var (
 	ServerHeader = "Caddy"
@@ -309,6 +597,13 @@ var (
 // ServeHTTP is the entry point for all HTTP requests.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
+
+	// Count HTTP/3 requests on connections ServeQUICConn owns. http3.Server
+	// does not track those, so shutdown uses this to tell an idle keepalive
+	// from work that still has to drain.
+	if finish := s.trackRawHTTP3Request(r); finish != nil {
+		defer finish()
+	}
 
 	// If there are listener wrappers that process tls connections but don't return a *tls.Conn, this field will be nil.
 	if r.TLS == nil {
@@ -327,6 +622,60 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// guard against slowloris-style attacks by aborting the connection
+	// if a read from the request body or a write to the response
+	// stalls for longer than the configured timeout; the deadline is
+	// reset on every successful read/write, so this doesn't affect
+	// legitimately slow clients as long as they keep making progress.
+	// hardDeadline, anchored to this handler's start, caps how far
+	// that reset can push the deadline out, so an explicitly configured
+	// ReadTimeout/WriteTimeout ceiling still applies on top instead of
+	// being silently overwritten by the first read/write.
+	rc := http.NewResponseController(w)
+	var readHardDeadline, writeHardDeadline time.Time
+	if s.ReadTimeout > 0 {
+		readHardDeadline = start.Add(time.Duration(s.ReadTimeout))
+	}
+	if s.WriteTimeout > 0 {
+		writeHardDeadline = start.Add(time.Duration(s.WriteTimeout))
+	}
+	var idleReader *IdleTimeoutReader
+	var idleWriter *IdleTimeoutWriter
+	if s.ReadIdleTimeout > 0 && r.Body != nil {
+		idleReader = &IdleTimeoutReader{
+			ReadCloser: r.Body,
+			Ctrl:       rc,
+			Deadline: IdleDeadline{
+				Start:        start,
+				Timeout:      time.Duration(s.ReadIdleTimeout),
+				MinRate:      s.ReadMinRate,
+				HardDeadline: readHardDeadline,
+			},
+			Logger:            s.logger,
+			DrainDeadline:     r.ProtoMajor == 1 && r.ContentLength != 0,
+			ClearBetweenReads: r.ProtoMajor == 2,
+		}
+		defer idleReader.HandlerDone()
+		r.Body = idleReader
+	}
+	if s.WriteIdleTimeout > 0 {
+		idleWriter = &IdleTimeoutWriter{
+			ResponseWriterWrapper: &ResponseWriterWrapper{ResponseWriter: w},
+			Ctrl:                  rc,
+			Deadline: IdleDeadline{
+				Start:        start,
+				Timeout:      time.Duration(s.WriteIdleTimeout),
+				MinRate:      s.WriteMinRate,
+				HardDeadline: writeHardDeadline,
+			},
+			MaxChunk:           s.MaxWriteChunk,
+			Logger:             s.logger,
+			ClearBetweenWrites: r.ProtoMajor == 2,
+		}
+		defer idleWriter.HandlerDone()
+		w = idleWriter
+	}
+
 	// set the Server header
 	h := w.Header()
 	h["Server"] = serverHeader
@@ -334,7 +683,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// advertise HTTP/3, if enabled
 	if s.h3server != nil && r.ProtoMajor < 3 {
 		if err := s.h3server.SetQUICHeaders(h); err != nil {
-			if c := s.logger.Check(zapcore.ErrorLevel, "setting HTTP/3 Alt-Svc header"); c != nil {
+			lvl := zapcore.ErrorLevel
+			if errors.Is(err, http3.ErrNoAltSvcPort) {
+				lvl = zapcore.DebugLevel
+			}
+			if c := s.logger.Check(lvl, "setting HTTP/3 Alt-Svc header"); c != nil {
 				c.Write(zap.Error(err))
 			}
 		}
@@ -342,7 +695,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// prepare internals of the request for the handler pipeline
 	repl := caddy.NewReplacer()
-	r = PrepareRequest(r, repl, w, s)
+	r = prepareRequest(r, repl, w, s, idleTimeouts{reader: idleReader, writer: idleWriter})
 
 	// clone the request for logging purposes before it enters any handler chain;
 	// this is necessary to capture the original request in case it gets modified
@@ -356,9 +709,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	errLog := s.errorLogger.WithLazy(loggableReq)
 
 	var duration time.Duration
+	var wrec ResponseRecorder
+	var writeErr error
 
 	if s.shouldLogRequest(r) {
-		wrec := NewResponseRecorder(w, nil, nil)
+		wrec = NewResponseRecorder(w, nil, nil)
 		w = wrec
 
 		// wrap the request body in a LengthReader
@@ -367,7 +722,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if r.Body != nil {
 			bodyReader = &lengthReader{Source: r.Body}
 			r.Body = bodyReader
-
 			// should always be true, private interface can only be referenced in the same package
 			if setReadSizer, ok := wrec.(interface{ setReadSize(*int) }); ok {
 				setReadSizer.setReadSize(&bodyReader.Length)
@@ -377,7 +731,28 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// capture the original version of the request
 		accLog := s.accessLogger.WithLazy(loggableReq)
 
-		defer s.logRequest(accLog, r, wrec, &duration, repl, bodyReader, shouldLogCredentials)
+		defer s.logRequest(accLog, r, wrec, &duration, &writeErr, repl, bodyReader, shouldLogCredentials)
+
+		// if the request went past the write timeout, flush so the access log can
+		// see the write error. deferred because flushing before the error routes
+		// run would commit a 200 and lose the error status. it sits after the
+		// access log defer so it still runs first.
+		defer func() {
+			if s.WriteTimeout <= 0 ||
+				r.ProtoMajor != 1 ||
+				duration < time.Duration(s.WriteTimeout) {
+				return
+			}
+			// over wrec, not the rc above: this reaches the recorder's
+			// FlushError, which skips buffered responses (#6144); rc sits
+			// below the recorder and would flush them anyway.
+			flushErr := http.NewResponseController(wrec).Flush()
+			if flushErr != nil &&
+				!errors.Is(flushErr, http.ErrHijacked) &&
+				!errors.Is(flushErr, http.ErrNotSupported) {
+				writeErr = flushErr
+			}
+		}()
 	}
 
 	// guarantee ACME HTTP challenges; handle them separately from any user-defined handlers
@@ -490,6 +865,83 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) error {
 		return HandlerError{
 			Err:        errors.New("rfc9112 forbids empty Host"),
 			StatusCode: http.StatusBadRequest,
+		}
+	}
+
+	// Drop headers whose names contain `_` or `.`: once FastCGI/CGI/FrankenPHP etc.
+	// rewrites `-` to `_` (and PHP additionally folds `.` to `_` when registering
+	// $_SERVER keys), an underscore or dot alias collides with the legitimate
+	// hyphenated header and can bypass `forward_auth copy_headers`
+	// (GHSA-f59h-q822-g45g, GHSA-49wc-4hcv-v58q).
+	//
+	// The two allowlists (ExpectedUnderscoreHeaders, ExpectedDotHeaders) are
+	// otherwise independent: each only keeps headers spelled with its own
+	// character, and either allowlist actively drops the plain-hyphenated
+	// variant of its entries.
+	for k := range r.Header {
+		hasUnderscore := strings.ContainsRune(k, '_')
+		hasDot := strings.ContainsRune(k, '.')
+
+		switch {
+		case hasUnderscore && hasDot:
+			// A name containing both separators still collides with the
+			// hyphenated, underscore-only, and dot-only spellings once a
+			// CGI/FastCGI/PHP backend folds them onto the same variable
+			// name. A prefix glob can't vet its free-form suffix for an
+			// embedded "other" separator, so only an exact allowlist entry
+			// for this literal spelling is honored here.
+			_, underscoreOK := s.underscoreExactAllow[k]
+			_, dotOK := s.dotExactAllow[k]
+			if !underscoreOK && !dotOK {
+				delete(r.Header, k)
+
+				if c := s.logger.Check(zapcore.DebugLevel, "dropping header containing both underscore and dot"); c != nil {
+					c.Write(zap.String("header", k))
+				}
+			} else if n := len(r.Header[k]); n > 1 {
+				delete(r.Header, k)
+
+				if c := s.logger.Check(zapcore.WarnLevel, "dropping allowlisted underscore/dot header with repeated values (possible spoofing)"); c != nil {
+					c.Write(zap.String("header", k), zap.Int("count", n))
+				}
+			}
+
+		case hasUnderscore:
+			if len(s.ExpectedUnderscoreHeaders) == 0 || !s.isAllowedUnderscoreHeader(k) {
+				delete(r.Header, k)
+
+				if c := s.logger.Check(zapcore.DebugLevel, "dropping header containing underscore"); c != nil {
+					c.Write(zap.String("header", k))
+				}
+			} else if n := len(r.Header[k]); n > 1 {
+				delete(r.Header, k)
+
+				if c := s.logger.Check(zapcore.WarnLevel, "dropping allowlisted underscore header with repeated values (possible spoofing)"); c != nil {
+					c.Write(zap.String("header", k), zap.Int("count", n))
+				}
+			}
+
+		case hasDot:
+			if len(s.ExpectedDotHeaders) == 0 || !s.isAllowedDotHeader(k) {
+				delete(r.Header, k)
+
+				if c := s.logger.Check(zapcore.DebugLevel, "dropping header containing dot"); c != nil {
+					c.Write(zap.String("header", k))
+				}
+			} else if n := len(r.Header[k]); n > 1 {
+				delete(r.Header, k)
+
+				if c := s.logger.Check(zapcore.WarnLevel, "dropping allowlisted dot header with repeated values (possible spoofing)"); c != nil {
+					c.Write(zap.String("header", k), zap.Int("count", n))
+				}
+			}
+
+		case s.isHyphenatedVariant(k):
+			delete(r.Header, k)
+
+			if c := s.logger.Check(zapcore.DebugLevel, "dropping hyphenated variant of expected underscore/dot header"); c != nil {
+				c.Write(zap.String("header", k))
+			}
 		}
 	}
 
@@ -621,7 +1073,7 @@ func (s *Server) findLastRouteWithHostMatcher() int {
 	for i, route := range s.Routes {
 		// since we want to break out of an inner loop, use a closure
 		// to allow us to use 'return' when we found a host matcher
-		found := (func() bool {
+		found := func() bool {
 			for _, sets := range route.MatcherSets {
 				for _, matcher := range sets {
 					switch matcher.(type) {
@@ -632,7 +1084,7 @@ func (s *Server) findLastRouteWithHostMatcher() int {
 				}
 			}
 			return false
-		})()
+		}()
 
 		// if we found the host matcher, change the lastIndex to
 		// just after the current route
@@ -660,31 +1112,142 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
 	}
 	addr.Network = h3net
-	h3ln, err := addr.ListenQUIC(s.ctx, 0, net.ListenConfig{}, tlsCfg, s.packetConnWrappers, s.Allow0RTT)
+	h3ln, err := addr.ListenQUIC(s.ctx, 0, net.ListenConfig{}, caddy.ListenQUICOptions{
+		TLSConfig:          tlsCfg,
+		PacketConnWrappers: s.packetConnWrappers,
+		Allow0RTT:          s.Allow0RTT,
+		EnableWebTransport: s.webTransportEnabled(),
+	})
 	if err != nil {
 		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
 	}
 
 	// create HTTP/3 server if not done already
 	if s.h3server == nil {
-		s.h3server = &http3.Server{
-			Handler:        s,
-			TLSConfig:      tlsCfg,
-			MaxHeaderBytes: s.MaxHeaderBytes,
-			QUICConfig: &quic.Config{
-				Versions: []quic.Version{quic.Version1, quic.Version2},
-				Tracer:   h3qlog.DefaultConnectionTracer,
-			},
-			IdleTimeout: time.Duration(s.IdleTimeout),
+		s.h3server = s.buildHTTP3Server(tlsCfg)
+		if s.webTransportEnabled() {
+			s.wtServer = &webtransport.Server{H3: s.h3server}
 		}
 	}
 
 	s.quicListeners = append(s.quicListeners, h3ln)
 
-	//nolint:errcheck
-	go s.h3server.ServeListener(h3ln)
+	go s.serveH3AcceptLoop(h3ln)
 
 	return nil
+}
+
+// serveH3AcceptLoop accepts incoming QUIC connections from the HTTP/3
+// listener. When WebTransport is not enabled, the listener is handed
+// directly to http3.Server — the code path is identical to pre-WebTransport
+// Caddy. When enabled, each connection is dispatched through
+// webtransport.Server.ServeQUICConn, which demultiplexes WebTransport
+// streams from normal HTTP/3 streams (forwarding the latter to the
+// http3.Server request path at the cost of one varint peek per stream).
+//
+// If WebTransport is enabled but the underlying QUIC listener was created
+// without DATAGRAM support (e.g. a pooled listener reused after a reload that
+// turns on webtransport), fall back to plain HTTP/3 with a warning so
+// that H3 is not silently broken by webtransport.Server.ServeQUICConn rejecting
+// every connection.
+func (s *Server) serveH3AcceptLoop(h3ln http3.QUICListener) {
+	h3 := s.http3ServerForListener(h3ln)
+	if h3 != s.h3server || s.wtServer == nil {
+		_ = h3.ServeListener(h3ln)
+		return
+	}
+	for {
+		conn, err := h3ln.Accept(s.ctx)
+		if err != nil {
+			return
+		}
+		s.wtServeMu.Lock()
+		if s.wtStopping {
+			s.wtServeMu.Unlock()
+			_ = conn.CloseWithError(0, "")
+			continue
+		}
+		if s.rawConns == nil {
+			s.rawConns = make(map[*quic.Conn]*rawQUICConn)
+		}
+		s.rawConns[conn] = &rawQUICConn{}
+		s.wtConns.Add(1)
+		s.wtServeMu.Unlock()
+		go func(conn *quic.Conn) {
+			defer s.untrackRawConn(conn)
+			defer s.wtConns.Done()
+			err := s.wtServer.ServeQUICConn(conn)
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
+				if c := s.logger.Check(zapcore.ErrorLevel, "serving WebTransport QUIC connection"); c != nil {
+					c.Write(zap.Error(err))
+				}
+			}
+		}(conn)
+	}
+}
+
+// http3ServerForListener returns the HTTP/3 server that should serve h3ln.
+// When WebTransport is off, or when the listener was created without the
+// QUIC capabilities WT needs (pooled listener reused after a reload), this
+// is a plain HTTP/3 server that does not advertise WT in SETTINGS. The
+// latter case logs a warning: the config asked for WebTransport but this
+// socket cannot provide it.
+func (s *Server) http3ServerForListener(h3ln http3.QUICListener) *http3.Server {
+	if !s.webTransportEnabled() {
+		return s.h3server
+	}
+	if wtLn, ok := h3ln.(interface{ SupportsWebTransport() bool }); ok && !wtLn.SupportsWebTransport() {
+		if c := s.logger.Check(zapcore.WarnLevel, "WebTransport unavailable: QUIC listener was created without DATAGRAM support; restart Caddy to apply webtransport"); c != nil {
+			c.Write(zap.Stringer("address", h3ln.Addr()))
+		}
+		var tlsCfg *tls.Config
+		if s.h3server != nil {
+			tlsCfg = s.h3server.TLSConfig
+		}
+		plain := s.buildHTTP3ServerWithWebTransport(tlsCfg, false)
+		s.wtServeMu.Lock()
+		s.h3Fallbacks = append(s.h3Fallbacks, plain)
+		s.wtServeMu.Unlock()
+		return plain
+	}
+	return s.h3server
+}
+
+// buildHTTP3Server constructs the http3.Server used by this server for
+// HTTP/3. When WebTransport is enabled, the server is additionally
+// configured for WebTransport: WT enablement is advertised in SETTINGS,
+// DATAGRAMs are enabled, QUIC stream-reset partial delivery is enabled,
+// and a ConnContext hook stashes the *quic.Conn in each request's context
+// so handlers can call webtransport.Server.Upgrade. When disabled, none of
+// those modifications are applied and the returned server is
+// bit-for-bit identical to the pre-WebTransport implementation.
+func (s *Server) buildHTTP3Server(tlsCfg *tls.Config) *http3.Server {
+	return s.buildHTTP3ServerWithWebTransport(tlsCfg, s.webTransportEnabled())
+}
+
+func (s *Server) buildHTTP3ServerWithWebTransport(tlsCfg *tls.Config, enableWT bool) *http3.Server {
+	qc := &quic.Config{
+		Versions:          []quic.Version{quic.Version1, quic.Version2},
+		InitialPacketSize: 1200,
+		Tracer:            h3qlog.DefaultConnectionTracer,
+	}
+	h3 := &http3.Server{
+		Handler:        s,
+		TLSConfig:      tlsCfg,
+		MaxHeaderBytes: s.MaxHeaderBytes,
+		QUICConfig:     qc,
+		IdleTimeout:    time.Duration(s.IdleTimeout),
+	}
+	if enableWT {
+		qc.EnableStreamResetPartialDelivery = true
+		// Stash the conn before ConfigureHTTP3Server wraps ConnContext, so
+		// ServeHTTP can attribute the request to this raw connection.
+		h3.ConnContext = func(ctx context.Context, c *quic.Conn) context.Context {
+			return context.WithValue(ctx, rawQUICConnCtxKey, c)
+		}
+		webtransport.ConfigureHTTP3Server(h3)
+	}
+	return h3
 }
 
 // configureServer applies/binds the registered callback functions to the server.
@@ -827,7 +1390,7 @@ func (s *Server) logTrace(mh MiddlewareHandler) {
 
 // logRequest logs the request to access logs, unless skipped.
 func (s *Server) logRequest(
-	accLog *zap.Logger, r *http.Request, wrec ResponseRecorder, duration *time.Duration,
+	accLog *zap.Logger, r *http.Request, wrec ResponseRecorder, duration *time.Duration, writeErr *error,
 	repl *caddy.Replacer, bodyReader *lengthReader, shouldLogCredentials bool,
 ) {
 	ctx := r.Context()
@@ -859,6 +1422,11 @@ func (s *Server) logRequest(
 	if status >= 500 {
 		logLevel = zapcore.ErrorLevel
 	}
+	if levelName, ok := GetVar(ctx, LogLevelVar).(string); ok {
+		if level, err := zapcore.ParseLevel(levelName); err == nil && level >= zapcore.DebugLevel && level <= zapcore.ErrorLevel {
+			logLevel = level
+		}
+	}
 
 	var fields []zapcore.Field
 	for _, logger := range loggers {
@@ -877,9 +1445,15 @@ func (s *Server) logRequest(
 
 			extra := ctx.Value(ExtraLogFieldsCtxKey).(*ExtraLogFields)
 
+			hasWriteErr := writeErr != nil && *writeErr != nil
+
 			fieldCount := 6
+			if hasWriteErr {
+				fieldCount++
+			}
 			fields = make([]zapcore.Field, 0, fieldCount+len(extra.fields))
-			fields = append(fields,
+			fields = append(
+				fields,
 				zap.Int("bytes_read", reqBodyLength),
 				zap.String("user_id", userID),
 				zap.Duration("duration", *duration),
@@ -890,6 +1464,9 @@ func (s *Server) logRequest(
 					ShouldLogCredentials: shouldLogCredentials,
 				}),
 			)
+			if hasWriteErr {
+				fields = append(fields, zap.NamedError("write_error", *writeErr))
+			}
 			fields = append(fields, extra.fields...)
 		}
 
@@ -900,20 +1477,56 @@ func (s *Server) logRequest(
 // protocol returns true if the protocol proto is configured/enabled.
 func (s *Server) protocol(proto string) bool {
 	if s.ListenProtocols == nil {
-		if slices.Contains(s.Protocols, proto) {
+		return slices.Contains(s.protocolsWithDefaults(), proto)
+	}
+
+	for _, lnProtocols := range s.ListenProtocols {
+		if slices.Contains(s.listenerProtocolsWithDefaults(lnProtocols), proto) {
 			return true
-		}
-	} else {
-		for _, lnProtocols := range s.ListenProtocols {
-			for _, lnProtocol := range lnProtocols {
-				if lnProtocol == "" && slices.Contains(s.Protocols, proto) || lnProtocol == proto {
-					return true
-				}
-			}
 		}
 	}
 
 	return false
+}
+
+func (s *Server) protocolsWithDefaults() []string {
+	if len(s.Protocols) == 0 {
+		return defaultProtocols
+	}
+	return s.Protocols
+}
+
+func (s *Server) listenerProtocolsWithDefaults(lnProtocols []string) []string {
+	serverProtocols := s.protocolsWithDefaults()
+	if len(lnProtocols) == 0 {
+		return serverProtocols
+	}
+
+	lnProtocolsDefault := false
+	lnProtocolsInclude := make([]string, 0, len(lnProtocols)+len(serverProtocols))
+	srvProtocolsInclude := make(map[string]struct{}, len(serverProtocols))
+	for _, srvProtocol := range serverProtocols {
+		srvProtocolsInclude[srvProtocol] = struct{}{}
+	}
+
+	for _, lnProtocol := range lnProtocols {
+		if lnProtocol == "" {
+			lnProtocolsDefault = true
+			continue
+		}
+		lnProtocolsInclude = append(lnProtocolsInclude, lnProtocol)
+		delete(srvProtocolsInclude, lnProtocol)
+	}
+
+	if lnProtocolsDefault {
+		for _, srvProtocol := range serverProtocols {
+			if _, ok := srvProtocolsInclude[srvProtocol]; ok {
+				lnProtocolsInclude = append(lnProtocolsInclude, srvProtocol)
+			}
+		}
+	}
+
+	return lnProtocolsInclude
 }
 
 // Listeners returns the server's listeners. These are active listeners,
@@ -927,11 +1540,260 @@ func (s *Server) Listeners() []net.Listener { return s.listeners }
 // Name returns the server's name.
 func (s *Server) Name() string { return s.name }
 
+// WebTransportConfig configures WebTransport on a server.
+// Currently empty; specifying the object enables the feature.
+// Reserved for future options.
+//
+// TODO: This is an EXPERIMENTAL feature. Subject to change or removal.
+type WebTransportConfig struct{}
+
+// webTransportEnabled reports whether this server has opted in to
+// WebTransport. Presence of the config object is the enablement signal.
+func (s *Server) webTransportEnabled() bool {
+	return s != nil && s.WebTransport != nil
+}
+
+// WebTransportServer returns the server's underlying WebTransport
+// serving state as an opaque value. Modules that import
+// github.com/quic-go/webtransport-go may type-assert it to
+// *webtransport.Server. Returns nil if WebTransport is not enabled
+// on this server (WebTransport is nil or HTTP/3 is not in use).
+//
+// This is exposed as any so caddyhttp's public API does not leak the
+// upstream webtransport-go type to packages that don't use it.
+//
+// EXPERIMENTAL: Subject to change or removal.
+func (s *Server) WebTransportServer() any {
+	if s.wtServer == nil {
+		return nil
+	}
+	return s.wtServer
+}
+
+// RegisterWebTransportSession tracks c so shutdown can close the session
+// without closing the shared HTTP/3 server. webtransport.Server.Close also
+// calls http3.Server.Close, which aborts ordinary HTTP/3 requests on the
+// same server and waits with no grace deadline. The returned function
+// removes c from the set and does not close it.
+//
+// EXPERIMENTAL: Subject to change or removal.
+func (s *Server) RegisterWebTransportSession(c io.Closer) (unregister func()) {
+	if s == nil || c == nil {
+		return func() {}
+	}
+	s.wtServeMu.Lock()
+	if s.wtSessions == nil {
+		s.wtSessions = make(map[io.Closer]struct{})
+	}
+	s.wtSessions[c] = struct{}{}
+	s.wtServeMu.Unlock()
+	return func() {
+		s.wtServeMu.Lock()
+		delete(s.wtSessions, c)
+		s.wtServeMu.Unlock()
+	}
+}
+
+// rawQUICConn is the shutdown state of one ServeQUICConn connection.
+type rawQUICConn struct {
+	reqs    int
+	closing bool
+}
+
+// rawQUICConnCtxKey is the request-context key for the *quic.Conn serving
+// a WebTransport-enabled HTTP/3 connection. The key is set from ConnContext
+// before webtransport.ConfigureHTTP3Server wraps it.
+type rawQUICConnCtxKeyType struct{}
+
+var rawQUICConnCtxKey = rawQUICConnCtxKeyType{}
+
+// trackRawHTTP3Request counts r against the raw QUIC connection that is
+// serving it. The returned function drops the count after the HTTP/3 stack
+// finishes the stream and, once shutdown has started, closes the connection
+// when nothing is left in flight. Closing from inside ServeHTTP would abort
+// the response: quic-go flushes and closes the stream only after the handler
+// returns. It returns nil when r is not served by a tracked ServeQUICConn
+// connection.
+func (s *Server) trackRawHTTP3Request(r *http.Request) func() {
+	if s == nil || !s.webTransportEnabled() || r == nil {
+		return nil
+	}
+	c, ok := r.Context().Value(rawQUICConnCtxKey).(*quic.Conn)
+	if !ok || c == nil {
+		return nil
+	}
+	s.wtServeMu.Lock()
+	st := s.rawConns[c]
+	if st == nil || st.closing {
+		s.wtServeMu.Unlock()
+		return nil
+	}
+	st.reqs++
+	s.wtServeMu.Unlock()
+	// The request context is cancelled when the HTTP/3 stream's context
+	// ends. That happens after this handler returns, so wait in the
+	// background. Waiting here would deadlock the stream close.
+	ctx := r.Context()
+	return func() { go s.finishRawHTTP3Request(c, ctx) }
+}
+
+// finishRawHTTP3Request drops one in-flight request once ctx ends. When
+// shutdown is in progress and this was the last request, the connection is
+// closed after a short delay so an idle keepalive cannot pin eternal grace.
+// Closing immediately aborts a response the client has not read: quic-go
+// turns a CONNECTION_CLOSE into a stream read error even if the bytes were
+// already buffered.
+func (s *Server) finishRawHTTP3Request(c *quic.Conn, ctx context.Context) {
+	if ctx != nil {
+		<-ctx.Done()
+	}
+	s.wtServeMu.Lock()
+	st := s.rawConns[c]
+	if st == nil {
+		s.wtServeMu.Unlock()
+		return
+	}
+	if st.reqs > 0 {
+		st.reqs--
+	}
+	closeNow := s.wtStopping && st.reqs == 0 && !st.closing
+	if closeNow {
+		st.closing = true
+	}
+	s.wtServeMu.Unlock()
+	if !closeNow {
+		return
+	}
+	timer := time.NewTimer(time.Second)
+	defer timer.Stop()
+	select {
+	case <-c.Context().Done():
+	case <-timer.C:
+		_ = c.CloseWithError(0, "")
+	}
+}
+
+// closeIdleRawConns closes tracked connections that have no in-flight
+// HTTP/3 request. An idle keepalive would otherwise keep ServeQUICConn
+// running for the QUIC idle timeout, and eternal grace would wait that
+// whole time.
+func (s *Server) closeIdleRawConns() {
+	if s == nil {
+		return
+	}
+	s.wtServeMu.Lock()
+	var idle []*quic.Conn
+	for c, st := range s.rawConns {
+		if st.reqs == 0 && !st.closing {
+			st.closing = true
+			idle = append(idle, c)
+		}
+	}
+	s.wtServeMu.Unlock()
+	for _, c := range idle {
+		_ = c.CloseWithError(0, "")
+	}
+}
+
+func (s *Server) untrackRawConn(c *quic.Conn) {
+	s.wtServeMu.Lock()
+	delete(s.rawConns, c)
+	s.wtServeMu.Unlock()
+}
+
+// shutdownFallbackHTTP3 drains plain HTTP/3 servers created for listeners
+// that cannot offer WebTransport. Each uses ServeListener, so its own
+// Shutdown applies the grace period. The shared h3server does not see
+// those connections.
+func (s *Server) shutdownFallbackHTTP3(ctx context.Context) error {
+	if s == nil {
+		return nil
+	}
+	s.wtServeMu.Lock()
+	fallbacks := s.h3Fallbacks
+	s.h3Fallbacks = nil
+	s.wtServeMu.Unlock()
+	var errs []error
+	for _, fb := range fallbacks {
+		if fb == nil {
+			continue
+		}
+		if err := fb.Shutdown(ctx); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// closeWebTransportSessions closes sessions registered with
+// RegisterWebTransportSession. It does not close QUIC connections or the
+// HTTP/3 server.
+func (s *Server) closeWebTransportSessions() {
+	if s == nil {
+		return
+	}
+	s.wtServeMu.Lock()
+	closers := make([]io.Closer, 0, len(s.wtSessions))
+	for c := range s.wtSessions {
+		closers = append(closers, c)
+	}
+	s.wtSessions = nil
+	s.wtServeMu.Unlock()
+	for _, c := range closers {
+		_ = c.Close()
+	}
+}
+
+// waitWebTransportConns waits until ServeQUICConn loops finish, or until
+// ctx ends. Those connections are not tracked by http3.Server.Shutdown
+// because webtransport.Server serves them through NewRawServerConn.
+//
+// When ctx ends first, registered sessions are closed while the packet
+// conns are still open so the close capsule can reach the peer. The
+// loops then get a short window to exit before the caller drops the
+// sockets. A nil ctx.Done (eternal grace) waits until the peer leaves
+// and does not force-close.
+func (s *Server) waitWebTransportConns(ctx context.Context) {
+	if s == nil {
+		return
+	}
+	s.wtServeMu.Lock()
+	s.wtStopping = true
+	s.wtServeMu.Unlock()
+	s.closeIdleRawConns()
+
+	done := make(chan struct{})
+	go func() {
+		s.wtConns.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return
+	case <-ctx.Done():
+	}
+
+	s.closeWebTransportSessions()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+	}
+}
+
 // PrepareRequest fills the request r for use in a Caddy HTTP handler chain. w and s can
 // be nil, but the handlers will lose response placeholders and access to the server.
 func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter, s *Server) *http.Request {
+	return prepareRequest(r, repl, w, s, idleTimeouts{})
+}
+
+// prepareRequest is PrepareRequest, also making the wrappers applying
+// the server's idle timeouts, if any, available to handlers.
+func prepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter, s *Server, idle idleTimeouts) *http.Request {
 	// set up the context for the request
 	ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl)
+	if idle.reader != nil || idle.writer != nil {
+		ctx = context.WithValue(ctx, idleTimeoutsCtxKey, idle)
+	}
 	ctx = context.WithValue(ctx, ServerCtxKey, s)
 
 	trusted, clientIP := determineTrustedProxy(r, s)
@@ -1086,11 +1948,11 @@ func strictUntrustedClientIp(r *http.Request, headers []string, trusted []netip.
 	for _, headerName := range headers {
 		parts := strings.Split(strings.Join(r.Header.Values(headerName), ","), ",")
 
-		for i := len(parts) - 1; i >= 0; i-- {
+		for _, part := range slices.Backward(parts) {
 			// Some proxies may retain the port number, so split if possible
-			host, _, err := net.SplitHostPort(parts[i])
+			host, _, err := net.SplitHostPort(part)
 			if err != nil {
-				host = parts[i]
+				host = part
 			}
 
 			// Remove any zone identifier from the IP address

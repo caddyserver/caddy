@@ -2,16 +2,44 @@ package httpcaddyfile
 
 import (
 	"encoding/json"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
+func TestWindowsRootTrailingBackslash(t *testing.T) {
+	adapter := caddyfile.Adapter{ServerType: ServerType{}}
+	input := "http://localhost {\nroot * C:\\site\\\nrespond ok\n}\n"
+	rootJSON, err := json.Marshal(`C:\site\`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, in := range []string{input, strings.ReplaceAll(input, "\n", "\r\n")} {
+		before, _, err := adapter.Adapt([]byte(in), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(before), `"root":`+string(rootJSON)) {
+			t.Fatalf("Windows root not preserved in adapted config: %s", before)
+		}
+		after, _, err := adapter.Adapt(caddyfile.Format([]byte(in)), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(before) != string(after) {
+			t.Fatalf("formatting changed adapted JSON:\nbefore: %s\nafter: %s", before, after)
+		}
+	}
+}
+
 func TestMatcherSyntax(t *testing.T) {
 	for i, tc := range []struct {
-		input       string
-		expectError bool
+		input          string
+		expectError    bool
+		expectContains string
 	}{
 		{
 			input: `http://localhost
@@ -54,6 +82,34 @@ func TestMatcherSyntax(t *testing.T) {
 			expectError: false,
 		},
 		{
+			input: `http://localhost {
+				@test {
+					path /test
+				}
+				@test {
+					path /other
+				}
+				respond @test "hello"
+			}
+			`,
+			expectError:    true,
+			expectContains: "is defined more than once",
+		},
+		{
+			input: `(snippet) {
+				@{args[0]} {
+					path /{args[0]}
+				}
+				respond @{args[0]} "hello"
+			}
+			http://localhost {
+				import snippet foo
+				import snippet bar
+			}
+			`,
+			expectError: false,
+		},
+		{
 			input: `@matcher {
 				path /matcher-not-allowed/outside-of-site-block/*
 			}
@@ -72,6 +128,13 @@ func TestMatcherSyntax(t *testing.T) {
 		if err != nil != tc.expectError {
 			t.Errorf("Test %d error expectation failed Expected: %v, got %s", i, tc.expectError, err)
 			continue
+		}
+
+		if err != nil && tc.expectContains != "" {
+			if !strings.Contains(err.Error(), tc.expectContains) {
+				t.Errorf("Test %d error message mismatch: expected to contain %q, got %q",
+					i, tc.expectContains, err.Error())
+			}
 		}
 	}
 }
@@ -259,5 +322,84 @@ func TestDefaultSNIWithoutHTTPS(t *testing.T) {
 
 	if !found {
 		t.Errorf("Expected default_sni 'my-sni.com' in TLS connection policies, but it was missing. Generated JSON: %s", string(result))
+	}
+}
+
+func TestTLSConnectionPoliciesAreIsolatedAcrossListeners(t *testing.T) {
+	caddyfileStr := `(mtls) {
+		tls {
+			client_auth {
+				mode require_and_verify
+				trust_pool file /tmp/root.crt
+			}
+		}
+	}
+
+	abc.domain.com, abc.domain.com:2000 {
+		import mtls
+		respond "first"
+	}
+
+	domain.domain.com {
+		import mtls
+		respond "second"
+	}
+
+	ghi.domain.com, ghi.domain.com:2000 {
+		import mtls
+		respond "third"
+	}`
+
+	adapter := caddyfile.Adapter{ServerType: ServerType{}}
+	result, _, err := adapter.Adapt([]byte(caddyfileStr), nil)
+	if err != nil {
+		t.Fatalf("Failed to adapt Caddyfile: %v", err)
+	}
+
+	var config struct {
+		Apps struct {
+			HTTP struct {
+				Servers map[string]*caddyhttp.Server `json:"servers"`
+			} `json:"http"`
+		} `json:"apps"`
+	}
+	if err := json.Unmarshal(result, &config); err != nil {
+		t.Fatalf("Failed to unmarshal JSON config: %v", err)
+	}
+
+	for listener, expectedNames := range map[string][]string{
+		":2000": {"abc.domain.com", "ghi.domain.com"},
+		":443":  {"abc.domain.com", "domain.domain.com", "ghi.domain.com"},
+	} {
+		var server *caddyhttp.Server
+		for _, candidate := range config.Apps.HTTP.Servers {
+			if slices.Contains(candidate.Listen, listener) {
+				server = candidate
+				break
+			}
+		}
+		if server == nil {
+			t.Fatalf("Expected a server listening on %s", listener)
+		}
+
+		var names []string
+		for _, policy := range server.TLSConnPolicies {
+			if policy.ClientAuthentication == nil {
+				continue
+			}
+			if policy.ClientAuthentication.Mode != "require_and_verify" {
+				t.Fatalf("Expected %s client authentication on %s, got %s", "require_and_verify", listener, policy.ClientAuthentication.Mode)
+			}
+			var policyNames []string
+			if err := json.Unmarshal(policy.MatchersRaw["sni"], &policyNames); err != nil {
+				t.Fatalf("Failed to unmarshal SNI matcher for %s: %v", listener, err)
+			}
+			names = append(names, policyNames...)
+		}
+
+		slices.Sort(names)
+		if !slices.Equal(names, expectedNames) {
+			t.Errorf("Expected client authentication for %v on %s, got %v", expectedNames, listener, names)
+		}
 	}
 }

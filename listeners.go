@@ -179,7 +179,9 @@ func (na NetworkAddress) listen(ctx context.Context, portOffset uint, config net
 		if ln == nil && err == nil {
 			// otherwise, create a new listener
 			lnKey := listenerKey(na.Network, address)
-			ln, err = listenReusable(ctx, lnKey, na.Network, address, config)
+			ln, err = internal.WithBindCapability(na.Network, address, func() (any, error) {
+				return listenReusable(ctx, lnKey, na.Network, address, config)
+			})
 		}
 	}
 
@@ -361,7 +363,7 @@ func ParseNetworkAddressWithDefaults(addr, defaultNetwork string, defaultPort ui
 		if end < start {
 			return NetworkAddress{}, fmt.Errorf("end port must not be less than start port")
 		}
-		if (end - start) > maxPortSpan {
+		if (end-start)+1 > maxPortSpan {
 			return NetworkAddress{}, fmt.Errorf("port range exceeds %d ports", maxPortSpan)
 		}
 	}
@@ -423,15 +425,34 @@ func JoinNetworkAddress(network, host, port string) string {
 	return a
 }
 
+// ListenQUICOptions holds optional parameters for ListenQUIC.
+// A zero value matches historical defaults: 0-RTT is allowed,
+// WebTransport QUIC capabilities are off, and no packet-conn
+// wrappers are applied.
+//
+// NOTE: This API is EXPERIMENTAL and may be changed or removed.
+type ListenQUICOptions struct {
+	TLSConfig          *tls.Config
+	PacketConnWrappers []PacketConnWrapper
+	Allow0RTT          *bool
+	EnableWebTransport bool
+}
+
 // ListenQUIC returns a http3.QUICEarlyListener suitable for use in a Caddy module.
 //
 // The network will be transformed into a QUIC-compatible type if the same address can be used with
 // different networks. Currently this just means that for tcp, udp will be used with the same
 // address instead.
 //
+// ctx, portOffset, and config match Listen. Additional QUIC-specific
+// parameters are passed in opts.
+//
+// The underlying listener is pooled per address: the first creator's configuration
+// (Allow0RTT, WebTransport capabilities) wins; subsequent callers reuse that listener.
+//
 // NOTE: This API is EXPERIMENTAL and may be changed or removed.
 // NOTE: user should close the returned listener twice, once to stop accepting new connections, the second time to free up the packet conn.
-func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config net.ListenConfig, tlsConf *tls.Config, pcWrappers []PacketConnWrapper, allow0rttconf *bool) (http3.QUICListener, error) {
+func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config net.ListenConfig, opts ListenQUICOptions) (http3.QUICListener, error) {
 	lnKey := listenerKey("quic"+na.Network, na.JoinHostPort(portOffset))
 
 	sharedEarlyListener, _, err := listenerPool.LoadOrNew(lnKey, func() (Destructor, error) {
@@ -443,7 +464,7 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 		ln := lnAny.(net.PacketConn)
 
 		h3ln := ln
-		if len(pcWrappers) == 0 {
+		if len(opts.PacketConnWrappers) == 0 {
 			for {
 				// retrieve the underlying socket, so quic-go can optimize.
 				if unwrapper, ok := h3ln.(interface{ Unwrap() net.PacketConn }); ok {
@@ -454,15 +475,18 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 			}
 		} else {
 			// wrap packet conn before QUIC
-			for _, pcWrapper := range pcWrappers {
+			for _, pcWrapper := range opts.PacketConnWrappers {
 				h3ln = pcWrapper.WrapPacketConn(h3ln)
 			}
 		}
 
-		sqs := newSharedQUICState(tlsConf)
+		sqs := newSharedQUICState(opts.TLSConfig)
 		// http3.ConfigureTLSConfig only uses this field and tls App sets this field as well
 		//nolint:gosec
-		quicTlsConfig := &tls.Config{GetConfigForClient: sqs.getConfigForClient}
+		quicTlsConfig := &tls.Config{
+			GetConfigForClient:          sqs.getConfigForClient,
+			GetEncryptedClientHelloKeys: sqs.getEncryptedClientHelloKeys,
+		}
 		// Require clients to verify their source address when we're handling more than 1000 handshakes per second.
 		// TODO: make tunable?
 		limiter := rate.NewLimiter(1000, 1000)
@@ -471,14 +495,19 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 			VerifySourceAddress: func(addr net.Addr) bool { return !limiter.Allow() },
 		}
 		allow0rtt := true
-		if allow0rttconf != nil {
-			allow0rtt = *allow0rttconf
+		if opts.Allow0RTT != nil {
+			allow0rtt = *opts.Allow0RTT
 		}
+		// EnableDatagrams and EnableStreamResetPartialDelivery are required by
+		// WebTransport; only enable them when WebTransport support is requested.
 		earlyLn, err := tr.ListenEarly(
 			http3.ConfigureTLSConfig(quicTlsConfig),
 			&quic.Config{
-				Allow0RTT: allow0rtt,
-				Tracer:    h3qlog.DefaultConnectionTracer,
+				InitialPacketSize:                1200,
+				Allow0RTT:                        allow0rtt,
+				Tracer:                           h3qlog.DefaultConnectionTracer,
+				EnableDatagrams:                  opts.EnableWebTransport,
+				EnableStreamResetPartialDelivery: opts.EnableWebTransport,
 			},
 		)
 		if err != nil {
@@ -486,7 +515,13 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 		}
 		// TODO: figure out when to close the listener and the transport
 		// using the original net.PacketConn to close them properly
-		return &sharedQuicListener{EarlyListener: earlyLn, packetConn: ln, sqs: sqs, key: lnKey}, nil
+		return &sharedQuicListener{
+			EarlyListener:        earlyLn,
+			packetConn:           ln,
+			sqs:                  sqs,
+			key:                  lnKey,
+			supportsWebTransport: opts.EnableWebTransport,
+		}, nil
 	})
 	if err != nil {
 		return nil, err
@@ -494,7 +529,7 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 
 	sql := sharedEarlyListener.(*sharedQuicListener)
 	// add current tls.Config to sqs, so GetConfigForClient will always return the latest tls.Config in case of context cancellation
-	ctx, cancel := sql.sqs.addState(tlsConf)
+	ctx, cancel := sql.sqs.addState(opts.TLSConfig)
 
 	return &fakeCloseQuicListener{
 		sharedQuicListener: sql,
@@ -540,6 +575,16 @@ func (sqs *sharedQUICState) getConfigForClient(ch *tls.ClientHelloInfo) (*tls.Co
 	return sqs.activeTlsConf.GetConfigForClient(ch)
 }
 
+// getEncryptedClientHelloKeys is used as tls.Config's GetEncryptedClientHelloKeys field.
+func (sqs *sharedQUICState) getEncryptedClientHelloKeys(ch *tls.ClientHelloInfo) ([]tls.EncryptedClientHelloKey, error) {
+	sqs.rmu.RLock()
+	defer sqs.rmu.RUnlock()
+	if sqs.activeTlsConf.GetEncryptedClientHelloKeys == nil {
+		return nil, nil
+	}
+	return sqs.activeTlsConf.GetEncryptedClientHelloKeys(ch)
+}
+
 // addState adds tls.Config and activeRequests to the map if not present and returns the corresponding context and its cancelFunc
 // so that when cancelled, the active tls.Config will change
 func (sqs *sharedQUICState) addState(tlsConfig *tls.Config) (context.Context, context.CancelCauseFunc) {
@@ -578,9 +623,17 @@ func (sqs *sharedQUICState) addState(tlsConfig *tls.Config) (context.Context, co
 // sharedQuicListener is like sharedListener, but for quic.EarlyListeners.
 type sharedQuicListener struct {
 	*quic.EarlyListener
-	packetConn net.PacketConn // we have to hold these because quic-go won't close listeners it didn't create
-	sqs        *sharedQUICState
-	key        string
+	packetConn           net.PacketConn // we have to hold these because quic-go won't close listeners it didn't create
+	sqs                  *sharedQUICState
+	key                  string
+	supportsWebTransport bool // set by the first creator; subsequent pool reuses keep this value
+}
+
+// SupportsWebTransport reports whether the shared QUIC listener was created
+// with WebTransport capabilities (DATAGRAM support and stream-reset partial
+// delivery). The value is fixed by the first creator of a pooled listener.
+func (sql *sharedQuicListener) SupportsWebTransport() bool {
+	return sql.supportsWebTransport
 }
 
 // Destruct closes the underlying QUIC listener and its associated net.PacketConn.
@@ -611,8 +664,8 @@ func fakeClosedErr(l interface{ Addr() net.Addr }) error {
 var errFakeClosed = fmt.Errorf("QUIC listener 'closed' 😉")
 
 type fakeCloseQuicListener struct {
-	closed              int32 // accessed atomically; belongs to this struct only
-	*sharedQuicListener       // embedded, so we also become a quic.EarlyListener
+	closed              atomic.Int32
+	*sharedQuicListener // embedded, so we also become a quic.EarlyListener
 	context             context.Context
 	contextCancel       context.CancelCauseFunc
 }
@@ -629,16 +682,16 @@ func (fcql *fakeCloseQuicListener) Accept(_ context.Context) (*quic.Conn, error)
 	}
 
 	// if the listener is "closed", return a fake closed error instead
-	if atomic.LoadInt32(&fcql.closed) == 1 && errors.Is(err, context.Canceled) {
+	if fcql.closed.Load() == 1 && errors.Is(err, context.Canceled) {
 		return nil, fakeClosedErr(fcql)
 	}
 	return nil, err
 }
 
 func (fcql *fakeCloseQuicListener) Close() error {
-	if atomic.CompareAndSwapInt32(&fcql.closed, 0, 1) {
+	if fcql.closed.CompareAndSwap(0, 1) {
 		fcql.contextCancel(errFakeClosed)
-	} else if atomic.CompareAndSwapInt32(&fcql.closed, 1, 2) {
+	} else if fcql.closed.CompareAndSwap(1, 2) {
 		_, _ = listenerPool.Delete(fcql.sharedQuicListener.key)
 	}
 	return nil

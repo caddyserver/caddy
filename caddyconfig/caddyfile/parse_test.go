@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -317,6 +318,18 @@ func TestParseOneAndImport(t *testing.T) {
 		{`localhost
 		  dir1 "{}"`, false, []string{"localhost"}, []int{2}},
 
+		// quoted braces are literal arguments: they must not open/close blocks or swallow directives
+		{"localhost {\n dir1 \"{\" `}`\n dir2 \"}\"\n dir3 \"{\"\n}",
+			false, []string{"localhost"}, []int{3, 2, 2}},
+
+		// quoted "{" as the last argument before a real block
+		{`localhost {
+		  dir1 "{" {
+		    a b
+		  }
+		  dir2 foo
+		}`, false, []string{"localhost"}, []int{6, 2}},
+
 		// import with args
 		{`import testdata/import_args0.txt a`, false, []string{"a"}, []int{}},
 		{`import testdata/import_args1.txt a b`, false, []string{"a", "b"}, []int{}},
@@ -464,6 +477,43 @@ func TestRecursiveImport(t *testing.T) {
 	}
 	if !isExpected(result) {
 		t.Error("relative+absolute import failed")
+	}
+}
+
+// TestParseImportInaccessibleFile ensures that an import path which exists
+// but cannot be accessed reports the underlying OS error instead of the
+// misleading "File to import not found" (issue #8161). A path through a
+// regular file fails stat with ENOTDIR, unlike a genuinely missing file,
+// which must keep the "not found" message. Windows reports that same path
+// as not existing instead, so the through-a-file case is skipped there;
+// the permission-denied case from the issue is unaffected.
+func TestParseImportInaccessibleFile(t *testing.T) {
+	testParseOne := func(input string) (ServerBlock, error) {
+		p := testParser(input)
+		p.Next() // parseOne doesn't call Next() to start, so we must
+		err := p.parseOne()
+		return p.block, err
+	}
+
+	if runtime.GOOS != "windows" {
+		_, err := testParseOne("import testdata/import_test1.txt/child.txt")
+		if err == nil {
+			t.Fatal("expected error importing through a regular file, got nil")
+		}
+		if strings.Contains(err.Error(), "not found") {
+			t.Errorf("expected OS error to be reported, got: %v", err)
+		}
+		if !strings.Contains(err.Error(), "child.txt") {
+			t.Errorf("expected error to name the import path, got: %v", err)
+		}
+	}
+
+	_, err := testParseOne("import testdata/not_found.txt")
+	if err == nil {
+		t.Fatal("expected error importing a missing file, got nil")
+	}
+	if !strings.Contains(err.Error(), "File to import not found") {
+		t.Errorf("expected 'File to import not found' for a missing file, got: %v", err)
 	}
 }
 
@@ -790,6 +840,35 @@ func TestSnippets(t *testing.T) {
 	}
 }
 
+func TestSnippetWithQuotedBraces(t *testing.T) {
+	// quoted braces inside a snippet are literal arguments and must not corrupt block nesting
+	p := testParser(`
+		(quoted) {
+			dir1 "}"
+			dir2 "{"
+		}
+		example.com {
+			import quoted
+			dir3 foo
+		}
+	`)
+	blocks, err := p.parseAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blocks) != 1 {
+		t.Fatalf("Expect exactly one server block. Got %d.", len(blocks))
+	}
+	if actual := len(blocks[0].Segments); actual != 3 {
+		t.Fatalf("Expected 3 segments, got %d: %+v", actual, blocks[0].Segments)
+	}
+	for i, expected := range []string{"}", "{", "foo"} {
+		if seg := blocks[0].Segments[i]; len(seg) != 2 || seg[1].Text != expected {
+			t.Errorf("Segment %d: expected 2 tokens with arg '%s', got %+v", i, expected, seg)
+		}
+	}
+}
+
 func writeStringToTempFileOrDie(t *testing.T, str string) (pathToFile string) {
 	file, err := os.CreateTemp("", t.Name())
 	if err != nil {
@@ -927,6 +1006,122 @@ func TestAcceptSiteImportWithBraces(t *testing.T) {
 	_, err := p.parseAll()
 	if err != nil {
 		t.Errorf("Expected error to be nil but got '%v'", err)
+	}
+}
+
+func TestGlobalOptionsAfterImportedSnippetsGivesHelpfulError(t *testing.T) {
+	tempDir := t.TempDir()
+	importFile1 := filepath.Join(tempDir, "matcher_snippet_1.caddy")
+	importFile2 := filepath.Join(tempDir, "matcher_snippet_2.caddy")
+
+	err := os.WriteFile(importFile1, []byte(`(matcher1)`), 0o644)
+	if err != nil {
+		t.Fatalf("writing first import file: %v", err)
+	}
+
+	err = os.WriteFile(importFile2, []byte(`(matcher2)`), 0o644)
+	if err != nil {
+		t.Fatalf("writing second import file: %v", err)
+	}
+
+	_, err = Parse("Testfile", []byte(`import `+importFile1+`
+import `+importFile2+`
+{
+	debug
+}`))
+	if err == nil {
+		t.Fatal("Expected an error, but got nil")
+	}
+
+	expected := "global options block must appear before import directives; move the global options block to the top of the Caddyfile"
+	if !strings.HasPrefix(err.Error(), expected) {
+		t.Errorf("Expected error to start with '%s' but got '%v'", expected, err)
+	}
+}
+
+func TestImportedSnippetDefinitionRetainsBlockPlaceholder(t *testing.T) {
+	tempDir := t.TempDir()
+	importFile := filepath.Join(tempDir, "snippets.caddy")
+
+	err := os.WriteFile(importFile, []byte(`
+		(site) {
+			http://{args[0]} {
+				respond "before"
+				{block}
+				respond "after"
+			}
+		}
+	`), 0o644)
+	if err != nil {
+		t.Fatalf("writing imported snippet file: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name               string
+		input              string
+		expectedDirectives []string
+	}{
+		{
+			name: "with nested block",
+			input: `
+				import ` + importFile + `
+
+				import site example.com {
+					redir https://example.net
+				}
+			`,
+			expectedDirectives: []string{"respond", "redir", "respond"},
+		},
+		{
+			name: "without nested block",
+			input: `
+				import ` + importFile + `
+
+				import site example.com
+			`,
+			expectedDirectives: []string{"respond", "respond"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := testParser(tc.input)
+			blocks, err := p.parseAll()
+			if err != nil {
+				t.Fatalf("parseAll: %v", err)
+			}
+
+			if len(blocks) != 1 {
+				t.Fatalf("expected exactly one server block, got %d", len(blocks))
+			}
+
+			if actual := blocks[0].GetKeysText(); len(actual) != 1 || actual[0] != "http://example.com" {
+				t.Fatalf("expected server block key http://example.com, got %v", actual)
+			}
+
+			if len(blocks[0].Segments) != len(tc.expectedDirectives) {
+				t.Fatalf("expected %d segments, got %d", len(tc.expectedDirectives), len(blocks[0].Segments))
+			}
+
+			for i, directive := range tc.expectedDirectives {
+				if actual := blocks[0].Segments[i].Directive(); actual != directive {
+					t.Fatalf("segment %d: expected directive %q, got %q", i, directive, actual)
+				}
+			}
+		})
+	}
+}
+
+func TestResolveImportGlob(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "a.caddy"), []byte("a\n"), 0o600)
+	os.WriteFile(filepath.Join(dir, "b.caddy"), []byte("b\n"), 0o600)
+	os.WriteFile(filepath.Join(dir, ".hidden.caddy"), []byte("h\n"), 0o600)
+	importer := filepath.Join(dir, "Caddyfile")
+	matches, _, err := resolveImportGlob(importer, "*.caddy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 2 { // dotfile skipped for glob
+		t.Errorf("got %d matches, want 2: %v", len(matches), matches)
 	}
 }
 

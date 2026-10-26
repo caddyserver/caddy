@@ -140,6 +140,42 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 		iss.Email = email
 	}
 
+	// expand CA endpoint, if non-empty
+	if iss.CA != "" {
+		ca, err := repl.ReplaceOrErr(iss.CA, true, true)
+		if err != nil {
+			return fmt.Errorf("expanding CA endpoint '%s': %v", iss.CA, err)
+		}
+		iss.CA = ca
+	}
+
+	// expand TestCA endpoint, if non-empty
+	if iss.TestCA != "" {
+		testca, err := repl.ReplaceOrErr(iss.TestCA, true, true)
+		if err != nil {
+			return fmt.Errorf("expanding TestCA endpoint '%s': %v", iss.TestCA, err)
+		}
+		iss.TestCA = testca
+	}
+
+	// expand EAB credentials, if non-empty
+	if iss.ExternalAccount != nil {
+		if iss.ExternalAccount.KeyID != "" {
+			keyID, err := repl.ReplaceOrErr(iss.ExternalAccount.KeyID, true, true)
+			if err != nil {
+				return fmt.Errorf("expanding EAB key ID '%s': %v", iss.ExternalAccount.KeyID, err)
+			}
+			iss.ExternalAccount.KeyID = keyID
+		}
+		if iss.ExternalAccount.MACKey != "" {
+			macKey, err := repl.ReplaceOrErr(iss.ExternalAccount.MACKey, true, true)
+			if err != nil {
+				return fmt.Errorf("expanding EAB MAC key (redacted): %v", err)
+			}
+			iss.ExternalAccount.MACKey = macKey
+		}
+	}
+
 	// expand account key, if non-empty
 	if iss.AccountKey != "" {
 		accountKey, err := repl.ReplaceOrErr(iss.AccountKey, true, true)
@@ -147,6 +183,15 @@ func (iss *ACMEIssuer) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("expanding account key PEM '%s': %v", iss.AccountKey, err)
 		}
 		iss.AccountKey = accountKey
+	}
+
+	// expand DNS override domain, if non-empty
+	if iss.Challenges != nil && iss.Challenges.DNS != nil && iss.Challenges.DNS.OverrideDomain != "" {
+		overrideDomain, err := repl.ReplaceOrErr(iss.Challenges.DNS.OverrideDomain, true, true)
+		if err != nil {
+			return fmt.Errorf("expanding DNS override domain '%s': %v", iss.Challenges.DNS.OverrideDomain, err)
+		}
+		iss.Challenges.DNS.OverrideDomain = overrideDomain
 	}
 
 	// DNS challenge provider, if not already established

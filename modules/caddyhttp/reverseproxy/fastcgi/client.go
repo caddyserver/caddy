@@ -26,6 +26,8 @@ package fastcgi
 import (
 	"bufio"
 	"bytes"
+	"errors"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net"
@@ -125,6 +127,23 @@ const (
 // not synchronized because we don't care what the contents are
 var pad [maxPad]byte
 
+// FastCGI has no way to express a body of unknown length: CONTENT_LENGTH is
+// required by CGI/1.1, and php-fpm hangs when it is absent or wrong and the
+// body is not empty. A request that arrives without a length therefore has to
+// be buffered in full before it can be forwarded.
+var (
+	errNoContentLength  = errors.New("request body has no known length; increase request_buffers so the body can be buffered in full to determine it")
+	errBadContentLength = errors.New("request body length is not a valid CONTENT_LENGTH")
+)
+
+// maxSurplus and maxSurplusWait bound how far a body reads on once a responder
+// writes past its declared Content-Length, so that stderr written after it is
+// still logged without the responder holding the connection.
+const (
+	maxSurplus     = 64 << 10
+	maxSurplusWait = time.Second
+)
+
 // client implements a FastCGI client, which is a standard for
 // interfacing external applications with Web servers.
 type client struct {
@@ -133,18 +152,26 @@ type client struct {
 	reqID  uint16
 	stderr bool
 	logger *zap.Logger
+
+	readDeadline time.Time // set by SetReadTimeout
 }
 
-// Do made the request and returns a io.Reader that translates the data read
-// from fcgi responder out of fcgi packet before returning it.
+// Do makes the request and returns an io.Reader that translates the data read
+// from the FastCGI responder out of FastCGI packets before returning it.
 func (c *client) Do(p map[string]string, req io.Reader) (r io.Reader, err error) {
-	// check for CONTENT_LENGTH, since the lack of it or wrong value will cause the backend to hang
-	if clStr, ok := p["CONTENT_LENGTH"]; !ok {
-		return nil, caddyhttp.Error(http.StatusLengthRequired, nil)
-	} else if _, err := strconv.ParseUint(clStr, 10, 64); err != nil {
-		// stdlib won't return a negative Content-Length, but we check just in case,
-		// the most likely cause is from a missing content length, which is -1
-		return nil, caddyhttp.Error(http.StatusLengthRequired, err)
+	// check for CONTENT_LENGTH, since the lack of it or wrong value will cause the backend to hang.
+	// A request with no length of its own (Transfer-Encoding: chunked, or an HTTP/2 or HTTP/3
+	// request sent without the header) only acquires one by being buffered in full, so say so:
+	// the bare status alone has sent people looking for the fault in their backend.
+	if clStr, ok := p["CONTENT_LENGTH"]; !ok || clStr == "" {
+		return nil, caddyhttp.Error(http.StatusLengthRequired, errNoContentLength)
+	} else if l, err := strconv.ParseInt(clStr, 10, 64); err != nil {
+		return nil, caddyhttp.Error(http.StatusLengthRequired, fmt.Errorf("%w: %w", errBadContentLength, err))
+	} else if l < 0 {
+		// net/http reports -1 for a body whose length it does not know, which is
+		// what a chunked request looks like by the time it reaches here. This is
+		// the case operators actually hit, so it gets the actionable message.
+		return nil, caddyhttp.Error(http.StatusLengthRequired, errNoContentLength)
 	}
 
 	writer := &streamWriter{c: c}
@@ -179,7 +206,7 @@ func (c *client) Do(p map[string]string, req io.Reader) (r io.Reader, err error)
 	return r, err
 }
 
-// clientCloser is a io.ReadCloser. It wraps a io.Reader with a Closer
+// clientCloser is an io.ReadCloser. It wraps an io.Reader with a Closer
 // that closes the client connection.
 type clientCloser struct {
 	rwc net.Conn
@@ -208,8 +235,70 @@ func (f clientCloser) Close() error {
 	return f.rwc.Close()
 }
 
-// Request returns a HTTP Response with Header and Body
-// from fcgi responder
+// declaredBody limits a response body to its declared Content-Length, since
+// any bytes past it would make the response invalid for the client.
+type declaredBody struct {
+	c         *client
+	r         *bufio.Reader
+	length    int64
+	remaining int64
+	err       error // returned by every Read once set
+}
+
+func (b *declaredBody) Read(p []byte) (int, error) {
+	if b.err != nil {
+		return 0, b.err
+	}
+	if b.remaining == 0 {
+		// The body still ends where the response does, as before the limit.
+		b.err = b.discardSurplus()
+		return 0, b.err
+	}
+	if int64(len(p)) > b.remaining {
+		p = p[:b.remaining]
+	}
+	n, err := b.r.Read(p)
+	b.remaining -= int64(n)
+	if err == io.EOF && b.remaining > 0 {
+		err = io.ErrUnexpectedEOF
+	}
+	b.err = err
+	return n, err
+}
+
+// discardSurplus reads the rest of the response after the declared body, so
+// that stderr written after it is still collected, and warns about any bytes
+// past the declared length. It returns io.EOF, or the error that cut the
+// response short.
+func (b *declaredBody) discardSurplus() error {
+	// Wait for the end of the response as reading the body used to; only a
+	// surplus byte starts the clock.
+	if _, err := b.r.Peek(1); err != nil {
+		return err
+	}
+	deadline := time.Now().Add(maxSurplusWait)
+	if !b.c.readDeadline.IsZero() && b.c.readDeadline.Before(deadline) {
+		deadline = b.c.readDeadline
+	}
+	if err := b.c.rwc.SetReadDeadline(deadline); err != nil {
+		return err
+	}
+	n, _ := io.CopyN(io.Discard, b.r, maxSurplus)
+	if c := b.c.logger.Check(zapcore.WarnLevel, "discarding upstream response bytes beyond the declared Content-Length"); c != nil {
+		c.Write(zap.Int64("content_length", b.length), zap.Int64("surplus_bytes", n))
+	}
+	return io.EOF
+}
+
+// bodyAllowed reports whether a response can have a body, by the rule
+// net/http applies when serving one.
+func bodyAllowed(method string, status int) bool {
+	return method != http.MethodHead && (status < 100 || status > 199) &&
+		status != http.StatusNoContent && status != http.StatusNotModified
+}
+
+// Request returns an HTTP response with header and body
+// from the FastCGI responder.
 func (c *client) Request(p map[string]string, req io.Reader) (resp *http.Response, err error) {
 	r, err := c.Do(p, req)
 	if err != nil {
@@ -236,13 +325,16 @@ func (c *client) Request(p map[string]string, req io.Reader) (resp *http.Respons
 		if statusIsCut {
 			resp.Status = statusInfo
 		}
+	} else if resp.Header.Get("Location") != "" {
+		resp.StatusCode = http.StatusFound
 	} else {
 		resp.StatusCode = http.StatusOK
 	}
 
 	// TODO: fixTransferEncoding ?
 	resp.TransferEncoding = resp.Header["Transfer-Encoding"]
-	resp.ContentLength, _ = strconv.ParseInt(resp.Header.Get("Content-Length"), 10, 64)
+	length, lengthErr := strconv.ParseInt(resp.Header.Get("Content-Length"), 10, 64)
+	resp.ContentLength = length
 
 	// wrap the response body in our closer
 	closer := clientCloser{
@@ -252,8 +344,11 @@ func (c *client) Request(p map[string]string, req io.Reader) (resp *http.Respons
 		status: resp.StatusCode,
 		logger: noopLogger,
 	}
-	if chunked(resp.TransferEncoding) {
+	switch {
+	case chunked(resp.TransferEncoding):
 		closer.Reader = httputil.NewChunkedReader(rb)
+	case lengthErr == nil && length >= 0 && bodyAllowed(p["REQUEST_METHOD"], resp.StatusCode):
+		closer.Reader = &declaredBody{c: c, r: rb, length: length, remaining: length}
 	}
 	if c.stderr {
 		closer.logger = c.logger
@@ -363,7 +458,8 @@ func (c *client) PostFile(p map[string]string, data url.Values, file map[string]
 // fcgi responder. A zero value for t means no timeout will be set.
 func (c *client) SetReadTimeout(t time.Duration) error {
 	if t != 0 {
-		return c.rwc.SetReadDeadline(time.Now().Add(t))
+		c.readDeadline = time.Now().Add(t)
+		return c.rwc.SetReadDeadline(c.readDeadline)
 	}
 	return nil
 }

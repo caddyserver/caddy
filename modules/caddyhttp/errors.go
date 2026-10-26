@@ -31,8 +31,7 @@ import (
 // set will be populated.
 func Error(statusCode int, err error) HandlerError {
 	const idLen = 9
-	var he HandlerError
-	if errors.As(err, &he) {
+	if he, ok := errors.AsType[HandlerError](err); ok {
 		if he.ID == "" {
 			he.ID = randString(idLen, true)
 		}
@@ -85,15 +84,17 @@ func (e HandlerError) Unwrap() error { return e.Err }
 // randString returns a string of n random characters.
 // It is not even remotely secure OR a proper distribution.
 // But it's good enough for some things. It excludes certain
-// confusing characters like I, l, 1, 0, O, etc. If sameCase
-// is true, then uppercase letters are excluded.
+// confusing characters.
+// If sameCase is false, then l, I, O, S, 1, and 0 are excluded.
+// If sameCase is true, then uppercase letters are excluded in
+// addition to l, o, 1, and 0.
 func randString(n int, sameCase bool) string {
 	if n <= 0 {
 		return ""
 	}
 	dict := []byte("abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRTUVWXY23456789")
 	if sameCase {
-		dict = []byte("abcdefghijkmnpqrstuvwxyz0123456789")
+		dict = []byte("abcdefghijkmnpqrstuvwxyz23456789")
 	}
 	b := make([]byte, n)
 	for i := range b {

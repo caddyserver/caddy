@@ -49,20 +49,28 @@ func cmdUpgrade(fl Flags) (int, error) {
 func splitModule(arg string) (module, version string, err error) {
 	const versionSplit = "@"
 
-	// accommodate module paths that have @ in them, but we can only tolerate that if there's also
-	// a version, otherwise we don't know if it's a version separator or part of the file path
-	lastVersionSplit := strings.LastIndex(arg, versionSplit)
-	if lastVersionSplit < 0 {
+	// Per https://go.dev/ref/mod#go-mod-file-ident, module paths consist of
+	// ASCII letters, digits, and `-`, `.`, `_`, `~` only, so `@` is never a
+	// valid path character. That makes the split unambiguous: at most one
+	// `@` may appear, and it separates the module path from the version.
+	switch strings.Count(arg, versionSplit) {
+	case 0:
 		module = arg
-	} else {
-		module, version = arg[:lastVersionSplit], arg[lastVersionSplit+1:]
+	case 1:
+		idx := strings.Index(arg, versionSplit)
+		module, version = arg[:idx], arg[idx+1:]
+		if version == "" {
+			return "", "", fmt.Errorf("version is required after '@'")
+		}
+	default:
+		return "", "", fmt.Errorf("module path must not contain '@'")
 	}
 
 	if module == "" {
-		err = fmt.Errorf("module name is required")
+		return "", "", fmt.Errorf("module name is required")
 	}
 
-	return module, version, err
+	return module, version, nil
 }
 
 func cmdAddPackage(fl Flags) (int, error) {
@@ -234,7 +242,7 @@ func getModules() (standard, nonstandard, unknown []moduleInfo, err error) {
 		// not sure why), and since New() should return a pointer
 		// value, we need to dereference it first
 		iface := any(modInfo.New())
-		if rv := reflect.ValueOf(iface); rv.Kind() == reflect.Ptr {
+		if rv := reflect.ValueOf(iface); rv.Kind() == reflect.Pointer {
 			iface = reflect.New(reflect.TypeOf(iface).Elem()).Elem().Interface()
 		}
 		modPkgPath := reflect.TypeOf(iface).PkgPath()
@@ -245,7 +253,7 @@ func getModules() (standard, nonstandard, unknown []moduleInfo, err error) {
 		// longest matching prefix in case there are nested modules
 		var matched *debug.Module
 		for _, dep := range bi.Deps {
-			if strings.HasPrefix(modPkgPath, dep.Path) {
+			if moduleContainsPackage(dep.Path, modPkgPath) {
 				if matched == nil || len(dep.Path) > len(matched.Path) {
 					matched = dep
 				}
@@ -254,13 +262,17 @@ func getModules() (standard, nonstandard, unknown []moduleInfo, err error) {
 
 		caddyModGoMod := moduleInfo{caddyModuleID: modID, goModule: matched}
 
-		if strings.HasPrefix(modPkgPath, caddy.ImportPath) {
+		if moduleContainsPackage(caddy.ImportPath, modPkgPath) {
 			standard = append(standard, caddyModGoMod)
 		} else {
 			nonstandard = append(nonstandard, caddyModGoMod)
 		}
 	}
 	return standard, nonstandard, unknown, err
+}
+
+func moduleContainsPackage(modulePath, packagePath string) bool {
+	return packagePath == modulePath || strings.HasPrefix(packagePath, modulePath+"/")
 }
 
 func listModules(path string) error {
@@ -288,6 +300,7 @@ func downloadBuild(qs url.Values) (*http.Response, error) {
 		return nil, fmt.Errorf("secure request failed: %v", err)
 	}
 	if resp.StatusCode >= 400 {
+		defer resp.Body.Close()
 		var details struct {
 			StatusCode int `json:"status_code"`
 			Error      struct {

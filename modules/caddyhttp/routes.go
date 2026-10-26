@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
@@ -241,8 +242,8 @@ func (routes RouteList) Compile(next Handler) Handler {
 		mid = append(mid, wrapRoute(route))
 	}
 	stack := next
-	for i := len(mid) - 1; i >= 0; i-- {
-		stack = mid[i](stack)
+	for _, middleware := range slices.Backward(mid) {
+		stack = middleware(stack)
 	}
 	return stack
 }
@@ -267,6 +268,19 @@ func wrapRoute(route Route) Middleware {
 			// but I just thought this made more sense
 			nextCopy := next
 
+			// if route is part of a group, ensure only the
+			// first matching route in the group is applied
+			var groups map[string]struct{}
+			if route.Group != "" {
+				groups = req.Context().Value(routeGroupCtxKey).(map[string]struct{})
+
+				if _, ok := groups[route.Group]; ok {
+					// this group has already been satisfied by a
+					// matching route; skip without running matchers
+					return nextCopy.ServeHTTP(rw, req)
+				}
+			}
+
 			// route must match at least one of the matcher sets
 			matches, err := route.MatcherSets.AnyMatchWithError(req)
 			if err != nil {
@@ -280,18 +294,8 @@ func wrapRoute(route Route) Middleware {
 				return nextCopy.ServeHTTP(rw, req)
 			}
 
-			// if route is part of a group, ensure only the
-			// first matching route in the group is applied
-			if route.Group != "" {
-				groups := req.Context().Value(routeGroupCtxKey).(map[string]struct{})
-
-				if _, ok := groups[route.Group]; ok {
-					// this group has already been
-					// satisfied by a matching route
-					return nextCopy.ServeHTTP(rw, req)
-				}
-
-				// this matching route satisfies the group
+			// this matching route satisfies the group
+			if groups != nil {
 				groups[route.Group] = struct{}{}
 			}
 
@@ -305,8 +309,8 @@ func wrapRoute(route Route) Middleware {
 			}
 
 			// compile this route's handler stack
-			for i := len(route.middleware) - 1; i >= 0; i-- {
-				nextCopy = route.middleware[i](nextCopy)
+			for _, middleware := range slices.Backward(route.middleware) {
+				nextCopy = middleware(nextCopy)
 			}
 
 			// Apply metrics instrumentation once for the entire route,

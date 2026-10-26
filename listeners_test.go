@@ -15,6 +15,9 @@
 package caddy
 
 import (
+	"context"
+	"crypto/tls"
+	"net"
 	"reflect"
 	"testing"
 
@@ -172,6 +175,63 @@ func TestJoinNetworkAddress(t *testing.T) {
 		if actual != tc.expect {
 			t.Errorf("Test %d: Expected '%s' but got '%s'", i, tc.expect, actual)
 		}
+	}
+}
+
+func TestSharedQUICStateGetEncryptedClientHelloKeys(t *testing.T) {
+	hello := &tls.ClientHelloInfo{ServerName: "example.com"}
+	initialKeys := []tls.EncryptedClientHelloKey{{Config: []byte("initial"), PrivateKey: []byte("initial-key")}}
+	updatedKeys := []tls.EncryptedClientHelloKey{{Config: []byte("updated"), PrivateKey: []byte("updated-key")}}
+
+	initialConfig := &tls.Config{
+		GetConfigForClient: func(*tls.ClientHelloInfo) (*tls.Config, error) {
+			return nil, nil
+		},
+		GetEncryptedClientHelloKeys: func(*tls.ClientHelloInfo) ([]tls.EncryptedClientHelloKey, error) {
+			return initialKeys, nil
+		},
+	}
+
+	sqs := newSharedQUICState(initialConfig)
+
+	keys, err := sqs.getEncryptedClientHelloKeys(hello)
+	if err != nil {
+		t.Fatalf("getting initial ECH keys: %v", err)
+	}
+	if !reflect.DeepEqual(keys, initialKeys) {
+		t.Fatalf("unexpected initial ECH keys: got %#v, want %#v", keys, initialKeys)
+	}
+
+	updatedConfig := &tls.Config{
+		GetConfigForClient: func(*tls.ClientHelloInfo) (*tls.Config, error) {
+			return nil, nil
+		},
+		GetEncryptedClientHelloKeys: func(*tls.ClientHelloInfo) ([]tls.EncryptedClientHelloKey, error) {
+			return updatedKeys, nil
+		},
+	}
+
+	_, cancel := sqs.addState(updatedConfig)
+	sqs.rmu.Lock()
+	sqs.activeTlsConf = updatedConfig
+	sqs.rmu.Unlock()
+
+	keys, err = sqs.getEncryptedClientHelloKeys(hello)
+	if err != nil {
+		t.Fatalf("getting updated ECH keys: %v", err)
+	}
+	if !reflect.DeepEqual(keys, updatedKeys) {
+		t.Fatalf("unexpected updated ECH keys: got %#v, want %#v", keys, updatedKeys)
+	}
+
+	cancel(nil)
+
+	keys, err = sqs.getEncryptedClientHelloKeys(hello)
+	if err != nil {
+		t.Fatalf("getting restored ECH keys: %v", err)
+	}
+	if !reflect.DeepEqual(keys, initialKeys) {
+		t.Fatalf("unexpected restored ECH keys: got %#v, want %#v", keys, initialKeys)
 	}
 }
 
@@ -650,5 +710,95 @@ func TestSplitUnixSocketPermissionsBits(t *testing.T) {
 		if !tc.expectErr && actualFileMode.Perm().String() != tc.expectFileMode {
 			t.Errorf("Test %d: Expected perms '%s' but got '%s'", i, tc.expectFileMode, actualFileMode.Perm().String())
 		}
+	}
+}
+
+// TestListenQUICOptions_ZeroValueAllows0RTT checks that ListenQUIC accepts a
+// zero-value options struct (historical default: 0-RTT allowed) and that the
+// returned listener is released by closing it twice, per ListenQUIC's contract.
+func TestListenQUICOptions_ZeroValueAllows0RTT(t *testing.T) {
+	na, err := ParseNetworkAddress("udp/127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("ParseNetworkAddress: %v", err)
+	}
+
+	ln, err := na.ListenQUIC(context.Background(), 0, net.ListenConfig{}, ListenQUICOptions{
+		TLSConfig: &tls.Config{}, //nolint:gosec // test listener; no client handshake
+	})
+	if err != nil {
+		t.Fatalf("ListenQUIC: %v", err)
+	}
+	if err := ln.Close(); err != nil {
+		t.Errorf("first Close: %v", err)
+	}
+	if err := ln.Close(); err != nil {
+		t.Errorf("second Close: %v", err)
+	}
+}
+
+// TestListenQUICWebTransportCapability verifies that WebTransport QUIC
+// capabilities are fixed by the first creator of a pooled QUIC listener.
+func TestListenQUICWebTransportCapability(t *testing.T) {
+	closeTwice := func(t *testing.T, ln interface{ Close() error }) {
+		t.Helper()
+		if err := ln.Close(); err != nil {
+			t.Errorf("first Close: %v", err)
+		}
+		if err := ln.Close(); err != nil {
+			t.Errorf("second Close: %v", err)
+		}
+	}
+	supportsWT := func(t *testing.T, ln any) bool {
+		t.Helper()
+		wt, ok := ln.(interface{ SupportsWebTransport() bool })
+		if !ok {
+			t.Fatal("listener does not implement SupportsWebTransport()")
+		}
+		return wt.SupportsWebTransport()
+	}
+
+	for _, tc := range []struct {
+		name        string
+		first, want bool
+	}{
+		{name: "off-then-on", first: false, want: false},
+		{name: "on-then-off", first: true, want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			probe, err := net.ListenPacket("udp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatalf("ListenPacket probe: %v", err)
+			}
+			port := uint(probe.LocalAddr().(*net.UDPAddr).Port)
+			_ = probe.Close()
+
+			na := NetworkAddress{Network: "udp", Host: "127.0.0.1", StartPort: port, EndPort: port}
+			tlsConf := &tls.Config{}
+			listen := func(enable bool) (interface{ Close() error }, error) {
+				return na.ListenQUIC(context.Background(), 0, net.ListenConfig{}, ListenQUICOptions{
+					TLSConfig:          tlsConf,
+					EnableWebTransport: enable,
+				})
+			}
+
+			ln1, err := listen(tc.first)
+			if err != nil {
+				t.Fatalf("first ListenQUIC: %v", err)
+			}
+			ln2, err := listen(!tc.first)
+			if err != nil {
+				closeTwice(t, ln1)
+				t.Fatalf("second ListenQUIC: %v", err)
+			}
+			defer closeTwice(t, ln1)
+			defer closeTwice(t, ln2)
+
+			if got := supportsWT(t, ln1); got != tc.want {
+				t.Errorf("first listener SupportsWebTransport() = %v, want %v", got, tc.want)
+			}
+			if got := supportsWT(t, ln2); got != tc.want {
+				t.Errorf("second listener SupportsWebTransport() = %v, want %v (pool reuses first creator's config)", got, tc.want)
+			}
+		})
 	}
 }

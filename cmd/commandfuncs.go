@@ -29,6 +29,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -58,7 +59,7 @@ func cmdStart(fl Flags) (int, error) {
 
 	// open a listener to which the child process will connect when
 	// it is ready to confirm that it has successfully started
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := listenTCPForPingback(net.Listen)
 	if err != nil {
 		return caddy.ExitCodeFailedStartup,
 			fmt.Errorf("opening listener for success confirmation: %v", err)
@@ -169,6 +170,22 @@ func cmdStart(fl Flags) (int, error) {
 	return caddy.ExitCodeSuccess, nil
 }
 
+type tcpListenFunc func(network, address string) (net.Listener, error)
+
+func listenTCPForPingback(listen tcpListenFunc) (net.Listener, error) {
+	ln, ipv4Err := listen("tcp4", "127.0.0.1:0")
+	if ipv4Err == nil {
+		return ln, nil
+	}
+
+	ln, ipv6Err := listen("tcp6", "[::1]:0")
+	if ipv6Err == nil {
+		return ln, nil
+	}
+
+	return nil, fmt.Errorf("listen on 127.0.0.1:0: %v; listen on [::1]:0: %v", ipv4Err, ipv6Err)
+}
+
 func cmdRun(fl Flags) (int, error) {
 	caddy.TrapSignals()
 
@@ -176,9 +193,9 @@ func cmdRun(fl Flags) (int, error) {
 	// so that we can hold onto logs until after
 	// the config is loaded (or fails to load)
 	// so that we can write the logs to the user's
-	// configured output. we must be sure to flush
-	// on any error before the config is loaded.
-	logger, defaultLogger, logBuffer := caddy.BufferedLog()
+	// configured output.
+	logger, defaultLogger, _ := caddy.BufferedLog()
+	defer caddy.UnbufferDefaultLogger(defaultLogger)
 
 	undoMaxProcs := setResourceLimits(logger)
 	defer undoMaxProcs()
@@ -197,7 +214,6 @@ func cmdRun(fl Flags) (int, error) {
 	// load all additional envs as soon as possible
 	err := handleEnvFileFlag(fl)
 	if err != nil {
-		logBuffer.FlushTo(defaultLogger)
 		return caddy.ExitCodeFailedStartup, err
 	}
 
@@ -215,7 +231,6 @@ func cmdRun(fl Flags) (int, error) {
 			logger.Info("no autosave file exists", zap.String("autosave_file", caddy.ConfigAutosavePath))
 			resumeFlag = false
 		} else if err != nil {
-			logBuffer.FlushTo(defaultLogger)
 			return caddy.ExitCodeFailedStartup, err
 		} else {
 			if configFlag == "" {
@@ -235,7 +250,6 @@ func cmdRun(fl Flags) (int, error) {
 	if !resumeFlag {
 		config, configFile, adapterUsed, err = LoadConfig(configFlag, configAdapterFlag)
 		if err != nil {
-			logBuffer.FlushTo(defaultLogger)
 			return caddy.ExitCodeFailedStartup, err
 		}
 	}
@@ -266,7 +280,6 @@ func cmdRun(fl Flags) (int, error) {
 	// run the initial config
 	err = caddy.Load(config, true)
 	if err != nil {
-		logBuffer.FlushTo(defaultLogger)
 		return caddy.ExitCodeFailedStartup, fmt.Errorf("loading initial config: %v", err)
 	}
 	// release the reference to the config so it can be GC'd
@@ -278,7 +291,6 @@ func cmdRun(fl Flags) (int, error) {
 	// also clear our ref to the buffer so it can get GC'd
 	logger = caddy.Log()
 	defaultLogger = nil //nolint:ineffassign,wastedassign
-	logBuffer = nil     //nolint:wastedassign,ineffassign
 	logger.Info("serving initial configuration")
 
 	// if we are to report to another process the successful start
@@ -677,6 +689,16 @@ func cmdFmt(fl Flags) (int, error) {
 	} else if configFile == "" {
 		configFile = configFlag
 	}
+
+	useImports := fl.Bool("imports")
+
+	// --imports cannot be used with stdin: there is no source directory to
+	// resolve import paths against.
+	if useImports && configFile == "-" {
+		return caddy.ExitCodeFailedStartup,
+			fmt.Errorf("cannot use --imports when reading from stdin (no source directory to resolve imports against)")
+	}
+
 	// as a special case, read from stdin if the file name is "-"
 	if configFile == "-" {
 		input, err := io.ReadAll(os.Stdin)
@@ -685,6 +707,63 @@ func cmdFmt(fl Flags) (int, error) {
 				fmt.Errorf("reading stdin: %v", err)
 		}
 		fmt.Print(string(caddyfile.Format(input)))
+		return caddy.ExitCodeSuccess, nil
+	}
+
+	// --imports: format the root file and all files it references via import
+	// directives, then write or print each one.
+	if useImports {
+		results, err := caddyfile.FormatImports(configFile, caddyfile.FormatOptions{})
+		if err != nil {
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("formatting imports: %v", err)
+		}
+
+		if fl.Bool("overwrite") {
+			if err := overwriteFormattedFiles(results); err != nil {
+				return caddy.ExitCodeFailedStartup, err
+			}
+			return caddy.ExitCodeSuccess, nil
+		}
+
+		originals := make([][]byte, len(results))
+		var formattingWarning caddyconfig.Warning
+		for i, f := range results {
+			original, readErr := os.ReadFile(f.Path)
+			if readErr != nil {
+				return caddy.ExitCodeFailedStartup, fmt.Errorf("reading file for formatting comparison %s: %v", f.Path, readErr)
+			}
+			originals[i] = original
+			if warning, different := caddyfile.FormattingDifference(f.Path, original); different && formattingWarning.File == "" {
+				formattingWarning = warning
+			}
+		}
+
+		for i, f := range results {
+			fmt.Printf("# %s\n", f.Path)
+			if fl.Bool("diff") {
+				diff := difflib.Diff(
+					strings.Split(string(originals[i]), "\n"),
+					strings.Split(string(f.Content), "\n"))
+				for _, d := range diff {
+					switch d.Delta {
+					case difflib.Common:
+						fmt.Printf("  %s\n", d.Payload)
+					case difflib.LeftOnly:
+						fmt.Printf("- %s\n", d.Payload)
+					case difflib.RightOnly:
+						fmt.Printf("+ %s\n", d.Payload)
+					}
+				}
+			} else {
+				fmt.Print(string(f.Content))
+			}
+		}
+		if formattingWarning.File != "" {
+			return caddy.ExitCodeFailedStartup, fmt.Errorf(`%s:%d: Caddyfile input is not formatted; Tip: use '--overwrite' to update your Caddyfile in-place instead of previewing it. Consult '--help' for more options`,
+				formattingWarning.File,
+				formattingWarning.Line,
+			)
+		}
 		return caddy.ExitCodeSuccess, nil
 	}
 
@@ -729,6 +808,119 @@ func cmdFmt(fl Flags) (int, error) {
 	}
 
 	return caddy.ExitCodeSuccess, nil
+}
+
+type formattedFileOverwrite struct {
+	path     string
+	content  []byte
+	original []byte
+	info     fs.FileInfo
+}
+
+func overwriteFormattedFiles(results []caddyfile.FormattedFile) error {
+	files := make([]formattedFileOverwrite, 0, len(results))
+	for _, result := range results {
+		path, err := filepath.EvalSymlinks(filepath.Dir(result.Path))
+		if err != nil {
+			return fmt.Errorf("preparing formatted file %s: resolving parent directory: %v", result.Path, err)
+		}
+		path = filepath.Join(path, filepath.Base(result.Path))
+
+		file, err := os.Open(path)
+		if err != nil {
+			return fmt.Errorf("preparing formatted file %s: %v", result.Path, err)
+		}
+		info, statErr := file.Stat()
+		pathInfo, lstatErr := os.Lstat(path)
+		original, readErr := io.ReadAll(file)
+		closeErr := file.Close()
+		if statErr != nil {
+			return fmt.Errorf("preparing formatted file %s: stating open file: %v", result.Path, statErr)
+		}
+		if lstatErr != nil {
+			return fmt.Errorf("preparing formatted file %s: checking destination: %v", result.Path, lstatErr)
+		}
+		if readErr != nil {
+			return fmt.Errorf("preparing formatted file %s: reading destination: %v", result.Path, readErr)
+		}
+		if closeErr != nil {
+			return fmt.Errorf("preparing formatted file %s: %v", result.Path, closeErr)
+		}
+		if pathInfo.Mode()&os.ModeSymlink != 0 || !pathInfo.Mode().IsRegular() || !os.SameFile(info, pathInfo) {
+			return fmt.Errorf("refusing to overwrite %s: destination is not the regular file that was opened", result.Path)
+		}
+		if !bytes.Equal(caddyfile.FormatWithOptions(original, caddyfile.FormatOptions{}), result.Content) {
+			return fmt.Errorf("refusing to overwrite %s: file changed after it was formatted", result.Path)
+		}
+		files = append(files, formattedFileOverwrite{path: path, content: result.Content, original: original, info: info})
+	}
+
+	for i, file := range files {
+		if err := atomicReplaceFormattedFile(file); err != nil {
+			if i > 0 {
+				return fmt.Errorf("overwriting formatted file %s after replacing %d of %d files: %v; configuration files may be partially updated", file.path, i, len(files), err)
+			}
+			return fmt.Errorf("overwriting formatted file %s before replacing any files: %v", file.path, err)
+		}
+	}
+	return nil
+}
+
+func atomicReplaceFormattedFile(file formattedFileOverwrite) (err error) {
+	temp, err := os.CreateTemp(filepath.Dir(file.path), ".caddy-fmt-*")
+	if err != nil {
+		return err
+	}
+	tempPath := temp.Name()
+	defer func() {
+		_ = temp.Close()
+		if err != nil {
+			_ = os.Remove(tempPath)
+		}
+	}()
+
+	if _, err = temp.Write(file.content); err != nil {
+		return err
+	}
+	if err = temp.Chmod(file.info.Mode().Perm()); err != nil {
+		return err
+	}
+	if err = temp.Sync(); err != nil {
+		return err
+	}
+	if err = temp.Close(); err != nil {
+		return err
+	}
+
+	destination, err := os.Open(file.path)
+	if err != nil {
+		return fmt.Errorf("reopening destination: %v", err)
+	}
+	destinationInfo, statErr := destination.Stat()
+	pathInfo, lstatErr := os.Lstat(file.path)
+	current, readErr := io.ReadAll(destination)
+	closeErr := destination.Close()
+	if statErr != nil {
+		return fmt.Errorf("restating destination: %v", statErr)
+	}
+	if lstatErr != nil {
+		return fmt.Errorf("rechecking destination: %v", lstatErr)
+	}
+	if readErr != nil {
+		return fmt.Errorf("rereading destination: %v", readErr)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("closing destination: %v", closeErr)
+	}
+	if pathInfo.Mode()&os.ModeSymlink != 0 || !pathInfo.Mode().IsRegular() ||
+		!os.SameFile(file.info, destinationInfo) || !os.SameFile(destinationInfo, pathInfo) ||
+		!bytes.Equal(current, file.original) {
+		return fmt.Errorf("destination changed while formatting")
+	}
+	if err = os.Rename(tempPath, file.path); err != nil {
+		return err
+	}
+	return nil
 }
 
 // handleEnvFileFlag loads the environment variables from the given --envfile
@@ -820,7 +1012,7 @@ func AdminAPIRequest(adminAddr, method, uri string, headers http.Header, body io
 		},
 	}
 
-	resp, err := client.Do(req) //nolint:gosec // the only SSRF here would be self-sabatoge I think
+	resp, err := client.Do(req) //nolint:gosec // the only SSRF here would be self-sabotage I think
 	if err != nil {
 		return nil, fmt.Errorf("performing request: %v", err)
 	}

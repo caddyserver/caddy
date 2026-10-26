@@ -67,7 +67,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //	    lb_retries <retries>
 //	    lb_try_duration <duration>
 //	    lb_try_interval <interval>
-//	    lb_retry_match <request-matcher>
+//	    lb_retry_match <matcher>
 //
 //	    # active health checking
 //	    health_uri          <uri>
@@ -96,9 +96,19 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //	    flush_interval     <duration>
 //	    request_buffers    <size>
 //	    response_buffers   <size>
+//	    stream_buffer_size <size>
 //	    stream_timeout     <duration>
 //	    stream_close_delay <duration>
+//	    stream_detached
+//	    stream_logs {
+//	        level <debug|info|warn|error>
+//	        logger_name <name|access>
+//	        skip_handshake
+//	    }
 //	    verbose_logs
+//
+//	    # reporting
+//	    proxy_status_name <name>
 //
 //	    # request manipulation
 //	    trusted_proxies [private_ranges] <ranges...>
@@ -646,7 +656,7 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				h.FlushInterval = caddy.Duration(dur)
 			}
 
-		case "request_buffers", "response_buffers":
+		case "request_buffers", "response_buffers", "stream_buffer_size":
 			subdir := d.Val()
 			if !d.NextArg() {
 				return d.ArgErr()
@@ -670,6 +680,17 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				h.RequestBuffers = size
 			case "response_buffers":
 				h.ResponseBuffers = size
+			case "stream_buffer_size":
+				h.StreamBufferSize = int(size)
+			}
+
+		case "proxy_status_name":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			h.ProxyStatusName = d.Val()
+			if d.NextArg() {
+				return d.ArgErr()
 			}
 
 		case "stream_timeout":
@@ -700,6 +721,49 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				h.StreamCloseDelay = caddy.Duration(dur)
 			}
 
+		case "stream_detached":
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+			h.StreamDetached = true
+
+		case "stream_logs":
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+			if h.StreamLogs == nil {
+				h.StreamLogs = new(StreamLogs)
+			}
+
+			nesting := d.Nesting()
+			for d.NextBlock(nesting) {
+				switch d.Val() {
+				case "level":
+					if !d.NextArg() {
+						return d.ArgErr()
+					}
+					h.StreamLogs.Level = d.Val()
+					if d.NextArg() {
+						return d.ArgErr()
+					}
+				case "logger_name":
+					if !d.NextArg() {
+						return d.ArgErr()
+					}
+					h.StreamLogs.LoggerName = d.Val()
+					if d.NextArg() {
+						return d.ArgErr()
+					}
+				case "skip_handshake":
+					if d.NextArg() {
+						return d.ArgErr()
+					}
+					h.StreamLogs.SkipHandshake = true
+				default:
+					return d.Errf("unrecognized stream_logs option: %s", d.Val())
+				}
+			}
+
 		case "trusted_proxies":
 			for d.NextArg() {
 				if d.Val() == "private_ranges" {
@@ -725,9 +789,6 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				err = headers.CaddyfileHeaderOp(h.Headers.Request, args[0], "", nil)
 			case 2:
 				// some lint checks, I guess
-				if strings.EqualFold(args[0], "host") && (args[1] == "{hostport}" || args[1] == "{http.request.hostport}") {
-					caddy.Log().Named("caddyfile").Warn("Unnecessary header_up Host: the reverse proxy's default behavior is to pass headers to the upstream")
-				}
 				if strings.EqualFold(args[0], "x-forwarded-for") && (args[1] == "{remote}" || args[1] == "{http.request.remote}" || args[1] == "{remote_host}" || args[1] == "{http.request.remote.host}") {
 					caddy.Log().Named("caddyfile").Warn("Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream")
 				}
@@ -885,6 +946,14 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return err
 				}
 			}
+			// check if the user set 'header_up host upstream_hostport' when proxying to HTTPS
+			// this is unnecessary because it's the default behavior already
+			if te.TLSEnabled() && h.Headers != nil && h.Headers.Request != nil {
+				hostVal := h.Headers.Request.Set.Get("Host")
+				if hostVal == "{upstream_hostport}" || hostVal == "{http.reverse_proxy.upstream.hostport}" {
+					caddy.Log().Named("caddyfile").Warn("Unnecessary header_up Host: the reverse proxy's default behavior is to pass the configured upstream address to the upstream when proxying to HTTPS")
+				}
+			}
 			if commonScheme == "http" && te.TLSEnabled() {
 				return d.Errf("upstream address scheme is HTTP but transport is configured for HTTP+TLS (HTTPS)")
 			}
@@ -915,13 +984,8 @@ func (h *Handler) FinalizeUnmarshalCaddyfile(helper httpcaddyfile.Helper) error 
 		d.Next()
 		args := d.RemainingArgs()
 
-		// TODO: Remove this check at some point in the future
-		if len(args) == 2 {
-			return d.Errf("configuring 'handle_response' for status code replacement is no longer supported. Use 'replace_status' instead.")
-		}
-
 		if len(args) > 1 {
-			return d.Errf("too many arguments for 'handle_response': %s", args)
+			return d.Errf("too many arguments for 'handle_response': only a single response matcher name is allowed, but got: %s", args)
 		}
 
 		var matcher *caddyhttp.ResponseMatcher

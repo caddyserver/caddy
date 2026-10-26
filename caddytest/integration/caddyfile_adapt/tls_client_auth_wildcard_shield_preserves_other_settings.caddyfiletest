@@ -1,0 +1,121 @@
+*.example.com {
+	tls {
+		protocols tls1.2 tls1.3
+		alpn h2 http/1.1
+		client_auth {
+			mode require_and_verify
+			trust_pool file {
+				pem_file ../caddy.ca.cer
+			}
+		}
+	}
+	respond "wildcard"
+}
+
+public.example.com {
+	respond "public"
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"public.example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "public",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						},
+						{
+							"match": [
+								{
+									"host": [
+										"*.example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "wildcard",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"tls_connection_policies": [
+						{
+							"match": {
+								"sni": [
+									"public.example.com"
+								]
+							},
+							"alpn": [
+								"h2",
+								"http/1.1"
+							],
+							"protocol_min": "tls1.2",
+							"protocol_max": "tls1.3"
+						},
+						{
+							"match": {
+								"sni": [
+									"*.example.com"
+								]
+							},
+							"alpn": [
+								"h2",
+								"http/1.1"
+							],
+							"protocol_min": "tls1.2",
+							"protocol_max": "tls1.3",
+							"client_authentication": {
+								"ca": {
+									"pem_files": [
+										"../caddy.ca.cer"
+									],
+									"provider": "file"
+								},
+								"mode": "require_and_verify"
+							}
+						},
+						{}
+					]
+				}
+			}
+		}
+	}
+}

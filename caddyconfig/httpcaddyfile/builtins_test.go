@@ -1,6 +1,7 @@
 package httpcaddyfile
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -66,15 +67,57 @@ func TestLogDirectiveSyntax(t *testing.T) {
 			input: `:8080 {
 				log {
 					sampling {
-						interval 2
+						interval 2s
 						first 3
 						thereafter 4
 					}
 				}
 			}
 			`,
-			output:      `{"logging":{"logs":{"default":{"exclude":["http.log.access.log0"]},"log0":{"sampling":{"interval":2,"first":3,"thereafter":4},"include":["http.log.access.log0"]}}},"apps":{"http":{"servers":{"srv0":{"listen":[":8080"],"logs":{"default_logger_name":"log0"}}}}}}`,
+			output:      `{"logging":{"logs":{"default":{"exclude":["http.log.access.log0"]},"log0":{"sampling":{"interval":2000000000,"first":3,"thereafter":4},"include":["http.log.access.log0"]}}},"apps":{"http":{"servers":{"srv0":{"listen":[":8080"],"logs":{"default_logger_name":"log0"}}}}}}`,
 			expectError: false,
+		},
+		{
+			input: `:8080 {
+				log {
+					output stdout
+					output file foo.log
+				}
+			}
+			`,
+			expectError: true,
+		},
+		{
+			input: `:8080 {
+				log {
+					format json
+					format console
+				}
+			}
+			`,
+			expectError: true,
+		},
+		{
+			input: `:8080 {
+				log {
+					level INFO
+					level DEBUG
+				}
+			}
+			`,
+			expectError: true,
+		},
+		{
+			input: `:8080 {
+				log {
+					sampling {
+						interval 1s
+						interval 2s
+					}
+				}
+			}
+			`,
+			expectError: true,
 		},
 	} {
 
@@ -365,5 +408,104 @@ func TestNestedImport(t *testing.T) {
 			t.Errorf("Test %d error expectation failed, got %s", i, err)
 			continue
 		}
+	}
+}
+
+func TestLogLevelDirectiveSyntax(t *testing.T) {
+	for _, tc := range []struct {
+		directive string
+		wantError bool
+	}{
+		{"log_level DEBUG", false}, {"log_level info", false},
+		{"log_level WARN", false}, {"log_level ERROR", false},
+		{"log_level /warnings WARN", false},
+		{"log_level", true}, {"log_level INFO WARN", true},
+		{"log_level invalid", true}, {"log_level DPANIC", true},
+		{"log_level PANIC", true}, {"log_level FATAL", true},
+		{"log_level WARN {\n foo\n}", true},
+	} {
+		t.Run(tc.directive, func(t *testing.T) {
+			adapter := caddyfile.Adapter{ServerType: ServerType{}}
+			result, _, err := adapter.Adapt([]byte(":8080 {\n"+tc.directive+"\n}"), nil)
+			if tc.wantError {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			var config struct {
+				Apps struct {
+					HTTP struct {
+						Servers map[string]struct {
+							Routes []struct {
+								Match  []map[string]any
+								Handle []struct {
+									Handler string
+									Level   string `json:"log_level"`
+								}
+							}
+						}
+					}
+				}
+			}
+			if err := json.Unmarshal(result, &config); err != nil {
+				t.Fatal(err)
+			}
+			routes := config.Apps.HTTP.Servers["srv0"].Routes
+			if len(routes) != 1 || len(routes[0].Handle) != 1 {
+				t.Fatalf("unexpected routes: %s", result)
+			}
+			handler := routes[0].Handle[0]
+			args := strings.Fields(tc.directive)
+			if handler.Handler != "vars" || handler.Level != strings.ToLower(args[len(args)-1]) {
+				t.Fatalf("unexpected handler: %s", result)
+			}
+			if strings.Contains(tc.directive, "/warnings") && len(routes[0].Match) != 1 {
+				t.Fatalf("missing matcher: %s", result)
+			}
+		})
+	}
+}
+
+func TestLogLevelDirectiveOrder(t *testing.T) {
+	for _, input := range []string{
+		"log_level /api/private/* ERROR\nlog_level /api/* DEBUG\nlog_level INFO",
+		"log_level INFO\nlog_level /api/* DEBUG\nlog_level /api/private/* ERROR",
+	} {
+		t.Run(input, func(t *testing.T) {
+			adapter := caddyfile.Adapter{ServerType: ServerType{}}
+			result, _, err := adapter.Adapt([]byte(":8080 {\n"+input+"\n}"), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var config struct {
+				Apps struct {
+					HTTP struct {
+						Servers map[string]struct {
+							Routes []struct {
+								Handle []struct {
+									Level string `json:"log_level"`
+								}
+							}
+						}
+					}
+				}
+			}
+			if err := json.Unmarshal(result, &config); err != nil {
+				t.Fatal(err)
+			}
+			var levels []string
+			for _, route := range config.Apps.HTTP.Servers["srv0"].Routes {
+				for _, handler := range route.Handle {
+					levels = append(levels, handler.Level)
+				}
+			}
+			if got := strings.Join(levels, ","); got != "info,debug,error" {
+				t.Fatalf("expected broadest log_level first, got %q: %s", got, result)
+			}
+		})
 	}
 }

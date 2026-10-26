@@ -1,6 +1,7 @@
 package caddytls
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -775,4 +776,220 @@ func TestHTTPCertPoolUnmarshalCaddyfile(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSystemCAPoolUnmarshalCaddyfile(t *testing.T) {
+	type args struct {
+		d *caddyfile.Dispenser
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{
+			name: "basic system pool configuration",
+			args: args{
+				d: caddyfile.NewTestDispenser(`system`),
+			},
+			wantErr: false,
+		},
+		{
+			name: "system pool with arguments produces error",
+			args: args{
+				d: caddyfile.NewTestDispenser(`system foo`),
+			},
+			wantErr: true,
+		},
+		{
+			name: "system pool with block produces error",
+			args: args{
+				d: caddyfile.NewTestDispenser(`system {
+					foo bar
+				}`),
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			scp := &SystemCAPool{}
+			if err := scp.UnmarshalCaddyfile(tt.args.d); (err != nil) != tt.wantErr {
+				t.Errorf("SystemCAPool.UnmarshalCaddyfile() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestCombinedCAPoolUnmarshalCaddyfile(t *testing.T) {
+	type args struct {
+		d *caddyfile.Dispenser
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{
+			name: "empty block produces error",
+			args: args{
+				d: caddyfile.NewTestDispenser(`combined {
+				}`),
+			},
+			wantErr: true,
+		},
+		{
+			name: "arguments on same line as module name produces error",
+			args: args{
+				d: caddyfile.NewTestDispenser(`combined foo`),
+			},
+			wantErr: true,
+		},
+		{
+			name: "single source - system",
+			args: args{
+				d: caddyfile.NewTestDispenser(`combined {
+					source system
+				}`),
+			},
+			wantErr: false,
+		},
+		{
+			name: "single source - inline with config",
+			args: args{
+				d: caddyfile.NewTestDispenser(fmt.Sprintf(`combined {
+					source inline {
+						trust_der %s
+					}
+				}`, test_der_1)),
+			},
+			wantErr: false,
+		},
+		{
+			name: "multiple sources produces error due to limitation",
+			args: args{
+				d: caddyfile.NewTestDispenser(fmt.Sprintf(`combined {
+					source system
+					source inline {
+						trust_der %s
+					}
+				}`, test_der_1)),
+			},
+			wantErr: false, // UnmarshalCaddyfile succeeds, but Provision will fail
+		},
+		{
+			name: "source without module name produces error",
+			args: args{
+				d: caddyfile.NewTestDispenser(`combined {
+					source
+				}`),
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid directive produces error",
+			args: args{
+				d: caddyfile.NewTestDispenser(`combined {
+					invalid_directive foo
+				}`),
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ccp := &CombinedCAPool{}
+			if err := ccp.UnmarshalCaddyfile(tt.args.d); (err != nil) != tt.wantErr {
+				t.Errorf("CombinedCAPool.UnmarshalCaddyfile() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && len(ccp.SourcesRaw) == 0 {
+				t.Errorf("CombinedCAPool.UnmarshalCaddyfile() produced no sources")
+			}
+		})
+	}
+}
+
+func TestSystemCAPoolProvision(t *testing.T) {
+	scp := &SystemCAPool{}
+	ctx := caddy.Context{Context: context.Background()}
+
+	err := scp.Provision(ctx)
+	if err != nil {
+		t.Errorf("SystemCAPool.Provision() error = %v", err)
+	}
+
+	if scp.pool == nil {
+		t.Error("SystemCAPool.Provision() did not create a cert pool")
+	}
+
+	pool := scp.CertPool()
+	if pool == nil {
+		t.Error("SystemCAPool.CertPool() returned nil")
+	}
+}
+
+func TestCombinedCAPoolProvisionWithSystemFails(t *testing.T) {
+	// Test that combining system pool fails during Provision
+	// because SystemCAPool doesn't implement CertificateProvider
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+
+	// Create a combined pool with system source
+	ccp := &CombinedCAPool{
+		SourcesRaw: []json.RawMessage{
+			json.RawMessage(`{"provider":"system"}`),
+		},
+	}
+
+	err := ccp.Provision(ctx)
+	if err == nil {
+		t.Error("CombinedCAPool.Provision() with system source should fail, but succeeded")
+	}
+
+	// Verify error message mentions CertificateProvider
+	if err != nil && !contains(err.Error(), "CertificateProvider") {
+		t.Errorf("Expected error to mention CertificateProvider, got: %v", err)
+	}
+}
+
+func TestCombinedCAPoolProvisionWithInlineSucceeds(t *testing.T) {
+	// Test that combining inline pools works
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+
+	// Create a combined pool with inline source
+	ccp := &CombinedCAPool{
+		SourcesRaw: []json.RawMessage{
+			json.RawMessage(fmt.Sprintf(`{"provider":"inline","trusted_ca_certs":["%s"]}`, test_der_1)),
+		},
+	}
+
+	err := ccp.Provision(ctx)
+	if err != nil {
+		t.Errorf("CombinedCAPool.Provision() with inline source failed: %v", err)
+	}
+
+	if ccp.pool == nil {
+		t.Error("CombinedCAPool.Provision() did not create a cert pool")
+	}
+
+	pool := ccp.CertPool()
+	if pool == nil {
+		t.Error("CombinedCAPool.CertPool() returned nil")
+	}
+}
+
+// Helper function for string contains check
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
+		(len(s) > 0 && len(substr) > 0 && findSubstring(s, substr)))
+}
+
+func findSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }

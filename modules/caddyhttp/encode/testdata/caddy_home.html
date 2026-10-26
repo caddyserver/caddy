@@ -1,0 +1,1351 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>Caddy - The Ultimate Server with Automatic HTTPS</title>
+
+
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<link rel="icon" href="/resources/images/favicon.png?v=378d6d0">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gantari:wght@400..800&family=Figtree:wght@300..900&&family=JetBrains+Mono:wght@400..600&family=Inter:wght@400..600&family=Poppins:wght@400;500;600;700;800&family=Albert+Sans:wght@400..600&display=swap" rel="stylesheet">
+
+<!-- Algolia DocSearch -->
+<link rel="preconnect" href="https://BH4D9OD16A-dsn.algolia.net" crossorigin />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@docsearch/css@3">
+
+<link rel="stylesheet" href="/resources/css/common.css?v=378d6d0">
+<link rel="stylesheet" href="/resources/css/chroma.css?v=378d6d0">
+
+<script src="/resources/js/lib.js?v=378d6d0"></script>
+<script src="/resources/js/common.js?v=378d6d0"></script>
+
+<!-- General metatags -->
+<meta name="author" content="Caddy Web Server">
+<meta name="description" content="Caddy is a powerful, enterprise-ready, open source web server with automatic HTTPS written in Go">
+<meta name="theme-color" content="#1b3143">
+
+<!-- Open Graph tags -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Caddy - The Ultimate Server with Automatic HTTPS">
+<meta property="og:site_name" content="Caddy Web Server">
+<meta property="og:url" content="https://caddyserver.com/">
+<meta property="og:description" content="Caddy is a powerful, enterprise-ready, open source web server with automatic HTTPS written in Go">
+<meta property="og:image" content="https://caddyserver.com/resources/images/open-graph-square.png?v=378d6d0">
+
+<!-- Global site tag (gtag.js) - Google Analytics (ZeroSSL) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-2DLB04LK4P"></script>
+<script>
+	window.dataLayer = window.dataLayer || [];
+	function gtag(){dataLayer.push(arguments);}
+	gtag('js', new Date());
+	gtag('config', 'G-2DLB04LK4P');
+</script>
+
+		<link rel="stylesheet" href="/resources/css/vendor/asciinema-player-3.6.1.css?v=378d6d0">
+		<script src="/resources/js/vendor/asciinema-player-3.6.1.min.js?v=378d6d0"></script>
+		<script src="/resources/js/home.js?v=378d6d0"></script>
+
+		<link rel="stylesheet" href="/resources/css/marketing.css?v=378d6d0">
+		<link rel="stylesheet" href="/resources/css/home.css?v=378d6d0">
+
+		<!-- <meta property="og:title" content="Caddy 2 - The Ultimate Server with Automatic HTTPS">
+			<meta name="twitter:title" value="Caddy 2 - The Ultimate Server with Automatic HTTPS"> -->
+	</head>
+	<body>
+		<div class="hero">
+			<header class="dark-header">
+	<div class="topbar">
+		<div class="wrapper">
+			<a href="https://zerossl.com" id="zerossl-link">
+				 A <img src="/old/resources/images/zerossl-logo.svg" alt="ZeroSSL" id="zerossl-logo"> Project
+			</a>
+			<a href="https://store.caddyserver.com">
+				<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-building-store" width="24"
+					height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none"
+					stroke-linecap="round" stroke-linejoin="round">
+					<path stroke="none" d="M0 0h24v24H0z" fill="none" />
+					<path d="M3 21l18 0" />
+					<path d="M3 7v1a3 3 0 0 0 6 0v-1m0 1a3 3 0 0 0 6 0v-1m0 1a3 3 0 0 0 6 0v-1h-18l2 -4h14l2 4" />
+					<path d="M5 21l0 -10.15" />
+					<path d="M19 21l0 -10.15" />
+					<path d="M9 21v-4a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v4" />
+				</svg>
+				Store
+			</a>
+			<a href="https://caddy.community">
+				<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-messages" width="24"
+					height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none"
+					stroke-linecap="round" stroke-linejoin="round">
+					<path stroke="none" d="M0 0h24v24H0z" fill="none" />
+					<path d="M21 14l-3 -3h-7a1 1 0 0 1 -1 -1v-6a1 1 0 0 1 1 -1h9a1 1 0 0 1 1 1v10" />
+					<path d="M14 15v2a1 1 0 0 1 -1 1h-7l-3 3v-10a1 1 0 0 1 1 -1h2" />
+				</svg>
+				Forum
+			</a>
+			<a href="https://github.com/caddyserver/caddy">
+				<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-brand-github" width="24"
+					height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none"
+					stroke-linecap="round" stroke-linejoin="round">
+					<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
+					<path
+						d="M9 19c-4.3 1.4 -4.3 -2.5 -6 -3m12 5v-3.5c0 -1 .1 -1.4 -.5 -2c2.8 -.3 5.5 -1.4 5.5 -6a4.6 4.6 0 0 0 -1.3 -3.2a4.2 4.2 0 0 0 -.1 -3.2s-1.1 -.3 -3.5 1.3a12.3 12.3 0 0 0 -6.2 0c-2.4 -1.6 -3.5 -1.3 -3.5 -1.3a4.2 4.2 0 0 0 -.1 3.2a4.6 4.6 0 0 0 -1.3 3.2c0 4.6 2.7 5.7 5.5 6c-.6 .6 -.6 1.2 -.5 2v3.5">
+					</path>
+				</svg>
+				GitHub
+			</a>
+			<a href="javascript:nextTheme();">
+				<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-brightness-half" width="24"
+					height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none"
+					stroke-linecap="round" stroke-linejoin="round">
+					<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
+					<path d="M12 9a3 3 0 0 0 0 6v-6z"></path>
+					<path
+						d="M6 6h3.5l2.5 -2.5l2.5 2.5h3.5v3.5l2.5 2.5l-2.5 2.5v3.5h-3.5l-2.5 2.5l-2.5 -2.5h-3.5v-3.5l-2.5 -2.5l2.5 -2.5z">
+					</path>
+				</svg>
+				<span>Theme: <span id="current-theme">System</span></span>
+			</a>
+		</div>
+	</div>
+	<div class="navbar wrapper">
+		<a href="/" class="logo-link">
+			<img src="/resources/images/logo-light.svg" class="logo" id="logo-light" alt="Caddy web server">
+			<img src="/resources/images/logo-dark.svg" class="logo" id="logo-dark" alt="Caddy web server">
+		</a>
+
+
+		<nav role="navigation">
+			<ul>
+				<li class="dropdown-trigger">
+					<a href="/docs/">Documentation</a>
+					<div class="dropdown">
+						<div class="row flatlinks">
+							<a href="/docs/install">
+								<b>
+									<svg xmlns="http://www.w3.org/2000/svg"
+										class="icon icon-tabler icon-tabler-server-bolt" width="24" height="24"
+										viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none"
+										stroke-linecap="round" stroke-linejoin="round">
+										<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
+										<path
+											d="M3 4m0 3a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v2a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3z">
+										</path>
+										<path d="M15 20h-9a3 3 0 0 1 -3 -3v-2a3 3 0 0 1 3 -3h12"></path>
+										<path d="M7 8v.01"></path>
+										<path d="M7 16v.01"></path>
+										<path d="M20 15l-2 3h3l-2 3"></path>
+									</svg>
+									Install
+								</b>
+								How to install Caddy on your computer or server
+							</a>
+							<a href="/docs/caddyfile">
+								<b>
+									<svg xmlns="http://www.w3.org/2000/svg"
+										class="icon icon-tabler icon-tabler-file-text" width="24" height="24"
+										viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none"
+										stroke-linecap="round" stroke-linejoin="round">
+										<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
+										<path d="M14 3v4a1 1 0 0 0 1 1h4"></path>
+										<path
+											d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2z">
+										</path>
+										<path d="M9 9l1 0"></path>
+										<path d="M9 13l6 0"></path>
+										<path d="M9 17l6 0"></path>
+									</svg>
+									Caddyfile
+								</b>
+								A simplified, human-friendly configuration format
+							</a>
+							<a href="/docs/json">
+								<b>
+									<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+										fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+										stroke-linejoin="round"
+										class="icon icon-tabler icons-tabler-outline icon-tabler-braces">
+										<path stroke="none" d="M0 0h24v24H0z" fill="none" />
+										<path d="M7 4a2 2 0 0 0 -2 2v3a2 3 0 0 1 -2 3a2 3 0 0 1 2 3v3a2 2 0 0 0 2 2" />
+										<path d="M17 4a2 2 0 0 1 2 2v3a2 3 0 0 0 2 3a2 3 0 0 0 -2 3v3a2 2 0 0 1 -2 2" />
+									</svg>
+									JSON
+								</b>
+								Powerful and programmable native config format
+							</a>
+						</div>
+						<div class="row">
+							<div class="linkbox">
+								<div class="col">
+									<div class="links-header">Tutorials</div>
+									<a href="/docs/getting-started">Caddy basics</a>
+									<a href="/docs/quick-starts/static-files">Static files</a>
+									<a href="/docs/quick-starts/reverse-proxy">Reverse proxy</a>
+									<a href="/docs/troubleshooting">Troubleshooting</a>
+								</div>
+								<div class="col">
+									<div class="links-header">Reference</div>
+									<a href="/docs/command-line">Command line</a>
+									<a href="/docs/caddyfile">Caddyfile</a>
+									<a href="/docs/api">API</a>
+									<a href="/docs/json">JSON Config</a>
+									<a href="/docs/automatic-https">Auto HTTPS</a>
+								</div>
+								<!-- <div class="col">
+									<div class="links-header">Caddyfile</div>
+									<a href="/docs/">Directives</a>
+									<a href="/docs/">Request matchers</a>
+									<a href="/docs/">Global options</a>
+								</div> -->
+								<div class="col">
+									<div class="links-header">Develop</div>
+									<a href="/docs/architecture">Architecture</a>
+									<a href="https://github.com/caddyserver/caddy/pulls">Contribute</a>
+									<a href="/docs/extending-caddy">Write a module</a>
+								</div>
+								<div class="col">
+									<div class="links-header">Articles</div>
+									<a href="/docs/logging">Logging</a>
+									<a href="/docs/metrics">Monitoring</a>
+									<a href="/docs/running">Run as service</a>
+									<a href="/docs/profiling">Profiling</a>
+									<!-- <a href="/docs/security">Security</a>
+									<a href="/docs/">Custom domains</a> -->
+									<a href="/docs/">All articles...</a>
+								</div>
+							</div>
+							<!-- Make a new linkbox div for a separate section. -->
+						</div>
+						<div class="row featured">
+							<a href="/docs/examples">
+								<b>
+									<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-atom-2"
+										width="24" height="24" viewBox="0 0 24 24" stroke-width="2"
+										stroke="currentColor" fill="none" stroke-linecap="round"
+										stroke-linejoin="round">
+										<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
+										<path d="M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0"></path>
+										<path d="M12 21l0 .01"></path>
+										<path d="M3 9l0 .01"></path>
+										<path d="M21 9l0 .01"></path>
+										<path d="M8 20.1a9 9 0 0 1 -5 -7.1"></path>
+										<path d="M16 20.1a9 9 0 0 0 5 -7.1"></path>
+										<path d="M6.2 5a9 9 0 0 1 11.4 0"></path>
+									</svg>
+									Examples
+								</b>
+								Learn from examples contributed by the community
+							</a>
+							<a href="/docs/faq">
+								<b>
+									<svg xmlns="http://www.w3.org/2000/svg"
+										class="icon icon-tabler icon-tabler-message-circle-question" width="24"
+										height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"
+										fill="none" stroke-linecap="round" stroke-linejoin="round">
+										<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
+										<path
+											d="M15.02 19.52c-2.341 .736 -5 .606 -7.32 -.52l-4.7 1l1.3 -3.9c-2.324 -3.437 -1.426 -7.872 2.1 -10.374c3.526 -2.501 8.59 -2.296 11.845 .48c1.649 1.407 2.575 3.253 2.742 5.152">
+										</path>
+										<path d="M19 22v.01"></path>
+										<path d="M19 19a2.003 2.003 0 0 0 .914 -3.782a1.98 1.98 0 0 0 -2.414 .483">
+										</path>
+									</svg>
+									<!-- <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-help-hexagon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+										<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
+										<path d="M19.875 6.27c.7 .398 1.13 1.143 1.125 1.948v7.284c0 .809 -.443 1.555 -1.158 1.948l-6.75 4.27a2.269 2.269 0 0 1 -2.184 0l-6.75 -4.27a2.225 2.225 0 0 1 -1.158 -1.948v-7.285c0 -.809 .443 -1.554 1.158 -1.947l6.75 -3.98a2.33 2.33 0 0 1 2.25 0l6.75 3.98h-.033z"></path>
+										<path d="M12 16v.01"></path>
+										<path d="M12 13a2 2 0 0 0 .914 -3.782a1.98 1.98 0 0 0 -2.414 .483"></path>
+									</svg> -->
+									FAQ
+								</b>
+								Get fast answers to common questions
+							</a>
+							<a href="/docs/modules">
+								<b>
+									<svg xmlns="http://www.w3.org/2000/svg"
+										class="icon icon-tabler icon-tabler-hexagons" width="24" height="24"
+										viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none"
+										stroke-linecap="round" stroke-linejoin="round">
+										<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
+										<path d="M4 18v-5l4 -2l4 2v5l-4 2z"></path>
+										<path d="M8 11v-5l4 -2l4 2v5"></path>
+										<path d="M12 13l4 -2l4 2v5l-4 2l-4 -2"></path>
+									</svg>
+									Modules
+								</b>
+								The official list of registered Caddy plugins
+							</a>
+						</div>
+						<div class="row">
+							<div class="plainbox">
+								<a href="/docs/">Documentation index</a>
+								<a href="https://caddy.community/c/wiki/13">Community wiki</a>
+								<a href="https://github.com/caddyserver/website">Contribute to docs</a>
+							</div>
+						</div>
+					</div>
+				</li>
+				<li>
+					<a href="/features">Features</a>
+				</li>
+				<li>
+					<a href="/account">Account</a>
+				</li>
+				<li>
+					<a href="/support">Support</a>
+				</li>
+			</ul>
+		</nav>
+
+		<div class="actions">
+			<div id="search"></div>
+
+			<a href="/download" class="button primary">
+				<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+					stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+					class="icon icon-tabler icons-tabler-outline icon-tabler-download">
+					<path stroke="none" d="M0 0h24v24H0z" fill="none" />
+					<path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2" />
+					<path d="M7 11l5 5l5 -5" />
+					<path d="M12 4l0 12" />
+				</svg>
+				Download
+			</a>
+			<a href="/sponsor" class="button purple">
+				<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+					stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+					class="icon icon-tabler icons-tabler-outline icon-tabler-heart-handshake">
+					<path stroke="none" d="M0 0h24v24H0z" fill="none" />
+					<path d="M19.5 12.572l-7.5 7.428l-7.5 -7.428a5 5 0 1 1 7.5 -6.566a5 5 0 1 1 7.5 6.572" />
+					<path
+						d="M12 6l-3.293 3.293a1 1 0 0 0 0 1.414l.543 .543c.69 .69 1.81 .69 2.5 0l1 -1a3.182 3.182 0 0 1 4.5 0l2.25 2.25" />
+					<path d="M12.5 15.5l2 2" />
+					<path d="M15 13l2 2" />
+				</svg>
+				Sponsor
+			</a>
+		</div>
+	</div>
+</header>
+
+			<div class="wrapper">
+				<div class="hero-content">
+					<div class="asides">
+						<div>
+							<h1>
+								<div class="color-dodge">
+									<div class="the">The</div>
+									Ultimate Server
+								</div>
+								<div class="subheading">
+									makes your sites more <b>secure</b>, more <b>reliable</b>, and more <b>scalable</b> than any other solution.
+								</div>
+							</h1>
+
+							<div class="action-buttons">
+								<a href="/download" class="button primary">Download</a>
+								<a href="/docs/" class="button cool">Docs<sh></sh></a>
+								<iframe src="https://ghbtns.com/github-btn.html?user=caddyserver&amp;repo=caddy&amp;type=star&amp;count=true&amp;size=large" frameborder="0" scrolling="0" width="160px" height="30px" class="github-stars"></iframe>
+							</div>
+						</div>
+						<div>
+							<div class="display right">
+								<div class="caption">
+									<div id="video-demo"></div>
+									Watch in real-time as Caddy serves HTTPS in &lt; 1 minute.
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<div class="sponsors-leaders">
+						<!-- <h3>Trusted, used, and sponsored by <b>leaders</b></h3> -->
+						<h3>Sponsored by <b>leaders</b></h3>
+
+						<!--
+							Images are not in any particular order except the top row is featured (higher-tier) sponsors.
+							Images are individually adjusted to appear roughly equally sized and weighted along their row.
+						-->
+
+						<div class="sponsor-logos">
+							<a href="https://zerossl.com" target="_blank">
+								<img src="/resources/images/sponsors/zerossl.svg" alt="ZeroSSL" title="ZeroSSL" height="55">
+							</a>
+							<a href="https://stripe.com" target="_blank">
+								<img src="/resources/images/sponsors/stripe.svg" alt="Stripe" title="Stripe" class="featured" height="52">
+							</a>
+							<a href="https://railway.com/?utm_medium=sponsor&utm_source=oss&utm_campaign=caddy" target="_blank">
+								<img src="/resources/images/sponsors/railway.svg" alt="Railway" title="Railway" class="featured" height="75" style="margin-left: -15px;">
+							</a>
+						</div>
+						<div class="sponsors-divider"></div>
+						<div class="sponsor-logos">
+							<!-- <a href="https://opensource.mercedes-benz.com/" target="_blank">
+								<img src="/resources/images/sponsors/mercedes-benz.svg" alt="Mercedes-Benz" title="Mercedes-Benz" height="38">
+							</a> -->
+							<a href="https://tailscale.com" target="_blank">
+								<img src="/resources/images/sponsors/tailscale.svg" alt="Tailscale" title="Tailscale" height="22">
+							</a>
+							<a href="https://framer.com" target="_blank">
+								<img src="/resources/images/sponsors/framer.svg" alt="Framer" title="Framer" height="32">
+							</a>
+							<a href="https://bytebase.com" target="_blank">
+								<img src="/resources/images/sponsors/bytebase.svg" alt="Bytebase" title="Bytebase" height="28">
+							</a>
+							<a href="https://les-tilleuls.coop/" target="_blank">
+								<img src="/resources/images/sponsors/les-tilleuls-white.svg" alt="Les-Tilleuls" title="Les-Tilleuls" height="25">
+							</a>
+							<a href="https://hopetv.org/" target="_blank">
+								<img src="/resources/images/sponsors/hopetv.png" alt="Hope Channel" title="Hope Channel" height="42">
+							</a>
+							<a href="https://sourcegraph.com/" target="_blank">
+								<img src="/resources/images/sponsors/sourcegraph.png" alt="Sourcegraph" title="Sourcegraph" height="23">
+							</a>
+							<a href="https://fusionauth.com" target="_blank">
+								<img src="/resources/images/sponsors/fusionauth.svg" alt="FusionAuth" title="FusionAuth" height="35">
+							</a>
+							<a href="https://www.aryeo.com" target="_blank">
+								<img src="/resources/images/sponsors/aryeo.svg" alt="Aryeo" title="Aryeo" height="26">
+							</a>
+							<a href="https://checklyhq.com" target="_blank">
+								<img src="/resources/images/sponsors/checkly.svg" alt="Checkly" title="Checkly" height="24" style="position: relative; top: 3px;">
+							</a>
+							<a href="https://appcove.com/" target="_blank">
+								<img src="/resources/images/sponsors/appcove.png" alt="AppCove" title="AppCove" height="24">
+							</a>
+							<a href="https://cubepath.com/" target="_blank">
+								<img src="/resources/images/sponsors/cubepath.svg" alt="CubePath" title="CubePath" height="25">
+							</a>
+							<a href="https://transistor.fm" target="_blank">
+								<img src="/resources/images/sponsors/transistorfm.svg" alt="Transistor" title="Transistor" height="32">
+							</a>
+							<a href="https://bestkru.com" target="_blank">
+								<img src="/resources/images/sponsors/bestkru.svg" alt="BestKru" title="BestKru" height="26">
+							</a>
+							<a href="https://photostructure.com/" target="_blank">
+								<img src="/resources/images/sponsors/photostructure.svg" alt="PhotoStructure" title="PhotoStructure" height="30">
+							</a>
+							<!-- <a href="https://gitea.com/" target="_blank">
+								<img src="/resources/images/sponsors/gitea.svg" alt="Gitea" title="Gitea" height="25">
+							</a> -->
+							<a href="https://boot.dev/" target="_blank">
+								<img src="/resources/images/sponsors/bootdev.png" alt="Boot.dev" title="Boot.dev" height="25">
+							</a>
+							<a href="https://saascustomdomains.com/" target="_blank">
+								<img src="/resources/images/sponsors/saascustomdomains.svg" alt="SaaS Custom Domains" title="SaaS Custom Domains" height="25">
+							</a>
+							<a href="https://redirect.pizza/?utm_campaign=caddyserver.com&utm_medium=logo&utm_source=sponsor" target="_blank">
+								<img src="/resources/images/sponsors/redirect-pizza.svg" alt="Redirect.pizza" title="Redirect.pizza" height="26">
+							</a>
+							<a href="https://approximated.app/" target="_blank">
+								<img src="/resources/images/sponsors/approximated.svg" alt="Approximated" title="Approximated" height="18">
+							</a>
+							<a href="https://aniftyco.com/" target="_blank">
+								<img src="/resources/images/sponsors/niftyco.svg" alt="Niftyco" title="Niftyco" height="23">
+							</a>
+							<a href="https://iqm.com/" target="_blank">
+								<img src="/resources/images/sponsors/iqm.svg" alt="IQM" title="IQM" height="22">
+							</a>
+							<a href="/sponsor" class="button purple">
+								<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-new-section" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+									<path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
+									<path d="M9 12l6 0"></path>
+									<path d="M12 9l0 6"></path>
+									<path d="M4 6v-1a1 1 0 0 1 1 -1h1m5 0h2m5 0h1a1 1 0 0 1 1 1v1m0 5v2m0 5v1a1 1 0 0 1 -1 1h-1m-5 0h-2m-5 0h-1a1 1 0 0 1 -1 -1v-1m0 -5v-2m0 -5"></path>
+								</svg>
+								Join the ranks
+							</a>
+						</div>
+						<!-- <a href="#">Why a sponsorship</a> -->
+						<!-- <a href="/sponsor" class="button purple">Sponsorship info</a> -->
+					</div>
+				</div>
+			</div>
+		</div>
+
+
+		<main>
+
+			<div class="wavy-top">
+				<div class="bgtext">
+					Every<br>
+					<span class="site-on">site on</span><br>
+					HTTPS
+				</div>
+				<h2 id="every-site-https">
+					<b>By default, </b>Caddy <b>automatically obtains</b> and <b>renews</b> TLS certificates for <b>all your sites.</b>
+				</h2>
+
+				<div class="wrapper feature cols">
+					<div class="col">
+						<h3 class="purple">HTTPS/TLS for custom domains</h3>
+						<p>
+							The secret sauce of almost every white-label SaaS is Caddy's original On-Demand TLS feature. Grow your SaaS business by orders of magnitude with ease!
+						</p>
+					</div>
+					<div class="col">
+						<h3 class="green">Dynamically provision certificates</h3>
+						<p>
+							With On-Demand TLS, only Caddy obtains, renews, and maintains certificates on-the-fly during TLS handshakes. Perfect for customer-owned domains.
+						</p>
+					</div>
+					<div class="col">
+						<h3 class="blue">Massively scale your TLS</h3>
+						<p>
+							Other web servers and scripted certificate tools fall over with hundreds of thousands of sites or thousands of instances. Caddy is designed to manage certificates reliably at this scale.
+						</p>
+					</div>
+				</div>
+
+				<div class="wrapper">
+					<div class="cols">
+						<div class="col">
+							<div class="sponsorship-primer">
+								<h3>sponsored by <b>users like you</b></h3>
+								<p>
+									Caddy is free software and relies on sponsorships to survive. Not just donations: sponsorships ensure ongoing development and provide your business with tangible benefits.
+								</p>
+								<a href="/sponsor" class="button purple">See sponsorships</a>
+							</div>
+						</div>
+						<div class="col">
+							<div class="sponsor-experience hopetv">
+								<img src="/resources/images/sponsors/hopetv.png" class="experience-logo">
+								<div class="experience-content">
+									<div class="experience-quote">
+										"Caddy's powerful technology has enabled Hope Channel International to deliver hope to millions, reaching people in every corner of the world."
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<section class="light">
+				<div class="section-upset">
+					<div class="wrapper">
+						<h2 id="most-advanced">The <b>most advanced</b> HTTPS server <b>in the world</b></h2>
+					</div>
+				</div>
+				<div class="wrapper">
+
+					<div class="feature cols">
+						<div class="col">
+							<h3 class="green">All you need for TLS and PKI 🔐</h3>
+							<p>
+								Caddy securely serves all sites with TLS by default. It can also manage your internal PKI for you across a fleet of servers and clients.
+							</p>
+						</div>
+						<div class="col">
+							<h3 class="purple">On-line config API ⚡️</h3>
+							<p>
+								Caddy's native configuration is a JSON document that you can export and manipulate with a RESTful config API.
+							</p>
+						</div>
+						<div class="col">
+							<h3 class="blue">PCI, HIPAA, and NIST compliant ✅</h3>
+							<p>
+								Caddy's TLS defaults are secure and pass PCI, HIPAA, and NIST compliance requirements. Yes, defaults: no hassle required.
+							</p>
+						</div>
+						<div class="col">
+							<h3 class="purple">HTTPS for localhost 🏠</h3>
+							<p>
+								We mean it when we say Caddy serves every site on HTTPS. Even localhost and internal IPs are served with TLS using the intermediate of a fully-automated, self-managed CA that is automatically installed into most local trust stores.
+							</p>
+						</div>
+						<div class="col">
+							<h3 class="blue">Cluster coordination 🌐</h3>
+							<p>
+								Simply configure multiple Caddy instances with the same storage, and they will automatically coordinate certificate management as a fleet and share resources such as keys and OCSP staples!
+							</p>
+						</div>
+						<div class="col">
+							<h3 class="green">Fewer moving parts ⚙️</h3>
+							<p>
+								Simplify your infrastructure! Caddy saves money, increases developer productivity, and reduces problems in production.
+							</p>
+						</div>
+					</div>
+
+					<div class="demobox">
+						<h2 id="on-demand-demo" lang="de">Experience it</h2>
+						<p>
+							<b>Discover Caddy's automagic HTTPS features with our hosted demo.</b>
+						</p>
+						<p>
+							Point DNS records for any subdomain named <b><code>caddydemo</code></b> to either:
+						</p>
+						<p class="demo-ips">
+							<code>
+								<span class="record-type">CNAME</span>
+								<span class="demo-ip">demo.caddyserver.com</span>
+							</code>
+						</p>
+						<p class="or">
+							or:
+						</p>
+						<p class="demo-ips">
+							<code>
+								<span class="record-type">A</span>
+								<span class="demo-ip">138.68.4.62</span>
+							</code>
+							<code>
+								<span class="record-type">AAAA</span>
+								<span class="demo-ip">2604:a880:2:d0::9dd:9001</span>
+							</code>
+						</p>
+						<p>
+							Then <b>visit it</b> in your browser.
+						</p>
+						<p>
+							You'll notice how Caddy <b>provisions a certificate</b> for your domain <b>automatically.</b>
+						</p>
+						<div class="demo-help">
+							<p>
+								<b>Not working?</b> Make sure to use a direct subdomain of a registered domain, not a "sub-subdomain."
+								Verify you have created the public DNS records shown above with the correct values.
+								You may have to allow time for propagation. Consult your DNS provider's documentation or support for assistance.
+								Your browser/client must set the TLS ServerName indication (most do).
+							</p>
+							<p>
+								<b>Example subdomains that could work:</b> <code>caddydemo.example.net</code>, <code>caddydemo.example.com.au</code>
+							</p>
+							<p>
+								Caddy is capable of serving TLS for any domains and IPs. This demo is intentionally restricted.
+							</p>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<section class="diagonal up light gray feature">
+				<div class="wrapper">
+
+					<h2 id="your-own-pki">Deploy your own PKI with Caddy</h2>
+					<p>
+						Not only is Caddy the industry leader in certificate automation, it also sports a fully-featured PKI suite for your own fully-automated internal PKI and private CAs.
+					</p>
+					<!-- <p>
+						Caddy will serve your localhost and internal sites over HTTPS using its own CA. And you can create your own CA to issue certs across your infrastructure. It has a built-in ACME server, powered by Smallstep, to automate your private PKI reliably at scale.
+					</p> -->
+					<p>
+						Powered by open source <a href="https://smallstep.com/certificates/">Smallstep libraries</a>, Caddy becomes a self-managing certificate authority.
+					</p>
+
+
+					<div class="asides">
+						<div>
+							<div class="display left">
+								<div class="ex-local-https">
+<pre class="chroma"><code><span class="line"><span class="cl"><span class="gh">localhost</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="k">respond</span> <span class="s2">&#34;Hello from HTTPS!&#34;</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="gh">192.168.1.10</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="k">respond</span> <span class="s2">&#34;Also HTTPS!&#34;</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="gh">http://localhost</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="k">respond</span> <span class="s2">&#34;Plain HTTP&#34;</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span></code></pre></div>
+<script>
+window.$_('.ex-local-https code').classList.add('light');
+</script>
+							</div>
+						</div>
+						<div>
+							<h3 class="purple">Internal and localhost certificates</h3>
+							<p>
+								If you configure sites with local or internal addresses, Caddy will serve them over HTTPS using a locally-trusted certificate authority with short-lived, auto-renewing certificates. It even offers to install your unique root into your local trust stores for you.
+							</p>
+							<a href="https://smallstep.com" title="Powered by Smallstep"><img src="/resources/images/sponsors/smallstep.svg" alt="Smallstep" class="smallstep"></a>
+						</div>
+					</div>
+
+					<div class="asides">
+						<div>
+							<h3 class="blue">Make and use your own CAs</h3>
+							<p>
+								Caddy lets you define as many CAs as you need. Root and intermediate keys are generated automatically, and intermediates are renewed before they expire.
+							</p>
+							<p>
+								Deploy an instance to act as an ACME server. Then other Caddy instances can use it for their certificates.
+							</p>
+						</div>
+						<div>
+							<div class="display right">
+								<div class="ex-custom-ca">
+<pre class="chroma"><code><span class="line"><span class="cl"><span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="k">pki</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">		<span class="k">ca</span> <span class="s">corporate</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">			<span class="k">name</span> <span class="s2">&#34;Our Corporation Authority&#34;</span>
+</span></span><span class="line"><span class="cl">		<span class="p">}</span>
+</span></span><span class="line"><span class="cl">	<span class="p">}</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="gh">internal.example.com</span> <span class="p">{</span><span class="c1">
+</span></span></span><span class="line"><span class="cl"><span class="c1">	# ACME endpoint: /acme/corporate/directory
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span>	<span class="k">acme_server</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">		<span class="k">ca</span> <span class="s">corporate</span>
+</span></span><span class="line"><span class="cl">	<span class="p">}</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span></code></pre></div>
+<script>
+window.$_('.ex-custom-ca code').classList.add('light');
+</script>
+							</div>
+						</div>
+					</div>
+
+					<div class="asides">
+						<div>
+							<div class="display left">
+								<div class="ex-json-automate-certs">
+<pre class="chroma"><code><span class="line"><span class="cl"><span class="p">{</span>
+</span></span><span class="line"><span class="cl">  <span class="nt">&#34;apps&#34;</span><span class="p">:</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="nt">&#34;tls&#34;</span><span class="p">:</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">      <span class="nt">&#34;certificates&#34;</span><span class="p">:</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">        <span class="nt">&#34;automate&#34;</span><span class="p">:</span> <span class="p">[</span>
+</span></span><span class="line"><span class="cl">          <span class="s2">&#34;example.com&#34;</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">          <span class="s2">&#34;sub.example.com&#34;</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">          <span class="s2">&#34;example.net&#34;</span>
+</span></span><span class="line"><span class="cl">        <span class="p">]</span>
+</span></span><span class="line"><span class="cl">      <span class="p">}</span>
+</span></span><span class="line"><span class="cl">    <span class="p">}</span>
+</span></span><span class="line"><span class="cl">  <span class="p">}</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span></code></pre></div>
+<script>
+window.$_('.ex-json-automate-certs code').classList.add('light');
+</script>
+
+							</div>
+						</div>
+						<div>
+							<h3 class="green">Keep certificates renewed</h3>
+							<p>
+								Caddy is more than just a web server. For example, this config is all it takes to obtain and renew certificates for a set of domain names.
+							</p>
+							<p>
+								Additional config can be written to wire up certificate maintenance events, which can then be used to integrate with external scripts and tooling.
+							</p>
+							<!-- <p>
+								Caddy 2 is a <a href="/docs/extending-caddy">highly extensible</a>, self-hosted platform on which you can build, configure, and deploy long-running services ("apps").
+							</p>
+							<p>
+								Caddy ships with apps for an <a href="/docs/modules/http">HTTPS server</a> (static files, reverse proxying, load balancing, etc.), <a href="/docs/modules/tls">TLS certificate manager</a>, and <a href="/docs/modules/pki">fully-managed internal PKI</a>. Caddy apps collaborate to make complex infrastructure just work with fewer moving parts.
+							</p>
+							<p>
+								<b>For example, the config shown here keeps your TLS certificates renewed for other programs to use;</b> no external tools or HTTP daemon required!
+							</p>
+							<p>
+								Providing a unified configuration, on-line <a href="/docs/api">config API</a>, and <a href="/docs/json">automatic documentation</a> for all apps, Caddy is nearly infinitely extensible. Thanks to its unique <a href="/docs/architecture">modular architecture</a>, we can offer unlimited features without bloating the code base.
+							</p> -->
+						</div>
+					</div>
+
+					<!-- <div class="action-buttons">
+						<a href="/download" class="button primary">Download</a>
+						<a href="/docs/" class="button secondary">Docs<sh></sh></a>
+					</div> -->
+
+
+				</div>
+			</section>
+
+			<section class="light feature">
+				<div class="wrapper">
+					<h2 id="experts-recommend">Recommended by experts</h2>
+					<p>
+						Academic and industry experts recommend Caddy, which has been cited in peer-reviewed journals for its security defaults, best practices, and its uniquely advanced feature set.
+					</p>
+					<div class="cols experts">
+						<div class="col">
+							<a href="https://doi.org/10.1145/3319535.3363192"><img src="/resources/images/cites/aas.png" class="cite"></a>
+							<p>
+								"Servers running Caddy exhibit nearly ubiquitous HTTPS deployment and use modern TLS configurations. ... We hope to see other popular server software follow Caddy's lead."
+							</p>
+							<p class="cite">
+								&mdash;<b>Josh Aas, Richard Barnes, Benton Case, Zakir Durumeric, Peter Eckersley, Alan Flores-López, J. Alex Halderman, Jacob Hoffman-Andrews, James Kasten, Eric Rescorla, Seth Schoen, and Brad Warren.</b> 2019. <i>Let's Encrypt: An Automated Certificate Authority to Encrypt the Entire Web.</i> In Proceedings of the 2019 ACM SIGSAC Conference on Computer and Communications Security (CCS '19). Association for Computing Machinery, New York, NY, USA, 2473–2487. <a href="https://doi.org/10.1145/3319535.3363192">https://doi.org/10.1145/3319535.3363192</a>
+							</p>
+						</div>
+						<div class="col">
+							<a href="https://www.usenix.org/conference/usenixsecurity17/technical-sessions/presentation/krombholz"><img src="/resources/images/cites/krombholz.png" class="cite"></a>
+							<p>
+								"TLS must be enabled by default ... and the Caddy web server is a good and usable example."
+							</p>
+							<p class="cite">
+								&mdash;<b>Katharina Krombholz, Wilfried Mayer, Martin Schmiedecker, and Edgar Weippl.</b> 2017. <i>"I Have No Idea What I'm Doing" - On the Usability of Deploying HTTPS.</i> In 26th USENIX Security Symposium (USENIX Security 17), USENIX Association, Vancouver, BC, 1339-1356. Retrieved from <a href="https://www.usenix.org/conference/usenixsecurity17/technical-sessions/presentation/krombholz">https://www.usenix.org/conference/usenixsecurity17/technical-sessions/presentation/krombholz</a>
+							</p>
+						</div>
+						<div class="col">
+							<a href="https://doi.org/10.1145/2987443.2987480"><img src="/resources/images/cites/springall.png" class="cite"></a>
+							<p>
+								"No popular server software does [session ticket key rotation], with the exception of Caddy."
+							</p>
+							<p class="cite">
+								&mdash;<b>Drew Springall, Zakir Durumeric, and J. Alex Halderman.</b> 2016. <i>Measuring the Security Harm of TLS Crypto Shortcuts.</i> In Proceedings of the 2016 Internet Measurement Conference (IMC '16), Association for Computing Machinery, Santa Monica, California, USA, 33-47. <a href="https://doi.org/10.1145/2987443.2987480">https://doi.org/10.1145/2987443.2987480</a>
+							</p>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<section class="diagonal down dark feature">
+				<div class="wrapper">
+					<h2 id="reverse-proxy">A forward-thinking reverse proxy</h2>
+					<p>
+						Caddy's proxy was designed to be as forward-compatible as possible and has major batteries included: load balancing, active and passive health checks, dynamic upstreams, retries, pluggable transports, and of course, best-in-class TLS security.
+					</p>
+
+
+					<div class="asides asides-40-60">
+						<div class="spacing">
+							<div class="rollover" data-rollover="rollover-php">
+								<h3 class="green">Proxy HTTP, FastCGI, WebSockets, and more</h3>
+								<p>
+									Capable of proxying HTTP and HTTPS, but also WebSockets, gRPC, FastCGI (usually PHP), and more! The underlying transport module is extensible for any custom way to generate an HTTP response.
+								</p>
+							</div>
+							<div class="rollover" data-rollover="rollover-dynamic-backends">
+								<h3 class="purple">Dynamic backends</h3>
+								<p>
+									Provide Caddy with a static list of backends or enable a module to retrieve backends dynamically during each request: ideal for rapidly changing environments. Caddy flows with your infrastructure!
+								</p>
+							</div>
+							<div class="rollover" data-rollover="rollover-ha">
+								<h3 class="blue">High availability</h3>
+								<p>
+									Caddy comes with a whole suite of high availability (HA) features: advanced health checking, graceful (hitless) config changes, circuit breaking, load limiting, on-line retries, and more. The best part? It's all free. No enterprise-level paywalls.
+								</p>
+							</div>
+						</div>
+						<div>
+							<div class="display right dark">
+								<script>
+ready(() => {
+	let startElement, endElement;
+
+	startElement = findWithContent('.ex-proxy pre.chroma code span', 'php_fastcgi');
+	endElement = findNextText(startElement, '9000');
+	wrapRangeWithSpan(startElement, endElement, 'rollover-php rollover-green');
+
+	startElement = findWithContent('.ex-proxy pre.chroma code span.line', 'reverse_proxy /api/* {');
+	endElement = findNextText(startElement, '}');
+	wrapRangeWithSpan(startElement, endElement, 'rollover-dynamic-backends rollover-purple');
+
+	startElement = findWithContent('.ex-proxy pre.chroma code span.line', 'reverse_proxy /service/* {');
+	endElement = findNextText(startElement, '}');
+	wrapRangeWithSpan(startElement, endElement, 'rollover-ha rollover-blue');
+
+	window.$_('.ex-proxy code').classList.add('dark');
+});
+</script>
+<div class="ex-proxy">
+<pre class="chroma"><code><span class="line"><span class="cl"><span class="gh">example.com</span><span class="p">
+</span></span></span><span class="line"><span class="cl"><span class="p"></span><span class="c1">
+</span></span></span><span class="line"><span class="cl"><span class="c1"># Serve PHP sites
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="k">handle</span> <span class="nd">/blog/*</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="k">root</span> <span class="nd">/var/www/wordpress</span>
+</span></span><span class="line"><span class="cl">	<span class="k">php_fastcgi</span> <span class="n">localhost</span><span class="p">:</span><span class="mi">9000</span>
+</span></span><span class="line"><span class="cl">	<span class="k">file_server</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span><span class="c1">
+</span></span></span><span class="line"><span class="cl"><span class="c1">
+</span></span></span><span class="line"><span class="cl"><span class="c1"># Proxy an autoscaling API with dynamic backends
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="k">reverse_proxy</span> <span class="nd">/api/*</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="k">dynamic</span> <span class="s">srv</span> <span class="s">_api._tcp.example.com</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span><span class="c1">
+</span></span></span><span class="line"><span class="cl"><span class="c1">
+</span></span></span><span class="line"><span class="cl"><span class="c1"># Proxy a compute-heavy distributed service
+</span></span></span><span class="line"><span class="cl"><span class="c1"># with load balancing and health checks
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="k">reverse_proxy</span> <span class="nd">/service/*</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="k">to</span>              <span class="n">10.0.1.1</span><span class="p">:</span><span class="mi">80</span> <span class="n">10.0.1.2</span><span class="p">:</span><span class="mi">80</span> <span class="n">10.0.1.3</span><span class="p">:</span><span class="mi">80</span>
+</span></span><span class="line"><span class="cl">	<span class="k">lb_policy</span>       <span class="s">least_conn</span>
+</span></span><span class="line"><span class="cl">	<span class="k">lb_try_duration</span> <span class="mi">10s</span>
+</span></span><span class="line"><span class="cl">	<span class="k">fail_duration</span>   <span class="mi">5s</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span><span class="c1">
+</span></span></span><span class="line"><span class="cl"><span class="c1">
+</span></span></span><span class="line"><span class="cl"><span class="c1"># Proxy everything else to an HTTPS upstream
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="k">reverse_proxy</span> <span class="s">https://service.example.com</span>
+</span></span></code></pre></div>
+
+							</div>
+						</div>
+					</div>
+
+					<div class="cols">
+						<div class="col">
+							<div class="sponsorship-primer">
+								<h3>software <b>assurance</b></h3>
+								<p>
+									Without sponsorships, Caddy could stop being developed at any time.
+									With sponsorships, you gain peace of mind knowing that the project will continue to be developed, along with tangible benefits like private support and training.
+								</p>
+								<a href="/sponsor" class="button purple">See sponsorships</a>
+							</div>
+						</div>
+						<div class="col">
+							<div class="sponsor-experience stripe">
+								<img src="/resources/images/sponsors/stripe.svg" class="experience-logo">
+								<div class="experience-content">
+									<div class="experience-quote">
+										"With its extensible architecture and on-line config API, Caddy powers many of Stripe's internal systems."
+									</div>
+									<!-- <div class="experience-credit">
+										<img src="https://preview.tabler.io/static/avatars/002m.jpg" class="experience-picture">
+										<cite>
+											<b>Sean Lin</b>
+											Example product manager
+										</cite>
+									</div> -->
+								</div>
+							</div>
+						</div>
+					</div>
+
+
+					<h2 id="file-server">Production-grade static file server</h2>
+					<p>
+						Serving static files is a tried-and-true method of delivering sites to numerous clients efficiently. Caddy has a robust file server that can be combined with other middleware features for the ultimate effortless website.
+					</p>
+
+
+					<div class="asides asides-40-60">
+						<div class="spacing">
+							<div class="rollover" data-rollover="rollover-compress">
+								<h3 class="blue">Compression</h3>
+								<p>
+									Caddy can compress files on-the-fly or serve precompressed files for extra performance. Caddy is also the first web server to support Zstandard encoding.
+								</p>
+							</div>
+							<div class="rollover" data-rollover="rollover-vfs">
+								<h3 class="green">Virtual file systems</h3>
+								<p>
+									Serve your static site from anything: the local file system, remote cloud storage, a database, or even embedded in the server binary!
+								</p>
+							</div>
+							<div class="rollover" data-rollover="rollover-range">
+								<h3 class="yellow">Range requests, Etags, and more</h3>
+								<p>
+									Unlike many ad-hoc file servers intended for temporary local development, Caddy fully supports Range requests, Etags, and a full production feature set.
+								</p>
+							</div>
+							<div class="rollover" data-rollover="rollover-browse">
+								<h3 class="purple">Directory file browser</h3>
+								<p>
+									If a directory without an index file is requested, Caddy can show an elegant file browser with breadcrumb nav, file size visualizations, filetype icons, and a grid view.
+								</p>
+							</div>
+						</div>
+						<div>
+							<div class="display right light">
+								<script>
+ready(() => {
+	let startElement, endElement;
+
+	startElement = findWithContent('.ex-fs pre.chroma code span.line', 'file_server /downloads/* {');
+	endElement = findNextText(startElement, '}');
+	wrapRangeWithSpan(startElement, endElement, 'rollover-compress rollover-blue');
+
+	startElement = findWithContent('.ex-fs pre.chroma code span', 'encode');
+	endElement = findNextText(startElement, 'gzip');
+	wrapRangeWithSpan(startElement, endElement, 'rollover-compress rollover-blue');
+
+	startElement = findWithContent('.ex-fs pre.chroma code span.line', 'file_server /database/* {');
+	endElement = findNextText(startElement, '}');
+	wrapRangeWithSpan(startElement, endElement, 'rollover-vfs rollover-green');
+
+	startElement = findWithContent('.ex-fs pre.chroma code span.line', 'file_server /embedded/* {');
+	endElement = findNextText(startElement, '}');
+	wrapRangeWithSpan(startElement, endElement, 'rollover-vfs rollover-green');
+
+	startElement = findWithContent('.ex-fs pre.chroma code span', '# (Range/Etag/etc. all work without extra config)');
+	wrapRangeWithSpan(startElement, startElement, 'rollover-range rollover-yellow');
+
+	startElement = findWithContent('.ex-fs pre.chroma code span', 'file_server');
+	endElement = findNextText(startElement, 'browse');
+	wrapRangeWithSpan(startElement, endElement, 'rollover-browse rollover-purple');
+
+	window.$_('.ex-fs code').classList.add('light');
+});
+</script>
+<div class="ex-fs">
+<pre class="chroma"><code><span class="line"><span class="cl"><span class="gh">example.com</span><span class="p">
+</span></span></span><span class="line"><span class="cl"><span class="p"></span>
+</span></span><span class="line"><span class="cl"><span class="k">root</span> <span class="nd">/var/www</span><span class="c1">
+</span></span></span><span class="line"><span class="cl"><span class="c1">
+</span></span></span><span class="line"><span class="cl"><span class="c1"># Serve precompressed files if present
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="k">file_server</span> <span class="nd">/downloads/*</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="k">precompressed</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span><span class="c1">
+</span></span></span><span class="line"><span class="cl"><span class="c1">
+</span></span></span><span class="line"><span class="cl"><span class="c1"># Compress everything else that would benefit
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="k">encode</span> <span class="s">zstd</span> <span class="s">gzip</span><span class="c1">
+</span></span></span><span class="line"><span class="cl"><span class="c1">
+</span></span></span><span class="line"><span class="cl"><span class="c1"># Static site using database as file system
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="k">file_server</span> <span class="nd">/database/*</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="k">fs</span> <span class="s">sqlite</span> <span class="s">data.sql</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span><span class="c1">
+</span></span></span><span class="line"><span class="cl"><span class="c1">
+</span></span></span><span class="line"><span class="cl"><span class="c1"># Static site embedded within the Caddy binary
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="k">file_server</span> <span class="nd">/embedded/*</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="k">fs</span> <span class="s">embedded</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span><span class="c1">
+</span></span></span><span class="line"><span class="cl"><span class="c1">
+</span></span></span><span class="line"><span class="cl"><span class="c1"># (Range/Etag/etc. all work without extra config)
+</span></span></span><span class="line"><span class="cl"><span class="c1">
+</span></span></span><span class="line"><span class="cl"><span class="c1"># Serve static site with directory listings
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="k">file_server</span> <span class="s">browse</span>
+</span></span></code></pre></div>
+
+							</div>
+						</div>
+					</div>
+
+					<div class="cols rollover" data-rollover="rollover-browse">
+						<div class="col">
+							<img src="/resources/images/file-browser/browse-themes.png" class="gallery">
+						</div>
+						<div class="col">
+							<img src="/resources/images/file-browser/browse-gallery-light.png" class="gallery">
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<section class="light feature">
+				<div class="wrapper">
+					<h2 id="flexible-config">Flexible configuration compatible with any workflow</h2>
+					<p>
+						Configure your server your way. Caddy's native configuration format is JSON, and with Caddy's config adapters, you can use any config format you prefer. All configuration is posted through a RESTful admin API, and Caddy's CLI helps you work with config files easily.
+					</p>
+
+
+					<div class="asides">
+						<div>
+							<div class="display left">
+								<code class="dark">$ caddy start --config caddy.json
+
+$ curl localhost:2019/id/my_handler \
+	-X PATCH \
+	-H "Content-Type: application/json" \
+	-d '{
+			"handler": "static_response",
+			"body": "Work smarter, not harder."
+		}'
+
+$ curl localhost:2019/config/ | jq<div class="blinking"></div></code>
+							</div>
+						</div>
+						<div>
+							<h3>JSON config API</h3>
+							<p>
+								Caddy's native config format is JSON, giving you incredible power and flexibility for automated, large-scale deployments.
+							<p>
+								Make dynamic config changes through an <a href="/docs/api">intuitive, programmable REST API</a> that offers ACID guarantees. It is also <b>safely scoped</b>, meaning that the URI path restricts changes, making it impossible to accidentally alter other parts of your config.
+							</p>
+							<!-- <ul>
+								<li><b>Atomic:</b> Multiple changes in a single request are treated as a single unit; any failed change aborts all the other changes.</li>
+								<li><b>Consistent:</b> No invalid configurations can be loaded; your server will never break if a problem is detected at config load.</li>
+								<li><b>Isolated:</b> No config changes rely on another. (It helps that HTTP is a stateless protocol!)</li>
+								<li><b>Durable:</b> Caddy automatically persists the current, valid configuration to disk and can safely resume it after a power cycle if the <code>--resume</code> flag is used.</li>
+							</ul> -->
+							<!-- <a href="/docs/api-tutorial" class="cyan button">API <b>tutorial</b></a>
+							&nbsp;
+							<a href="/docs/api" class="gray button">API <b>reference</b></a> -->
+						</div>
+					</div>
+
+
+					<div class="asides">
+						<div>
+							<h3>Caddyfile</h3>
+							<p>
+								Although JSON offers ultimate control, most people prefer to use a <a href="/docs/caddyfile">Caddyfile</a> because it lets you get a production-ready site up and running in just a few hand-written lines. It's not uncommon for Caddyfiles to be <a href="https://twitter.com/bwesterb/status/1708903488426512668">just ~15-25% the size of a less-capable nginx config</a>.
+							</p>
+						</div>
+						<div>
+							<div class="display right light">
+								<div class="ex-website-caddyfile">
+<pre class="chroma"><code><span class="line"><span class="cl"><span class="gh">caddyserver.com</span><span class="p">
+</span></span></span><span class="line"><span class="cl"><span class="p"></span>
+</span></span><span class="line"><span class="cl"><span class="k">root</span> <span class="s">src</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="k">file_server</span>
+</span></span><span class="line"><span class="cl"><span class="k">templates</span><span class="c1"> # markdown &amp; syntax highlighting!
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span><span class="k">encode</span> <span class="s">zstd</span> <span class="s">gzip</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="k">redir</span>   <span class="nd">/docs/json</span>   <span class="s">/docs/json/</span>
+</span></span><span class="line"><span class="cl"><span class="k">rewrite</span> <span class="nd">/docs/json/*</span> <span class="s">/docs/json/index.html</span>
+</span></span><span class="line"><span class="cl"><span class="k">rewrite</span> <span class="nd">/docs/*</span>      <span class="s">/docs/index.html</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="k">reverse_proxy</span> <span class="nd">/api/*</span> <span class="n">localhost</span><span class="p">:</span><span class="mi">9002</span>
+</span></span></code></pre></div>
+<script>
+window.$_('.ex-website-caddyfile code').classList.add('light');
+</script>
+
+								<div class="caption">Actual config used by this site.</div>
+							</div>
+						</div>
+					</div>
+
+
+					<div class="asides">
+						<div>
+							<div class="display left">
+								<code class="dark">$ caddy run \
+	--config nginx.conf \
+	--adapter nginx<div class="blinking"></div></code>
+							</div>
+						</div>
+						<div>
+							<h3>Config adapters</h3>
+							<p>
+								Power Caddy with anything, even NGINX config files!
+							</p>
+							<p>
+								With first-class support for <a href="/docs/config-adapters">config adaptation</a>, you can configure your web server with your favorite format: YAML, TOML, CUE, NGINX, HCL, Dhall, JSON with comments, or even a MySQL database... or anything else. The Caddyfile is a built-in config adapter.
+							</p>
+							<!-- <p>
+								Fewer moving parts means fewer failures, lower costs, and less sunk time.
+							</p> -->
+							<!-- <a href="/docs/config-adapters" class="gray button">Config adapters</a> -->
+						</div>
+					</div>
+				</div>
+			</section>
+
+
+
+			<section class="diagonal up light gray feature">
+				<div class="wrapper">
+					<h2 id="extensibility">Unparalleled extensibility</h2>
+					<p>
+						Caddy is the only server in the world with its novel, modular architecture. At its core, Caddy is a configuration manager that runs apps like an HTTP server, internal certificate authority, TLS certificate manager, process supervisor, and more.
+					</p>
+					<p>
+						And because of its unique design, we can offer unlimited features without bloating the code base. Only compile in what you need.
+					</p>
+					<div class="cols">
+						<div class="col">
+							<h3 class="green"><a href="https://i.giphy.com/media/xUA7ba9aksCuKR9dgA/giphy.webp" target="_blank" title="Important visualization">Unlimited power</a></h3>
+							<p>
+								Nearly every part of the config that "does something" is pluggable. Caddy offers unlimited capabilities in such a lean package.
+							</p>
+						</div>
+						<div class="col">
+							<h3 class="purple">Native CPU performance</h3>
+							<p>
+								No RPC calls or flimsy dependency management. Plugins are compiled into the static binary, making successful deployments certain and runtimes blazing fast.
+							</p>
+						</div>
+						<div class="col">
+							<h3 class="blue">Easy to develop</h3>
+							<p>
+								Writing Caddy plugins is as easy as writing a Go package. It's a comfortable and familiar process for any Go programmer.
+							</p>
+						</div>
+					</div>
+				</div>
+			</section>
+
+
+			<section class="frankenphp dark feature">
+				<div class="wrapper">
+					<div class="asides">
+						<div>
+							<div class="left">
+								<h2 id="extensibility">4x faster PHP apps</h2>
+								<p>
+									With <a href="https://frankenphp.dev">FrankenPHP</a>, Caddy acts as a PHP application server that delivers PHP pages about <a href="https://blog.laravel.com/octane-frankenphp">4x faster</a> than Swoole or RoadRunner: no need for php-fpm (FastCGI).
+								</p>
+								<p>
+									Deploy your PHP application as a single static binary without needing to install PHP and php-fpm separately. Caddy with FrankenPHP is all you need for high-performing PHP apps!
+								</p>
+								<a href="https://frankenphp.dev" title="FrankenPHP"><img src="/resources/images/frankenphp-logo.svg" alt="FrankenPHP - Modern PHP app server" class="franken-logo"></a>
+								<p class="endnote">
+									Benchmarks compare total response times using worker mode with Octane. FrankenPHP runs in-process with the server, so it's generally faster than FPM/mod_php in most cases. PHP execution is not accelerated.
+								</p>
+							</div>
+						</div>
+						<img src="/resources/images/frankenphp-dab.svg" class="franken-mascot">
+					</div>
+
+					<div class="asides">
+						<div>
+							<div class="display left">
+								<div class="ex-frankenphp">
+<pre class="chroma"><code><span class="line"><span class="cl"><span class="p">{</span><span class="c1">
+</span></span></span><span class="line"><span class="cl"><span class="c1">	# Enable FrankenPHP
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span>	<span class="k">frankenphp</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="gh">example.com</span> <span class="p">{</span><span class="c1">
+</span></span></span><span class="line"><span class="cl"><span class="c1">	# Serve PHP app from current directory
+</span></span></span><span class="line"><span class="cl"><span class="c1"></span>	<span class="k">php_server</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span></code></pre></div>
+<script>
+window.$_('.ex-frankenphp code').classList.add('dark');
+</script>
+
+							</div>
+						</div>
+						<div>
+							<p>
+								Serving your PHP app is as simple as this Caddyfile. The PHP interpreter is completely embedded within the Caddy binary and your application files will be served from the current working directory. No need for php-fpm or separate PHP installs!
+							</p>
+							<p>
+								<a href="https://frankenphp.dev" class="franken button">Learn more</a>
+							</p>
+						</div>
+					</div>
+				</div>
+			</section>
+
+
+			<section class="diagonal down light feature">
+				<div class="wrapper">
+					<h2 id="gold-standard">The <span class="gold">gold standard</span> web server</h2>
+					<p>
+						Caddy has the most robust TLS stack on the market. With stronger memory safety guarantees than OpenSSL (Apache &amp; NGINX) and more advanced certificate automation logic than any other server or utility, Caddy keeps your sites online through problems when other servers... won't.
+					</p>
+					<p>
+						Caddy was the first server to fully automate public certificate management&mdash;so we've been doing this longer than anyone. With more than 50 million certificates under management, Caddy has set the gold standard for other servers to live up to.
+					</p>
+					<div class="cols">
+						<div class="col">
+							<h3 class="green">OCSP stapling saves the day</h3>
+							<p>
+								Caddy automatically staples OCSP responses and caches them to weather outages. In 2018, many popular sites went down for users of mainstream browsers because crucial OCSP infrastructure had an extended outage. Only Caddy staples and caches OCSP responses by default, so all Caddy sites were unaffected.
+							</p>
+						</div>
+						<div class="col">
+							<h3 class="purple">On guard against revocation</h3>
+							<p>
+								In 2020, a mass certificate revocation event left many sysadmins scrambling to renew their certificates ahead of schedule. Caddy automatically renews certificates that get revoked, and all Caddy sites were unaffected. (This was before ARI existed.)
+							</p>
+						</div>
+						<div class="col">
+							<h3 class="blue">Stands tall during audits</h3>
+							<p>
+								Companies have deployed Caddy in front of their site just hours before important audits&mdash;potentially saving their compliance status&mdash;because of Caddy's safe defaults and "batteries included" approach.
+							</p>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<section class="light gray feature">
+				<div class="wrapper">
+					<h2>Take everyone's word for it</h2>
+					<p>
+						We're biased. But Caddy is widely relied upon and praised by a diverse global user base because of its ease of use, secure defaults, powerful feature set, and business-changing cost reductions.
+					</p>
+					<div class="testimonials-container">
+						<div class="testimonials">
+							<div class="testimonial-col"></div>
+							<div class="testimonial-col"></div>
+							<div class="testimonial-col"></div>
+						</div>
+					</div>
+				</div>
+			</section>
+
+		</main>
+
+
+		<footer>
+	<div class="wrapper">
+		<div class="logo-area">
+			<img src="/resources/images/logo-dark.svg" class="logo" alt="Caddy web server">
+			<p>
+				A free <a href="https://github.com/caddyserver/caddy">open source</a> project
+				that relies on <a href="/sponsor">sponsors</a>.
+			</p>
+			<p>
+				<a href="https://usefathom.com/ref/AUKNWU">Privacy-respecting analytics</a> by Fathom
+			</p>
+			<br>
+			<p>
+				&copy; 2026 ZeroSSL. All rights reserved.
+			</p>
+		</div>
+		<div class="link-col">
+			<div class="col-header">Project</div>
+			<a href="/features">Features</a>
+			<a href="/download">Download</a>
+			<a href="/docs">Documentation</a>
+		</div>
+		<div class="link-col">
+			<div class="col-header">Business services</div>
+			<a href="/support">Support</a>
+			<a href="/sponsor">Sponsorships</a>
+		</div>
+		<div class="link-col">
+			<div class="col-header">Community</div>
+			<a href="https://caddy.community">Forum</a>
+			<a href="https://github.com/caddyserver">GitHub</a>
+			<a href="https://twitter.com/caddyserver">Twitter / X</a>
+			<a href="https://scholar.google.com/scholar?q=caddy+web+server">Research</a>
+		</div>
+	</div>
+	<div class="wrapper nostalgia">
+		<p>Caddy supports an open Web that promotes privacy, preserves data ownership, fosters innovation, freely allows varieties of client software, and safeguards human sanctity.</p>
+		<div class="nostalgia-badges">
+			<img src="/resources/images/nostalgia/get.gif" title="Honoring early Web clients">
+			<img src="/resources/images/nostalgia/microsoft-ie.gif" title="Honoring early Web clients">
+			<img src="/resources/images/nostalgia/now_anim.gif" title="Honoring early Web clients">
+			<img src="/resources/images/nostalgia/caddy.png" title="Powered by Caddy!">
+			<div class="w3c">
+				<img src="/resources/images/nostalgia/valid_html5_yellow.png" title="This site uses HTML 5">
+				<img src="/resources/images/nostalgia/valid_css3_blue.png" title="This site uses CSS 3">
+			</div>
+			<div title="Don't forget to sign our guestbook!"><img alt="0" title="Hit counter" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAVCAIAAADAXPmFAAABf2lDQ1BzUkdCIElFQzYxOTY2LTIuMQAAKJF1kc8rRFEUxz8GESPKjywsJg2rIUZNbJSZhJI0RhlsZp55M2rezOu9kWSrbKcosfFrwV/AVlkrRaRky5rYoOdco0Yy93bv+dzvPed07rngiqQ1w67oASOTs8IjQc9MdNZT9UitzGZa8Mc02xyanByn5Hi7oUzZqy6Vq7Tfv6N2IWFrUFYtPKiZVk54VHh8OWcq3hRu0lKxBeFjYZ8lBQpfKz1e4CfFyQJ/KLYi4RC4GoQ9yV8c/8VayjKE5eV4jfSS9lOPeok7kZmeEtsuqw2bMCME8TDGMCEC9DIge4Au/HTLiRLxPd/xE2QlVpPdZAWLRZKkyOETdUmyJ8TqoidkpllR/f/bV1vv8xeyu4NQ+eA4Lx1QtQGfecd533eczwMov4ezTDE+uwf9r6Lni5p3F+rX4OS8qMW34HQdWu/MmBX7lspluXQdno+gLgqNl1AzV+jZzz2HtxBZla+6gO0d6BT/+vkvdv5n7QE3vncAAAAJcEhZcwAADsQAAA7EAZUrDhsAAABpSURBVDiN1VNJEsAgCAtOP9iX8kQ8dKxA7Hbg0JyEJGZkEKiGzKO9EraplistIMCejDYqzhHHAlvgljnxikb8A+oN8Q1uGqFpoXJg9QFlwzk49uhoKhsokqk/jPVml3LCUo28YJ//Qz067YITxllUaOsAAAAASUVORK5CYII="><img alt="1" title="Hit counter" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAVCAIAAADAXPmFAAABf2lDQ1BzUkdCIElFQzYxOTY2LTIuMQAAKJF1kc8rRFEUxz8GESPKjywsJg2rIUZNbJSZhJI0RhlsZp55M2rezOu9kWSrbKcosfFrwV/AVlkrRaRky5rYoOdco0Yy93bv+dzvPed07rngiqQ1w67oASOTs8IjQc9MdNZT9UitzGZa8Mc02xyanByn5Hi7oUzZqy6Vq7Tfv6N2IWFrUFYtPKiZVk54VHh8OWcq3hRu0lKxBeFjYZ8lBQpfKz1e4CfFyQJ/KLYi4RC4GoQ9yV8c/8VayjKE5eV4jfSS9lOPeok7kZmeEtsuqw2bMCME8TDGMCEC9DIge4Au/HTLiRLxPd/xE2QlVpPdZAWLRZKkyOETdUmyJ8TqoidkpllR/f/bV1vv8xeyu4NQ+eA4Lx1QtQGfecd533eczwMov4ezTDE+uwf9r6Lni5p3F+rX4OS8qMW34HQdWu/MmBX7lspluXQdno+gLgqNl1AzV+jZzz2HtxBZla+6gO0d6BT/+vkvdv5n7QE3vncAAAAJcEhZcwAADsQAAA7EAZUrDhsAAABlSURBVDiN5ZPBDsAgCEMfZj/Il/KJ7rJNmaLZgdN6QdM2SImQDWlHXQrtqqWpLdKCQX0ZFp5ODRyOm3qqu5WB3yDf4GewWbjixhDHRavokrgNGnd4YpXxST+JtWzUgLrwP/+HfJw/VBTTE/WQ8gAAAABJRU5ErkJggg=="><img alt="0" title="Hit counter" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAVCAIAAADAXPmFAAABf2lDQ1BzUkdCIElFQzYxOTY2LTIuMQAAKJF1kc8rRFEUxz8GESPKjywsJg2rIUZNbJSZhJI0RhlsZp55M2rezOu9kWSrbKcosfFrwV/AVlkrRaRky5rYoOdco0Yy93bv+dzvPed07rngiqQ1w67oASOTs8IjQc9MdNZT9UitzGZa8Mc02xyanByn5Hi7oUzZqy6Vq7Tfv6N2IWFrUFYtPKiZVk54VHh8OWcq3hRu0lKxBeFjYZ8lBQpfKz1e4CfFyQJ/KLYi4RC4GoQ9yV8c/8VayjKE5eV4jfSS9lOPeok7kZmeEtsuqw2bMCME8TDGMCEC9DIge4Au/HTLiRLxPd/xE2QlVpPdZAWLRZKkyOETdUmyJ8TqoidkpllR/f/bV1vv8xeyu4NQ+eA4Lx1QtQGfecd533eczwMov4ezTDE+uwf9r6Lni5p3F+rX4OS8qMW34HQdWu/MmBX7lspluXQdno+gLgqNl1AzV+jZzz2HtxBZla+6gO0d6BT/+vkvdv5n7QE3vncAAAAJcEhZcwAADsQAAA7EAZUrDhsAAABpSURBVDiN1VNJEsAgCAtOP9iX8kQ8dKxA7Hbg0JyEJGZkEKiGzKO9EraplistIMCejDYqzhHHAlvgljnxikb8A+oN8Q1uGqFpoXJg9QFlwzk49uhoKhsokqk/jPVml3LCUo28YJ//Qz067YITxllUaOsAAAAASUVORK5CYII="><img alt="2" title="Hit counter" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAVCAIAAADAXPmFAAABf2lDQ1BzUkdCIElFQzYxOTY2LTIuMQAAKJF1kc8rRFEUxz8GESPKjywsJg2rIUZNbJSZhJI0RhlsZp55M2rezOu9kWSrbKcosfFrwV/AVlkrRaRky5rYoOdco0Yy93bv+dzvPed07rngiqQ1w67oASOTs8IjQc9MdNZT9UitzGZa8Mc02xyanByn5Hi7oUzZqy6Vq7Tfv6N2IWFrUFYtPKiZVk54VHh8OWcq3hRu0lKxBeFjYZ8lBQpfKz1e4CfFyQJ/KLYi4RC4GoQ9yV8c/8VayjKE5eV4jfSS9lOPeok7kZmeEtsuqw2bMCME8TDGMCEC9DIge4Au/HTLiRLxPd/xE2QlVpPdZAWLRZKkyOETdUmyJ8TqoidkpllR/f/bV1vv8xeyu4NQ+eA4Lx1QtQGfecd533eczwMov4ezTDE+uwf9r6Lni5p3F+rX4OS8qMW34HQdWu/MmBX7lspluXQdno+gLgqNl1AzV+jZzz2HtxBZla+6gO0d6BT/+vkvdv5n7QE3vncAAAAJcEhZcwAADsQAAA7EAZUrDhsAAABuSURBVDiNzVJJEsAgCEOmH+SlfSJetDQaaQ91plxcSIBERXZHia2/AmpbDbgE3ctp3K44BZofkKMcHFWn/EPsJ6CGk5mLolHj6inKvHVSLCDW+48jObPV4PR7W3PRYweKFhFv/lyoWyKJ5PN/HBVcRBIbb1m1OAAAAABJRU5ErkJggg=="><img alt="8" title="Hit counter" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAVCAIAAADAXPmFAAABf2lDQ1BzUkdCIElFQzYxOTY2LTIuMQAAKJF1kc8rRFEUxz8GESPKjywsJg2rIUZNbJSZhJI0RhlsZp55M2rezOu9kWSrbKcosfFrwV/AVlkrRaRky5rYoOdco0Yy93bv+dzvPed07rngiqQ1w67oASOTs8IjQc9MdNZT9UitzGZa8Mc02xyanByn5Hi7oUzZqy6Vq7Tfv6N2IWFrUFYtPKiZVk54VHh8OWcq3hRu0lKxBeFjYZ8lBQpfKz1e4CfFyQJ/KLYi4RC4GoQ9yV8c/8VayjKE5eV4jfSS9lOPeok7kZmeEtsuqw2bMCME8TDGMCEC9DIge4Au/HTLiRLxPd/xE2QlVpPdZAWLRZKkyOETdUmyJ8TqoidkpllR/f/bV1vv8xeyu4NQ+eA4Lx1QtQGfecd533eczwMov4ezTDE+uwf9r6Lni5p3F+rX4OS8qMW34HQdWu/MmBX7lspluXQdno+gLgqNl1AzV+jZzz2HtxBZla+6gO0d6BT/+vkvdv5n7QE3vncAAAAJcEhZcwAADsQAAA7EAZUrDhsAAABWSURBVDiN5VNBDgAgCALX/79cR0fqqoOnODmFVFxAN+jhvCKas1lxAfpz5tlKQ2k+pJZqdFQL9QP6BboDM3M1qTtWp2AM50UHxpE+sdUObOxOPP+Hfiyb7BQlYsbtmgAAAABJRU5ErkJggg=="><img alt="9" title="Hit counter" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAVCAIAAADAXPmFAAABf2lDQ1BzUkdCIElFQzYxOTY2LTIuMQAAKJF1kc8rRFEUxz8GESPKjywsJg2rIUZNbJSZhJI0RhlsZp55M2rezOu9kWSrbKcosfFrwV/AVlkrRaRky5rYoOdco0Yy93bv+dzvPed07rngiqQ1w67oASOTs8IjQc9MdNZT9UitzGZa8Mc02xyanByn5Hi7oUzZqy6Vq7Tfv6N2IWFrUFYtPKiZVk54VHh8OWcq3hRu0lKxBeFjYZ8lBQpfKz1e4CfFyQJ/KLYi4RC4GoQ9yV8c/8VayjKE5eV4jfSS9lOPeok7kZmeEtsuqw2bMCME8TDGMCEC9DIge4Au/HTLiRLxPd/xE2QlVpPdZAWLRZKkyOETdUmyJ8TqoidkpllR/f/bV1vv8xeyu4NQ+eA4Lx1QtQGfecd533eczwMov4ezTDE+uwf9r6Lni5p3F+rX4OS8qMW34HQdWu/MmBX7lspluXQdno+gLgqNl1AzV+jZzz2HtxBZla+6gO0d6BT/+vkvdv5n7QE3vncAAAAJcEhZcwAADsQAAA7EAZUrDhsAAABgSURBVDiNY2CgNWBEMP8TpZAJoZoRl1oGBkaEcUwIUVx6GFEsZ0GRw6oH1alMGPIEAO01oPqBEVvgogqi+hFXVCCpgtkQSIQNjJhOChwGwbqecLAyEVDNgJ7ASM4PtAcAUoUUKAw29gMAAAAASUVORK5CYII="></div>
+		</div>
+	</div>
+</footer>
+
+<!-- Fathom - beautiful, simple website analytics -->
+<script src="https://cdn.usefathom.com/script.js" site="GVMGKAKP" honor-dnt="true" defer></script>
+<!-- / Fathom -->
+
+<!-- Algolia DocSearch -->
+<script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@docsearch/js@3"></script>
+
+
+
+		<template id="tpl-testimonial">
+			<div class="testimonial">
+				<img class="testimonial-picture">
+				<div class="testimonial-content">
+					<div class="testimonial-quote">
+
+					</div>
+					<a class="testimonial-name" target="_blank">
+
+					</a>
+					<div class="testimonial-role">
+						<div class="testimonial-role-text"></div>
+						<a class="testimonial-org"></a>
+					</div>
+				</div>
+			</div>
+		</template>
+
+		<script>
+			AsciinemaPlayer.create('/resources/demo.cast', $_('#video-demo'), {
+				preload: true,
+				autoPlay: true,
+				controls: true
+			});
+		</script>
+	</body>
+</html>
