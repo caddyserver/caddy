@@ -151,7 +151,14 @@ func (h CopyResponseHeadersHandler) ServeHTTP(rw http.ResponseWriter, req *http.
 			fmt.Errorf("cannot use 'copy_response_headers' outside of reverse_proxy's handle_response routes"))
 	}
 
-	for field, values := range hrc.response.Header {
+	// Hop-by-hop fields belong to the upstream connection. Strip them
+	// before include and exclude, so naming one in include does not
+	// copy it. Clone first: later handlers in this handle_response
+	// route still need the original upstream headers.
+	src := hrc.response.Header.Clone()
+	stripHopByHopHeaders(src)
+
+	for field, values := range src {
 		// Check the include list first, skip
 		// the header if it's _not_ in this list.
 		if len(h.includeMap) > 0 {
