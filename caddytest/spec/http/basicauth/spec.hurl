@@ -36,3 +36,14 @@ insecure: true
 HTTP 200
 [Asserts]
 `Hello, World!`
+
+
+# requests with an incorrect password are rejected with 401
+GET https://localhost:9443
+[BasicAuth]
+john:wrong-password
+[Options]
+insecure: true
+HTTP 401
+[Asserts]
+header "WWW-Authenticate" == "Basic realm=\"restricted\""
