@@ -122,3 +122,23 @@ func TestBrowseHidesPathQualifiedEntries(t *testing.T) {
 		})
 	}
 }
+
+func TestHideRelativeDataDir(t *testing.T) {
+	for _, env := range []string{"XDG_DATA_HOME", "HOME", "AppData", "HOMEDRIVE", "HOMEPATH", "USERPROFILE", "home"} {
+		t.Setenv(env, "")
+	}
+
+	fsrv := FileServer{Root: "."}
+	ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+	if err := fsrv.Provision(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	key := filepath.Join("caddy", "certificates", "local", "localhost", "localhost.key")
+	if !fileHidden(key, fsrv.Hide) {
+		t.Errorf("%s is not hidden; hide list: %v", key, fsrv.Hide)
+	}
+	if fileHidden("caddyfile.go", fsrv.Hide) {
+		t.Errorf("caddyfile.go is hidden; hide list: %v", fsrv.Hide)
+	}
+}
