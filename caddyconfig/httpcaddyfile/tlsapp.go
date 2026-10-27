@@ -1155,7 +1155,8 @@ outer:
 						i--
 						continue outer
 					}
-				} else {
+				} else if !automationPolicyMergeShadows(i, j, aps) {
+					// merge only if aps[j] won't shadow a policy between i and j;
 					// avoid repeated subjects
 					for _, subj := range aps[j].SubjectsRaw {
 						if !slices.Contains(aps[i].SubjectsRaw, subj) {
@@ -1205,6 +1206,30 @@ func automationPolicyShadows(i int, aps []*caddytls.AutomationPolicy) int {
 		}
 	}
 	return -1
+}
+
+// automationPolicyMergeShadows returns true if merging aps[j] into aps[i]
+// (where i < j) would make aps[j] shadow a policy between i and j.
+//
+// For example, say the policies are for "example.com" (i),
+// "foo.example.com" (i+1), and "*.example.com" (j). Merging j into i moves
+// "*.example.com" before the i+1 policy. Then the wildcard matches
+// "foo.example.com" first, and the i+1 policy is never used.
+//
+// Like automationPolicyIsSubset above, this uses certmagic.MatchWildcard,
+// which supports only a single "*". It does not handle interior wildcards
+// like "foo.*.example.com".
+func automationPolicyMergeShadows(i, j int, aps []*caddytls.AutomationPolicy) bool {
+	for k := i + 1; k < j; k++ {
+		for _, kSubj := range aps[k].SubjectsRaw {
+			if slices.ContainsFunc(aps[j].SubjectsRaw, func(jSubj string) bool {
+				return certmagic.MatchWildcard(kSubj, jSubj)
+			}) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // subjectQualifiesForPublicCert is like certmagic.SubjectQualifiesForPublicCert() except
