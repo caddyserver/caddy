@@ -42,6 +42,25 @@ HTTP 200
 [Asserts]
 body == "index.txt"
 
+# HEAD returns the file headers without a response body
+HEAD https://localhost:9443/index.txt
+[Options]
+insecure: true
+HTTP 200
+[Asserts]
+header "Content-Length" == "9"
+body == ""
+
+# file_server serves the requested byte range
+GET https://localhost:9443/index.txt
+Range: bytes=0-4
+[Options]
+insecure: true
+HTTP 206
+[Asserts]
+header "Content-Range" == "bytes 0-4/9"
+body == "index"
+
 # requests for sub-folder followed by .. result in sanitized path
 GET https://localhost:9443/non-existent/../index.txt
 [Options]
@@ -114,6 +133,12 @@ localhost {
 ```
 
 GET https://localhost:9443
+[Options]
+insecure: true
+HTTP 404
+
+# file_server returns 404 for a missing file
+GET https://localhost:9443/missing.txt
 [Options]
 insecure: true
 HTTP 404
