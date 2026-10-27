@@ -381,10 +381,12 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 		// clean the path and split, if configured -- we must split before
 		// globbing so that the file system doesn't include the remainder
 		// ("afterSplit") in the filename; be sure to restore trailing slash
-		beforeSplit, afterSplit := m.firstSplit(path.Clean(expandedFile))
-		if strings.HasSuffix(file, "/") {
-			beforeSplit += "/"
+		// so that "/file/" or "/file/./" cannot match a regular file
+		cleanedFile := path.Clean(expandedFile)
+		if strings.HasSuffix(expandedFile, "/") && !strings.HasSuffix(cleanedFile, "/") {
+			cleanedFile += "/"
 		}
+		beforeSplit, afterSplit := m.firstSplit(cleanedFile)
 
 		// create the full path to the file by prepending the site root
 		fullPattern := caddyhttp.SanitizedPathJoin(root, beforeSplit)

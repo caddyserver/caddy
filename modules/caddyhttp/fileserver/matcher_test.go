@@ -55,7 +55,28 @@ func TestFileMatcher(t *testing.T) {
 		f.Close()
 	}
 
+	if err := os.WriteFile("./testdata/.env", []byte("SECRET=1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		os.Remove("./testdata/.env")
+	})
+
 	for i, tc := range []testCase{
+		{
+			path:         "/.env",
+			expectedPath: "/.env",
+			expectedType: "file",
+			matched:      true,
+		},
+		{
+			path:    "/.env/",
+			matched: false,
+		},
+		{
+			path:    "/.env/./",
+			matched: false,
+		},
 		{
 			path:         "/foo.txt",
 			expectedPath: "/foo.txt",
@@ -63,9 +84,21 @@ func TestFileMatcher(t *testing.T) {
 			matched:      true,
 		},
 		{
-			path:         "/foo.txt/",
-			expectedPath: "/foo.txt",
-			expectedType: "file",
+			path:    "/foo.txt/",
+			matched: false,
+		},
+		{
+			path:    "/foo.txt/./",
+			matched: false,
+		},
+		{
+			path:    "/foo.txt//",
+			matched: false,
+		},
+		{
+			path:         "/foodir/./",
+			expectedPath: "/foodir/",
+			expectedType: "directory",
 			matched:      true,
 		},
 		{
@@ -330,8 +363,18 @@ func TestPHPFileMatcher(t *testing.T) {
 			matched:      true,
 		},
 		{
-			path:         "/notphp.php.txt/",
-			expectedPath: "/notphp.php.txt",
+			path:    "/notphp.php.txt/",
+			matched: false,
+		},
+		{
+			path:         "/index.php/",
+			expectedPath: "/index.php",
+			expectedType: "file",
+			matched:      true,
+		},
+		{
+			path:         "/index.php/somewhere/",
+			expectedPath: "/index.php",
 			expectedType: "file",
 			matched:      true,
 		},
