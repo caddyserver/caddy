@@ -85,7 +85,7 @@ func TestCacheLoggerFollowsCacheOwnerAcrossReload(t *testing.T) {
 }
 
 // A reload that only changes logging must not replace the cache, and the
-// reused cache's logging must honour the new config's level. Replacing the
+// reused cache's logging must honor the new config's level. Replacing the
 // cache instead would discard every cached certificate because an operator
 // raised a log level.
 func TestCacheLoggerAppliesReloadedLevel(t *testing.T) {
@@ -152,5 +152,40 @@ func TestCacheLoggerUsesCreatorBeforePublication(t *testing.T) {
 	}
 	if got := servingLogs.FilterMessage("loading certificate").Len(); got != 0 {
 		t.Errorf("serving config received %d logs from a cache it does not own, want 0", got)
+	}
+}
+
+// A config's logger is a tee of per-output cores, each with its own level,
+// plus name-based include/exclude filtering and optional sampling — and all
+// of those decide in Check, not Write. The cache logger therefore has to let
+// the delegate's Check pick the sinks; writing to the delegate directly would
+// send debug cache entries to error-only outputs and ignore filtering.
+func TestCacheLoggerRespectsDelegatePerSinkLevels(t *testing.T) {
+	withCleanCertCacheState(t)
+
+	debugCore, debugLogs := observer.New(zapcore.DebugLevel)
+	errorCore, errorLogs := observer.New(zapcore.ErrorLevel)
+	app := &TLS{logger: zap.New(zapcore.NewTee(debugCore, errorCore))}
+
+	opts := baseOpts()
+	opts.Logger = app.cacheLogger()
+	app.provisionCertCache(opts)
+	app.publishCertCache()
+
+	opts.Logger.Debug("added certificate to cache")
+	if got := debugLogs.FilterMessage("added certificate to cache").Len(); got != 1 {
+		t.Errorf("debug sink received %d debug cache entries, want 1", got)
+	}
+	if got := errorLogs.FilterMessage("added certificate to cache").Len(); got != 0 {
+		t.Errorf("error-only sink received %d debug cache entries, want 0", got)
+	}
+
+	opts.Logger.With(zap.String("identifier", "example.com")).Error("renewing certificate")
+	errs := errorLogs.FilterMessage("renewing certificate").All()
+	if len(errs) != 1 {
+		t.Fatalf("error sink received %d error cache entries, want 1", len(errs))
+	}
+	if got := errs[0].ContextMap()["identifier"]; got != "example.com" {
+		t.Errorf("field reached the delegate as %v, want example.com", got)
 	}
 }

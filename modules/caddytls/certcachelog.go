@@ -69,10 +69,10 @@ func (t *TLS) cacheLogger() *zap.Logger {
 // that currently owns the certificate cache. See (*TLS).cacheLogger for why the
 // cache's logger has to be indirect.
 //
-// Entries are handed to the delegate core unmodified, so the logger name zap
-// built up, and the level, time and fields, are all the delegate's to encode,
-// and the per-module include/exclude filtering Caddy installs in that core
-// still applies. The one thing delegating at the core level cannot carry over
+// Check defers to the delegate core's own Check, so the logger name zap built
+// up, the per-output levels, the per-module include/exclude filtering, and the
+// sampling Caddy configures all apply to cache entries exactly as they do to
+// the owning app's other logs. The one thing delegating at the core level cannot carry over
 // is the Logger-level options Caddy builds from with_caller and
 // with_stacktrace: those are opt-in, and an absent caller field is better than
 // one naming a frame inside this file.
@@ -114,10 +114,18 @@ func (c *cacheLogCore) With(fields []zapcore.Field) zapcore.Core {
 }
 
 func (c *cacheLogCore) Check(ent zapcore.Entry, ce *zapcore.CheckedEntry) *zapcore.CheckedEntry {
-	if c.Enabled(ent.Level) {
-		return ce.AddCore(ent, c)
+	// Hand the decision to the delegate rather than registering this core,
+	// so the cores the delegate's own Check accepts are the ones that write.
+	// Caddy builds a config's logger as a tee of per-output cores, each with
+	// its own level, wrapped in name-based include/exclude filtering and
+	// optional sampling — and all three act in Check, not Write. Registering
+	// this core here and writing to the delegate from Write would bypass
+	// every one of them.
+	d := c.delegate()
+	if len(c.fields) > 0 {
+		d = d.With(c.fields)
 	}
-	return ce
+	return d.Check(ent, ce)
 }
 
 func (c *cacheLogCore) Write(ent zapcore.Entry, fields []zapcore.Field) error {
