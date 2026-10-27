@@ -149,3 +149,53 @@ func TestPHPFastCGIProtectedRouteIgnoresDotSegments(t *testing.T) {
 		})
 	}
 }
+
+// The php_fastcgi directory redirect must stay on the requesting origin. Its
+// matcher judges the cleaned request path, so /%2Fevil.com%2F..%2Fsub is matched
+// as /sub and resolves to <root>/sub/index.php, but the Location header used to
+// be built from the raw original path and came out as //evil.com/../sub/, which
+// browsers treat as a scheme-relative URL to another host.
+func TestPHPFastCGIDirectoryRedirectStaysOnOrigin(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "sub"), 0o755); err != nil {
+		t.Fatalf("creating sub: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "sub", "index.php"), []byte("<?php // index"), 0o644); err != nil {
+		t.Fatalf("writing index.php: %v", err)
+	}
+
+	tester := caddytest.NewTester(t)
+	tester.InitServer(fmt.Sprintf(`{
+		skip_install_trust
+		admin localhost:2999
+		http_port     9080
+		https_port    9443
+		grace_period  1ns
+	}
+
+	localhost:9080 {
+		root * %s
+		php_fastcgi 127.0.0.1:9
+	}
+	`, root), "caddyfile")
+
+	for _, uri := range []string{
+		"/sub",
+		"/sub?a=1",
+		"/%2Fevil.com%2F..%2Fsub",
+		"/%5Cevil.com%2F..%2Fsub",
+	} {
+		want := "http://localhost:9080/sub/"
+		if strings.Contains(uri, "?") {
+			want += "?a=1"
+		}
+		resp := tester.AssertRedirect("http://localhost:9080"+uri, want, http.StatusPermanentRedirect)
+		if resp == nil {
+			continue
+		}
+		// a Location beginning with // or /\ is scheme-relative to browsers
+		if loc := resp.Header.Get("Location"); strings.HasPrefix(loc, "//") || strings.HasPrefix(loc, `/\`) {
+			t.Errorf("requesting %q: Location %q is not origin-relative", uri, loc)
+		}
+	}
+}
