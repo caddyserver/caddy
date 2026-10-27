@@ -1312,6 +1312,110 @@ func TestIdleTimeoutReaderClearBetweenReads(t *testing.T) {
 	}
 }
 
+func TestIdleTimeoutReader_HandlerDeadline(t *testing.T) {
+	const idle = time.Hour
+	now := time.Now()
+	earlier := now.Add(30 * time.Minute)
+	later := now.Add(2 * time.Hour)
+	hard := now.Add(20 * time.Minute)
+
+	// the values recorded for each SetReadDeadline call
+	const (
+		idleSet    = "idle"
+		zeroSet    = "zero"
+		earlierSet = "earlier"
+		laterSet   = "later"
+		hardSet    = "hard"
+		otherSet   = "other"
+	)
+
+	for i, tc := range []struct {
+		name      string
+		clear     bool
+		hard      bool
+		deadlines []time.Time
+		expected  []string
+	}{
+		{
+			name:      "earlier handler deadline caps the idle reset",
+			deadlines: []time.Time{earlier},
+			expected:  []string{earlierSet, earlierSet, earlierSet, zeroSet},
+		},
+		{
+			name:      "clearing puts back the handler deadline",
+			clear:     true,
+			deadlines: []time.Time{earlier},
+			expected:  []string{earlierSet, earlierSet, earlierSet, earlierSet, zeroSet},
+		},
+		{
+			name:      "later handler deadline doesn't loosen the idle timeout",
+			deadlines: []time.Time{later},
+			expected:  []string{laterSet, idleSet, idleSet, zeroSet},
+		},
+		{
+			name:      "clearing puts back a later handler deadline",
+			clear:     true,
+			deadlines: []time.Time{later},
+			expected:  []string{laterSet, idleSet, laterSet, idleSet, zeroSet},
+		},
+		{
+			name:      "zero handler deadline removes the ceiling",
+			deadlines: []time.Time{earlier, {}},
+			expected:  []string{earlierSet, zeroSet, idleSet, idleSet, zeroSet},
+		},
+		{
+			name:      "earlier hard deadline stays the ceiling",
+			clear:     true,
+			hard:      true,
+			deadlines: []time.Time{earlier},
+			expected:  []string{earlierSet, hardSet, hardSet, hardSet, zeroSet},
+		},
+	} {
+		rec := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+		r := &IdleTimeoutReader{
+			ReadCloser:        io.NopCloser(strings.NewReader("ab")),
+			Ctrl:              http.NewResponseController(rec),
+			Deadline:          IdleDeadline{Timeout: idle},
+			Logger:            zap.NewNop(),
+			ClearBetweenReads: tc.clear,
+		}
+		if tc.hard {
+			r.Deadline.HardDeadline = hard
+		}
+
+		// handlers usually reach the reader through other wrappers
+		w := &readDeadlineWriter{ResponseWriterWrapper: ResponseWriterWrapper{ResponseWriter: rec}, reader: r}
+		ctrl := http.NewResponseController(&ResponseWriterWrapper{ResponseWriter: w})
+		for _, d := range tc.deadlines {
+			require.NoError(t, ctrl.SetReadDeadline(d))
+		}
+
+		before := time.Now()
+		_, err := io.Copy(io.Discard, r)
+		require.NoError(t, err)
+		after := time.Now()
+
+		var actual []string
+		for _, d := range rec.snapshot() {
+			switch {
+			case d.IsZero():
+				actual = append(actual, zeroSet)
+			case d.Equal(earlier):
+				actual = append(actual, earlierSet)
+			case d.Equal(later):
+				actual = append(actual, laterSet)
+			case d.Equal(hard):
+				actual = append(actual, hardSet)
+			case !d.Before(before.Add(idle)) && !d.After(after.Add(idle)):
+				actual = append(actual, idleSet)
+			default:
+				actual = append(actual, otherSet)
+			}
+		}
+		assert.Equal(t, tc.expected, actual, "Test %d (%s)", i, tc.name)
+	}
+}
+
 // TestIdleTimeoutReaderHandlerDoneClearsReleasedHardDeadline checks
 // that the hard deadline put back after a partial read doesn't outlive
 // the handler when it returns without reading the rest of the body.
