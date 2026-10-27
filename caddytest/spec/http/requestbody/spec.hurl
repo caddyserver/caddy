@@ -11,19 +11,32 @@ Content-Type: text/caddyfile
 localhost {
 	log
 	request_body {
-        max_size 2B
+        max_size 3B
     }
     reverse_proxy localhost:8000 # to fake body reading
 	handle_errors 4xx {
-		respond "OK"
+		respond "Too large"
 	}
 }
 http://localhost:8000 {
-	respond "Failed"
+	respond "{http.request.body}"
 }
 ```
 
-GET https://localhost:9443
+# request_body accepts a body exactly at the configured size limit
+POST https://localhost:9443
+[Options]
+delay: 1s
+insecure: true
+```
+ok
+```
+HTTP 200
+[Asserts]
+body == "ok\n"
+
+# request_body rejects a body larger than the configured size limit
+POST https://localhost:9443
 [Options]
 delay: 1s
 insecure: true
@@ -31,6 +44,6 @@ insecure: true
 Hello
 ```
 HTTP 413
-`OK`
+`Too large`
 
 # TODO: how to test{read,write}_timeout?
