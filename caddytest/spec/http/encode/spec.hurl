@@ -20,11 +20,13 @@ localhost {
 GET https://localhost:9443
 Accept-Encoding: gzip
 [Options]
+compressed: true
 insecure: true
 HTTP 200
 [Asserts]
 header "Content-Encoding" == "gzip"
 header "Vary" contains "Accept-Encoding"
+body == "This is a test response that should not be compressed with gzip encoding."
 
 
 # encode does not compress when client doesn't accept encoding
@@ -135,6 +137,36 @@ HTTP 200
 [Asserts]
 header "Content-Encoding" not exists
 body == "short"
+
+
+# encode does not use a compression explicitly excluded by the client
+# Configure a response that can be compressed with gzip
+POST http://localhost:2019/load
+Content-Type: text/caddyfile
+```
+{
+	skip_install_trust
+	http_port     9080
+	https_port    9443
+	local_certs
+}
+localhost {
+	encode gzip {
+		minimum_length 1
+	}
+	respond "This response can be compressed with gzip."
+}
+```
+
+# encode does not use a compression explicitly excluded by the client
+GET https://localhost:9443
+Accept-Encoding: gzip;q=0, identity;q=1
+[Options]
+insecure: true
+HTTP 200
+[Asserts]
+header "Content-Encoding" not exists
+body == "This response can be compressed with gzip."
 
 
 # Configure Caddy with large response
