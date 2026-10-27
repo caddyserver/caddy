@@ -49,6 +49,37 @@ HTTP 200
 body == "Backend response: POST /submit"
 
 
+# Configure reverse_proxy to an upstream that echoes the request body
+POST http://localhost:2019/load
+Content-Type: text/caddyfile
+```
+{
+	skip_install_trust
+	http_port     9080
+	https_port    9443
+	local_certs
+}
+localhost {
+	reverse_proxy localhost:8080
+}
+http://localhost:8080 {
+	respond "{http.request.body}"
+}
+```
+
+# reverse_proxy forwards the complete request body upstream
+POST https://localhost:9443/submit
+[Options]
+delay: 500ms
+insecure: true
+```
+request payload
+```
+HTTP 200
+[Asserts]
+body == "request payload\n"
+
+
 # Configure Caddy with reverse_proxy and header manipulation
 POST http://localhost:2019/load
 Content-Type: text/caddyfile
@@ -121,7 +152,9 @@ Content-Type: text/caddyfile
 	local_certs
 }
 localhost {
-	reverse_proxy localhost:8080 localhost:8081
+	reverse_proxy localhost:8080 localhost:8081 {
+		lb_policy round_robin
+	}
 }
 http://localhost:8080 {
 	respond "Backend 1"
@@ -137,14 +170,18 @@ GET https://localhost:9443
 delay: 500ms
 insecure: true
 HTTP 200
+[Asserts]
+body == "Backend 1"
 
 
-# Multiple requests may hit different backends
+# round_robin sends the next request to the other upstream
 GET https://localhost:9443
 [Options]
 delay: 500ms
 insecure: true
 HTTP 200
+[Asserts]
+body == "Backend 2"
 
 
 # Configure Caddy with reverse_proxy and transport options
