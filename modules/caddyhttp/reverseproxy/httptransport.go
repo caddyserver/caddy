@@ -824,7 +824,13 @@ func (t *TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) 
 			return nil, fmt.Errorf("managing client certificate: %v", err)
 		}
 		cfg.GetClientCertificate = func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
-			certs := caddytls.AllMatchingCertificates(t.ClientCertificateAutomate)
+			// tlsApp, not the published cache: this closure outlives the
+			// config that built it, since a transport goes on serving
+			// requests while the old config drains after a reload. The TLS
+			// app that managed this certificate is the one that has it, and
+			// a reload changing the cache options publishes a different
+			// cache which that certificate was never loaded into.
+			certs := tlsApp.AllMatchingCertificates(t.ClientCertificateAutomate)
 			var err error
 			for _, cert := range certs {
 				certCertificate := cert.Certificate // avoid taking address of iteration variable (gosec warning)

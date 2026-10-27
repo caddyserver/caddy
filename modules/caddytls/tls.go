@@ -51,6 +51,14 @@ func init() {
 // is committed. Provision therefore neither publishes nor destroys a
 // cache, so a config that fails to provision or start leaves the
 // committed config's cache untouched and still maintained.
+//
+// certCacheMu must not be held across a call into a certmagic cache, in
+// either lock mode. Both of the cache's callbacks into this package —
+// GetConfigForCert and the logger from cacheLogger — resolve the owning app
+// through appForCache, which takes certCacheMu for reading, and certmagic
+// invokes them while holding the cache's own lock. Holding ours across a
+// cache call would complete that cycle. Every site here takes what it needs
+// from these variables, releases, and only then touches a cache.
 var (
 	certCache   *certmagic.Cache
 	certCacheMu sync.RWMutex
@@ -90,6 +98,18 @@ func normalizeCacheOptions(opts certmagic.CacheOptions) certmagic.CacheOptions {
 // cacheReusable reports whether a cache created with have can serve a
 // config wanting want. Only the fields fixed at cache creation matter;
 // both must already be normalized.
+//
+// The two CacheOptions fields not compared here are both handled by
+// indirection rather than by replacing the cache, because replacing it
+// discards every cached certificate:
+//
+//   - GetConfigForCert resolves the owning app through appForCache, so a
+//     reused cache consults the config that currently owns it.
+//   - Logger resolves the owning app's logger at log time through
+//     cacheLogger, for the same reason. certmagic fixes a cache's logger in
+//     NewCache and never updates it, so without that indirection a reused
+//     cache would keep logging maintenance failures to the outgoing
+//     config's destination.
 func cacheReusable(have, want certmagic.CacheOptions) bool {
 	return have.Capacity == want.Capacity &&
 		have.OCSPCheckInterval == want.OCSPCheckInterval &&
@@ -324,7 +344,10 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		GetConfigForCert: func(cert certmagic.Certificate) (*certmagic.Config, error) {
 			return creator.appForCache().getConfigForName(cert.Names[0]), nil
 		},
-		Logger: t.logger.Named("cache"),
+		// not t.logger directly: a cache can outlive the app that created
+		// it, so its logger has to resolve the owning app at log time
+		// (see cacheLogger)
+		Logger: creator.cacheLogger(),
 	}
 	if t.Automation != nil {
 		cacheOpts.OCSPCheckInterval = time.Duration(t.Automation.OCSPCheckInterval)
@@ -1100,12 +1123,55 @@ func (t *TLS) getAutomationPolicyForName(name string) *AutomationPolicy {
 	return t.Automation.defaultInternalAutomationPolicy
 }
 
+// AllMatchingCertificates returns the list of all certificates in this app's
+// cache which could be used to satisfy the given SAN.
+//
+// Callers provisioned by a config must use this and not the package-level
+// function of the same name, so that the certificates they see are the ones
+// their own config loaded and manages. The package-level function reads the
+// published cache, which changes the instant a reload with different cache
+// options commits — in the middle of requests the outgoing config is still
+// serving. The replacement cache is populated from scratch by the incoming
+// config's provisioning, so a lookup that follows the publication can miss a
+// certificate the outgoing config was managing and fail a handshake that was
+// working a moment earlier.
+//
+// Resolving through the app instead is stable for the life of the thing that
+// was provisioned with it: t.cache is set during Provision and never
+// reassigned, so an in-flight consumer keeps reading the cache its own config
+// populated. That stays true after the outgoing app's Cleanup has stopped that
+// cache — stopping a certmagic cache ends its maintenance goroutine and leaves
+// its contents readable — which is what makes this safe for a transport still
+// draining requests.
+//
+// The cache pointer is read under certCacheMu and the lock released before
+// calling into certmagic, which takes its own: holding ours across that call
+// would nest the two locks for no reason.
+func (t *TLS) AllMatchingCertificates(san string) []certmagic.Certificate {
+	certCacheMu.RLock()
+	cache := t.cache
+	certCacheMu.RUnlock()
+	if cache == nil {
+		return nil
+	}
+	return cache.AllMatchingCertificates(san)
+}
+
 // AllMatchingCertificates returns the list of all certificates in
 // the cache which could be used to satisfy the given SAN.
+//
+// Deprecated: use (*TLS).AllMatchingCertificates. This reads the cache of
+// whichever config is currently committed, which is not necessarily the config
+// that provisioned the caller; during a reload that changes the cache options
+// the two differ. See that method for the consequences.
 func AllMatchingCertificates(san string) []certmagic.Certificate {
 	certCacheMu.RLock()
-	defer certCacheMu.RUnlock()
-	return certCache.AllMatchingCertificates(san)
+	cache := certCache
+	certCacheMu.RUnlock()
+	if cache == nil {
+		return nil
+	}
+	return cache.AllMatchingCertificates(san)
 }
 
 func (t *TLS) HasCertificateForSubject(subject string) bool {
@@ -1113,14 +1179,7 @@ func (t *TLS) HasCertificateForSubject(subject string) bool {
 	// this config has loaded or manages, and it is asked during
 	// provisioning (by auto-HTTPS and ECH) before this app's cache is
 	// published
-	certCacheMu.RLock()
-	cache := t.cache
-	certCacheMu.RUnlock()
-	if cache == nil {
-		return false
-	}
-	allMatchingCerts := cache.AllMatchingCertificates(subject)
-	for _, cert := range allMatchingCerts {
+	for _, cert := range t.AllMatchingCertificates(subject) {
 		// check if the cert is manually loaded by this config
 		if _, ok := t.loaded[cert.Hash()]; ok {
 			return true

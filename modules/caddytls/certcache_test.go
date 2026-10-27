@@ -1,10 +1,19 @@
 package caddytls
 
 import (
+	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"math/big"
 	"testing"
 	"time"
 
 	"github.com/caddyserver/certmagic"
+	"go.uber.org/zap"
 )
 
 func noopGetConfig(certmagic.Certificate) (*certmagic.Config, error) {
@@ -211,4 +220,108 @@ func TestAppForCacheFollowsCacheOwner(t *testing.T) {
 		t.Fatal("app provisioning a private cache did not own it")
 	}
 	third.cache.Stop()
+}
+
+// selfSignedCert returns a short-lived self-signed certificate for san.
+func selfSignedCert(t *testing.T, san string) tls.Certificate {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generating key: %v", err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: san},
+		DNSNames:     []string{san},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(24 * time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("creating certificate: %v", err)
+	}
+	leaf, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatalf("parsing certificate: %v", err)
+	}
+	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key, Leaf: leaf}
+}
+
+// cacheUnmanagedCert puts cert into app's cache the way a manually-loaded
+// certificate reaches it. Storage is a temporary directory and OCSP stapling
+// is off, so this touches neither the real storage nor the network.
+func cacheUnmanagedCert(t *testing.T, app *TLS, cert tls.Certificate) {
+	t.Helper()
+	cfg := certmagic.New(app.cache, certmagic.Config{
+		Storage: &certmagic.FileStorage{Path: t.TempDir()},
+		OCSP:    certmagic.OCSPConfig{DisableStapling: true},
+		Logger:  zap.NewNop(),
+	})
+	if _, err := cfg.CacheUnmanagedTLSCertificate(context.Background(), cert, nil); err != nil {
+		t.Fatalf("caching unmanaged certificate: %v", err)
+	}
+}
+
+// An option-changing reload publishes a replacement cache, and anything the
+// outgoing config provisioned has to keep resolving certificates in the cache
+// its own config populated. A reverse-proxy transport is the case that matters:
+// its GetClientCertificate closure goes on serving requests while the outgoing
+// config drains, and the replacement cache is loaded from scratch by the
+// incoming config, so a lookup that follows the publication finds nothing and
+// fails a client-certificate handshake that was working a moment earlier.
+//
+// That is why the lookup is a method on the app rather than the package-level
+// AllMatchingCertificates, which reads whichever cache is published now.
+func TestAppCacheLookupSurvivesOptionChangingReload(t *testing.T) {
+	withCleanCertCacheState(t)
+
+	const san = "client.example.com"
+
+	outgoing := provisionAndPublish(baseOpts())
+	cacheUnmanagedCert(t, outgoing, selfSignedCert(t, san))
+
+	outgoingStopped := false
+	t.Cleanup(func() {
+		if !outgoingStopped {
+			outgoing.cache.Stop()
+		}
+	})
+
+	if got := len(outgoing.AllMatchingCertificates(san)); got != 1 {
+		t.Fatalf("outgoing config holds %d certificates for %s, want 1", got, san)
+	}
+
+	// a reload changing an option fixed at cache creation, so the cache is
+	// replaced rather than reused
+	changed := baseOpts()
+	changed.Capacity++
+	incoming := new(TLS)
+	incoming.provisionCertCache(changed)
+	if incoming.cache == outgoing.cache {
+		t.Fatal("expected a capacity change to replace the cache")
+	}
+	incoming.publishCertCache()
+
+	// the published cache is now the incoming config's, which never loaded
+	// this certificate — this is exactly what the package-level lookup sees
+	if got := len(AllMatchingCertificates(san)); got != 0 {
+		t.Fatalf("replacement cache holds %d certificates for %s, want 0", got, san)
+	}
+
+	// an in-flight consumer of the outgoing config still finds it
+	if got := len(outgoing.AllMatchingCertificates(san)); got != 1 {
+		t.Errorf("outgoing config lost its certificate when the reload published: got %d, want 1", got)
+	}
+
+	// and still finds it after that cache has been stopped, which is what the
+	// outgoing app's Cleanup does once the new config is committed; stopping a
+	// certmagic cache ends its maintenance goroutine and leaves its contents
+	// readable, so a draining transport is covered for its whole lifetime
+	outgoing.cache.Stop()
+	outgoingStopped = true
+	if got := len(outgoing.AllMatchingCertificates(san)); got != 1 {
+		t.Errorf("stopped cache served %d certificates, want 1", got)
+	}
 }
