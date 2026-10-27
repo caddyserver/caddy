@@ -508,6 +508,59 @@ func TestServer_DetermineTrustedProxy_MatchRightMostUntrustedSkippingTrusted(t *
 	assert.Equal(t, clientIP, "45.54.45.54")
 }
 
+func TestServer_serveHTTP_RejectsPathLikeHost(t *testing.T) {
+	for _, tc := range []struct {
+		host   string
+		reject bool
+	}{
+		{host: ".", reject: true},
+		{host: "..", reject: true},
+		{host: "..:443", reject: true},
+		{host: "[..]:443", reject: true},
+		{host: "../../..", reject: true},
+		{host: "a/b", reject: true},
+		{host: `a\b`, reject: true},
+		{host: `..\..`, reject: true},
+		{host: "a\x00b", reject: true},
+		{host: "...", reject: true},
+		{host: "....:443", reject: true},
+		{host: ".. ", reject: true},
+		{host: "a b", reject: true},
+		{host: "example.com", reject: false},
+		{host: "example.com:8443", reject: false},
+		{host: "example.com.", reject: false},
+		{host: "..example.com", reject: false},
+		{host: "127.0.0.1:80", reject: false},
+		{host: "[::1]:443", reject: false},
+		{host: "[::1]", reject: false},
+	} {
+		t.Run(tc.host, func(t *testing.T) {
+			called := false
+			s := &Server{
+				logger: zap.NewNop(),
+				primaryHandlerChain: HandlerFunc(func(http.ResponseWriter, *http.Request) error {
+					called = true
+					return nil
+				}),
+			}
+
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.Host = tc.host
+
+			err := s.serveHTTP(httptest.NewRecorder(), req)
+			if !tc.reject {
+				require.NoError(t, err)
+				assert.True(t, called)
+				return
+			}
+			var handlerErr HandlerError
+			require.ErrorAs(t, err, &handlerErr)
+			assert.Equal(t, http.StatusBadRequest, handlerErr.StatusCode)
+			assert.False(t, called)
+		})
+	}
+}
+
 // TestServer_serveHTTP_DropsUnderscoreHeader covers GHSA-f59h-q822-g45g: an
 // underscore-named alias (e.g. `Remote_user`) of a hyphenated header must be
 // dropped before any handler runs.
