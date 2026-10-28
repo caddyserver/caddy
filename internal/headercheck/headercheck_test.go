@@ -22,9 +22,10 @@
 // writes to a header, so neither covers a direct write or a delete. A key
 // that is not canonical there is a silent lookup miss, not a compile error.
 //
-// This covers three shapes the enabled linters miss:
+// This covers four shapes the enabled linters miss:
 //
 //	h["x-key"] = []string{"v"}          // direct write
+//	http.Header{"x-key": {"v"}}         // composite literal
 //	delete(h, "x-key")                  // delete builtin
 //	h["x-key"] = append(h["x-key"], "v) // read-modify-write
 //
@@ -164,6 +165,24 @@ func checkFile(t *testing.T, pkg *packages.Package, file *ast.File) int {
 			}
 			checked++
 			report(node.Index.Pos(), key, "http.Header index")
+
+		// http.Header{"Key": ...}, which stores the key verbatim.
+		case *ast.CompositeLit:
+			if !isHeader(node) {
+				return true
+			}
+			for _, elt := range node.Elts {
+				kv, ok := elt.(*ast.KeyValueExpr)
+				if !ok {
+					continue
+				}
+				key, ok := keyOf(kv.Key)
+				if !ok {
+					continue
+				}
+				checked++
+				report(kv.Key.Pos(), key, "http.Header literal")
+			}
 
 		// delete(h, "Key"), which no enabled linter inspects.
 		case *ast.CallExpr:
