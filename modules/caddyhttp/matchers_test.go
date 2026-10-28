@@ -437,6 +437,31 @@ func TestPathMatcher(t *testing.T) {
 			input:  "/admin%2fpanelX",
 			expect: false,
 		},
+		{
+			match:  MatchPath{"/secret/*"},
+			input:  "/%C5%BFecret/f.txt", // U+017F LATIN SMALL LETTER LONG S
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/secret"},
+			input:  "/%C5%BFECRET",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/ſecret"},
+			input:  "/SECRET",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/admin"},
+			input:  "/adm%C4%B1n", // U+0131 LATIN SMALL LETTER DOTLESS I
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/a%2fsecret"},
+			input:  "/a%2F%C5%BFecret",
+			expect: true,
+		},
 	} {
 		err := tc.match.Provision(caddy.Context{})
 		if err == nil && tc.provisionErr {

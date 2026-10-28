@@ -29,6 +29,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"cel.dev/cel-go/cel"
 	"cel.dev/cel-go/common"
@@ -417,7 +419,7 @@ func (m MatchPath) Provision(_ caddy.Context) error {
 			m[0] = m[i]
 			break
 		}
-		m[i] = strings.ToLower(m[i])
+		m[i] = foldPathCase(m[i])
 	}
 	return nil
 }
@@ -436,7 +438,7 @@ func (m MatchPath) MatchWithError(r *http.Request) (bool, error) {
 	// related to differences between operating systems, applications,
 	// etc; if case-sensitive matching is needed, the regex matcher
 	// can be used instead.
-	reqPath := normalizeWindowsPath(strings.ToLower(r.URL.Path))
+	reqPath := normalizeWindowsPath(foldPathCase(r.URL.Path))
 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
@@ -653,8 +655,26 @@ func (MatchPath) matchPatternWithEscapeSequence(escapedPath, matchPath string) b
 	matchPath = strings.ReplaceAll(matchPath, "%*", "*")
 
 	// ignore error here because we can't handle it anyway
-	matches, _ := path.Match(matchPath, strings.ToLower(sb.String()))
+	matches, _ := path.Match(matchPath, foldPathCase(sb.String()))
 	return matches
+}
+
+// foldPathCase lower-cases p for the case-insensitive path matcher. Each
+// character is upper-cased before being lower-cased so that letters which
+// are their own lowercase form but upper-case to ASCII, such as 'ſ'
+// (U+017F) and 'ı' (U+0131), fold onto 's' and 'i'. strings.ToLower leaves
+// them alone, yet a case-insensitive filesystem (e.g. APFS on macOS) opens
+// /secret for a request to /ſecret, which would otherwise slip past a
+// matcher for /secret.
+func foldPathCase(p string) string {
+	for i := 0; i < len(p); i++ {
+		if p[i] >= utf8.RuneSelf {
+			return strings.Map(func(r rune) rune {
+				return unicode.ToLower(unicode.ToUpper(r))
+			}, p)
+		}
+	}
+	return strings.ToLower(p)
 }
 
 // windowsEscapedPathSeparatorRepl normalizes Windows backslash separators
