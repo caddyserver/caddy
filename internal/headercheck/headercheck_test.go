@@ -141,7 +141,7 @@ func checkFile(t *testing.T, pkg *packages.Package, file *ast.File) int {
 		if !ok || tv.Type == nil {
 			return false
 		}
-		named, ok := tv.Type.(*types.Named)
+		named, ok := types.Unalias(tv.Type).(*types.Named)
 		if !ok {
 			return false
 		}
