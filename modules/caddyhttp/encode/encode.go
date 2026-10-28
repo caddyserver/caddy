@@ -159,12 +159,76 @@ func (enc *Encode) Validate() error {
 }
 
 func isEncodeAllowed(h http.Header) bool {
-	for _, v := range h["Cache-Control"] {
-		if strings.Contains(v, "no-transform") {
+	return !slices.ContainsFunc(h["Cache-Control"], hasNoTransform)
+}
+
+// hasNoTransform reports whether the Cache-Control field line v carries a
+// well-formed no-transform directive. RFC 9111 section 5.2 compares directive
+// names case-insensitively.
+func hasNoTransform(v string) bool {
+	for v != "" {
+		var elem string
+		elem, v = cutListElement(v)
+		name, arg, hasArg := strings.Cut(strings.Trim(elem, " \t"), "=")
+		if strings.EqualFold(name, "no-transform") && (!hasArg || isToken(arg) || isQuotedString(arg)) {
+			return true
+		}
+	}
+	return false
+}
+
+// cutListElement splits v at its first comma outside a quoted-string.
+func cutListElement(v string) (elem, rest string) {
+	quoted := false
+	for i := 0; i < len(v); i++ {
+		switch {
+		case quoted && v[i] == '\\':
+			i++
+		case v[i] == '"':
+			quoted = !quoted
+		case !quoted && v[i] == ',':
+			return v[:i], v[i+1:]
+		}
+	}
+	return v, ""
+}
+
+// isQuotedString reports whether s is a quoted-string as defined by RFC 9110
+// section 5.6.4.
+func isQuotedString(s string) bool {
+	if len(s) < 2 || s[0] != '"' {
+		return false
+	}
+	for i := 1; i < len(s); i++ {
+		switch s[i] {
+		case '\\':
+			i++
+		case '"':
+			return i == len(s)-1
+		}
+	}
+	return false
+}
+
+func isToken(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := range len(s) {
+		if !isTokenChar(s[i]) {
 			return false
 		}
 	}
 	return true
+}
+
+// isTokenChar reports whether c is a tchar as defined by RFC 9110 section 5.6.2.
+func isTokenChar(c byte) bool {
+	switch {
+	case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', '0' <= c && c <= '9':
+		return true
+	}
+	return strings.IndexByte("!#$%&'*+-.^_`|~", c) >= 0
 }
 
 func hasNonEmptyValue(h http.Header, key string) bool {

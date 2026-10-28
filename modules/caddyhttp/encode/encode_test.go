@@ -363,17 +363,59 @@ func TestIsEncodeAllowed(t *testing.T) {
 			name: "Cache-Control HTTP header ending with no-transform directive",
 			headers: http.Header{
 				"Accept-Encoding": {"gzip"},
-				"Cache-Control":   {"no-cache; no-transform"},
+				"Cache-Control":   {"no-cache, no-transform"},
 			},
 			expected: false,
+		},
+		{
+			name: "Cache-Control HTTP header with directives separated by semicolons",
+			headers: http.Header{
+				"Cache-Control": {"no-cache; no-transform"},
+			},
+			expected: true,
 		},
 		{
 			name: "With Cache-Control HTTP header no-transform as Cache-Extension value",
 			headers: http.Header{
 				"Accept-Encoding": {"gzip"},
-				"Cache-Control":   {`no-store; no-cache; community="no-transform"`},
+				"Cache-Control":   {`no-store, no-cache, community="no-transform"`},
+			},
+			expected: true,
+		},
+		{
+			name: "Cache-Control HTTP header with no-transform inside a quoted argument containing commas",
+			headers: http.Header{
+				"Cache-Control": {`private="Set-Cookie, no-transform"`},
+			},
+			expected: true,
+		},
+		{
+			name: "Cache-Control HTTP header with no-transform after a quoted argument",
+			headers: http.Header{
+				"Cache-Control": {`private="Set-Cookie, Vary", no-transform`},
 			},
 			expected: false,
+		},
+		{
+			name: "Cache-Control HTTP header with a malformed no-transform argument",
+			headers: http.Header{
+				"Cache-Control": {"no-transform=, no-transform =1"},
+			},
+			expected: true,
+		},
+		{
+			name: "Cache-Control HTTP header with no-transform in another case",
+			headers: http.Header{
+				"Cache-Control": {"max-age=0, No-Transform"},
+			},
+			expected: false,
+		},
+		{
+			name: "Cache-Control HTTP header with no-transform inside a longer token",
+			headers: http.Header{
+				"Cache-Control": {"x-no-transform-ext, no-transformation"},
+			},
+			expected: true,
 		},
 		{
 			name: "Cache-Control HTTP header with no-transform on a later line",
