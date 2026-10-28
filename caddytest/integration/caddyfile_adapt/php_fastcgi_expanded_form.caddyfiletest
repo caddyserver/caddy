@@ -8,7 +8,7 @@ route {
 		}
 		not path */
 	}
-	redir @canonicalPath ./{http.request.orig_uri.path.file}/{orig_?query} 308
+	redir @canonicalPath ./{http.request.orig_uri.path.file_escaped}/{orig_?query} 308
 
 	# If the requested file does not exist, try index files
 	@indexFiles {
@@ -50,7 +50,7 @@ route {
 													"handler": "static_response",
 													"headers": {
 														"Location": [
-															"./{http.request.orig_uri.path.file}/{http.request.orig_uri.prefixed_query}"
+															"./{http.request.orig_uri.path.file_escaped}/{http.request.orig_uri.prefixed_query}"
 														]
 													},
 													"status_code": 308

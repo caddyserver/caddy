@@ -22,6 +22,7 @@ import (
 	"net/http/fcgi"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -154,14 +155,22 @@ func TestPHPFastCGIProtectedRouteIgnoresDotSegments(t *testing.T) {
 // matcher judges the cleaned request path, so /%2Fevil.com%2F..%2Fsub is matched
 // as /sub and resolves to <root>/sub/index.php, but the Location header used to
 // be built from the raw original path and came out as //evil.com/../sub/, which
-// browsers treat as a scheme-relative URL to another host.
+// browsers treat as a scheme-relative URL to another host. The relative
+// reference is built from the escaped original segment, so names with reserved
+// or non-ASCII characters must still round-trip to the same directory.
 func TestPHPFastCGIDirectoryRedirectStaysOnOrigin(t *testing.T) {
-	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, "sub"), 0o755); err != nil {
-		t.Fatalf("creating sub: %v", err)
+	dirs := []string{"sub", "a b", "a#b", "50%", "a;b", "café", "x/sub"}
+	if runtime.GOOS != "windows" {
+		dirs = append(dirs, "a?b", "a:b")
 	}
-	if err := os.WriteFile(filepath.Join(root, "sub", "index.php"), []byte("<?php // index"), 0o644); err != nil {
-		t.Fatalf("writing index.php: %v", err)
+	root := t.TempDir()
+	for _, dir := range dirs {
+		if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(dir)), 0o755); err != nil {
+			t.Fatalf("creating %s: %v", dir, err)
+		}
+		if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(dir), "index.php"), []byte("<?php // index"), 0o644); err != nil {
+			t.Fatalf("writing %s/index.php: %v", dir, err)
+		}
 	}
 
 	tester := caddytest.NewTester(t)
@@ -179,23 +188,42 @@ func TestPHPFastCGIDirectoryRedirectStaysOnOrigin(t *testing.T) {
 	}
 	`, root), "caddyfile")
 
-	for _, uri := range []string{
-		"/sub",
-		"/sub?a=1",
-		"/%2Fevil.com%2F..%2Fsub",
-		"/%5Cevil.com%2F..%2Fsub",
-	} {
-		want := "http://localhost:9080/sub/"
-		if strings.Contains(uri, "?") {
-			want += "?a=1"
-		}
-		resp := tester.AssertRedirect("http://localhost:9080"+uri, want, http.StatusPermanentRedirect)
+	tests := []struct {
+		uri  string
+		want string
+	}{
+		{uri: "/sub", want: "/sub/"},
+		{uri: "/sub?a=1", want: "/sub/?a=1"},
+		{uri: "/%2Fevil.com%2F..%2Fsub", want: "/%2Fevil.com%2F..%2Fsub/"},
+		{uri: "/%5Cevil.com%2F..%2Fsub", want: "/%5Cevil.com%2F..%2Fsub/"},
+		{uri: "/a%20b", want: "/a%20b/"},
+		{uri: "/a%23b", want: "/a%23b/"},
+		{uri: "/50%25", want: "/50%25/"},
+		{uri: "/a;b", want: "/a;b/"},
+		{uri: "/caf%C3%A9", want: "/caf%C3%A9/"},
+		{uri: "/x%2Fsub", want: "/x%2Fsub/"},
+	}
+	if runtime.GOOS != "windows" {
+		tests = append(tests,
+			struct{ uri, want string }{uri: "/a%3Fb", want: "/a%3Fb/"},
+			struct{ uri, want string }{uri: "/a:b", want: "/a:b/"},
+		)
+	}
+	for _, tc := range tests {
+		resp := tester.AssertRedirect("http://localhost:9080"+tc.uri, "http://localhost:9080"+tc.want, http.StatusPermanentRedirect)
 		if resp == nil {
 			continue
 		}
+		loc := resp.Header.Get("Location")
 		// a Location beginning with // or /\ is scheme-relative to browsers
-		if loc := resp.Header.Get("Location"); strings.HasPrefix(loc, "//") || strings.HasPrefix(loc, `/\`) {
-			t.Errorf("requesting %q: Location %q is not origin-relative", uri, loc)
+		if strings.HasPrefix(loc, "//") || strings.HasPrefix(loc, `/\`) {
+			t.Errorf("requesting %q: Location %q is not origin-relative", tc.uri, loc)
+		}
+		for i := 0; i < len(loc); i++ {
+			if loc[i] < 0x21 || loc[i] > 0x7e {
+				t.Errorf("requesting %q: Location %q contains an unescaped byte %#x", tc.uri, loc, loc[i])
+				break
+			}
 		}
 	}
 }

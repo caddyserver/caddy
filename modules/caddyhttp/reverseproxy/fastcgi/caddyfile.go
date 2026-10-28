@@ -356,7 +356,7 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 			// segment containing ':' from being read as a scheme.
 			redirHandler := caddyhttp.StaticResponse{
 				StatusCode: caddyhttp.WeakString(strconv.Itoa(http.StatusPermanentRedirect)),
-				Headers:    http.Header{"Location": []string{"./{http.request.orig_uri.path.file}/{http.request.orig_uri.prefixed_query}"}},
+				Headers:    http.Header{"Location": []string{"./{http.request.orig_uri.path.file_escaped}/{http.request.orig_uri.prefixed_query}"}},
 			}
 			redirRoute := caddyhttp.Route{
 				MatcherSetsRaw: []caddy.ModuleMap{redirMatcherSet},
