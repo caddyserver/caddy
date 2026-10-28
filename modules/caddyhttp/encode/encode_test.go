@@ -129,7 +129,7 @@ func TestPreferOrder(t *testing.T) {
 			name:     "PreferOrder(): 2 accept (1 empty), 3 prefer",
 			accept:   "gzip,,zstd",
 			prefer:   []string{"zstd", "br", "gzip"},
-			expected: []string{"zstd", "gzip", ""},
+			expected: []string{"zstd", "gzip"},
 		},
 		{
 			name:     "PreferOrder(): 1 accept, 2 prefer",
@@ -454,5 +454,59 @@ func TestServeHTTPDefaultEncodingPreference(t *testing.T) {
 	contentEncoding2 := w2.Header().Get("Content-Encoding")
 	if contentEncoding2 != "gzip" {
 		t.Errorf("Expected Content-Encoding to be 'gzip' when explicitly preferred, got '%s'", contentEncoding2)
+	}
+}
+
+// RFC 9110 section 5.3: a recipient MAY combine multiple field lines with the
+// same name by joining their values with commas; the semantics of a list-based
+// field like Accept-Encoding do not change when it is split across lines.
+func TestAcceptedEncodingsMultipleFieldLines(t *testing.T) {
+	for _, tc := range []struct {
+		lines    []string
+		expected []string
+	}{
+		{[]string{"gzip", "br"}, []string{"br", "gzip"}},
+		{[]string{"identity", "br"}, []string{"br", "identity"}},
+		{[]string{"gzip;q=0", "br"}, []string{"br"}},
+		{[]string{"", "gzip"}, []string{"gzip"}},
+		{[]string{"gzip;q=0.5", "zstd;q=0.8, br;q=0"}, []string{"zstd", "gzip"}},
+	} {
+		r, _ := http.NewRequest(http.MethodGet, "/", nil)
+		for _, l := range tc.lines {
+			r.Header.Add("Accept-Encoding", l)
+		}
+		got := AcceptedEncodings(r, []string{"zstd", "br", "gzip"})
+		if !slices.Equal(got, tc.expected) {
+			t.Errorf("Accept-Encoding lines %q: got %v, expected %v", tc.lines, got, tc.expected)
+		}
+	}
+}
+
+func TestServeHTTPMultipleAcceptEncodingLines(t *testing.T) {
+	enc := new(Encode)
+	enc.MinLength = 1
+	enc.writerPools = map[string]*sync.Pool{
+		"br": {New: func() any { return mockEncoder{} }},
+	}
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+	if err := enc.Provision(ctx); err != nil {
+		t.Fatal(err)
+	}
+	r, _ := http.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Add("Accept-Encoding", "identity")
+	r.Header.Add("Accept-Encoding", "br")
+	w := httptest.NewRecorder()
+	w.Header().Set("Content-Type", "text/plain")
+	next := caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+		w.WriteHeader(http.StatusOK)
+		_, err := w.Write([]byte("hello world"))
+		return err
+	})
+	if err := enc.ServeHTTP(w, r, next); err != nil {
+		t.Fatal(err)
+	}
+	if ce := w.Header().Get("Content-Encoding"); ce != "br" {
+		t.Errorf("expected Content-Encoding br, got %q", ce)
 	}
 }

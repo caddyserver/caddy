@@ -23,6 +23,7 @@ import (
 	"cmp"
 	"fmt"
 	"io"
+	"iter"
 	"math"
 	"net/http"
 	"slices"
@@ -579,17 +580,24 @@ func hasVaryValue(hdr http.Header, target string) bool {
 // encodings are not considered. See
 // http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html.
 func AcceptedEncodings(r *http.Request, preferredOrder []string) []string {
-	acceptEncHeader := firstValue(r.Header["Accept-Encoding"])
-	if acceptEncHeader == "" {
+	values := r.Header["Accept-Encoding"]
+	if len(values) == 0 {
 		return []string{}
 	}
 	websocketKey := firstValue(r.Header["Sec-Websocket-Key"])
 
-	prefs := make([]encodingPreference, 0, strings.Count(acceptEncHeader, ",")+1)
+	n := 0
+	for _, line := range values {
+		n += strings.Count(line, ",") + 1
+	}
+	prefs := make([]encodingPreference, 0, n)
 
-	for accepted := range strings.SplitSeq(acceptEncHeader, ",") {
+	for accepted := range listItems(values) {
 		encName, params, found := strings.Cut(accepted, ";")
 		encName = strings.ToLower(strings.TrimSpace(encName))
+		if encName == "" {
+			continue
+		}
 
 		// determine q-factor
 		qFactor := 1.0
@@ -643,6 +651,20 @@ func AcceptedEncodings(r *http.Request, preferredOrder []string) []string {
 	}
 
 	return prefEncNames
+}
+
+// listItems yields the items of a list-based field, which RFC 9110 section 5.3
+// allows to be split across several field lines.
+func listItems(lines []string) iter.Seq[string] {
+	return func(yield func(string) bool) {
+		for _, line := range lines {
+			for item := range strings.SplitSeq(line, ",") {
+				if !yield(item) {
+					return
+				}
+			}
+		}
+	}
 }
 
 // encodingPreference pairs an encoding with its q-factor.
