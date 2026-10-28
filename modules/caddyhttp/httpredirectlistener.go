@@ -138,9 +138,15 @@ func (c *httpRedirectConn) Read(p []byte) (int, error) {
 	}
 
 	// Build the redirect response, using the same Host and URL,
-	// but replacing the scheme with https.
+	// but replacing the scheme with https. RequestURI keeps only the
+	// path and query of an absolute-form target (its authority is
+	// already in req.Host), and an asterisk-form target has no path.
+	target := req.URL.RequestURI()
+	if target == "*" {
+		target = "/"
+	}
 	headers := make(http.Header)
-	headers.Add("Location", "https://"+req.Host+req.URL.String())
+	headers.Add("Location", "https://"+req.Host+target)
 	resp := &http.Response{
 		Proto:      "HTTP/1.0",
 		Status:     "308 Permanent Redirect",
