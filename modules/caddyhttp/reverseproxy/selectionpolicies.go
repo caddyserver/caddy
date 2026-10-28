@@ -167,7 +167,7 @@ func (r *WeightedRoundRobinSelection) Select(pool UpstreamPool, _ *http.Request,
 
 	upstreams := make([]*Upstream, 0, len(weights))
 	for i, upstream := range pool {
-		if !upstream.Available() || r.Weights[i] == 0 {
+		if i >= len(r.Weights) || !upstream.Available() || r.Weights[i] == 0 {
 			continue
 		}
 		upstreams = append(upstreams, upstream)
@@ -840,10 +840,10 @@ func leastRequests(upstreams []*Upstream) *Upstream {
 		if reqs == 0 {
 			return upstream
 		}
-		// If bestReqs was just initialized to -1
-		// we need to append upstream also
-		if reqs <= bestReqs || bestReqs == -1 {
+		if reqs < bestReqs || bestReqs == -1 {
 			bestReqs = reqs
+			best = []*Upstream{upstream}
+		} else if reqs == bestReqs {
 			best = append(best, upstream)
 		}
 	}

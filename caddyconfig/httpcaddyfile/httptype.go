@@ -18,6 +18,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net"
 	"reflect"
 	"slices"
@@ -25,6 +26,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/caddyserver/certmagic"
 	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2"
@@ -61,6 +63,18 @@ func (st ServerType) Setup(
 	var warnings []caddyconfig.Warning
 	gc := counter{new(int)}
 	state := make(map[string]any)
+
+	// adaptation fills the options in as it goes, so work on our own copy;
+	// the caller may reuse or share the map they gave us
+	options = maps.Clone(options)
+	if options == nil {
+		options = make(map[string]any)
+	}
+
+	// an order accumulated by a previous adaptation must not carry into
+	// this one, so drop it and let the first "order" option start over
+	// from the order the plugins registered
+	delete(options, "order")
 
 	// load all the server blocks and associate them with a "pile" of config values
 	originalServerBlocks := make([]serverBlock, 0, len(inputServerBlocks))
@@ -292,7 +306,8 @@ func (st ServerType) Setup(
 	if filesystems, ok := options["filesystem"].(caddy.Module); ok {
 		cfg.AppsRaw["caddy.filesystems"] = caddyconfig.JSON(
 			filesystems,
-			&warnings)
+			&warnings,
+		)
 	}
 
 	if storageCvtr, ok := options["storage"].(caddy.StorageConverter); ok {
@@ -719,6 +734,7 @@ func (st *ServerType) serversFromPairings(
 		})
 
 		var hasCatchAllTLSConnPolicy, addressQualifiesForTLS bool
+		var emptyConnPolicies caddytls.ConnectionPolicies
 		autoHTTPSWillAddConnPolicy := srv.AutoHTTPS == nil || !srv.AutoHTTPS.Disabled
 
 		// if needed, the ServerLogConfig is initialized beforehand so
@@ -788,7 +804,12 @@ func (st *ServerType) serversFromPairings(
 			if cpVals, ok := sblock.pile["tls.connection_policy"]; ok {
 				// tls connection policies
 				for _, cpVal := range cpVals {
-					cp := cpVal.Value.(*caddytls.ConnectionPolicy)
+					// Policies are parsed once per original server block. Each listener
+					// rewrites and consolidates them independently.
+					cp, err := cloneConnectionPolicy(cpVal.Value.(*caddytls.ConnectionPolicy))
+					if err != nil {
+						return nil, fmt.Errorf("cloning TLS connection policy: %v", err)
+					}
 
 					// make sure the policy covers all hostnames from the block
 					for _, h := range hosts {
@@ -824,8 +845,25 @@ func (st *ServerType) serversFromPairings(
 					if !cp.SettingsEmpty() || mapContains(forceAutomatedNames, hosts) {
 						srv.TLSConnPolicies = append(srv.TLSConnPolicies, cp)
 						hasCatchAllTLSConnPolicy = len(hosts) == 0
+					} else if len(hosts) > 0 {
+						emptyConnPolicies = append(emptyConnPolicies, cp)
 					}
 				}
+			} else if specificHosts := slices.DeleteFunc(
+				slices.Clone(hosts),
+				func(h string) bool { return h == "" || strings.Contains(h, "*") },
+			); len(specificHosts) > 0 {
+				// site blocks with no TLS connection policy of their own may
+				// still need an empty policy hoisted above a wildcard policy
+				// that requires client authentication, or that requirement
+				// would apply to their more specific hostnames too - see the
+				// hoisting loop below and issue #7860
+				slices.Sort(specificHosts)
+				emptyConnPolicies = append(emptyConnPolicies, &caddytls.ConnectionPolicy{
+					MatchersRaw: caddy.ModuleMap{
+						"sni": caddyconfig.JSON(specificHosts, warnings),
+					},
+				})
 			}
 
 			for _, addr := range sblock.parsedKeys {
@@ -876,7 +914,8 @@ func (st *ServerType) serversFromPairings(
 					listenerWrapper,
 					"wrapper",
 					listenerWrapper.(caddy.Module).CaddyModule().ID.Name(),
-					warnings)
+					warnings,
+				)
 				srv.ListenerWrappersRaw = append(srv.ListenerWrappersRaw, jsonListenerWrapper)
 			}
 
@@ -890,13 +929,14 @@ func (st *ServerType) serversFromPairings(
 					packetConnWrapper,
 					"wrapper",
 					packetConnWrapper.(caddy.Module).CaddyModule().ID.Name(),
-					warnings)
+					warnings,
+				)
 				srv.PacketConnWrappersRaw = append(srv.PacketConnWrappersRaw, jsonPacketConnWrapper)
 			}
 
 			// set up each handler directive, making sure to honor directive order
 			dirRoutes := sblock.pile["route"]
-			siteSubroute, err := buildSubroute(dirRoutes, groupCounter, true)
+			siteSubroute, err := buildSubroute(dirRoutes, groupCounter, directiveOrderFor(options))
 			if err != nil {
 				return nil, err
 			}
@@ -911,10 +951,7 @@ func (st *ServerType) serversFromPairings(
 				}
 				sort.SliceStable(errorSubrouteVals, func(i, j int) bool {
 					sri, srj := errorSubrouteVals[i].Value.(*caddyhttp.Subroute), errorSubrouteVals[j].Value.(*caddyhttp.Subroute)
-					if len(sri.Routes[0].MatcherSetsRaw) == 0 && len(srj.Routes[0].MatcherSetsRaw) != 0 {
-						return false
-					}
-					return true
+					return len(sri.Routes[0].MatcherSetsRaw) != 0 && len(srj.Routes[0].MatcherSetsRaw) == 0
 				})
 				errorsSubroute := &caddyhttp.Subroute{}
 				for _, val := range errorSubrouteVals {
@@ -990,6 +1027,72 @@ func (st *ServerType) serversFromPairings(
 			return nil, err
 		}
 
+		// hostnames whose site blocks configure no TLS settings of their own
+		// still need shielding if a policy matching a wildcard hostname would
+		// otherwise impose CLIENT AUTHENTICATION on them. Because connection
+		// policies are first-match, the shield hoisted above the wildcard
+		// policy must be a COPY of that policy with only client_authentication
+		// removed: an empty policy would not just lift the client-auth
+		// requirement but suppress every other setting the wildcard policy
+		// carries (certificate selection, protocol bounds, ALPN, ...), which
+		// the covered hostname does want to inherit - see issue #7860
+		// the wildcard names each client-auth policy matches, decoded once and
+		// index-aligned with srv.TLSConnPolicies; nil for a policy that needs
+		// no client auth or matches no wildcard
+		clientAuthWildcards := make([][]string, len(srv.TLSConnPolicies))
+		for i, cp := range srv.TLSConnPolicies {
+			if cp.ClientAuthentication == nil {
+				continue
+			}
+			names, ok := sniNames(cp, "of existing connection policy ", warnings)
+			if !ok {
+				continue
+			}
+			clientAuthWildcards[i] = slices.DeleteFunc(names, func(name string) bool {
+				return !strings.Contains(name, "*")
+			})
+		}
+
+		// each covering policy needs its OWN shield matching only the
+		// hostnames it covers: the hostnames of a single site block may be
+		// covered by DIFFERENT wildcards, and a shield hoisted above one
+		// policy must not match the hostnames belonging to another, or it
+		// would lift their client-auth requirement too
+		shieldedHosts := make([][]string, len(srv.TLSConnPolicies))
+		for _, ecp := range emptyConnPolicies {
+			hosts, ok := sniNames(ecp, "", warnings)
+			if !ok {
+				continue // no SNI matcher to reason about
+			}
+			for _, host := range hosts {
+				// connection policies are first-match, so only the first
+				// covering policy is ever reached for this hostname
+				for i, wildcards := range clientAuthWildcards {
+					if slices.ContainsFunc(wildcards, func(name string) bool {
+						return certmagic.MatchWildcard(host, name)
+					}) {
+						shieldedHosts[i] = append(shieldedHosts[i], host)
+						break
+					}
+				}
+			}
+		}
+
+		// hoist the shields last to last, so that inserting one does not
+		// shift the index of a covering policy still to be shielded
+		for i, hosts := range slices.Backward(shieldedHosts) {
+			if len(hosts) == 0 {
+				continue
+			}
+			slices.Sort(hosts)
+			shield := *srv.TLSConnPolicies[i]
+			shield.ClientAuthentication = nil
+			shield.MatchersRaw = caddy.ModuleMap{
+				"sni": caddyconfig.JSON(slices.Compact(hosts), warnings),
+			}
+			srv.TLSConnPolicies = slices.Insert(srv.TLSConnPolicies, i, &shield)
+		}
+
 		// a catch-all TLS conn policy is necessary to ensure TLS can
 		// be offered to all hostnames of the server; even though only
 		// one policy is needed to enable TLS for the server, that
@@ -1026,6 +1129,38 @@ func (st *ServerType) serversFromPairings(
 	}
 
 	return servers, nil
+}
+
+func cloneConnectionPolicy(cp *caddytls.ConnectionPolicy) (*caddytls.ConnectionPolicy, error) {
+	encoded, err := json.Marshal(cp)
+	if err != nil {
+		return nil, err
+	}
+
+	cloned := new(caddytls.ConnectionPolicy)
+	if err := json.Unmarshal(encoded, cloned); err != nil {
+		return nil, err
+	}
+	return cloned, nil
+}
+
+// sniNames returns the server names a connection policy's sni matcher matches.
+// The bool is false when the policy has no sni matcher, or when it does not
+// decode - the latter is unexpected enough to warn about rather than silently
+// skip, since callers use it to decide whether a hostname needs shielding.
+func sniNames(cp *caddytls.ConnectionPolicy, what string, warnings *[]caddyconfig.Warning) ([]string, bool) {
+	raw, ok := cp.MatchersRaw["sni"]
+	if !ok {
+		return nil, false
+	}
+	var sni caddytls.MatchServerName
+	if err := json.Unmarshal(raw, &sni); err != nil {
+		*warnings = append(*warnings, caddyconfig.Warning{
+			Message: fmt.Sprintf("decoding sni matcher %swhile checking wildcard coverage: %v", what, err),
+		})
+		return nil, false
+	}
+	return sni, true
 }
 
 func detectConflictingSchemes(srv *caddyhttp.Server, serverBlocks []serverBlock, options map[string]any) error {
@@ -1314,15 +1449,17 @@ func appendSubrouteToRouteList(routeList caddyhttp.RouteList,
 
 // buildSubroute turns the config values, which are expected to be routes
 // into a clean and orderly subroute that has all the routes within it.
-func buildSubroute(routes []ConfigValue, groupCounter counter, needsSorting bool) (*caddyhttp.Subroute, error) {
-	if needsSorting {
+// The order is the one belonging to the current adaptation; pass nil to
+// keep the routes in the order they were written in.
+func buildSubroute(routes []ConfigValue, groupCounter counter, order []string) (*caddyhttp.Subroute, error) {
+	if order != nil {
 		for _, val := range routes {
-			if !slices.Contains(directiveOrder, val.directive) {
+			if !slices.Contains(order, val.directive) {
 				return nil, fmt.Errorf("directive '%s' is not an ordered HTTP handler, so it cannot be used here - try placing within a route block or using the order global option", val.directive)
 			}
 		}
 
-		sortRoutes(routes)
+		sortRoutes(routes, order)
 	}
 
 	subroute := new(caddyhttp.Subroute)

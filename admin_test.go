@@ -271,19 +271,21 @@ func TestAdminHandlerServeHTTPRedactsSensitiveHeadersInLogs(t *testing.T) {
 	handler := adminHandler{
 		mux: http.NewServeMux(),
 	}
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/redaction-test", nil)
 	req.Header.Set("Authorization", "Bearer secret")
 	req.Header.Set("Cookie", "session=secret")
 	req.Header.Set("X-Test", "ok")
 	rr := httptest.NewRecorder()
 
+	Log().Info("unrelated test log")
 	handler.ServeHTTP(rr, req)
 
-	if logs.Len() == 0 {
-		t.Fatal("expected request log entry")
+	entries := logs.FilterMessage("received request").FilterField(zap.String("uri", req.RequestURI)).All()
+	if len(entries) != 1 {
+		t.Fatalf("request log entries = %d, want 1", len(entries))
 	}
 
-	ctx := logs.All()[0].ContextMap()
+	ctx := entries[0].ContextMap()
 	headers, ok := ctx["headers"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected headers field in log context, got %T", ctx["headers"])
@@ -685,6 +687,18 @@ func TestRemoteAdminAccessControlPathSegmentMatching(t *testing.T) {
 			wantErr:     false,
 		},
 		{
+			name:        "trailing slash scope excludes exact path without slash",
+			allowedPath: "/pki/ca/prod/",
+			requestPath: "/pki/ca/prod",
+			wantErr:     true,
+		},
+		{
+			name:        "trailing slash scope includes exact path with slash",
+			allowedPath: "/pki/ca/prod/",
+			requestPath: "/pki/ca/prod/",
+			wantErr:     false,
+		},
+		{
 			name:        "sibling with shared prefix",
 			allowedPath: "/pki/ca/prod",
 			requestPath: "/pki/ca/prod-backup",
@@ -700,6 +714,48 @@ func TestRemoteAdminAccessControlPathSegmentMatching(t *testing.T) {
 			name:        "root path",
 			allowedPath: "/",
 			requestPath: "/pki/ca/prod",
+			wantErr:     false,
+		},
+		{
+			name:        "empty path preserves allow all",
+			allowedPath: "",
+			requestPath: "/pki/ca/prod",
+			wantErr:     false,
+		},
+		{
+			name:        "dot-dot traversal out of scope",
+			allowedPath: "/pki/ca/prod",
+			requestPath: "/pki/ca/prod/../../../../load",
+			wantErr:     true,
+		},
+		{
+			name:        "dot-dot traversal out of trailing slash scope",
+			allowedPath: "/pki/ca/prod/",
+			requestPath: "/pki/ca/prod/../../../../load",
+			wantErr:     true,
+		},
+		{
+			name:        "encoded traversal (net/url decodes %2e to . before path.Clean resolves ..)",
+			allowedPath: "/pki/ca/prod",
+			requestPath: "/pki/ca/prod/%2e%2e/load",
+			wantErr:     true,
+		},
+		{
+			name:        "sibling traversal",
+			allowedPath: "/pki/ca/prod",
+			requestPath: "/pki/ca/prod/../staging",
+			wantErr:     true,
+		},
+		{
+			name:        "collapsed slashes",
+			allowedPath: "/pki/ca/prod",
+			requestPath: "/pki//ca/prod",
+			wantErr:     false,
+		},
+		{
+			name:        "exact request with trailing slash",
+			allowedPath: "/pki/ca/prod",
+			requestPath: "/pki/ca/prod/",
 			wantErr:     false,
 		},
 	}
@@ -832,6 +888,96 @@ vq+SH04xKhtFudVBAQ==`
 							{
 								PublicKeys:  []string{"invalid-cert-data"},
 								Permissions: []AdminPermissions{{Methods: []string{"GET"}, Paths: []string{"/test"}}},
+							},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "non-canonical root path with trailing slash",
+			cfg: &Config{
+				Admin: &AdminConfig{
+					Identity: &IdentityConfig{},
+					Remote: &RemoteAdmin{
+						Listen: "localhost:2021",
+						AccessControl: []*AdminAccess{
+							{
+								PublicKeys:  []string{testCert},
+								Permissions: []AdminPermissions{{Methods: []string{"GET"}, Paths: []string{"//"}}},
+							},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "canonical subpath with trailing slash",
+			cfg: &Config{
+				Admin: &AdminConfig{
+					Identity: &IdentityConfig{},
+					Remote: &RemoteAdmin{
+						Listen: "localhost:2021",
+						AccessControl: []*AdminAccess{
+							{
+								PublicKeys:  []string{testCert},
+								Permissions: []AdminPermissions{{Methods: []string{"GET"}, Paths: []string{"/foo/"}}},
+							},
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "non-canonical path /..",
+			cfg: &Config{
+				Admin: &AdminConfig{
+					Identity: &IdentityConfig{},
+					Remote: &RemoteAdmin{
+						Listen: "localhost:2021",
+						AccessControl: []*AdminAccess{
+							{
+								PublicKeys:  []string{testCert},
+								Permissions: []AdminPermissions{{Methods: []string{"GET"}, Paths: []string{"/.."}}},
+							},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "non-canonical path with double slashes",
+			cfg: &Config{
+				Admin: &AdminConfig{
+					Identity: &IdentityConfig{},
+					Remote: &RemoteAdmin{
+						Listen: "localhost:2021",
+						AccessControl: []*AdminAccess{
+							{
+								PublicKeys:  []string{testCert},
+								Permissions: []AdminPermissions{{Methods: []string{"GET"}, Paths: []string{"/foo//bar"}}},
+							},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "non-canonical path with double trailing slashes",
+			cfg: &Config{
+				Admin: &AdminConfig{
+					Identity: &IdentityConfig{},
+					Remote: &RemoteAdmin{
+						Listen: "localhost:2021",
+						AccessControl: []*AdminAccess{
+							{
+								PublicKeys:  []string{testCert},
+								Permissions: []AdminPermissions{{Methods: []string{"GET"}, Paths: []string{"/foo//"}}},
 							},
 						},
 					},

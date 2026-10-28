@@ -45,7 +45,7 @@ func TestFinalizeResponse_101_StripsHopByHopHeaders(t *testing.T) {
 	repl := caddy.NewReplacer()
 	rw := httptest.NewRecorder()
 
-	err := h.finalizeResponse(rw, req, res, repl, fakeStart, caddy.Log())
+	err := h.finalizeResponse(rw, req, res, repl, fakeStart, caddy.Log(), "")
 	if err != nil {
 		t.Logf("finalizeResponse returned error (expected, no real conn): %v", err)
 	}
@@ -93,7 +93,7 @@ func TestFinalizeResponse_101_StripsConnectionNamedHeaders(t *testing.T) {
 	repl := caddy.NewReplacer()
 	rw := httptest.NewRecorder()
 
-	err := h.finalizeResponse(rw, req, res, repl, fakeStart, caddy.Log())
+	err := h.finalizeResponse(rw, req, res, repl, fakeStart, caddy.Log(), "")
 	if err != nil {
 		t.Logf("finalizeResponse returned error (no real connection): %v", err)
 	}
@@ -133,7 +133,7 @@ func TestFinalizeResponse_200_StillStripsHopByHop(t *testing.T) {
 	repl := caddy.NewReplacer()
 	rw := httptest.NewRecorder()
 
-	err := h.finalizeResponse(rw, req, res, repl, fakeStart, caddy.Log())
+	err := h.finalizeResponse(rw, req, res, repl, fakeStart, caddy.Log(), "")
 	if err != nil {
 		t.Fatalf("finalizeResponse returned error: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestFinalizeResponse_101_NoUpgradeRequest(t *testing.T) {
 	repl := caddy.NewReplacer()
 	rw := httptest.NewRecorder()
 
-	err := h.finalizeResponse(rw, req, res, repl, fakeStart, caddy.Log())
+	err := h.finalizeResponse(rw, req, res, repl, fakeStart, caddy.Log(), "")
 	if err != nil {
 		t.Fatalf("finalizeResponse returned error: %v", err)
 	}

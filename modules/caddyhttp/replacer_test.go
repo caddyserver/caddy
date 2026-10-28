@@ -19,6 +19,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -26,6 +27,62 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 )
+
+func TestMissingCookiePlaceholder(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req = req.WithContext(context.WithValue(req.Context(), VarsCtxKey, map[string]any{}))
+	repl := NewTestReplacer(req)
+	const input = "before-{http.request.cookie.session}-after"
+	if got := repl.ReplaceKnown(input, ""); got != "before--after" {
+		t.Fatalf("missing cookie = %q, want %q", got, "before--after")
+	}
+	req.AddCookie(&http.Cookie{Name: "session", Value: "present"})
+	if got := repl.ReplaceKnown(input, ""); got != "before-present-after" {
+		t.Fatalf("present cookie = %q, want %q", got, "before-present-after")
+	}
+}
+
+func TestTLSPlaceholdersWithoutTLS(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req = req.WithContext(context.WithValue(req.Context(), VarsCtxKey, map[string]any{}))
+	repl := NewTestReplacer(req)
+	for _, field := range []string{
+		"version", "cipher_suite", "resumed", "proto", "proto_mutual", "server_name", "ech",
+		"client.fingerprint", "client.public_key", "client.public_key_sha256",
+		"client.issuer", "client.serial", "client.subject", "client.certificate_pem", "client.certificate_der_base64",
+		"client.san.dns_names", "client.san.emails", "client.san.ips", "client.san.uris",
+		"client.san.dns_names.0", "client.san.emails.0", "client.san.ips.0", "client.san.uris.0",
+	} {
+		t.Run(field, func(t *testing.T) {
+			key := "http.request.tls." + field
+			value, known := repl.Get(key)
+			if !known || caddy.ToString(value) != "" {
+				t.Fatalf("Get(%q) = %v, %v; want empty, known", key, value, known)
+			}
+			if got := repl.ReplaceKnown("before-{"+key+"}-after", ""); got != "before--after" {
+				t.Fatalf("replacement = %q, want %q", got, "before--after")
+			}
+		})
+	}
+}
+
+func TestUnknownTLSPlaceholdersRemainLiteral(t *testing.T) {
+	for _, state := range []*tls.ConnectionState{nil, {ServerName: "example.com"}} {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.TLS = state
+		req = req.WithContext(context.WithValue(req.Context(), VarsCtxKey, map[string]any{}))
+		repl := NewTestReplacer(req)
+		for _, field := range []string{
+			"unknown", "client.unknown", "client.san.unknown",
+			"client.san.dns_names_extra", "client.san.dns_names.-1", "client.san.dns_names.nope",
+		} {
+			input := "{http.request.tls." + field + "}"
+			if got := repl.ReplaceKnown(input, ""); got != input {
+				t.Errorf("replacement = %q, want literal %q", got, input)
+			}
+		}
+	}
+}
 
 func TestHTTPVarReplacement(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodGet, "/foo/bar.tar.gz?a=1&b=2", nil)
@@ -294,5 +351,114 @@ func TestHTTPProtoNameNormalization(t *testing.T) {
 		if !okName || gotName != tc.expectName {
 			t.Errorf("proto=%s: expected http.request.proto_name to be %q, got %q (ok=%t)", tc.proto, tc.expectName, gotName, okName)
 		}
+	}
+}
+
+// BenchmarkAddHTTPVarsToReplacer measures the per-request replacer setup, which
+// is the common path where the request UUID is never referenced.
+func BenchmarkAddHTTPVarsToReplacer(b *testing.B) {
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/foo?a=b", nil)
+	req.Header.Set("User-Agent", "test-agent")
+	ctx := context.WithValue(req.Context(), VarsCtxKey, make(map[string]any))
+	ctx = context.WithValue(ctx, ExtraLogFieldsCtxKey, new(ExtraLogFields))
+	req = req.WithContext(ctx)
+
+	b.ReportAllocs()
+	for b.Loop() {
+		repl := caddy.NewReplacer()
+		addHTTPVarsToReplacer(repl, req, nil)
+	}
+}
+
+// TestHTTPVarReplacementUUID verifies the lazily-allocated request UUID is
+// generated on first access and stays stable across references.
+func TestHTTPVarReplacementUUID(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	repl := caddy.NewReplacer()
+	ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
+	ctx = context.WithValue(ctx, VarsCtxKey, make(map[string]any))
+	ctx = context.WithValue(ctx, ExtraLogFieldsCtxKey, new(ExtraLogFields))
+	req = req.WithContext(ctx)
+	addHTTPVarsToReplacer(repl, req, nil)
+
+	first, ok := repl.GetString("http.request.uuid")
+	if !ok || first == "" {
+		t.Fatalf("expected a non-empty uuid, got %q (ok=%t)", first, ok)
+	}
+
+	second, _ := repl.GetString("http.request.uuid")
+	if first != second {
+		t.Errorf("expected stable uuid across references: %q != %q", first, second)
+	}
+}
+
+// failingBodyReader serves some bytes and then returns a fixed error, to
+// exercise the read failure path of the request body placeholders.
+type failingBodyReader struct {
+	data []byte
+	pos  int
+	err  error
+}
+
+func (b *failingBodyReader) Read(p []byte) (int, error) {
+	if b.pos < len(b.data) {
+		n := copy(p, b.data[b.pos:])
+		b.pos += n
+		return n, nil
+	}
+	return 0, b.err
+}
+
+func (b *failingBodyReader) Close() error { return nil }
+
+// TestRequestBodyPlaceholderErrorScoping verifies that only a max_size-driven
+// handler error from the request body read becomes a RequestBodyLimitError,
+// while every other error keeps the placeholder's old ignore-and-truncate
+// behavior.
+func TestRequestBodyPlaceholderErrorScoping(t *testing.T) {
+	maxBytes := &http.MaxBytesError{Limit: 10}
+	for _, tc := range []struct {
+		name       string
+		readErr    error
+		wantMarker bool
+	}{
+		{name: "max_size handler error becomes the marker", readErr: HandlerError{Err: maxBytes, StatusCode: http.StatusRequestEntityTooLarge}, wantMarker: true},
+		{name: "unrelated handler error keeps old behavior", readErr: HandlerError{Err: errors.New("boom"), StatusCode: http.StatusInternalServerError}},
+		{name: "raw max bytes error keeps old behavior", readErr: maxBytes},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/", nil)
+			req.Body = &failingBodyReader{data: []byte("abc"), err: tc.readErr}
+
+			body, err := readRequestBodyForPlaceholder(req)
+
+			if !tc.wantMarker {
+				if err != nil {
+					t.Fatalf("unrelated errors must be ignored like before but got %v", err)
+				}
+				if string(body) != "abc" {
+					t.Errorf("expected the truncated prefix %q but got %q", "abc", body)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("expected the body limit marker but got none")
+			}
+			var marker RequestBodyLimitError
+			if !errors.As(err, &marker) {
+				t.Fatalf("expected RequestBodyLimitError but got %T", err)
+			}
+			var handlerErr HandlerError
+			if errors.As(err, &handlerErr) {
+				t.Error("the marker must not be detectable as a HandlerError")
+			}
+			if marker.StatusCode() != http.StatusRequestEntityTooLarge {
+				t.Errorf("expected status 413 but got %d", marker.StatusCode())
+			}
+			var maxErr *http.MaxBytesError
+			if !errors.As(err, &maxErr) {
+				t.Error("the marker must unwrap to the MaxBytesError")
+			}
+		})
 	}
 }

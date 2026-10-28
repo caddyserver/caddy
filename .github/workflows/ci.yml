@@ -132,6 +132,8 @@ jobs:
     - name: Run tests
       # id: step_test
       # continue-on-error: true
+      env:
+        GODEBUG: http2xconnect=1
       run: |
         # (go test -coverprofile=cover-profile.out -race ./... 2>&1) > test-results/test-result.out
         go test -coverprofile="cover-profile.out" -short -race ./...
@@ -191,7 +193,7 @@ jobs:
           retries=3
           exit_code=0
           while ((retries > 0)); do
-            CGO_ENABLED=0 go test -p 1 ./...
+            GODEBUG=http2xconnect=1 CGO_ENABLED=0 go test -p 1 ./...
             exit_code=$?
             if ((exit_code == 0)); then
               break
@@ -246,4 +248,4 @@ jobs:
           version: latest
           args: build --single-target --snapshot
         env:
-          TAG: ${{ github.head_ref || github.ref_name }}
+          TAG: ${{ github.event.pull_request.head.sha || github.sha }}

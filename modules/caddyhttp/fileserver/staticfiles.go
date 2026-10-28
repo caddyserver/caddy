@@ -29,7 +29,9 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -266,6 +268,57 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 	return nil
 }
 
+const windowsShortNamePunctuation = "$%'-_@~`!(){}^#&"
+
+// possibleWindowsShortNamePart reports whether s could be part of an 8.3
+// alias. Extended characters are allowed when Windows' allowextchar behavior
+// is enabled, so non-ASCII characters must be accepted here to fail closed.
+func possibleWindowsShortNamePart(s string) bool {
+	for _, c := range s {
+		if c >= utf8.RuneSelf ||
+			(c >= 'a' && c <= 'z') ||
+			(c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9') ||
+			strings.ContainsRune(windowsShortNamePunctuation, c) {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+// hasWindowsShortName reports whether any component of p has the syntax of an
+// NTFS 8.3 short name. Both slash types separate components on Windows, which
+// also ignores trailing dots and spaces in each component.
+func hasWindowsShortName(p string) bool {
+	for _, component := range strings.FieldsFunc(p, func(r rune) bool {
+		return r == '/' || r == '\\'
+	}) {
+		component = strings.TrimRight(component, ". ")
+		base, extension, hasExtension := strings.Cut(component, ".")
+		if utf8.RuneCountInString(base) > 8 || !possibleWindowsShortNamePart(base) ||
+			(hasExtension && (utf8.RuneCountInString(extension) > 3 || !possibleWindowsShortNamePart(extension))) {
+			continue
+		}
+
+		tilde := strings.LastIndexByte(base, '~')
+		if tilde <= 0 || tilde == len(base)-1 {
+			continue
+		}
+		shortNameNumber := base[tilde+1:]
+		for _, c := range shortNameNumber {
+			if c < '0' || c > '9' {
+				shortNameNumber = ""
+				break
+			}
+		}
+		if shortNameNumber != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
@@ -275,8 +328,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			return caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("illegal ADS path"))
 		}
 		// reject paths with "8.3" short names
-		trimmedPath := strings.TrimRight(r.URL.Path, ". ") // Windows ignores trailing dots and spaces, sigh
-		if len(path.Base(trimmedPath)) <= 12 && strings.Contains(trimmedPath, "~") {
+		if hasWindowsShortName(r.URL.Path) {
 			return caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("illegal short name"))
 		}
 		// both of those could bypass file hiding or possibly leak information even if the file is not hidden
@@ -440,6 +492,9 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			continue
 		}
 		compressedFilename := filename + precompress.Suffix()
+		if fileHidden(compressedFilename, filesToHide) {
+			continue
+		}
 		compressedInfo, err := fs.Stat(fileSystem, compressedFilename)
 		if err != nil || compressedInfo.IsDir() {
 			if c := fsrv.logger.Check(zapcore.DebugLevel, "precompressed file not accessible"); c != nil {
@@ -638,8 +693,12 @@ func (fsrv *FileServer) mapDirOpenError(fileSystem fs.FS, originalErr error, nam
 		return originalErr
 	}
 
-	var pathErr *fs.PathError
-	if errors.As(originalErr, &pathErr) {
+	// a regular file used as a directory, e.g. /index.php/foo
+	if errors.Is(originalErr, syscall.ENOTDIR) {
+		return fs.ErrNotExist
+	}
+
+	if _, ok := errors.AsType[*fs.PathError](originalErr); ok {
 		return fs.ErrInvalid
 	}
 
@@ -768,6 +827,7 @@ func calculateEtag(d os.FileInfo) string {
 	var sb strings.Builder
 	sb.WriteRune('"')
 	sb.WriteString(strconv.FormatInt(mtime.UnixNano(), 36))
+	sb.WriteRune('-')
 	sb.WriteString(strconv.FormatInt(d.Size(), 36))
 	sb.WriteRune('"')
 	return sb.String()
