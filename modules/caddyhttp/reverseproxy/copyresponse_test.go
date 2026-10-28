@@ -56,10 +56,7 @@ func TestCopyResponseHeadersStripsHopByHop(t *testing.T) {
 		return h
 	}
 
-	// The replacement body is the same length as the upstream body.
-	// copy_response_headers also copies Content-Length, and a shorter
-	// body makes the client report unexpected EOF. X-Replaced shows
-	// that static_response ran.
+	// X-Replaced shows that static_response ran.
 	const replaced = `{"handler":"static_response","body":"from-upstream","headers":{"X-Replaced":["yes"]}}`
 	cases := []struct {
 		name        string
@@ -131,6 +128,66 @@ func TestCopyResponseHeadersStripsHopByHop(t *testing.T) {
 				if got := resp.Header.Get(field); got != "" {
 					t.Errorf("%s = %q, want absent", field, got)
 				}
+			}
+		})
+	}
+}
+
+func TestCopyResponseHeadersDropsContentLength(t *testing.T) {
+	const upstreamBody = "THIS-IS-THE-LONG-UPSTREAM-BODY-1234567890"
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, upstreamBody)
+	}))
+	t.Cleanup(backend.Close)
+
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	t.Cleanup(cancel)
+
+	cases := []struct {
+		name    string
+		copy    string
+		respond string
+		want    string
+	}{
+		{name: "shorter body", copy: `{"handler":"copy_response_headers"}`, respond: `{"handler":"static_response","body":"SHORT"}`, want: "SHORT"},
+		{name: "longer body", copy: `{"handler":"copy_response_headers"}`, respond: `{"handler":"static_response","body":"` + upstreamBody + upstreamBody + `"}`, want: upstreamBody + upstreamBody},
+		{name: "no body", copy: `{"handler":"copy_response_headers"}`, respond: `{"handler":"static_response"}`, want: ""},
+		{name: "included explicitly", copy: `{"handler":"copy_response_headers","include":["Content-Length"]}`, respond: `{"handler":"static_response","body":"SHORT"}`, want: "SHORT"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := minimalHandler(0, &Upstream{Host: new(Host), Dial: backend.Listener.Addr().String()})
+			route := caddyhttp.Route{HandlersRaw: []json.RawMessage{json.RawMessage(tc.copy), json.RawMessage(tc.respond)}}
+			if err := route.ProvisionHandlers(ctx, nil); err != nil {
+				t.Fatalf("provision handle_response: %v", err)
+			}
+			h.HandleResponse = []caddyhttp.ResponseHandler{{Routes: caddyhttp.RouteList{route}}}
+
+			front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				err := h.ServeHTTP(w, prepareTestRequest(r), caddyhttp.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
+					return nil
+				}))
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusBadGateway)
+				}
+			}))
+			t.Cleanup(front.Close)
+
+			resp, err := front.Client().Get(front.URL)
+			if err != nil {
+				t.Fatalf("GET: %v", err)
+			}
+			defer resp.Body.Close()
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				t.Fatalf("read body (Content-Length %q): %v", resp.Header.Get("Content-Length"), err)
+			}
+			if string(body) != tc.want {
+				t.Fatalf("body = %q, want %q", body, tc.want)
+			}
+			if resp.ContentLength >= 0 && resp.ContentLength != int64(len(tc.want)) {
+				t.Errorf("Content-Length = %d, want %d or none", resp.ContentLength, len(tc.want))
 			}
 		})
 	}

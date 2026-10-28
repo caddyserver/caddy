@@ -157,6 +157,9 @@ func (h CopyResponseHeadersHandler) ServeHTTP(rw http.ResponseWriter, req *http.
 	// route still need the original upstream headers.
 	src := hrc.response.Header.Clone()
 	stripHopByHopHeaders(src)
+	// Content-Length describes the upstream body, which the rest of
+	// this route replaces, so never copy it, even when included.
+	src.Del("Content-Length")
 
 	for field, values := range src {
 		// Check the include list first, skip
