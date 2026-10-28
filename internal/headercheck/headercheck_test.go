@@ -64,6 +64,8 @@ var allowed = map[string]bool{
 	"Sec-WebSocket-Version":    true,
 }
 
+// TODO: once golangci-lint ships https://github.com/lasiar/canonicalheader/pull/90, drop the index and
+// delete checks and keep the canonical* parameter check. The RFC 6455 sites then need //nolint:canonicalheader.
 func TestHeaderKeysAreCanonical(t *testing.T) {
 	cfg := &packages.Config{
 		Mode: packages.NeedName | packages.NeedSyntax | packages.NeedTypes |
