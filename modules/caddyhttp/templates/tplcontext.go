@@ -473,6 +473,8 @@ func (c TemplateContext) funcHTTPError(statusCode int) (bool, error) {
 	c.RespHeader.Header.Del("Etag")
 	c.RespHeader.Header.Del("Last-Modified")
 	c.RespHeader.Header.Del("Accept-Ranges")
+	c.RespHeader.Header.Del("Content-Encoding")
+	c.RespHeader.Header.Del("Content-Range")
 
 	return false, caddyhttp.Error(statusCode, nil)
 }
@@ -488,7 +490,7 @@ func (c TemplateContext) funcHTTPError(statusCode int) (bool, error) {
 func (c TemplateContext) funcHumanize(formatType, data string) (string, error) {
 	// The format type can optionally be followed
 	// by a colon to provide arguments for the format
-	parts := strings.Split(formatType, ":")
+	parts := strings.SplitN(formatType, ":", 2)
 
 	switch parts[0] {
 	case "size":

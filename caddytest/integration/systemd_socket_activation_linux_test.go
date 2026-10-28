@@ -130,7 +130,9 @@ func runSystemdListenFDHelper(t *testing.T) {
 			return tlsConfig, nil
 		},
 	}
-	quicListener, err := h3.ListenQUIC(context.Background(), 0, net.ListenConfig{}, tlsConfig, nil, nil)
+	quicListener, err := h3.ListenQUIC(context.Background(), 0, net.ListenConfig{}, caddy.ListenQUICOptions{
+		TLSConfig: tlsConfig,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -16,7 +16,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"go.uber.org/zap"
+
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
@@ -50,12 +54,15 @@ func TestSwitchProtocolCopierBufferSize(t *testing.T) {
 	var wg sync.WaitGroup
 	var errc = make(chan error, 1)
 	var dst bytes.Buffer
+	var sent, received int64
 
 	copier := switchProtocolCopier{
 		user:       nopReadWriteCloser{Reader: strings.NewReader("hello")},
 		backend:    nopReadWriteCloser{Writer: &dst},
 		wg:         &wg,
 		bufferSize: 7,
+		sent:       &sent,
+		received:   &received,
 	}
 
 	buf := copier.buffer()
@@ -67,9 +74,9 @@ func TestSwitchProtocolCopierBufferSize(t *testing.T) {
 	go copier.copyToBackend(errc)
 	wg.Wait()
 
-	// the destination cannot be half-closed, so a clean copy reports errCopyDone
+	// The destination cannot be half-closed, so a clean copy reports errCopyDone.
 	if err := <-errc; !errors.Is(err, errCopyDone) {
-		t.Fatalf("copyToBackend() error = %v, want %v", err, errCopyDone)
+		t.Fatalf("copyToBackend() error = %v", err)
 	}
 	if got := dst.String(); got != "hello" {
 		t.Fatalf("copied data = %q, want %q", got, "hello")
@@ -105,11 +112,14 @@ func TestSwitchProtocolCopierHalfClose(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var wg sync.WaitGroup
+			var sent, received int64
 			errc := make(chan error, 1)
 			copier := switchProtocolCopier{
-				user:    nopReadWriteCloser{Reader: strings.NewReader("hello")},
-				backend: tc.dst,
-				wg:      &wg,
+				user:     nopReadWriteCloser{Reader: strings.NewReader("hello")},
+				backend:  tc.dst,
+				wg:       &wg,
+				sent:     &sent,
+				received: &received,
 			}
 
 			wg.Add(1)
@@ -130,14 +140,17 @@ func TestSwitchProtocolCopierHalfClose(t *testing.T) {
 // half-close, so the tunnel is still torn down immediately.
 func TestSwitchProtocolCopierErrorIsNotHalfClose(t *testing.T) {
 	var wg sync.WaitGroup
+	var sent, received int64
 	errc := make(chan error, 1)
 	wantErr := errors.New("write failed")
 	dst := &closeWriteRecorder{writeErr: wantErr}
 
 	copier := switchProtocolCopier{
-		user:    nopReadWriteCloser{Reader: strings.NewReader("hello")},
-		backend: dst,
-		wg:      &wg,
+		user:     nopReadWriteCloser{Reader: strings.NewReader("hello")},
+		backend:  dst,
+		wg:       &wg,
+		sent:     &sent,
+		received: &received,
 	}
 
 	wg.Add(1)
@@ -166,6 +179,149 @@ type nopReadWriteCloser struct {
 }
 
 func (nopReadWriteCloser) Close() error { return nil }
+
+type trackingReadWriteCloser struct {
+	closed chan struct{}
+	one    sync.Once
+}
+
+func newTrackingReadWriteCloser() *trackingReadWriteCloser {
+	return &trackingReadWriteCloser{closed: make(chan struct{})}
+}
+
+func (c *trackingReadWriteCloser) Read(_ []byte) (int, error)  { return 0, io.EOF }
+func (c *trackingReadWriteCloser) Write(p []byte) (int, error) { return len(p), nil }
+func (c *trackingReadWriteCloser) Close() error {
+	c.one.Do(func() {
+		close(c.closed)
+	})
+	return nil
+}
+
+func (c *trackingReadWriteCloser) isClosed() bool {
+	select {
+	case <-c.closed:
+		return true
+	default:
+		return false
+	}
+}
+
+func TestHandlerCleanupLegacyModeClosesAllConnections(t *testing.T) {
+	ts := newTunnelTracker(caddy.Log(), 0)
+	connA := newTrackingReadWriteCloser()
+	connB := newTrackingReadWriteCloser()
+	ts.registerConnection(connA, nil, false, "a")
+	ts.registerConnection(connB, nil, false, "b")
+
+	h := &Handler{
+		tunnelTracker:  ts,
+		StreamDetached: false,
+	}
+
+	if err := h.Cleanup(); err != nil {
+		t.Fatalf("cleanup failed: %v", err)
+	}
+	if !connA.isClosed() || !connB.isClosed() {
+		t.Fatalf("legacy cleanup should close all upgraded connections")
+	}
+}
+
+func TestHandlerCleanupLegacyModeHonorsDelay(t *testing.T) {
+	ts := newTunnelTracker(caddy.Log(), 40*time.Millisecond)
+	conn := newTrackingReadWriteCloser()
+	ts.registerConnection(conn, nil, false, "a")
+
+	h := &Handler{
+		tunnelTracker:  ts,
+		StreamDetached: false,
+	}
+
+	if err := h.Cleanup(); err != nil {
+		t.Fatalf("cleanup failed: %v", err)
+	}
+	if conn.isClosed() {
+		t.Fatal("connection should not close immediately when stream_close_delay is set")
+	}
+
+	select {
+	case <-conn.closed:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("connection did not close after stream_close_delay elapsed")
+	}
+}
+
+func TestHandlerCleanupDetachedModeClosesOnlyRemovedUpstreams(t *testing.T) {
+	const upstreamA = "upstream-a"
+	const upstreamB = "upstream-b"
+
+	// Simulate old+new configs both referencing upstreamA (refcount 2),
+	// while upstreamB is only referenced by the old config (refcount 1).
+	hosts.LoadOrStore(upstreamA, struct{}{})
+	hosts.LoadOrStore(upstreamA, struct{}{})
+	hosts.LoadOrStore(upstreamB, struct{}{})
+	t.Cleanup(func() {
+		_, _ = hosts.Delete(upstreamA)
+		_, _ = hosts.Delete(upstreamA)
+		_, _ = hosts.Delete(upstreamB)
+	})
+
+	ts := newTunnelTracker(caddy.Log(), 0)
+	registerDetachedTunnelTrackers(ts)
+	connA := newTrackingReadWriteCloser()
+	connB := newTrackingReadWriteCloser()
+	ts.registerConnection(connA, nil, true, upstreamA)
+	ts.registerConnection(connB, nil, true, upstreamB)
+
+	h := &Handler{
+		tunnelTracker:  ts,
+		StreamDetached: true,
+		Upstreams: UpstreamPool{
+			&Upstream{Dial: upstreamA},
+			&Upstream{Dial: upstreamB},
+		},
+	}
+
+	if err := h.Cleanup(); err != nil {
+		t.Fatalf("cleanup failed: %v", err)
+	}
+
+	if connA.isClosed() {
+		t.Fatal("connection for detached upstream should remain open")
+	}
+	if !connB.isClosed() {
+		t.Fatal("connection for removed upstream should be closed")
+	}
+}
+
+func TestHandlerUnmarshalCaddyfileStreamLogsBlock(t *testing.T) {
+	d := caddyfile.NewTestDispenser(`
+	reverse_proxy localhost:9000 {
+		stream_logs {
+			level info
+			logger_name access
+			skip_handshake
+		}
+	}
+	`)
+
+	var h Handler
+	if err := h.UnmarshalCaddyfile(d); err != nil {
+		t.Fatalf("UnmarshalCaddyfile() error = %v", err)
+	}
+	if h.StreamLogs == nil {
+		t.Fatal("expected stream_logs to be configured")
+	}
+	if h.StreamLogs.Level != "info" {
+		t.Fatalf("expected stream_logs.level=info, got %q", h.StreamLogs.Level)
+	}
+	if h.StreamLogs.LoggerName != "access" {
+		t.Fatalf("expected stream_logs.logger_name=access, got %q", h.StreamLogs.LoggerName)
+	}
+	if !h.StreamLogs.SkipHandshake {
+		t.Fatal("expected stream_logs.skip_handshake=true")
+	}
+}
 
 // closeWriteRecorder is a destination that supports closing only its write
 // half, and records whether that happened.
@@ -312,8 +468,8 @@ func TestHandlerUpgradedStreamHalfClose(t *testing.T) {
 				Host: new(Host),
 				Dial: backend.Listener.Addr().String(),
 			})
-			h.connections = make(map[io.ReadWriteCloser]openConnection)
-			h.connectionsMu = new(sync.Mutex)
+			h.tunnelTracker = newTunnelTracker(caddy.Log(), 0)
+			initReverseProxyMetrics(h, prometheus.NewRegistry())
 
 			frontend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				// Isolate half-close propagation from request cancellation which has
@@ -397,4 +553,382 @@ func TestFlushIntervalIncremental(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHandlerCleanupDetachedRemovalWithDelay(t *testing.T) {
+	const upstream = "detached-removal-with-delay"
+	hosts.LoadOrStore(upstream, new(Host))
+	t.Cleanup(func() { _, _ = hosts.Delete(upstream) })
+	ts := newTunnelTracker(caddy.Log(), time.Hour)
+	registerDetachedTunnelTrackers(ts)
+	t.Cleanup(func() { unregisterDetachedTunnelTrackers(ts) })
+	detached := newTrackingReadWriteCloser()
+	attached := newTrackingReadWriteCloser()
+	deleteDetached := ts.registerConnection(detached, nil, true, upstream)
+	deleteAttached := ts.registerConnection(attached, nil, false, upstream)
+	t.Cleanup(deleteDetached)
+	t.Cleanup(deleteAttached)
+	h := &Handler{tunnelTracker: ts, StreamDetached: true, Upstreams: UpstreamPool{&Upstream{Dial: upstream}}}
+	if err := h.Cleanup(); err != nil {
+		t.Fatal(err)
+	}
+	if !detached.isClosed() {
+		t.Error("detached stream remains open after upstream removal")
+	}
+	if attached.isClosed() {
+		t.Error("attached stream closed before stream_close_delay elapsed")
+	}
+}
+
+func TestHandlerCleanupEmptyDetachedTracker(t *testing.T) {
+	for _, delay := range []time.Duration{0, time.Hour} {
+		t.Run(delay.String(), func(t *testing.T) {
+			ts := newTunnelTracker(caddy.Log(), delay)
+			registerDetachedTunnelTrackers(ts)
+			t.Cleanup(func() { unregisterDetachedTunnelTrackers(ts) })
+			// Cover a tracker whose last connection closed before handler cleanup.
+			conn := newTrackingReadWriteCloser()
+			ts.registerConnection(conn, nil, true, "upstream")()
+			if err := (&Handler{tunnelTracker: ts, StreamDetached: true}).Cleanup(); err != nil {
+				t.Fatal(err)
+			}
+			detachedTunnelTrackersMu.Lock()
+			_, retained := detachedTunnelTrackers[ts]
+			detachedTunnelTrackersMu.Unlock()
+			if retained {
+				t.Error("empty tracker remains globally registered after cleanup")
+			}
+		})
+	}
+}
+
+func TestDetachedTrackerRemovalAllowsConcurrentConnectionDeletion(t *testing.T) {
+	ts := newTunnelTracker(caddy.Log(), 0)
+	registerDetachedTunnelTrackers(ts)
+	t.Cleanup(func() { unregisterDetachedTunnelTrackers(ts) })
+	// An attached stream on another stopped handler can finish while an
+	// upstream-removal notification closes a detached stream. Its deletion
+	// must be able to acquire the registry lock and release its tracker lock.
+	other := newTunnelTracker(caddy.Log(), 0)
+	otherConn := newTrackingReadWriteCloser()
+	deleteOther := other.registerConnection(otherConn, nil, false, "other")
+	if err := other.cleanupAttachedConnections(); err != nil {
+		t.Fatal(err)
+	}
+	deleted := make(chan struct{})
+	conn := newTrackingReadWriteCloser()
+	del := ts.registerConnection(conn, func() error {
+		go func() {
+			deleteOther()
+			close(deleted)
+		}()
+		select {
+		case <-deleted:
+		case <-time.After(time.Second):
+			t.Error("upstream removal blocked another connection's deletion")
+		}
+		return nil
+	}, true, "upstream")
+	t.Cleanup(del)
+	if err := ts.cleanupAttachedConnections(); err != nil {
+		t.Fatal(err)
+	}
+	if err := notifyDetachedTunnelTrackersOfUpstreamRemoval("upstream", ts); err != nil {
+		t.Fatal(err)
+	}
+	// On a regression the notification must release its lock before waiting
+	// for deletion, so the failing test does not leave a blocked goroutine.
+	<-deleted
+	if !conn.isClosed() {
+		t.Error("removed upstream connection was not closed")
+	}
+}
+
+// opaqueUpgradeWriter supports hijacking but hides the recorder from the
+// detachment helper, as a middleware wrapper without Unwrap would do.
+type opaqueUpgradeWriter struct {
+	http.ResponseWriter
+}
+
+func (w opaqueUpgradeWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return http.NewResponseController(w.ResponseWriter).Hijack()
+}
+
+type rejectingUpgradeWriter struct {
+	*caddyhttp.ResponseWriterWrapper
+}
+
+func (rejectingUpgradeWriter) DetachAfterHijack(detached bool) bool {
+	return !detached
+}
+
+type pipeUpgradeWriter struct {
+	*httptest.ResponseRecorder
+	conn net.Conn
+}
+
+func (w pipeUpgradeWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return w.conn, bufio.NewReadWriter(bufio.NewReader(w.conn), bufio.NewWriter(w.conn)), nil
+}
+
+func TestUpgradeDetachmentRequiresWriterSupport(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		wrap     func(http.ResponseWriter) http.ResponseWriter
+		detached bool
+	}{
+		{name: "opaque wrapper", wrap: func(w http.ResponseWriter) http.ResponseWriter { return opaqueUpgradeWriter{w} }},
+		{name: "inner writer rejects detachment", wrap: func(w http.ResponseWriter) http.ResponseWriter {
+			rejecting := rejectingUpgradeWriter{&caddyhttp.ResponseWriterWrapper{ResponseWriter: w}}
+			return caddyhttp.NewResponseRecorder(rejecting, nil, nil)
+		}},
+		{name: "supported recorder", wrap: func(w http.ResponseWriter) http.ResponseWriter { return w }, detached: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			front, client := net.Pipe()
+			back, backend := net.Pipe()
+			defer front.Close()
+			defer client.Close()
+			defer back.Close()
+			defer backend.Close()
+			if err := client.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+				t.Fatal(err)
+			}
+			echoDone := make(chan struct{})
+			go func() {
+				defer close(echoDone)
+				_, _ = io.Copy(backend, backend)
+			}()
+			h := &Handler{StreamDetached: true, logger: caddy.Log(), tunnelTracker: newTunnelTracker(caddy.Log(), 0)}
+			initReverseProxyMetrics(h, prometheus.NewRegistry())
+			recorder := caddyhttp.NewResponseRecorder(pipeUpgradeWriter{httptest.NewRecorder(), front}, nil, nil)
+			writer := tc.wrap(recorder)
+			req := prepareTestRequest(httptest.NewRequest(http.MethodGet, "/upgrade", nil))
+			req.Header.Set("Connection", "Upgrade")
+			req.Header.Set("Upgrade", "test-stream")
+			res := &http.Response{StatusCode: http.StatusSwitchingProtocols, Header: req.Header.Clone(), Body: back}
+			handlerDone := make(chan struct{})
+			go func() {
+				defer close(handlerDone)
+				h.handleUpgradeResponse(caddy.Log(), writer, req, res, "detachment-test")
+			}()
+			const payload = "echo"
+			if _, err := io.WriteString(client, payload); err != nil {
+				t.Fatal(err)
+			}
+			received := make([]byte, len(payload))
+			if _, err := io.ReadFull(client, received); err != nil {
+				t.Fatal(err)
+			}
+			if string(received) != payload {
+				t.Fatalf("echo = %q, want %q", received, payload)
+			}
+			h.tunnelTracker.mu.Lock()
+			for _, conn := range h.tunnelTracker.connections {
+				if conn.detached != tc.detached {
+					t.Errorf("tracked detached = %v, want %v", conn.detached, tc.detached)
+				}
+			}
+			h.tunnelTracker.mu.Unlock()
+			if tc.detached {
+				select {
+				case <-handlerDone:
+				case <-time.After(time.Second):
+					t.Error("supported detached tunnel kept the handler running")
+				}
+			} else {
+				select {
+				case <-handlerDone:
+					t.Error("handler returned while the writer chain remained attached")
+				case <-time.After(100 * time.Millisecond):
+				}
+			}
+			client.Close()
+			backend.Close()
+			select {
+			case <-handlerDone:
+			case <-time.After(time.Second):
+				t.Fatal("handler did not finish after stream close")
+			}
+			<-echoDone
+			// Wait for detached tunnel cleanup too, so no copy goroutine can
+			// still be updating counters after this subtest finishes.
+			deadline := time.Now().Add(time.Second)
+			for {
+				h.tunnelTracker.mu.Lock()
+				remaining := len(h.tunnelTracker.connections)
+				h.tunnelTracker.mu.Unlock()
+				if remaining == 0 {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatal("tunnel connections were not unregistered")
+				}
+				time.Sleep(time.Millisecond)
+			}
+			// Attached byte counters are safe to inspect after the handler has waited
+			// for both copying goroutines. Partial detachment must also be undone.
+			if !tc.detached {
+				recorders := []caddyhttp.ResponseRecorder{recorder}
+				if outer, ok := writer.(caddyhttp.ResponseRecorder); ok {
+					recorders = append(recorders, outer)
+				}
+				for _, rr := range recorders {
+					if rr.Size() != len(payload) {
+						t.Errorf("attached recorder size = %d, want %d", rr.Size(), len(payload))
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestUpgradeResponseCleanupOnFailure(t *testing.T) {
+	body := &closeTrackingBody{Buffer: bytes.NewBufferString("test body")}
+
+	res := &http.Response{
+		StatusCode: http.StatusSwitchingProtocols,
+		Header:     make(http.Header),
+		Body:       body,
+	}
+	res.Header.Set("Upgrade", "websocket")
+	res.Header.Set("Connection", "Upgrade")
+
+	// Request with mismatched upgrade type -> should fail check and close body
+	req, err := http.NewRequest("GET", "http://example.com", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Upgrade", "something-else")
+	req.Header.Set("Connection", "Upgrade")
+
+	recorder := httptest.NewRecorder()
+	h := &Handler{}
+	logger := zap.NewNop()
+
+	h.handleUpgradeResponse(logger, recorder, req, res, "127.0.0.1:8080")
+
+	if !body.closed {
+		t.Errorf("expected backend response body to be closed on upgrade protocol mismatch, but it was not")
+	}
+}
+
+func TestUpgradeResponseCleanupAfterHijack(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		flushFailure bool
+	}{
+		{name: "handshake flush failure", flushFailure: true},
+		{name: "buffered backend write failure"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			front, client := net.Pipe()
+			back, backend := net.Pipe()
+			for _, conn := range []net.Conn{front, client, back, backend} {
+				t.Cleanup(func() { conn.Close() })
+			}
+
+			writeFailure := &upgradeWriteErrorConn{writeErr: errors.New("upgrade setup write failed")}
+			reader := bufio.NewReader(strings.NewReader(""))
+			writer := bufio.NewWriter(front)
+			var body io.ReadWriteCloser = back
+			var wantWrite string
+			if tc.flushFailure {
+				writeFailure.Conn = front
+				writer = bufio.NewWriter(writeFailure)
+				wantWrite = "HTTP/1.1 101 Switching Protocols\r\n\r\n"
+				// Flush must have pending bytes; flushing an empty writer
+				// never reaches the failing connection's Write method.
+				if _, err := writer.WriteString(wantWrite); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				writeFailure.Conn = back
+				body = writeFailure
+				wantWrite = "buffered client data"
+				reader = bufio.NewReader(strings.NewReader(wantWrite))
+				// Buffered() must be nonzero before the handler checks it.
+				if _, err := reader.Peek(len(wantWrite)); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			rw := &upgradeFailureHijacker{
+				ResponseRecorder: httptest.NewRecorder(),
+				conn:             front,
+				brw:              bufio.NewReadWriter(reader, writer),
+			}
+			req := prepareTestRequest(httptest.NewRequest(http.MethodGet, "/upgrade", nil))
+			req.Header.Set("Connection", "Upgrade")
+			req.Header.Set("Upgrade", "test-stream")
+			res := &http.Response{StatusCode: http.StatusSwitchingProtocols, Header: req.Header.Clone(), Body: body}
+			logger := zap.NewNop()
+			h := &Handler{logger: logger, tunnelTracker: newTunnelTracker(logger, 0)}
+			for _, peer := range []net.Conn{client, backend} {
+				if err := peer.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			h.handleUpgradeResponse(logger, rw, req, res, "cleanup-test")
+
+			if !rw.hijacked {
+				t.Fatal("setup failed before successful client hijack")
+			}
+			if writeFailure.writeCalls != 1 || string(writeFailure.written) != wantWrite {
+				t.Fatalf("failure injection: got %d writes of %q, want one write of %q",
+					writeFailure.writeCalls, writeFailure.written, wantWrite)
+			}
+			for _, peer := range []struct {
+				name string
+				conn net.Conn
+			}{
+				{name: "client", conn: client},
+				{name: "backend", conn: backend},
+			} {
+				var data [1]byte
+				if n, err := peer.conn.Read(data[:]); n != 0 || !errors.Is(err, io.EOF) {
+					t.Errorf("%s peer read = (%d, %v), want (0, EOF) after setup failure", peer.name, n, err)
+				}
+			}
+			if remaining := len(h.tunnelTracker.connections); remaining != 0 {
+				t.Errorf("setup failure registered %d tunnel connections", remaining)
+			}
+		})
+	}
+}
+
+type upgradeFailureHijacker struct {
+	*httptest.ResponseRecorder
+	conn     net.Conn
+	brw      *bufio.ReadWriter
+	hijacked bool
+}
+
+func (w *upgradeFailureHijacker) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	w.hijacked = true
+	return w.conn, w.brw, nil
+}
+
+type upgradeWriteErrorConn struct {
+	net.Conn
+	writeErr   error
+	writeCalls int
+	written    []byte
+}
+
+func (c *upgradeWriteErrorConn) Write(p []byte) (int, error) {
+	c.writeCalls++
+	c.written = append(c.written, p...)
+	return 0, c.writeErr
+}
+
+type closeTrackingBody struct {
+	*bytes.Buffer
+	closed bool
+}
+
+func (c *closeTrackingBody) Close() error {
+	c.closed = true
+	return nil
 }

@@ -1,9 +1,11 @@
 package reverseproxy
 
 import (
+	"errors"
 	"io"
 	"strings"
 	"testing"
+	"testing/iotest"
 )
 
 type zeroReader struct{}
@@ -119,5 +121,35 @@ func TestBufferingBoundary(t *testing.T) {
 		if wantFull && read != int64(len(body)) {
 			t.Errorf("limit %d: read %d bytes, want %d", limit, read, len(body))
 		}
+	}
+}
+
+// TestBufferingKeepsReadError checks that a body which fails partway through
+// (a request_body max_size limit, a truncated upstream response) is not
+// passed on as if it were complete.
+func TestBufferingKeepsReadError(t *testing.T) {
+	errRead := errors.New("read failed")
+
+	for _, limit := range []int64{-1, 5, 100} {
+		var h Handler
+		body := io.NopCloser(io.MultiReader(strings.NewReader("0123456789"), iotest.ErrReader(errRead)))
+		res, _ := h.bufferedBody(body, limit)
+
+		got, err := io.ReadAll(res)
+		if !errors.Is(err, errRead) {
+			t.Errorf("limit %d: reading buffered body: got error %v, want %v", limit, err, errRead)
+		}
+		if string(got) != "0123456789" {
+			t.Errorf("limit %d: got %q, want %q", limit, got, "0123456789")
+		}
+
+		brc, ok := res.(bodyReadCloser)
+		if !ok {
+			t.Fatalf("limit %d: expected a bodyReadCloser", limit)
+		}
+		if brc.body == nil {
+			t.Errorf("limit %d: body reported as fully buffered", limit)
+		}
+		res.Close()
 	}
 }

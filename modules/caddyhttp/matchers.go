@@ -31,8 +31,11 @@ import (
 	"strings"
 
 	"cel.dev/cel-go/cel"
+	"cel.dev/cel-go/common"
+	"cel.dev/cel-go/common/ast"
 	"cel.dev/cel-go/common/types"
 	"cel.dev/cel-go/common/types/ref"
+	"cel.dev/cel-go/parser"
 	"golang.org/x/net/idna"
 
 	"github.com/caddyserver/caddy/v2"
@@ -661,6 +664,18 @@ var windowsEscapedPathSeparatorRepl = strings.NewReplacer(
 	"%5c", "%2f",
 	"%5C", "%2f",
 )
+
+// NormalizedPath returns a decoded request path in the form the path matchers
+// evaluate it: rewritten the way the Windows filesystem resolves it (a no-op on
+// other platforms), then cleaned. Consumers that act on a path a matcher has
+// already judged should derive it with this, so the two cannot disagree about
+// which resource a request names. An empty path is returned unchanged.
+func NormalizedPath(p string, mergeSlashes bool) string {
+	if p == "" {
+		return ""
+	}
+	return CleanPath(normalizeWindowsPath(p), mergeSlashes)
+}
 
 // normalizeWindowsPath rewrites a decoded request path the way the Windows
 // filesystem resolves it, so that path matchers (both `path` and `path_regexp`)
@@ -1482,6 +1497,60 @@ func (m *MatchTLS) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
+// CELLibrary produces options that expose this matcher for use in CEL
+// expression matchers. It mirrors the three states the Caddyfile `tls`
+// matcher itself supports: bare `tls` (any TLS connection, regardless of
+// handshake completion), `tls early_data` (handshake not yet complete), and
+// the otherwise-implicit "handshake complete" case. `tls()` is sugar for
+// `tls('any')`; both spellings are equivalent and supported.
+//
+// Example:
+//
+//	expression tls() && !tls('early_data')
+func (MatchTLS) CELLibrary(ctx caddy.Context) (cel.Library, error) {
+	const funcName = "tls_request_string"
+	factory := func(data ref.Val) (RequestMatcherWithError, error) {
+		str, ok := data.(types.String)
+		if !ok {
+			return nil, errors.New("tls argument was not a string")
+		}
+		switch string(str) {
+		case "any":
+			// Also reachable directly as tls('any'), not just via the
+			// zero-arg tls() macro below -- both are valid and equivalent.
+			return MatchTLS{}, nil
+		case "complete":
+			complete := true
+			return MatchTLS{HandshakeComplete: &complete}, nil
+		case "early_data":
+			complete := false
+			return MatchTLS{HandshakeComplete: &complete}, nil
+		default:
+			return nil, fmt.Errorf("tls argument must be 'any', 'complete', or 'early_data', got %q", str)
+		}
+	}
+
+	// tls() is sugar for tls('any'): it expands to the same 2-arg call the
+	// one-argument form produces, just with the argument injected by the
+	// macro itself instead of typed out by the caller.
+	zeroArgMacro := parser.NewGlobalMacro("tls", 0,
+		func(eh cel.MacroExprFactory, target ast.Expr, args []ast.Expr) (ast.Expr, *common.Error) {
+			return eh.NewCall(funcName, eh.NewIdent(CELRequestVarName), eh.NewLiteral(types.String("any"))), nil
+		})
+	oneArgMacro := parser.NewGlobalMacro("tls", 1, celMatcherStringMacroExpander(funcName))
+
+	envOptions := []cel.EnvOption{
+		cel.Macros(zeroArgMacro, oneArgMacro),
+		cel.Function(funcName,
+			cel.Overload(funcName, []*cel.Type{cel.ObjectType("http.Request"), cel.StringType}, cel.BoolType),
+			cel.SingletonBinaryBinding(CELMatcherRuntimeFunction(funcName, factory))),
+	}
+	programOptions := []cel.ProgramOption{
+		cel.CustomDecorator(CELMatcherDecorator(funcName, factory)),
+	}
+	return NewMatcherCELLibrary(envOptions, programOptions), nil
+}
+
 // CaddyModule returns the Caddy module information.
 func (MatchNot) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
@@ -1787,6 +1856,7 @@ var (
 	_ CELLibraryProducer = (*MatchHeader)(nil)
 	_ CELLibraryProducer = (*MatchHeaderRE)(nil)
 	_ CELLibraryProducer = (*MatchProtocol)(nil)
+	_ CELLibraryProducer = (*MatchTLS)(nil)
 	_ CELLibraryProducer = (*VarsMatcher)(nil)
 	_ CELLibraryProducer = (*MatchVarsRE)(nil)
 

@@ -176,11 +176,11 @@ func (enc *Encode) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyh
 			// the Etag in the first place don't know that we appended to their Etag! so here
 			// we have to strip our addition so the upstream handlers can still honor client
 			// caches without knowing about our changes...
-			if etag := r.Header.Get("If-None-Match"); etag != "" && !strings.HasPrefix(etag, "W/") {
-				ourSuffix := "-" + encName + `"`
-				if before, ok := strings.CutSuffix(etag, ourSuffix); ok {
-					etag = before + `"`
-					r.Header.Set("If-None-Match", etag)
+			if etags := r.Header.Values("If-None-Match"); len(etags) > 0 {
+				etag := strings.Join(etags, ", ")
+				stripped := strings.ReplaceAll(etag, "-"+encName+`"`, `"`)
+				if stripped != etag || len(etags) > 1 {
+					r.Header.Set("If-None-Match", stripped)
 				}
 			}
 
@@ -252,6 +252,7 @@ type responseWriter struct {
 	config       *Encode
 	statusCode   int
 	wroteHeader  bool
+	wroteBody    bool
 	incremental  bool
 	isConnect    bool
 	disabled     bool // disable encoding for this response
@@ -419,6 +420,9 @@ func (rw *responseWriter) Write(p []byte) (int, error) {
 	} else {
 		n, err = rw.ResponseWriter.Write(p)
 	}
+	if n > 0 {
+		rw.wroteBody = true
+	}
 	if err != nil || !rw.incremental {
 		return n, err
 	}
@@ -466,9 +470,15 @@ func (rw *responseWriter) ReadFrom(r io.Reader) (int64, error) {
 	// the response will be compressed, no sendfile support
 	if rw.w != nil {
 		nr, err := io.Copy(rw.w, r)
+		if nr > 0 {
+			rw.wroteBody = true
+		}
 		return nr + ns, err
 	}
 	nr, err := rf.ReadFrom(r)
+	if nr > 0 {
+		rw.wroteBody = true
+	}
 	return nr + ns, err
 }
 
@@ -491,7 +501,10 @@ func (rw *responseWriter) Close() error {
 
 	var err error
 	if rw.w != nil {
-		err = rw.w.Close()
+		// don't write an empty encoded stream when there was no body
+		if rw.wroteBody {
+			err = rw.w.Close()
+		}
 		rw.w.Reset(nil)
 		rw.config.writerPools[rw.encodingName].Put(rw.w)
 		rw.w = nil

@@ -23,12 +23,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptrace"
 	"net/netip"
 	"net/textproto"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -36,6 +38,10 @@ import (
 	"time"
 
 	"github.com/dunglas/httpsfv"
+	"github.com/quic-go/quic-go/http3"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/contrib/propagators/autoprop"
+	oteltrace "go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/net/http/httpguts"
@@ -199,6 +205,22 @@ type Handler struct {
 	// by the previous config closing. Default: no delay.
 	StreamCloseDelay caddy.Duration `json:"stream_close_delay,omitempty"`
 
+	// If true, upgraded connections such as WebSockets are detached from
+	// the handler and retained across config reloads when their upstream
+	// still exists in the new config. Connections using upstreams that are
+	// removed are closed during cleanup. By default this is false, preserving
+	// legacy behavior where upgraded connections are closed on reload
+	// (optionally delayed by stream_close_delay).
+	// Only http1.1 websocket connections are affected, websockets for h2/h3
+	// are not affected. If true, bytes transferred for http1.1 in the access
+	// logs will be zero but those stats can be found in the stream logs for
+	// http1/2/3 regardless if this is enabled.
+	StreamDetached bool `json:"stream_detached,omitempty"`
+
+	// Controls logging behavior for upgraded stream lifecycle events.
+	// If omitted, defaults are used (level=DEBUG, logger_name="http.handlers.reverse_proxy.stream").
+	StreamLogs *StreamLogs `json:"stream_logs,omitempty"`
+
 	// If configured, rewrites the copy of the upstream request.
 	// Allows changing the request method and URI (path and query).
 	// Since the rewrite is applied to the copy, it does not persist
@@ -258,14 +280,20 @@ type Handler struct {
 	// Holds the handle_response Caddyfile tokens while adapting
 	handleResponseSegments []*caddyfile.Dispenser
 
-	// Stores upgraded requests (hijacked connections) for proper cleanup
-	connections           map[io.ReadWriteCloser]openConnection
-	connectionsCloseTimer *time.Timer
-	connectionsMu         *sync.Mutex
+	// Tracks hijacked/upgraded connections (WebSocket etc.) so they can be
+	// closed when their upstream is removed from the config.
+	tunnelTracker *tunnelTracker
+
+	// tracedTransport wraps Transport to emit OpenTelemetry client spans
+	// for upstream round trips when the request is being traced.
+	tracedTransport http.RoundTripper
 
 	ctx    caddy.Context
 	logger *zap.Logger
 	events *caddyevents.App
+
+	streamLogLevel      zapcore.Level
+	streamLogLoggerName string
 }
 
 // CaddyModule returns the Caddy module information.
@@ -285,8 +313,25 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	h.events = eventAppIface.(*caddyevents.App)
 	h.ctx = ctx
 	h.logger = ctx.Logger()
-	h.connections = make(map[io.ReadWriteCloser]openConnection)
-	h.connectionsMu = new(sync.Mutex)
+	h.tunnelTracker = newTunnelTracker(h.logger, time.Duration(h.StreamCloseDelay))
+	h.streamLogLevel = defaultStreamLogLevel
+	h.streamLogLoggerName = defaultStreamLoggerName
+	if h.StreamLogs != nil {
+		if h.StreamLogs.Level != "" {
+			lvl, err := zapcore.ParseLevel(strings.ToLower(strings.TrimSpace(h.StreamLogs.Level)))
+			if err != nil {
+				return fmt.Errorf("invalid stream_logs.level %q: %w", h.StreamLogs.Level, err)
+			}
+			h.streamLogLevel = lvl
+		}
+		if name := strings.TrimSpace(h.StreamLogs.LoggerName); name != "" {
+			h.streamLogLoggerName = name
+		}
+	}
+
+	if h.StreamDetached {
+		registerDetachedTunnelTrackers(h.tunnelTracker)
+	}
 
 	// warn about unsafe buffering config
 	if h.RequestBuffers == -1 || h.ResponseBuffers == -1 {
@@ -380,6 +425,8 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 		h.Transport = t
 	}
 
+	h.tracedTransport = newTracedTransport(h.Transport)
+
 	// If the transport can provide header ops, cache them now so we don't
 	// have to compute them per-request. Provision the HeaderOps if present
 	// so any runtime artifacts (like precompiled regex) are prepared.
@@ -456,15 +503,91 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-// Cleanup cleans up the resources made by h.
-func (h *Handler) Cleanup() error {
-	err := h.cleanupConnections()
+func (h Handler) streamLogsSkipHandshake() bool {
+	return h.StreamLogs != nil && h.StreamLogs.SkipHandshake
+}
 
-	// remove hosts from our config from the pool
-	for _, upstream := range h.Upstreams {
-		_, _ = hosts.Delete(upstream.String())
+func (h Handler) streamLoggerForRequest(req *http.Request) *zap.Logger {
+	name := strings.TrimSpace(h.streamLogLoggerName)
+	if name == "" {
+		name = defaultStreamLoggerName
 	}
 
+	if name == streamLoggerNameUseAccess {
+		logger := caddy.Log().Named(defaultAccessLoggerBase)
+		names := caddyhttp.GetVar(req.Context(), caddyhttp.AccessLoggerNameVarKey)
+		namesSlice, ok := names.([]any)
+		if !ok {
+			return logger
+		}
+		for _, v := range namesSlice {
+			name, ok := v.(string)
+			if !ok {
+				continue
+			}
+			if name == "" {
+				return logger
+			}
+			return logger.Named(name)
+		}
+		return logger
+	}
+
+	return caddy.Log().Named(name)
+}
+
+var (
+	detachedTunnelTrackers   = make(map[*tunnelTracker]struct{})
+	detachedTunnelTrackersMu sync.Mutex
+)
+
+func registerDetachedTunnelTrackers(ts *tunnelTracker) {
+	detachedTunnelTrackersMu.Lock()
+	defer detachedTunnelTrackersMu.Unlock()
+	detachedTunnelTrackers[ts] = struct{}{}
+}
+
+func notifyDetachedTunnelTrackersOfUpstreamRemoval(upstream string, self *tunnelTracker) error {
+	detachedTunnelTrackersMu.Lock()
+	trackers := make([]*tunnelTracker, 0, len(detachedTunnelTrackers))
+	for tunnel := range detachedTunnelTrackers {
+		trackers = append(trackers, tunnel)
+	}
+	detachedTunnelTrackersMu.Unlock()
+
+	// Connection deletion unregisters empty trackers. Do not hold the
+	// registry lock while acquiring tracker locks or closing connections.
+	var err error
+	for _, tunnel := range trackers {
+		if closeErr := tunnel.closeConnectionsForUpstream(upstream); closeErr != nil && tunnel == self && err == nil {
+			err = closeErr
+		}
+	}
+	return err
+}
+
+func unregisterDetachedTunnelTrackers(ts *tunnelTracker) {
+	detachedTunnelTrackersMu.Lock()
+	defer detachedTunnelTrackersMu.Unlock()
+	delete(detachedTunnelTrackers, ts)
+}
+
+// Cleanup cleans up the resources made by h.
+func (h *Handler) Cleanup() error {
+	// even if StreamDetached is true, extended connect websockets may still be running
+	err := h.tunnelTracker.cleanupAttachedConnections()
+	for _, upstream := range h.Upstreams {
+		// hosts.Delete returns deleted=true when the ref count reaches zero,
+		// meaning no other active config references this upstream. In that
+		// case close any tunnels proxying to it; otherwise let them survive
+		// to their natural end since the upstream is still in use.
+		deleted, _ := hosts.Delete(upstream.String())
+		if deleted {
+			if closeErr := notifyDetachedTunnelTrackersOfUpstreamRemoval(upstream.String(), h.tunnelTracker); closeErr != nil && err == nil {
+				err = closeErr
+			}
+		}
+	}
 	return err
 }
 
@@ -739,12 +862,13 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 		return true, nil
 	}
 
-	// if the roundtrip was successful, don't retry the request or
-	// ding the health status of the upstream (an error can still
-	// occur after the roundtrip if, for example, a response handler
-	// after the roundtrip returns an error)
-	if succ, ok := proxyErr.(roundtripSucceededError); ok {
-		return true, succ.error
+	// if the handler has already committed a client-visible response
+	// (e.g. a successful roundtrip whose handle_response route errored,
+	// or a WebTransport upgrade that flushed 200 OK and hijacked the
+	// stream), don't retry against another upstream and don't ding the
+	// upstream's health status
+	if term, ok := proxyErr.(terminalError); ok {
+		return true, term.error
 	}
 
 	// remember this failure (if enabled); response-based retries
@@ -794,6 +918,7 @@ func normalizeWebsocketHeaders(header http.Header) {
 // proxying) regardless of proxy retries. This assumes that no mutations
 // of the cloned request are performed by h during or after proxying.
 func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.Request, error) {
+	origReq := req
 	req = cloneRequest(req)
 
 	// if enabled, perform rewrites on the cloned request; if
@@ -805,6 +930,17 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 			req.ContentLength = 0
 			req.Body = nil
 		}
+	}
+
+	if req.Body != nil {
+		// net/http fills in the incoming trailers only when Body.Read reaches
+		// EOF. Keep an independent map, but update it in that same Read before
+		// the transport writes the trailers. Install this before buffering,
+		// which may itself consume the body to EOF before the round trip.
+		if req.Trailer == nil {
+			req.Trailer = make(http.Header)
+		}
+		req.Body = &requestBodyWithTrailers{ReadCloser: req.Body, original: origReq, trailer: req.Trailer}
 	}
 
 	// Fully buffering the request is incompatible with incremental forwarding.
@@ -831,6 +967,15 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 			req.ContentLength = readBytes
 			req.Header.Set("Content-Length", strconv.FormatInt(req.ContentLength, 10))
 		}
+	}
+
+	// HTTP/1 upstreams require chunked framing to carry trailers, including
+	// when buffering has made the body length known (or the body is empty).
+	// Length-required transports such as FastCGI need the buffered length and
+	// do not carry HTTP trailers.
+	if len(req.Trailer) > 0 && req.Body != nil && !h.transportRequiresContentLength() {
+		req.ContentLength = -1
+		req.Header.Del("Content-Length")
 	}
 
 	if req.ContentLength == 0 {
@@ -1047,6 +1192,18 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	server := req.Context().Value(caddyhttp.ServerCtxKey).(*caddyhttp.Server)
 	shouldLogCredentials := server.Logs != nil && server.Logs.ShouldLogCredentials
 
+	// WebTransport: Extended CONNECT :protocol=webtransport can't flow
+	// through the normal HTTP round-trip — the session hosts many QUIC
+	// streams and datagrams that need bidirectional pumping. Swap
+	// RoundTrip for a small hijack helper. Upstream dial failures
+	// surface as DialError so the loop can retry across upstreams;
+	// pre-upgrade misconfig and post-upgrade failures return
+	// terminalError because the response is already committed to the
+	// client or no upstream can fix the condition.
+	if isWebTransportExtendedConnect(origReq) {
+		return h.webTransportHijack(rw, req, origReq, repl, di, server)
+	}
+
 	// Forward 1xx status codes, backported from https://github.com/golang/go/pull/53164
 	var (
 		roundTripMutex sync.Mutex
@@ -1062,12 +1219,16 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 				return nil
 			}
 			h := rw.Header()
-			copyHeader(h, http.Header(header))
+			ownHeaders := h.Clone()
+			upstreamHeaders := http.Header(header).Clone()
+			stripHopByHopHeaders(upstreamHeaders)
+			copyHeader(h, upstreamHeaders)
 			rw.WriteHeader(code)
 
-			// Clear headers coming from the backend
+			// Clear headers coming from the backend, keeping our own
 			// (it's not automatically done by ResponseWriter.WriteHeader() for 1xx responses)
 			clear(h)
+			maps.Copy(h, ownHeaders)
 
 			return nil
 		},
@@ -1083,7 +1244,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 
 	// do the round-trip
 	start := time.Now()
-	res, err := h.Transport.RoundTrip(req)
+	res, err := h.roundTrip(req)
 	duration := time.Since(start)
 
 	// record that the round trip is done for the 1xx response handler
@@ -1120,30 +1281,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 		)
 	}
 
-	// duration until upstream wrote response headers (roundtrip duration)
-	repl.Set("http.reverse_proxy.upstream.latency", duration)
-	repl.Set("http.reverse_proxy.upstream.latency_ms", duration.Seconds()*1e3) // multiply seconds to preserve decimal (see #4666)
-
-	// update circuit breaker on current conditions
-	if di.Upstream.cb != nil {
-		di.Upstream.cb.RecordMetric(res.StatusCode, duration)
-	}
-
-	// perform passive health checks (if enabled)
-	if h.HealthChecks != nil && h.HealthChecks.Passive != nil {
-		// strike if the status code matches one that is "bad"
-		for _, badStatus := range h.HealthChecks.Passive.UnhealthyStatus {
-			if caddyhttp.StatusCodeMatches(res.StatusCode, badStatus) {
-				h.countFailure(di.Upstream)
-			}
-		}
-
-		// strike if the roundtrip took too long
-		if h.HealthChecks.Passive.UnhealthyLatency > 0 &&
-			duration >= time.Duration(h.HealthChecks.Passive.UnhealthyLatency) {
-			h.countFailure(di.Upstream)
-		}
-	}
+	h.recordUpstreamRoundTrip(di, repl, res.StatusCode, duration)
 
 	// if enabled, buffer the response body
 	if h.ResponseBuffers != 0 && !caddyhttp.IsIncremental(res.Header) {
@@ -1164,14 +1302,13 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	// check if the response matches a retry match entry; if so,
 	// close the body and return a retryable error so the request
 	// is retried with the next upstream. Only evaluate matcher sets
-	// that contain at least one expression matcher, since those are
-	// the ones that can reference response data ({rp.status_code},
-	// {rp.header.*}). Pure request-only matchers (method, path, etc.)
-	// are skipped to avoid retrying every response that matches a
-	// request condition
+	// with an expression that references response data ({rp.status_code},
+	// {rp.header.*}). Request-only matchers (method, path, or an
+	// expression without response placeholders) are skipped to avoid
+	// retrying every response that matches a request condition
 	if h.LoadBalancing != nil && len(h.LoadBalancing.RetryMatch) > 0 {
 		for _, matcherSet := range h.LoadBalancing.RetryMatch {
-			if !matcherSetHasExpressionMatcher(matcherSet) {
+			if !matcherSetReferencesResponse(matcherSet) {
 				continue
 			}
 			match, err := matcherSet.MatchWithError(req)
@@ -1218,10 +1355,11 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 		// we use the original request here, so that any routes from 'next'
 		// see the original request rather than the proxy cloned request.
 		hrc := &handleResponseContext{
-			handler:  h,
-			response: res,
-			start:    start,
-			logger:   logger,
+			handler:      h,
+			response:     res,
+			start:        start,
+			logger:       logger,
+			upstreamAddr: di.Upstream.String(),
 		}
 		ctx := origReq.Context()
 		ctx = context.WithValue(ctx, proxyHandleResponseContextCtxKey, hrc)
@@ -1239,10 +1377,10 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 			res.Body.Close()
 		}
 
-		// wrap any route error in roundtripSucceededError so caller knows that
-		// the roundtrip was successful and to not retry
+		// wrap any route error in terminalError so the outer loop knows
+		// the response is committed and must not be retried
 		if routeErr != nil {
-			return roundtripSucceededError{routeErr}
+			return terminalError{routeErr}
 		}
 
 		// we're done handling the response, and we don't want to
@@ -1251,7 +1389,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	}
 
 	// copy the response body and headers back to the upstream client
-	return h.finalizeResponse(rw, req, res, repl, start, logger)
+	return h.finalizeResponse(rw, req, res, repl, start, logger, di.Upstream.String())
 }
 
 // finalizeResponse prepares and copies the response.
@@ -1262,6 +1400,7 @@ func (h *Handler) finalizeResponse(
 	repl *caddy.Replacer,
 	start time.Time,
 	logger *zap.Logger,
+	upstreamAddr string,
 ) error {
 	responseWasIncremental := caddyhttp.IsIncremental(res.Header)
 
@@ -1271,10 +1410,7 @@ func (h *Handler) finalizeResponse(
 	// and restore it with a canonical Connection header.
 	upgradeVal := res.Header.Get("Upgrade")
 
-	removeConnectionHeaders(res.Header)
-	for _, h := range hopHeaders {
-		res.Header.Del(h)
-	}
+	stripHopByHopHeaders(res.Header)
 
 	if res.StatusCode == http.StatusSwitchingProtocols && upgradeVal != "" {
 		res.Header.Set("Upgrade", upgradeVal)
@@ -1283,9 +1419,7 @@ func (h *Handler) finalizeResponse(
 
 	// deal with 101 Switching Protocols responses: (WebSocket, h2c, etc)
 	if res.StatusCode == http.StatusSwitchingProtocols {
-		var wg sync.WaitGroup
-		h.handleUpgradeResponse(logger, &wg, rw, req, res)
-		wg.Wait()
+		h.handleUpgradeResponse(logger, rw, req, res, upstreamAddr)
 		return nil
 	}
 
@@ -1307,7 +1441,7 @@ func (h *Handler) finalizeResponse(
 	if responseHasContent(req, res) && h.ResponseBuffers != 0 &&
 		(responseWasIncremental || caddyhttp.IsIncremental(res.Header)) {
 		res.Body.Close()
-		return roundtripSucceededError{h.refuseIncremental(rw, res.Header)}
+		return terminalError{h.refuseIncremental(rw, res.Header)}
 	}
 
 	copyHeader(rw.Header(), res.Header)
@@ -1341,7 +1475,13 @@ func (h *Handler) finalizeResponse(
 		// we'll just log the error and abort the stream here and panic just as
 		// the standard lib's proxy to propagate the stream error.
 		// see issue https://github.com/caddyserver/caddy/issues/5951
-		if c := logger.Check(zapcore.WarnLevel, "aborting with incomplete response"); c != nil {
+		lvl := zapcore.WarnLevel
+		if isClientCanceledH3(err) {
+			// the client canceled the request; expected and not actionable
+			// see issue https://github.com/caddyserver/caddy/issues/5766
+			lvl = zapcore.DebugLevel
+		}
+		if c := logger.Check(lvl, "aborting with incomplete response"); c != nil {
 			c.Write(zap.Error(err))
 		}
 		// flush the buffer to ensure the client sees the partial response
@@ -1383,6 +1523,17 @@ func (h *Handler) finalizeResponse(
 	return nil
 }
 
+// isClientCanceledH3 returns true if err is an HTTP/3 client canceling
+// its request (H3_REQUEST_CANCELLED) while the response was being written.
+// The same error read from an HTTP/3 backend is the backend's doing.
+func isClientCanceledH3(err error) bool {
+	if !errors.Is(err, errWritingDownstream) {
+		return false
+	}
+	h3Err, ok := errors.AsType[*http3.Error](err)
+	return ok && h3Err.Remote && h3Err.ErrorCode == http3.ErrCodeRequestCanceled
+}
+
 // tryAgain takes the time that the handler was initially invoked,
 // the amount of retries already performed, as well as any error
 // currently obtained, and the request being tried, and returns
@@ -1410,9 +1561,12 @@ func (lb LoadBalancing) tryAgain(ctx caddy.Context, start time.Time, retries int
 	// could not even be established to the upstream), then it
 	// should be safe to retry, since without a connection, no
 	// HTTP request can be transmitted; but if the error is not
-	// specifically a dialer error, we need to be careful
+	// specifically a dialer error, we need to be careful; the
+	// dial error may be wrapped, e.g. net/http wraps it in a
+	// *net.OpError ("proxyconnect") when a forward proxy is used
 	if proxyErr != nil {
-		_, isDialError := proxyErr.(DialError)
+		var dialErr DialError
+		isDialError := errors.As(proxyErr, &dialErr)
 		_, isRetryableResponse := proxyErr.(retryableResponseError)
 		herr, isHandlerError := proxyErr.(caddyhttp.HandlerError)
 
@@ -1464,6 +1618,31 @@ func (lb LoadBalancing) tryAgain(ctx caddy.Context, start time.Time, retries int
 		}
 		return false
 	}
+}
+
+// newTracedTransport wraps rt so that round trips are recorded as
+// OpenTelemetry client spans. The tracer provider is taken from the span
+// in the request context (set by the tracing handler), so the wrapper does
+// not depend on any global tracer provider.
+func newTracedTransport(rt http.RoundTripper) http.RoundTripper {
+	return otelhttp.NewTransport(rt,
+		otelhttp.WithPropagators(autoprop.NewTextMapPropagator()),
+	)
+}
+
+// roundTrip sends req to the upstream. If req carries a valid span context,
+// the round trip is recorded as an OpenTelemetry client span and that span's
+// context is propagated to the upstream.
+func (h *Handler) roundTrip(req *http.Request) (*http.Response, error) {
+	if h.tracedTransport == nil || !oteltrace.SpanContextFromContext(req.Context()).IsValid() {
+		return h.Transport.RoundTrip(req)
+	}
+	// the traced transport clones req, so set the scheme beforehand
+	// to keep it visible to the span attributes and to req itself
+	if ss, ok := h.Transport.(interface{ SetScheme(*http.Request) }); ok {
+		ss.SetScheme(req)
+	}
+	return h.tracedTransport.RoundTrip(req)
 }
 
 // directRequest modifies only req.URL so that it points to the upstream
@@ -1535,33 +1714,53 @@ func (h Handler) provisionUpstream(upstream *Upstream, dynamic bool) {
 // (which it shouldn't be), this function returns its input; i.e. is a no-op, for safety.
 // Otherwise, it returns bodyReadCloser, the original body will be closed and body will be nil
 // if it's explicitly configured to buffer all or EOF is reached when reading.
-// TODO: the error during reading is discarded if the limit is negative, should the error be propagated
-// to upstream/downstream?
+// If reading fails, the body is returned as partially buffered, so the read error
+// is not hidden from the caller.
 func (h Handler) bufferedBody(originalBody io.ReadCloser, limit int64) (io.ReadCloser, int64) {
 	if limit == 0 {
 		return originalBody, 0
 	}
 	var written int64
+	var err error
 	buf := bufPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	if limit > 0 {
-		var err error
 		written, err = io.CopyN(buf, originalBody, limit)
-		if (err != nil && err != io.EOF) || written == limit {
-			return bodyReadCloser{
-				Reader: io.MultiReader(buf, originalBody),
-				buf:    buf,
-				body:   originalBody,
-			}, written
-		}
 	} else {
-		written, _ = io.Copy(buf, originalBody)
+		written, err = io.Copy(buf, originalBody)
+	}
+	if (err != nil && err != io.EOF) || written == limit {
+		return bodyReadCloser{
+			Reader: io.MultiReader(buf, originalBody),
+			buf:    buf,
+			body:   originalBody,
+		}, written
 	}
 	originalBody.Close() // no point in keeping it open
 	return bodyReadCloser{
 		Reader: buf,
 		buf:    buf,
 	}, written
+}
+
+// requestBodyWithTrailers publishes a snapshot of the incoming trailers at EOF.
+// Close only closes the underlying body; it must not read or publish trailers.
+type requestBodyWithTrailers struct {
+	io.ReadCloser
+	original *http.Request
+	trailer  http.Header
+}
+
+func (b *requestBodyWithTrailers) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if err == io.EOF && b.original != nil {
+		clear(b.trailer)
+		for k, vv := range b.original.Trailer {
+			b.trailer[k] = slices.Clone(vv)
+		}
+		b.original = nil // repeated EOF reads must not recopy or append values
+	}
+	return n, err
 }
 
 // cloneRequest makes a semi-deep clone of origReq.
@@ -1604,6 +1803,31 @@ func copyHeader(dst, src http.Header) {
 	for k, vv := range src {
 		for _, v := range vv {
 			dst.Add(k, v)
+		}
+	}
+}
+
+// recordUpstreamRoundTrip publishes latency placeholders, records circuit
+// breaker metrics, and applies passive health-check strikes for one
+// completed upstream attempt. Used by both the HTTP round-trip path and
+// the WebTransport hijack path.
+func (h *Handler) recordUpstreamRoundTrip(di DialInfo, repl *caddy.Replacer, status int, duration time.Duration) {
+	repl.Set("http.reverse_proxy.upstream.latency", duration)
+	repl.Set("http.reverse_proxy.upstream.latency_ms", duration.Seconds()*1e3) // multiply seconds to preserve decimal (see #4666)
+
+	if di.Upstream != nil && di.Upstream.cb != nil {
+		di.Upstream.cb.RecordMetric(status, duration)
+	}
+
+	if h.HealthChecks != nil && h.HealthChecks.Passive != nil {
+		for _, badStatus := range h.HealthChecks.Passive.UnhealthyStatus {
+			if caddyhttp.StatusCodeMatches(status, badStatus) {
+				h.countFailure(di.Upstream)
+			}
+		}
+		if h.HealthChecks.Passive.UnhealthyLatency > 0 &&
+			duration >= time.Duration(h.HealthChecks.Passive.UnhealthyLatency) {
+			h.countFailure(di.Upstream)
 		}
 	}
 }
@@ -1660,6 +1884,16 @@ func removeConnectionHeaders(h http.Header) {
 				h.Del(sf)
 			}
 		}
+	}
+}
+
+// stripHopByHopHeaders removes hop-by-hop headers from h, including any
+// headers nominated by the Connection header.
+// See RFC 7230, section 6.1.
+func stripHopByHopHeaders(h http.Header) {
+	removeConnectionHeaders(h)
+	for _, hop := range hopHeaders {
+		h.Del(hop)
 	}
 }
 
@@ -1795,6 +2029,11 @@ var hopHeaders = []string{
 // DialError is an error that specifically occurs
 // in a call to Dial or DialContext.
 type DialError struct{ error }
+
+// NewDialError wraps err as a DialError for transports outside this package.
+func NewDialError(err error) DialError {
+	return DialError{err}
+}
 
 // TLSTransport is implemented by transports
 // that are capable of using TLS.
@@ -1998,23 +2237,52 @@ type RequestHeaderOpsTransport interface {
 	RequestHeaderOps() *headers.HeaderOps
 }
 
-// matcherSetHasExpressionMatcher reports whether a matcher set contains
-// at least one expression matcher. Expression matchers can reference
-// response data via placeholders like {rp.status_code}. Matcher sets
-// without expression matchers only test request properties and should
-// not be evaluated for response-based retry decisions
-func matcherSetHasExpressionMatcher(matcherSet caddyhttp.MatcherSet) bool {
+// responsePlaceholders are the placeholders that are only set once the
+// upstream round trip completes ({rp.status_code} is adapted to
+// {http.reverse_proxy.status_code}, and so on)
+var responsePlaceholders = []string{
+	"http.reverse_proxy.status_code",
+	"http.reverse_proxy.status_text",
+	"http.reverse_proxy.upstream.latency",
+	"http.reverse_proxy.upstream.latency_ms",
+}
+
+// responseHeaderPlaceholderPrefix is the prefix of the response
+// header placeholders, {http.reverse_proxy.header.*}
+const responseHeaderPlaceholderPrefix = "http.reverse_proxy.header."
+
+// matcherSetReferencesResponse reports whether a matcher set contains an
+// expression matcher that reads response data, or a placeholder whose name
+// is only known at evaluation time. Other matcher sets only test request or
+// upstream selection properties and should not be evaluated for
+// response-based retry decisions
+func matcherSetReferencesResponse(matcherSet caddyhttp.MatcherSet) bool {
 	for _, m := range matcherSet {
-		if _, ok := m.(*caddyhttp.MatchExpression); ok {
-			return true
+		expr, ok := m.(*caddyhttp.MatchExpression)
+		if !ok {
+			continue
+		}
+		for _, name := range expr.Placeholders() {
+			if name == "" ||
+				slices.Contains(responsePlaceholders, name) ||
+				strings.HasPrefix(name, responseHeaderPlaceholderPrefix) {
+				return true
+			}
 		}
 	}
 	return false
 }
 
-// roundtripSucceededError is an error type that is returned if the
-// roundtrip succeeded, but an error occurred after-the-fact.
-type roundtripSucceededError struct{ error }
+// terminalError signals that the proxy loop must stop and the wrapped
+// error must be propagated unchanged. It is emitted in any situation
+// where the handler has committed enough client-visible state that
+// retrying against another upstream would be unsafe — for example, a
+// handle_response route that ran after a successful round-trip, or a
+// WebTransport upgrade that already flushed 200 OK and hijacked the
+// stream. The inner error may be nil to signal terminal success.
+type terminalError struct{ error }
+
+func (e terminalError) Unwrap() error { return e.error }
 
 // retryableResponseError is returned when the upstream response matched
 // a retry_match entry, indicating the request should be retried with the
@@ -2045,6 +2313,22 @@ func (brc bodyReadCloser) Close() error {
 		return brc.body.Close()
 	}
 	return nil
+}
+
+// StreamLogs controls logging for upgraded stream lifecycle events.
+type StreamLogs struct {
+	// The minimum level at which stream lifecycle events are logged.
+	// Supported values are debug, info, warn, and error. Default: debug.
+	Level string `json:"level,omitempty"`
+
+	// Logger name for stream lifecycle logs. Default: "http.handlers.reverse_proxy.stream".
+	// Special value "access" uses the access logger namespace and, if set,
+	// respects the first value in access_logger_names/log_name for the request.
+	LoggerName string `json:"logger_name,omitempty"`
+
+	// If true, suppresses the access log entry normally emitted when an
+	// upgraded stream handshake completes and the request unwinds.
+	SkipHandshake bool `json:"skip_handshake,omitempty"`
 }
 
 // bufPool is used for buffering requests and responses.
@@ -2079,6 +2363,9 @@ type handleResponseContext struct {
 	// i.e. copied and closed, to make sure that it doesn't
 	// happen twice.
 	isFinalized bool
+
+	// upstreamAddr is the selected upstream address for this request.
+	upstreamAddr string
 }
 
 // proxyHandleResponseContextCtxKey is the context key for the active proxy handler
@@ -2088,6 +2375,13 @@ const proxyHandleResponseContextCtxKey caddy.CtxKey = "reverse_proxy_handle_resp
 
 // errNoUpstream occurs when there are no upstream available.
 var errNoUpstream = fmt.Errorf("no upstreams available")
+
+const (
+	defaultStreamLogLevel     = zapcore.DebugLevel
+	defaultStreamLoggerName   = "http.handlers.reverse_proxy.stream"
+	streamLoggerNameUseAccess = "access"
+	defaultAccessLoggerBase   = "http.log.access"
+)
 
 // Interface guards
 var (
