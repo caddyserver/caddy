@@ -36,6 +36,7 @@ import (
 	"go/token"
 	"go/types"
 	"net/http"
+	"strings"
 	"testing"
 
 	"golang.org/x/tools/go/packages"
@@ -44,22 +45,12 @@ import (
 // headerType is the type whose map operations must use canonical keys.
 const headerType = "net/http.Header"
 
-// allowed are keys deliberately written with the RFC 6455 casing
-// ("WebSocket", capital S) instead of net/http's canonical form, because
-// some upstreams compare them case-sensitively. They are only ever written
-// on the way out, never looked up against a parsed header map.
-// See normalizeWebsocketHeaders and
-// https://github.com/caddyserver/caddy/pull/6621.
-var allowed = map[string]bool{
-	"Sec-WebSocket-Accept":     true,
-	"Sec-WebSocket-Extensions": true,
-	"Sec-WebSocket-Key":        true,
-	"Sec-WebSocket-Protocol":   true,
-	"Sec-WebSocket-Version":    true,
-}
+// nolintDirective marks a deliberate non-canonical key on its line, such as
+// the RFC 6455 spellings written for case-sensitive upstreams.
+const nolintDirective = "//nolint:canonicalheader"
 
 // TODO: delete this package once golangci-lint ships https://github.com/lasiar/canonicalheader/pull/90;
-// the RFC 6455 writes in allowed then need //nolint:canonicalheader.
+// the linter honors the same //nolint:canonicalheader directives.
 func TestHeaderKeysAreCanonical(t *testing.T) {
 	cfg := &packages.Config{
 		Mode: packages.NeedName | packages.NeedSyntax | packages.NeedTypes |
@@ -95,9 +86,18 @@ func TestHeaderKeysAreCanonical(t *testing.T) {
 func checkFile(t *testing.T, pkg *packages.Package, file *ast.File) int {
 	var checked int
 
+	exempt := make(map[int]bool)
+	for _, group := range file.Comments {
+		for _, c := range group.List {
+			if strings.HasPrefix(c.Text, nolintDirective) {
+				exempt[pkg.Fset.Position(c.Slash).Line] = true
+			}
+		}
+	}
+
 	report := func(pos token.Pos, key, form string) {
 		canonical := http.CanonicalHeaderKey(key)
-		if key == canonical || allowed[key] {
+		if key == canonical || exempt[pkg.Fset.Position(pos).Line] {
 			return
 		}
 		t.Errorf("%s: %s uses non-canonical key %q; want %q",
