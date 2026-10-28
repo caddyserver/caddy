@@ -1216,9 +1216,13 @@ func automationPolicyShadows(i int, aps []*caddytls.AutomationPolicy) int {
 // "*.example.com" before the i+1 policy. Then the wildcard matches
 // "foo.example.com" first, and the i+1 policy is never used.
 //
-// Like automationPolicyIsSubset above, this uses certmagic.MatchWildcard,
-// which supports only a single "*". It does not handle interior wildcards
-// like "foo.*.example.com".
+// The opposite case, where a policy between i and j covers a subject of
+// aps[j], is not checked on purpose. That subject is already shadowed
+// because of the sort order, and merging moves it before the broader
+// pattern, so it uses the settings from its own site block.
+//
+// This uses certmagic.MatchWildcard, which the TLS app also uses to pick
+// a policy for a name.
 func automationPolicyMergeShadows(i, j int, aps []*caddytls.AutomationPolicy) bool {
 	for k := i + 1; k < j; k++ {
 		for _, kSubj := range aps[k].SubjectsRaw {

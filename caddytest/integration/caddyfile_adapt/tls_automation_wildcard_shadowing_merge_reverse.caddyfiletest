@@ -1,0 +1,120 @@
+# The *.example.com policy has more subjects, so it is sorted before the
+# foo.example.com policy and covers foo.example.com. The first and last
+# policies have the same settings, so they are merged. This moves
+# foo.example.com before the wildcard, and it uses the issuer from its own
+# site block.
+a.example.com, b.example.com, c.example.com {
+	tls {
+		issuer acme
+	}
+}
+
+*.example.com, other.com, third.com {
+	tls internal
+}
+
+foo.example.com, e.com {
+	tls force_automate {
+		issuer acme
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"foo.example.com",
+										"e.com"
+									]
+								}
+							],
+							"terminal": true
+						},
+						{
+							"match": [
+								{
+									"host": [
+										"a.example.com",
+										"b.example.com",
+										"c.example.com"
+									]
+								}
+							],
+							"terminal": true
+						},
+						{
+							"match": [
+								{
+									"host": [
+										"*.example.com",
+										"other.com",
+										"third.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"tls_connection_policies": [
+						{
+							"match": {
+								"sni": [
+									"e.com",
+									"foo.example.com"
+								]
+							}
+						},
+						{}
+					]
+				}
+			}
+		},
+		"tls": {
+			"certificates": {
+				"automate": [
+					"e.com",
+					"foo.example.com"
+				]
+			},
+			"automation": {
+				"policies": [
+					{
+						"subjects": [
+							"a.example.com",
+							"b.example.com",
+							"c.example.com",
+							"e.com",
+							"foo.example.com"
+						],
+						"issuers": [
+							{
+								"module": "acme"
+							}
+						]
+					},
+					{
+						"subjects": [
+							"*.example.com",
+							"other.com",
+							"third.com"
+						],
+						"issuers": [
+							{
+								"module": "internal"
+							}
+						]
+					}
+				]
+			}
+		}
+	}
+}
