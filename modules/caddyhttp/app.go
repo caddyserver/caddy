@@ -76,6 +76,7 @@ func init() {
 // `{http.request.orig_uri.path.*}` | Parts of the original path, split by `/` (0-based from left)
 // `{http.request.orig_uri.path.dir}` | The request's original directory
 // `{http.request.orig_uri.path.file}` | The request's original filename
+// `{http.request.orig_uri.path.file_escaped}` | The request's original filename, percent-encoded as in the request's escaped path
 // `{http.request.orig_uri.query}` | The request's original query string (without `?`)
 // `{http.request.orig_uri.prefixed_query}` | The request's original query string with a `?` prefix, if non-empty
 // `{http.request.port}` | The port part of the request's Host header
