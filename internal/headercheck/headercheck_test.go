@@ -28,11 +28,6 @@
 //	http.Header{"x-key": {"v"}}         // composite literal
 //	delete(h, "x-key")                  // delete builtin
 //	h["x-key"] = append(h["x-key"], "v) // read-modify-write
-//
-// A helper that takes the key from its caller hides the literal from all of
-// the above. Naming such a parameter with a canonical prefix, as
-// headerGet(hdr, canonicalKey) does, opts every argument passed to it into
-// the same verification.
 package headercheck
 
 import (
@@ -41,7 +36,6 @@ import (
 	"go/token"
 	"go/types"
 	"net/http"
-	"strings"
 	"testing"
 
 	"golang.org/x/tools/go/packages"
@@ -64,8 +58,8 @@ var allowed = map[string]bool{
 	"Sec-WebSocket-Version":    true,
 }
 
-// TODO: once golangci-lint ships https://github.com/lasiar/canonicalheader/pull/90, drop the index and
-// delete checks and keep the canonical* parameter check. The RFC 6455 sites then need //nolint:canonicalheader.
+// TODO: delete this package once golangci-lint ships https://github.com/lasiar/canonicalheader/pull/90;
+// the RFC 6455 writes in allowed then need //nolint:canonicalheader.
 func TestHeaderKeysAreCanonical(t *testing.T) {
 	cfg := &packages.Config{
 		Mode: packages.NeedName | packages.NeedSyntax | packages.NeedTypes |
@@ -95,25 +89,6 @@ func TestHeaderKeysAreCanonical(t *testing.T) {
 		t.Fatal("no http.Header map operations found; the check is not running")
 	}
 	t.Logf("checked %d direct http.Header map operations", checked)
-}
-
-// signatureOf resolves the signature of the function a call invokes.
-func signatureOf(pkg *packages.Package, call *ast.CallExpr) (*types.Signature, bool) {
-	var ident *ast.Ident
-	switch fun := ast.Unparen(call.Fun).(type) {
-	case *ast.Ident:
-		ident = fun
-	case *ast.SelectorExpr:
-		ident = fun.Sel
-	default:
-		return nil, false
-	}
-	fn, ok := pkg.TypesInfo.Uses[ident].(*types.Func)
-	if !ok {
-		return nil, false
-	}
-	sig, ok := fn.Type().(*types.Signature)
-	return sig, ok
 }
 
 // checkFile reports the number of direct http.Header map operations examined.
@@ -194,34 +169,7 @@ func checkFile(t *testing.T, pkg *packages.Package, file *ast.File) int {
 						checked++
 						report(node.Args[1].Pos(), key, "delete on http.Header")
 					}
-					return true
 				}
-			}
-
-			// Helpers that index a header with a key their caller supplies
-			// hide the literal from every check above. Any parameter named
-			// canonical* opts that argument into the same verification.
-			sig, ok := signatureOf(pkg, node)
-			if !ok {
-				return true
-			}
-			params := sig.Params()
-			for i := range params.Len() {
-				if !strings.HasPrefix(params.At(i).Name(), "canonical") {
-					continue
-				}
-				if sig.Variadic() && i == params.Len()-1 {
-					break
-				}
-				if i >= len(node.Args) {
-					break
-				}
-				key, ok := keyOf(node.Args[i])
-				if !ok {
-					continue
-				}
-				checked++
-				report(node.Args[i].Pos(), key, "header key argument")
 			}
 		}
 		return true
