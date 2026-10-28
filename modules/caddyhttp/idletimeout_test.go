@@ -368,6 +368,25 @@ func TestIdleTimeoutReaderHandlerDoneArmsDrain(t *testing.T) {
 	assert.False(t, deadlines[0].IsZero())
 }
 
+func TestIdleTimeoutReaderHandlerDoneArmsDrainAfterHandlerDeadline(t *testing.T) {
+	w := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	r := &IdleTimeoutReader{
+		ReadCloser:    io.NopCloser(strings.NewReader("body")),
+		Ctrl:          http.NewResponseController(w),
+		Deadline:      IdleDeadline{Timeout: time.Second},
+		Logger:        zap.NewNop(),
+		DrainDeadline: true,
+	}
+	handlerDeadline := time.Now().Add(time.Hour)
+	require.NoError(t, r.SetReadDeadline(handlerDeadline))
+
+	r.HandlerDone()
+	deadlines := w.snapshot()
+	require.Len(t, deadlines, 2)
+	assert.False(t, deadlines[1].IsZero())
+	assert.True(t, deadlines[1].Before(handlerDeadline))
+}
+
 func TestIdleTimeoutReaderHandlerDoneWithoutDrainDeadline(t *testing.T) {
 	w := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
 	r := &IdleTimeoutReader{
@@ -1368,7 +1387,19 @@ func TestIdleTimeoutReader_HandlerDeadline(t *testing.T) {
 			clear:     true,
 			hard:      true,
 			deadlines: []time.Time{earlier},
-			expected:  []string{earlierSet, hardSet, hardSet, hardSet, zeroSet},
+			expected:  []string{hardSet, hardSet, hardSet, hardSet, zeroSet},
+		},
+		{
+			name:      "later handler deadline doesn't lift the hard deadline",
+			hard:      true,
+			deadlines: []time.Time{later},
+			expected:  []string{hardSet, hardSet, hardSet, zeroSet},
+		},
+		{
+			name:      "zero handler deadline keeps the hard deadline",
+			hard:      true,
+			deadlines: []time.Time{{}},
+			expected:  []string{hardSet, hardSet, hardSet, zeroSet},
 		},
 	} {
 		rec := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}

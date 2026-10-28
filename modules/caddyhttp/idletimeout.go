@@ -169,17 +169,21 @@ const (
 
 // SetReadDeadline sets the read deadline on behalf of a handler and
 // keeps it as a ceiling for the idle deadline, until the handler sets
-// another one. A zero deadline removes the ceiling.
+// another one. A zero deadline removes the ceiling. HardDeadline still
+// applies.
 func (r *IdleTimeoutReader) SetReadDeadline(deadline time.Time) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if err := r.Ctrl.SetReadDeadline(deadline); err != nil {
+	prev := r.handlerDeadline
+	r.handlerDeadline = deadline
+	ceiling := r.ceilingLocked()
+	if err := r.Ctrl.SetReadDeadline(ceiling); err != nil {
+		r.handlerDeadline = prev
 		return err
 	}
-	r.installed = deadline
-	r.handlerDeadline = deadline
-	if deadline.IsZero() {
+	r.installed = ceiling
+	if ceiling.IsZero() {
 		r.armed = deadlineNone
 	} else {
 		r.armed = deadlineHard
@@ -229,9 +233,9 @@ func (r *IdleTimeoutReader) Read(p []byte) (int, error) {
 // HandlerDone prevents later body reads from using the response controller.
 // If the body is not finished and DrainDeadline is set, it leaves an idle
 // deadline armed for net/http's post-handler drain. Otherwise, it clears a
-// deadline left from a finished body or put back between reads, unless the
-// body timed out with an expired drain deadline. It must be called before the
-// installing handler returns.
+// deadline left from a finished body, put back between reads or set by the
+// handler, unless the body timed out with an expired drain deadline. It must
+// be called before the installing handler returns.
 func (r *IdleTimeoutReader) HandlerDone() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -239,10 +243,13 @@ func (r *IdleTimeoutReader) HandlerDone() {
 	if r.finished {
 		return
 	}
-	if r.terminalErr != nil || r.armed == deadlineHard {
+	switch {
+	case r.terminalErr != nil:
 		r.clearDeadlineLocked()
-	} else if r.DrainDeadline && r.armed != deadlineIdle && !r.unsupported {
+	case r.DrainDeadline && r.armed != deadlineIdle && !r.unsupported:
 		r.setDeadlineLocked("could not set final read deadline")
+	case r.armed == deadlineHard:
+		r.clearDeadlineLocked()
 	}
 	r.finished = true
 }
