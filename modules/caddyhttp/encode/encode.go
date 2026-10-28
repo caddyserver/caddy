@@ -159,7 +159,21 @@ func (enc *Encode) Validate() error {
 }
 
 func isEncodeAllowed(h http.Header) bool {
-	return !strings.Contains(firstValue(h["Cache-Control"]), "no-transform")
+	for _, v := range h["Cache-Control"] {
+		if strings.Contains(v, "no-transform") {
+			return false
+		}
+	}
+	return true
+}
+
+func hasNonEmptyValue(h http.Header, key string) bool {
+	for _, v := range h[key] {
+		if v != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func (enc *Encode) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
@@ -527,7 +541,7 @@ func (rw *responseWriter) init() {
 
 	hdr := rw.Header()
 
-	if firstValue(hdr["Content-Encoding"]) == "" && isEncodeAllowed(hdr) &&
+	if !hasNonEmptyValue(hdr, "Content-Encoding") && isEncodeAllowed(hdr) &&
 		rw.config.Match(rw) {
 		rw.w = rw.config.writerPools[rw.encodingName].Get().(Encoder)
 		rw.w.Reset(rw.ResponseWriter)

@@ -375,6 +375,20 @@ func TestIsEncodeAllowed(t *testing.T) {
 			},
 			expected: false,
 		},
+		{
+			name: "Cache-Control HTTP header with no-transform on a later line",
+			headers: http.Header{
+				"Cache-Control": {"no-cache", "no-transform"},
+			},
+			expected: false,
+		},
+		{
+			name: "Cache-Control HTTP header on multiple lines without no-transform",
+			headers: http.Header{
+				"Cache-Control": {"no-cache", "max-age=60"},
+			},
+			expected: true,
+		},
 	}
 
 	for _, test := range testCases {
