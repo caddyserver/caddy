@@ -383,6 +383,13 @@ func TestIsEncodeAllowed(t *testing.T) {
 			expected: true,
 		},
 		{
+			name: "With Cache-Control HTTP header no-transform as token Cache-Extension value",
+			headers: http.Header{
+				"Cache-Control": {"no-cache, community=no-transform"},
+			},
+			expected: true,
+		},
+		{
 			name: "Cache-Control HTTP header with no-transform inside a quoted argument containing commas",
 			headers: http.Header{
 				"Cache-Control": {`private="Set-Cookie, no-transform"`},
