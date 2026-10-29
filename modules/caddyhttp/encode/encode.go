@@ -356,7 +356,7 @@ func (rw *responseWriter) WriteHeader(status int) {
 	// we would miss the Vary header in this case when compression was also enabled; note that we set this
 	// header in the responseWriter.init() method but that is only called if we are writing a response body
 	if status == http.StatusNotModified && !hasVaryValue(h, "Accept-Encoding") {
-		h.Add("Vary", "Accept-Encoding")
+		h["Vary"] = append(h["Vary"], "Accept-Encoding")
 	}
 
 	// write status immediately if status is 2xx and the request is CONNECT
@@ -378,7 +378,7 @@ func (rw *responseWriter) WriteHeader(status int) {
 	// body may not be written for a while and the client needs the headers
 	// to establish the stream; see #6293
 	if !rw.wroteHeader && finalStatus &&
-		(rw.incremental || isSSE(h.Get("Content-Type"))) {
+		(rw.incremental || isSSE(firstValue(h["Content-Type"]))) {
 		rw.init()
 		rw.ResponseWriter.WriteHeader(status)
 		rw.wroteHeader = true
@@ -456,8 +456,8 @@ func (rw *responseWriter) Write(p []byte) (int, error) {
 		rw.WriteHeader(http.StatusOK)
 	}
 	if !rw.wroteHeader && rw.statusCode == 0 && caddyhttp.IsIncremental(rw.Header()) {
-		if rw.Header().Get("Content-Type") == "" {
-			rw.Header().Set("Content-Type", http.DetectContentType(p))
+		if hdr := rw.Header(); firstValue(hdr["Content-Type"]) == "" {
+			hdr["Content-Type"] = []string{http.DetectContentType(p)}
 		}
 		rw.WriteHeader(http.StatusOK)
 	}
@@ -467,13 +467,13 @@ func (rw *responseWriter) Write(p []byte) (int, error) {
 		var gtMinLength bool
 		if len(p) > rw.config.MinLength {
 			gtMinLength = true
-		} else if cl, err := strconv.Atoi(rw.Header().Get("Content-Length")); err == nil && cl > rw.config.MinLength {
+		} else if cl, err := strconv.Atoi(firstValue(rw.Header()["Content-Length"])); err == nil && cl > rw.config.MinLength {
 			gtMinLength = true
 		}
 
 		if gtMinLength {
-			if rw.Header().Get("Content-Type") == "" {
-				rw.Header().Set("Content-Type", http.DetectContentType(p))
+			if hdr := rw.Header(); firstValue(hdr["Content-Type"]) == "" {
+				hdr["Content-Type"] = []string{http.DetectContentType(p)}
 			}
 			rw.init()
 		}
@@ -566,7 +566,7 @@ func (rw *responseWriter) ReadFrom(r io.Reader) (int64, error) {
 func (rw *responseWriter) Close() error {
 	// didn't write, probably head request
 	if !rw.wroteHeader {
-		cl, err := strconv.Atoi(rw.Header().Get("Content-Length"))
+		cl, err := strconv.Atoi(firstValue(rw.Header()["Content-Length"]))
 		if err == nil && cl > rw.config.MinLength {
 			rw.init()
 		}
