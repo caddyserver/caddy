@@ -363,7 +363,10 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 	// add all the curve preferences in order, without duplicates
 	curvesAdded := make(map[tls.CurveID]struct{})
 	for _, curveName := range p.Curves {
-		curveID := SupportedCurves[curveName]
+		curveID, ok := SupportedCurves[curveName]
+		if !ok {
+			return fmt.Errorf("unsupported curve: %s", curveName)
+		}
 		if _, ok := curvesAdded[curveID]; !ok {
 			curvesAdded[curveID] = struct{}{}
 			cfg.CurvePreferences = append(cfg.CurvePreferences, curveID)
@@ -377,14 +380,23 @@ func (p *ConnectionPolicy) buildStandardTLSConfig(ctx caddy.Context) error {
 	}
 
 	// min and max protocol versions
-	if (p.ProtocolMin != "" && p.ProtocolMax != "") && p.ProtocolMin > p.ProtocolMax {
-		return fmt.Errorf("protocol min (%x) cannot be greater than protocol max (%x)", p.ProtocolMin, p.ProtocolMax)
-	}
 	if p.ProtocolMin != "" {
-		cfg.MinVersion = SupportedProtocols[p.ProtocolMin]
+		minVersion, ok := SupportedProtocols[p.ProtocolMin]
+		if !ok {
+			return fmt.Errorf("unsupported protocol_min: %s", p.ProtocolMin)
+		}
+		cfg.MinVersion = minVersion
 	}
 	if p.ProtocolMax != "" {
-		cfg.MaxVersion = SupportedProtocols[p.ProtocolMax]
+		maxVersion, ok := SupportedProtocols[p.ProtocolMax]
+		if !ok {
+			return fmt.Errorf("unsupported protocol_max: %s", p.ProtocolMax)
+		}
+		cfg.MaxVersion = maxVersion
+	}
+	if cfg.MinVersion > cfg.MaxVersion {
+		return fmt.Errorf("protocol min (%s) cannot be greater than protocol max (%s)",
+			ProtocolName(cfg.MinVersion), ProtocolName(cfg.MaxVersion))
 	}
 
 	// client authentication
@@ -918,6 +930,12 @@ func (clientauth *ClientAuthentication) verifyConnection(cs tls.ConnectionState)
 			return err
 		}
 	}
+
+	// crypto/tls has already enforced whether the mode requires a
+	// certificate, so the verifiers only check one that was presented
+	if len(rawCerts) == 0 {
+		return nil
+	}
 	for _, verifier := range clientauth.verifiers {
 		if err := verifier.VerifyClientCertificate(rawCerts, cs.VerifiedChains); err != nil {
 			return err
@@ -1082,7 +1100,8 @@ type LeafCertificateLoader interface {
 }
 
 // ClientCertificateVerifier is a type which verifies client certificates.
-// It is called during verifyPeerCertificate in the TLS handshake.
+// It is called during verifyConnection in the TLS handshake, only when
+// the client presented a certificate.
 type ClientCertificateVerifier interface {
 	VerifyClientCertificate(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error
 }
