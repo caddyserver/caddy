@@ -16,7 +16,7 @@ require (
 	github.com/dunglas/go-urlpattern v1.0.0
 	github.com/dunglas/httpsfv v1.1.1
 	github.com/dustin/go-humanize v1.1.0
-	github.com/go-chi/chi/v5 v5.3.2
+	github.com/go-chi/chi/v5 v5.4.0
 	github.com/google/uuid v1.6.0
 	github.com/klauspost/compress v1.20.1
 	github.com/klauspost/cpuid/v2 v2.4.0
