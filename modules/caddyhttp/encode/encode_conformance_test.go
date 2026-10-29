@@ -234,7 +234,7 @@ var encodeScenarios = []encodeScenario{
 		checkResponse: checkStripsEncodedETagSuffix,
 	},
 	{
-		name:      "request cache-control no-transform prevents encoding",
+		name:      "request cache-control no-transform does not prevent encoding",
 		method:    http.MethodGet,
 		minLength: 1,
 		reqHeaders: func(encoderCase) http.Header {
@@ -243,7 +243,7 @@ var encodeScenarios = []encodeScenario{
 		next: func(encoderCase) caddyhttp.Handler {
 			return conformanceLargeBodyHandler(conformanceContentType)
 		},
-		checkResponse: checkBypassesEncoding,
+		checkResponse: checkEncodesConformanceBody,
 	},
 	{
 		name:      "response cache-control no-transform prevents encoding",
@@ -256,18 +256,6 @@ var encodeScenarios = []encodeScenario{
 				_, err := w.Write(conformanceLargeBody())
 				return err
 			})
-		},
-		checkResponse: checkBypassesEncoding,
-	},
-	{
-		name:      "request cache-control no-transform on a later line prevents encoding",
-		method:    http.MethodGet,
-		minLength: 1,
-		reqHeaders: func(encoderCase) http.Header {
-			return http.Header{"Cache-Control": {"no-cache", "no-transform"}}
-		},
-		next: func(encoderCase) caddyhttp.Handler {
-			return conformanceLargeBodyHandler(conformanceContentType)
 		},
 		checkResponse: checkBypassesEncoding,
 	},
@@ -484,6 +472,16 @@ func conformanceLargeBodyHandler(contentType string) caddyhttp.Handler {
 		_, err := w.Write(body)
 		return err
 	})
+}
+
+func checkEncodesConformanceBody(t *testing.T, w *httptest.ResponseRecorder, encCase encoderCase) {
+	t.Helper()
+
+	encName := encCase.encoding.AcceptEncoding()
+	if got := w.Header().Get("Content-Encoding"); got != encName {
+		t.Fatalf("Content-Encoding = %q, want %q", got, encName)
+	}
+	assertDecompresses(t, encCase, w.Body.Bytes(), conformanceLargeBody())
 }
 
 func checkBypassesEncoding(t *testing.T, w *httptest.ResponseRecorder, encCase encoderCase) {

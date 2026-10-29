@@ -170,30 +170,28 @@ func hasNonEmptyValue(h http.Header, key string) bool {
 }
 
 func (enc *Encode) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	if !httpguts.HeaderValuesContainsToken(r.Header["Cache-Control"], "no-transform") {
-		for _, encName := range AcceptedEncodings(r, enc.Prefer) {
-			if _, ok := enc.writerPools[encName]; !ok {
-				continue // encoding not offered
-			}
-			w = enc.openResponseWriter(encName, w, r.Method == http.MethodConnect)
-			defer w.(*responseWriter).Close()
-
-			// to comply with RFC 9110 section 8.8.3(.3), we modify the Etag when encoding
-			// by appending a hyphen and the encoder name; the problem is, the client will
-			// send back that Etag in an If-None-Match header, but upstream handlers that set
-			// the Etag in the first place don't know that we appended to their Etag! so here
-			// we have to strip our addition so the upstream handlers can still honor client
-			// caches without knowing about our changes...
-			if etags := r.Header["If-None-Match"]; len(etags) > 0 {
-				etag := strings.Join(etags, ", ")
-				stripped := strings.ReplaceAll(etag, "-"+encName+`"`, `"`)
-				if stripped != etag || len(etags) > 1 {
-					r.Header["If-None-Match"] = []string{stripped}
-				}
-			}
-
-			break
+	for _, encName := range AcceptedEncodings(r, enc.Prefer) {
+		if _, ok := enc.writerPools[encName]; !ok {
+			continue // encoding not offered
 		}
+		w = enc.openResponseWriter(encName, w, r.Method == http.MethodConnect)
+		defer w.(*responseWriter).Close()
+
+		// to comply with RFC 9110 section 8.8.3(.3), we modify the Etag when encoding
+		// by appending a hyphen and the encoder name; the problem is, the client will
+		// send back that Etag in an If-None-Match header, but upstream handlers that set
+		// the Etag in the first place don't know that we appended to their Etag! so here
+		// we have to strip our addition so the upstream handlers can still honor client
+		// caches without knowing about our changes...
+		if etags := r.Header["If-None-Match"]; len(etags) > 0 {
+			etag := strings.Join(etags, ", ")
+			stripped := strings.ReplaceAll(etag, "-"+encName+`"`, `"`)
+			if stripped != etag || len(etags) > 1 {
+				r.Header["If-None-Match"] = []string{stripped}
+			}
+		}
+
+		break
 	}
 
 	err := next.ServeHTTP(w, r)
@@ -534,6 +532,7 @@ func (rw *responseWriter) init() {
 
 	hdr := rw.Header()
 
+	// Only the response no-transform binds us; the request one addresses intermediaries.
 	if !hasNonEmptyValue(hdr, "Content-Encoding") &&
 		!httpguts.HeaderValuesContainsToken(hdr["Cache-Control"], "no-transform") &&
 		rw.config.Match(rw) {
