@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -1571,6 +1572,44 @@ func TestServer_ServeHTTP_IdleTimeouts(t *testing.T) {
 			assert.Equal(t, tc.applied, reader != nil)
 			assert.Equal(t, tc.applied, writer != nil)
 		})
+	}
+}
+
+// TestServer_ServeHTTP_HandlerReadDeadline checks that a read deadline
+// set by a handler through http.ResponseController still applies to a
+// stalled request body, instead of being replaced by the idle reader.
+func TestServer_ServeHTTP_HandlerReadDeadline(t *testing.T) {
+	readErr := make(chan error, 1)
+	s := &Server{
+		ReadIdleTimeout: caddy.Duration(time.Minute),
+		logger:          zap.NewNop(),
+		errorLogger:     zap.NewNop(),
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			if err := http.NewResponseController(w).SetReadDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
+				readErr <- err
+				return nil
+			}
+			_, err := io.ReadAll(r.Body)
+			readErr <- err
+			return nil
+		}),
+	}
+	ts := httptest.NewServer(http.HandlerFunc(s.ServeHTTP))
+	t.Cleanup(ts.Close)
+
+	conn, err := net.Dial("tcp", ts.Listener.Addr().String())
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+
+	// announce a body, send one byte of it and stall
+	_, err = io.WriteString(conn, "POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 10\r\n\r\nx")
+	require.NoError(t, err)
+
+	select {
+	case err := <-readErr:
+		require.ErrorIs(t, err, os.ErrDeadlineExceeded)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the handler's read deadline was replaced by the idle timeout")
 	}
 }
 
