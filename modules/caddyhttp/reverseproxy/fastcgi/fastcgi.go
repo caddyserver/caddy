@@ -157,6 +157,14 @@ func (t Transport) DefaultBufferSizes() (int64, int64) {
 	return 4096, 0
 }
 
+// RequiresContentLength reports that fastcgi cannot forward a body of unknown
+// length: without a valid CONTENT_LENGTH the client rejects the request rather
+// than let the upstream hang, so the request buffer above is the only way to
+// learn the length of a body that does not announce one.
+func (t Transport) RequiresContentLength() bool {
+	return true
+}
+
 // RoundTrip implements http.RoundTripper.
 func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 	server := r.Context().Value(caddyhttp.ServerCtxKey).(*caddyhttp.Server)
@@ -205,7 +213,7 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 	dialer := net.Dialer{Timeout: time.Duration(t.DialTimeout)}
 	conn, err := dialer.DialContext(ctx, network, address)
 	if err != nil {
-		return nil, fmt.Errorf("dialing backend: %v", err)
+		return nil, reverseproxy.NewDialError(fmt.Errorf("dialing backend: %w", err))
 	}
 	defer func() {
 		// conn will be closed with the response body unless there's an error
@@ -285,7 +293,15 @@ func (t Transport) buildEnv(r *http.Request) (envVars, error) {
 		}
 	}
 
-	fpath := r.URL.Path
+	// Derive the script from the same path model the matchers judged: Windows
+	// separators and per-component trailing dots/spaces normalized, then cleaned
+	// (mirroring MatchPath and MatchURLPattern). Caddy does not rewrite
+	// r.URL.Path itself, and the rewrite route php_fastcgi relies on to normalize
+	// it can fail to match, so the transport must establish this invariant rather
+	// than inherit it. Without this, /admin.php/../../other.php (or, on Windows,
+	// /admin.php\..\other.php) is judged by every path matcher as /other.php
+	// while SCRIPT_FILENAME resolves to /admin.php.
+	fpath := caddyhttp.NormalizedPath(r.URL.Path, true)
 	scriptName := fpath
 
 	docURI := fpath
@@ -532,7 +548,8 @@ var headerNameReplacer = strings.NewReplacer("-", "_")
 var (
 	_ zapcore.ObjectMarshaler = (*loggableEnv)(nil)
 
-	_ caddy.Provisioner              = (*Transport)(nil)
-	_ http.RoundTripper              = (*Transport)(nil)
-	_ reverseproxy.BufferedTransport = (*Transport)(nil)
+	_ caddy.Provisioner                           = (*Transport)(nil)
+	_ http.RoundTripper                           = (*Transport)(nil)
+	_ reverseproxy.BufferedTransport              = (*Transport)(nil)
+	_ reverseproxy.ContentLengthRequiredTransport = (*Transport)(nil)
 )

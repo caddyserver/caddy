@@ -267,6 +267,64 @@ func TestHandler(t *testing.T) {
 	}
 }
 
+func TestHeaderOpsSetMultipleCookies(t *testing.T) {
+	want := []string{"a=1; Path=/", "b=2; Path=/"}
+	for _, tc := range []struct {
+		fieldName, provisionedName string
+	}{
+		{"Set-Cookie", "Set-Cookie"},
+		{"set-cookie", "Set-Cookie"},
+		{"sEt-CoOkIe", "Set-Cookie"},
+		{"{cookie_header}", "{cookie_header}"},
+		{"set-{cookie_suffix}", "set-{cookie_suffix}"},
+	} {
+		t.Run(tc.fieldName, func(t *testing.T) {
+			ops := HeaderOps{Set: http.Header{tc.fieldName: want}}
+			if err := ops.Provision(caddy.Context{}); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(ops.Set, http.Header{tc.provisionedName: want}) {
+				t.Fatalf("provisioned Set = %v, want field %q", ops.Set, tc.provisionedName)
+			}
+			repl := caddy.NewReplacer()
+			repl.Set("cookie_header", "set-cookie")
+			repl.Set("cookie_suffix", "cookie")
+			hdr := http.Header{"Set-Cookie": {"old=1"}}
+			ops.ApplyTo(hdr, repl)
+			if got := hdr.Values("Set-Cookie"); !reflect.DeepEqual(got, want) {
+				t.Errorf("Set-Cookie values = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestHandlerProvisionSetCollision(t *testing.T) {
+	for _, name := range []string{"request", "response"} {
+		t.Run(name, func(t *testing.T) {
+			ops := &HeaderOps{Set: http.Header{
+				"set-cookie": {"b=2; Path=/"},
+				"Set-Cookie": {"a=1; Path=/"},
+			}}
+			h := Handler{Request: ops}
+			if name == "response" {
+				h = Handler{Response: &RespHeaderOps{HeaderOps: ops}}
+			}
+			if err := h.Provision(caddy.Context{}); err != nil {
+				t.Fatal(err)
+			}
+			want := http.Header{"Set-Cookie": {"a=1; Path=/", "b=2; Path=/"}}
+			if !reflect.DeepEqual(ops.Set, want) {
+				t.Fatalf("provisioned Set = %v, want %v", ops.Set, want)
+			}
+			hdr := make(http.Header)
+			ops.ApplyTo(hdr, caddy.NewReplacer())
+			if !reflect.DeepEqual(hdr, want) {
+				t.Errorf("headers = %v, want %v", hdr, want)
+			}
+		})
+	}
+}
+
 type nextHandler func(http.ResponseWriter, *http.Request) error
 
 func (f nextHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) error {

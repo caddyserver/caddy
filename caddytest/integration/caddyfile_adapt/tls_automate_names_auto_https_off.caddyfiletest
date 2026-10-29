@@ -1,0 +1,62 @@
+{
+	auto_https off
+	tls_automate_names mail.example.com
+}
+
+foo.example.com {
+	respond "hi"
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"foo.example.com"
+									]
+								}
+							],
+							"handle": [
+								{
+									"handler": "subroute",
+									"routes": [
+										{
+											"handle": [
+												{
+													"body": "hi",
+													"handler": "static_response"
+												}
+											]
+										}
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"tls_connection_policies": [
+						{}
+					],
+					"automatic_https": {
+						"disable": true
+					}
+				}
+			}
+		},
+		"tls": {
+			"certificates": {
+				"automate": [
+					"mail.example.com"
+				]
+			}
+		}
+	}
+}

@@ -1,0 +1,16 @@
+{
+	tls_automate_names mail.example.com xmpp.example.com
+}
+----------
+{
+	"apps": {
+		"tls": {
+			"certificates": {
+				"automate": [
+					"mail.example.com",
+					"xmpp.example.com"
+				]
+			}
+		}
+	}
+}

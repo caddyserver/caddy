@@ -782,6 +782,37 @@ func TestHandleErrorRangeAndCodes(t *testing.T) {
 	tester.AssertGetResponse("http://localhost:9080/private", 410, "Error in the [400 .. 499] range")
 }
 
+func TestHandleErrorOverlappingCodesKeepOrder(t *testing.T) {
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`{
+		admin localhost:2999
+		http_port     9080
+	}
+	localhost:9080 {
+		root * /srv
+		error /private* "Unauthorized" 410
+		error /hidden* "Not found" 404
+		error /internalerr* "Internal Server Error" 500
+
+		handle_errors 404 {
+			respond "Not found page"
+		}
+		handle_errors 4xx {
+			respond "Error in the [400 .. 499] range"
+		}
+		handle_errors {
+			respond "First fallback"
+		}
+		handle_errors {
+			respond "Second fallback"
+		}
+	}`, "caddyfile")
+	// act and assert
+	tester.AssertGetResponse("http://localhost:9080/hidden", 404, "Not found page")
+	tester.AssertGetResponse("http://localhost:9080/private", 410, "Error in the [400 .. 499] range")
+	tester.AssertGetResponse("http://localhost:9080/internalerr", 500, "First fallback")
+}
+
 func TestHandleErrorSubHandlers(t *testing.T) {
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`{
@@ -820,6 +851,72 @@ func TestHandleErrorSubHandlers(t *testing.T) {
 	tester.AssertGetResponse("http://localhost:9080/notfound", 404, "default not found")
 	tester.AssertGetResponse("http://localhost:9080/es/internalerr", 500, "Default error")
 	tester.AssertGetResponse("http://localhost:9080/en/internalerr", 500, "English error")
+}
+
+func TestHeaderDefaults(t *testing.T) {
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`{
+		admin localhost:2999
+		http_port     9080
+	}
+	localhost:9080 {
+		header Cache-Control "no-store"
+		header {
+			?Cache-Control "max-age=60"
+			?X-Frame-Options "DENY"
+		}
+		header {
+			match status 404
+			?X-Robots-Tag "noindex"
+		}
+		header {
+			?X-Dup "first"
+			?X-Dup "second"
+		}
+		header {
+			match header !X-Absent
+			?X-Absent "fallback"
+		}
+		respond /missing 404
+		respond "ok"
+	}
+	`, "caddyfile")
+
+	resp, _ := tester.AssertGetResponse("http://localhost:9080/", 200, "ok")
+	if got := resp.Header.Get("Cache-Control"); got != "no-store" {
+		t.Errorf("Cache-Control = %q, want %q", got, "no-store")
+	}
+	if got := resp.Header.Get("X-Frame-Options"); got != "DENY" {
+		t.Errorf("X-Frame-Options = %q, want %q", got, "DENY")
+	}
+	if got := resp.Header.Get("X-Robots-Tag"); got != "" {
+		t.Errorf("X-Robots-Tag on a 200 = %q, want none", got)
+	}
+	if got := resp.Header.Get("X-Dup"); got != "second" {
+		t.Errorf("X-Dup = %q, want %q", got, "second")
+	}
+	if got := resp.Header.Get("X-Absent"); got != "fallback" {
+		t.Errorf("X-Absent = %q, want %q", got, "fallback")
+	}
+
+	resp, _ = tester.AssertGetResponse("http://localhost:9080/missing", 404, "")
+	if got := resp.Header.Get("X-Robots-Tag"); got != "noindex" {
+		t.Errorf("X-Robots-Tag on a 404 = %q, want %q", got, "noindex")
+	}
+}
+
+func TestHeaderDefaultMatcherSameField(t *testing.T) {
+	caddytest.AssertLoadError(t, `{
+		admin localhost:2999
+		http_port     9080
+	}
+	localhost:9080 {
+		header {
+			match header X-Frame-Options SAMEORIGIN
+			?x-frame-options "DENY"
+		}
+	}
+	`, "caddyfile", "cannot match on response header X-Frame-Options and also set a default for it")
 }
 
 func TestInvalidSiteAddressesAsDirectives(t *testing.T) {

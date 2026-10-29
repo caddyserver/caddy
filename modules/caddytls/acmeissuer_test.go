@@ -1,9 +1,22 @@
 package caddytls
 
 import (
-	"github.com/caddyserver/caddy/v2"
-	"github.com/mholt/acmez/v3/acme"
+	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
+	"time"
+
+	"github.com/caddyserver/caddy/v2"
+	_ "github.com/caddyserver/caddy/v2/modules/internal/network"
+	"github.com/caddyserver/certmagic"
+	"github.com/mholt/acmez/v3/acme"
+	"go.uber.org/zap"
 )
 
 func TestACMEIssuerExpandPlaceholders(t *testing.T) {
@@ -39,5 +52,80 @@ func TestACMEIssuerExpandPlaceholders(t *testing.T) {
 	}
 	if want := "example-mac-key"; iss.ExternalAccount.MACKey != want {
 		t.Errorf("ExternalAccount.MACKey: got %q, want %q", iss.ExternalAccount.MACKey, want)
+	}
+}
+
+// The HTTP app provisions ACME issuers again to fill in its ports and then
+// rebuilds the CertMagic config; requests must still use the configured proxy (#8283).
+func TestACMEIssuerNetworkProxyAfterRebuildCertMagic(t *testing.T) {
+	var proxied atomic.Int32
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodConnect && r.Host == "acme.invalid:443" {
+			proxied.Add(1)
+		}
+		http.Error(w, "test proxy", http.StatusBadGateway)
+	}))
+	defer proxy.Close()
+
+	certCacheMu.Lock()
+	prevCache := certCache
+	certCache = certmagic.NewCache(certmagic.CacheOptions{
+		GetConfigForCert: func(certmagic.Certificate) (*certmagic.Config, error) { return nil, nil },
+	})
+	certCacheMu.Unlock()
+	defer func() {
+		certCacheMu.Lock()
+		certCache.Stop()
+		certCache = prevCache
+		certCacheMu.Unlock()
+	}()
+
+	caddyCtx, cancel := caddy.NewContext(caddy.Context{Context: t.Context()})
+	defer cancel()
+	tlsApp := &TLS{ctx: caddyCtx, logger: zap.NewNop()}
+
+	iss := &ACMEIssuer{
+		CA:              "https://acme.invalid/directory",
+		NetworkProxyRaw: []byte(`{"from":"url","url":"` + proxy.URL + `"}`),
+	}
+	if err := iss.Provision(caddyCtx); err != nil {
+		t.Fatalf("provisioning issuer: %v", err)
+	}
+	ap := &AutomationPolicy{
+		Issuers: []certmagic.Issuer{iss},
+		storage: &certmagic.FileStorage{Path: t.TempDir()},
+	}
+	if err := ap.Provision(tlsApp); err != nil {
+		t.Fatalf("provisioning automation policy: %v", err)
+	}
+
+	// what the HTTP app's fillInACMEIssuer and createAutomationPolicies do
+	if err := iss.Provision(caddyCtx); err != nil {
+		t.Fatalf("re-provisioning issuer: %v", err)
+	}
+	if err := ap.RebuildCertMagic(tlsApp); err != nil {
+		t.Fatalf("rebuilding certmagic config: %v", err)
+	}
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	csrDER, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{DNSNames: []string{"example.com"}}, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	csr, err := x509.ParseCertificateRequest(csrDER)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancelIssue := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancelIssue()
+	if _, err := iss.Issue(ctx, csr); err == nil {
+		t.Fatal("expected issuance to fail against the test proxy")
+	}
+	if proxied.Load() == 0 {
+		t.Error("ACME request did not go through the configured network proxy")
 	}
 }

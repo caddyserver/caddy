@@ -1,0 +1,5 @@
+:80
+
+log_level FATAL
+----------
+invalid log level "FATAL": expected DEBUG, INFO, WARN, or ERROR

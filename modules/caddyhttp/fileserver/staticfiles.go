@@ -29,6 +29,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 	"unicode/utf8"
 
@@ -491,6 +492,9 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			continue
 		}
 		compressedFilename := filename + precompress.Suffix()
+		if fileHidden(compressedFilename, filesToHide) {
+			continue
+		}
 		compressedInfo, err := fs.Stat(fileSystem, compressedFilename)
 		if err != nil || compressedInfo.IsDir() {
 			if c := fsrv.logger.Check(zapcore.DebugLevel, "precompressed file not accessible"); c != nil {
@@ -689,8 +693,12 @@ func (fsrv *FileServer) mapDirOpenError(fileSystem fs.FS, originalErr error, nam
 		return originalErr
 	}
 
-	var pathErr *fs.PathError
-	if errors.As(originalErr, &pathErr) {
+	// a regular file used as a directory, e.g. /index.php/foo
+	if errors.Is(originalErr, syscall.ENOTDIR) {
+		return fs.ErrNotExist
+	}
+
+	if _, ok := errors.AsType[*fs.PathError](originalErr); ok {
 		return fs.ErrInvalid
 	}
 
