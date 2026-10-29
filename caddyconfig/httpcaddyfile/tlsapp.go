@@ -1156,7 +1156,7 @@ outer:
 						continue outer
 					}
 				} else if !automationPolicyMergeShadows(i, j, aps) {
-					// merge only if aps[j] won't shadow a policy between i and j;
+					// merge only if it won't change which policy handles a name
 					// avoid repeated subjects
 					for _, subj := range aps[j].SubjectsRaw {
 						if !slices.Contains(aps[i].SubjectsRaw, subj) {
@@ -1209,27 +1209,29 @@ func automationPolicyShadows(i int, aps []*caddytls.AutomationPolicy) int {
 }
 
 // automationPolicyMergeShadows returns true if merging aps[j] into aps[i]
-// (where i < j) would make aps[j] shadow a policy between i and j.
+// (where i < j) would change which policy handles a name. This happens
+// when a subject of a policy between i and j overlaps with a subject of
+// aps[j], in either direction.
 //
 // For example, say the policies are for "example.com" (i),
 // "foo.example.com" (i+1), and "*.example.com" (j). Merging j into i moves
 // "*.example.com" before the i+1 policy. Then the wildcard matches
 // "foo.example.com" first, and the i+1 policy is never used.
 //
-// The opposite case, where a policy between i and j covers a subject of
-// aps[j], is not checked on purpose. That subject is already shadowed
-// because of the sort order, and merging moves it before the broader
-// pattern, so it uses the settings from its own site block.
+// The reverse case matters too. If the wildcard is in i+1 and the name is
+// in j, merging moves the name before the wildcard, and its policy changes.
+// A merge should not change the result, so it is skipped here as well.
 //
 // This uses certmagic.MatchWildcard, which the TLS app also uses to pick
 // a policy for a name.
 func automationPolicyMergeShadows(i, j int, aps []*caddytls.AutomationPolicy) bool {
 	for k := i + 1; k < j; k++ {
 		for _, kSubj := range aps[k].SubjectsRaw {
-			if slices.ContainsFunc(aps[j].SubjectsRaw, func(jSubj string) bool {
-				return certmagic.MatchWildcard(kSubj, jSubj)
-			}) {
-				return true
+			for _, jSubj := range aps[j].SubjectsRaw {
+				if certmagic.MatchWildcard(kSubj, jSubj) ||
+					certmagic.MatchWildcard(jSubj, kSubj) {
+					return true
+				}
 			}
 		}
 	}
