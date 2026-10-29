@@ -110,7 +110,7 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, wg *sync.WaitGroup, 
 		req.Body = body
 		rw.Header().Del("Upgrade")
 		rw.Header().Del("Connection")
-		delete(rw.Header(), "Sec-WebSocket-Accept")
+		delete(rw.Header(), "Sec-WebSocket-Accept") //nolint:canonicalheader // set by normalizeWebsocketHeaders above
 		rw.WriteHeader(http.StatusOK)
 
 		if c := logger.Check(zap.DebugLevel, "upgrading connection"); c != nil {

@@ -260,6 +260,46 @@ var encodeScenarios = []encodeScenario{
 		checkResponse: checkBypassesEncoding,
 	},
 	{
+		name:      "request cache-control no-transform on a later line prevents encoding",
+		method:    http.MethodGet,
+		minLength: 1,
+		reqHeaders: func(encoderCase) http.Header {
+			return http.Header{"Cache-Control": {"no-cache", "no-transform"}}
+		},
+		next: func(encoderCase) caddyhttp.Handler {
+			return conformanceLargeBodyHandler(conformanceContentType)
+		},
+		checkResponse: checkBypassesEncoding,
+	},
+	{
+		name:      "response cache-control no-transform on a later line prevents encoding",
+		method:    http.MethodGet,
+		minLength: 1,
+		next: func(encoderCase) caddyhttp.Handler {
+			return caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+				w.Header().Set("Content-Type", conformanceContentType)
+				w.Header()["Cache-Control"] = []string{"no-cache", "no-transform"}
+				_, err := w.Write(conformanceLargeBody())
+				return err
+			})
+		},
+		checkResponse: checkBypassesEncoding,
+	},
+	{
+		name:      "content-encoding after an empty line prevents encoding",
+		method:    http.MethodGet,
+		minLength: 1,
+		next: func(encoderCase) caddyhttp.Handler {
+			return caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+				w.Header().Set("Content-Type", conformanceContentType)
+				w.Header()["Content-Encoding"] = []string{"", "gzip"}
+				_, err := w.Write(conformanceLargeBody())
+				return err
+			})
+		},
+		checkResponse: checkKeepsUpstreamContentEncoding,
+	},
+	{
 		name:      "content type matcher rejection prevents encoding",
 		method:    http.MethodGet,
 		minLength: 1,
@@ -454,6 +494,17 @@ func checkBypassesEncoding(t *testing.T, w *httptest.ResponseRecorder, encCase e
 		t.Fatalf("Content-Encoding = %q, want empty", got)
 	}
 	if !bytes.Equal(w.Body.Bytes(), want) {
+		t.Fatalf("body len = %d, want len = %d", w.Body.Len(), len(want))
+	}
+}
+
+func checkKeepsUpstreamContentEncoding(t *testing.T, w *httptest.ResponseRecorder, encCase encoderCase) {
+	t.Helper()
+
+	if got, want := w.Header().Values("Content-Encoding"), []string{"", "gzip"}; !slices.Equal(got, want) {
+		t.Fatalf("Content-Encoding = %q, want %q", got, want)
+	}
+	if want := conformanceLargeBody(); !bytes.Equal(w.Body.Bytes(), want) {
 		t.Fatalf("body len = %d, want len = %d", w.Body.Len(), len(want))
 	}
 }
