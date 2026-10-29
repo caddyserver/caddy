@@ -170,8 +170,10 @@ require (
 	go.opentelemetry.io/otel/trace v1.46.0
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
+	golang.org/x/mod v0.41.0 // indirect
 	golang.org/x/sys v0.48.0
 	golang.org/x/text v0.42.0 // indirect
+	golang.org/x/tools v0.50.0
 	google.golang.org/grpc v1.83.2 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 	howett.net/plist v1.0.1 // indirect
