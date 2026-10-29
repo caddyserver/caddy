@@ -296,6 +296,42 @@ var encodeScenarios = []encodeScenario{
 		},
 		checkResponse: checkBypassesEncoding,
 	},
+	{
+		name:      "missing accept-encoding keeps identity and varies",
+		method:    http.MethodGet,
+		minLength: 1,
+		reqHeaders: func(encoderCase) http.Header {
+			return http.Header{"Accept-Encoding": nil}
+		},
+		next: func(encoderCase) caddyhttp.Handler {
+			return conformanceLargeBodyHandler(conformanceContentType)
+		},
+		checkResponse: checkIdentityVaries,
+	},
+	{
+		name:      "identity accept-encoding keeps identity and varies",
+		method:    http.MethodGet,
+		minLength: 1,
+		reqHeaders: func(encoderCase) http.Header {
+			return http.Header{"Accept-Encoding": {"identity"}}
+		},
+		next: func(encoderCase) caddyhttp.Handler {
+			return conformanceLargeBodyHandler(conformanceContentType)
+		},
+		checkResponse: checkIdentityVaries,
+	},
+	{
+		name:      "missing accept-encoding with content type matcher rejection does not vary",
+		method:    http.MethodGet,
+		minLength: 1,
+		reqHeaders: func(encoderCase) http.Header {
+			return http.Header{"Accept-Encoding": nil}
+		},
+		next: func(encoderCase) caddyhttp.Handler {
+			return conformanceLargeBodyHandler("image/png")
+		},
+		checkResponse: checkBypassesEncoding,
+	},
 }
 
 // TestEncodeResponseSemantics verifies HTTP edge cases (304, HEAD, range, WebSocket,
@@ -493,6 +529,24 @@ func checkBypassesEncoding(t *testing.T, w *httptest.ResponseRecorder, encCase e
 	}
 	if !bytes.Equal(w.Body.Bytes(), want) {
 		t.Fatalf("body len = %d, want len = %d", w.Body.Len(), len(want))
+	}
+	if encode.HasVaryValue(w.Header(), "Accept-Encoding") {
+		t.Fatalf("Vary = %q, want no Accept-Encoding", w.Header().Values("Vary"))
+	}
+}
+
+func checkIdentityVaries(t *testing.T, w *httptest.ResponseRecorder, encCase encoderCase) {
+	t.Helper()
+
+	want := conformanceLargeBody()
+	if got := w.Header().Get("Content-Encoding"); got != "" {
+		t.Fatalf("Content-Encoding = %q, want empty", got)
+	}
+	if !bytes.Equal(w.Body.Bytes(), want) {
+		t.Fatalf("body len = %d, want len = %d", w.Body.Len(), len(want))
+	}
+	if !encode.HasVaryValue(w.Header(), "Accept-Encoding") {
+		t.Fatalf("Vary = %q, want Accept-Encoding", w.Header().Values("Vary"))
 	}
 }
 
