@@ -664,11 +664,8 @@ func AcceptedEncodings(r *http.Request, preferredOrder []string) []string {
 	}
 	websocketKey := firstValue(r.Header["Sec-Websocket-Key"])
 
-	n := 0
-	for _, line := range values {
-		n += strings.Count(line, ",") + 1
-	}
-	prefs := make([]encodingPreference, 0, n)
+	// sized for typical headers so the slice stays on the stack
+	prefs := make([]encodingPreference, 0, 8)
 
 	for accepted := range listItems(values) {
 		encName, params, found := strings.Cut(accepted, ";")
