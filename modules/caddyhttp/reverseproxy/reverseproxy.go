@@ -1426,12 +1426,13 @@ func (h *Handler) finalizeResponse(
 	}
 
 	// delete our Server header and use Via instead (see #6275)
-	rw.Header().Del("Server")
+	rwHeader := rw.Header()
+	delete(rwHeader, "Server")
 	var protoPrefix string
 	if !strings.HasPrefix(strings.ToUpper(res.Proto), "HTTP/") {
 		protoPrefix = res.Proto[:strings.Index(res.Proto, "/")+1]
 	}
-	rw.Header().Add("Via", protoPrefix+strconv.Itoa(res.ProtoMajor)+"."+strconv.Itoa(res.ProtoMinor)+" Caddy")
+	rwHeader["Via"] = append(rwHeader["Via"], protoPrefix+strconv.Itoa(res.ProtoMajor)+"."+strconv.Itoa(res.ProtoMinor)+" Caddy")
 
 	// apply any response header operations
 	if h.Headers != nil && h.Headers.Response != nil {
