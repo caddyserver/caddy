@@ -171,7 +171,8 @@ const (
 // SetReadDeadline sets the read deadline on behalf of a handler and
 // keeps it as a ceiling for the idle deadline, until the handler sets
 // another one. A zero deadline removes the ceiling. HardDeadline still
-// applies, and so does the idle deadline of a read in flight.
+// applies, and so does the idle deadline of a read in flight or the
+// expired one bounding the drain of a timed-out body.
 func (r *IdleTimeoutReader) SetReadDeadline(deadline time.Time) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -179,7 +180,7 @@ func (r *IdleTimeoutReader) SetReadDeadline(deadline time.Time) error {
 	prev := r.handlerDeadline
 	r.handlerDeadline = deadline
 	install := r.ceilingLocked()
-	pinned := r.reading && r.armed == deadlineIdle
+	pinned := (r.reading && r.armed == deadlineIdle) || r.keepExpiredLocked()
 	if pinned && (install.IsZero() || r.installed.Before(install)) {
 		install = r.installed
 	}
@@ -347,17 +348,23 @@ func (r *IdleTimeoutReader) clearDeadlineLocked() {
 	if r.armed == deadlineNone {
 		return
 	}
-	if r.DrainDeadline && !r.installed.IsZero() && !time.Now().Before(r.installed) &&
-		errors.Is(r.terminalErr, os.ErrDeadlineExceeded) {
-		// HTTP/1 drains a small unread body before writing the response.
-		// Clearing its expired deadline would let a stalled client block
-		// that drain, and therefore the error response, indefinitely.
+	if r.keepExpiredLocked() {
 		return
 	}
 	if !r.setReadDeadlineLocked(time.Time{}, "could not clear read deadline") {
 		return
 	}
 	r.armed = deadlineNone
+}
+
+// keepExpiredLocked reports whether the installed deadline expired with
+// the body and must be kept. HTTP/1 drains a small unread body before
+// writing the response. Clearing its expired deadline would let a
+// stalled client block that drain, and therefore the error response,
+// indefinitely.
+func (r *IdleTimeoutReader) keepExpiredLocked() bool {
+	return r.DrainDeadline && !r.installed.IsZero() && !time.Now().Before(r.installed) &&
+		errors.Is(r.terminalErr, os.ErrDeadlineExceeded)
 }
 
 // IdleTimeoutWriter wraps a ResponseWriter with IdleDeadline, resetting

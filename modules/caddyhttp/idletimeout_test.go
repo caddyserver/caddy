@@ -1493,6 +1493,28 @@ func TestIdleTimeoutReaderHandlerDeadlineDuringRead(t *testing.T) {
 	}
 }
 
+// TestIdleTimeoutReaderHandlerDeadlineAfterTimeout checks that a
+// handler can't lift the expired deadline bounding the HTTP/1 drain of
+// a body that timed out.
+func TestIdleTimeoutReaderHandlerDeadlineAfterTimeout(t *testing.T) {
+	w := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	r := &IdleTimeoutReader{
+		ReadCloser:    io.NopCloser(iotest.ErrReader(os.ErrDeadlineExceeded)),
+		Ctrl:          http.NewResponseController(w),
+		Deadline:      IdleDeadline{Timeout: -time.Second},
+		Logger:        zap.NewNop(),
+		DrainDeadline: true,
+	}
+	_, err := r.Read(make([]byte, 1))
+	require.ErrorIs(t, err, os.ErrDeadlineExceeded)
+	expired := w.snapshot()[0]
+
+	require.NoError(t, r.SetReadDeadline(time.Time{}))
+	r.HandlerDone()
+	deadlines := w.snapshot()
+	assert.Equal(t, expired, deadlines[len(deadlines)-1])
+}
+
 // TestIdleTimeoutReaderHandlerDoneClearsReleasedHardDeadline checks
 // that the hard deadline put back after a partial read doesn't outlive
 // the handler when it returns without reading the rest of the body.
