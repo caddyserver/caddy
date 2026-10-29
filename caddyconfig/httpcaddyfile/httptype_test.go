@@ -403,3 +403,33 @@ func TestTLSConnectionPoliciesAreIsolatedAcrossListeners(t *testing.T) {
 		}
 	}
 }
+
+func TestConflictingClientAuthIsRejected(t *testing.T) {
+	caddyfileStr := `example.com/public/* {
+		tls {
+			client_auth {
+				mode request
+			}
+		}
+		respond "public"
+	}
+
+	example.com/admin* {
+		tls {
+			client_auth {
+				mode require_and_verify
+				trust_pool file /tmp/root.crt
+			}
+		}
+		respond "admin"
+	}`
+
+	adapter := caddyfile.Adapter{ServerType: ServerType{}}
+	result, _, err := adapter.Adapt([]byte(caddyfileStr), nil)
+	if err == nil {
+		t.Fatalf("Expected conflicting client auth to be rejected, got: %s", result)
+	}
+	if !strings.Contains(err.Error(), "conflicting client auth configuration") {
+		t.Fatalf("Expected conflicting client auth error, got: %v", err)
+	}
+}
