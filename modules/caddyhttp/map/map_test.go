@@ -144,6 +144,79 @@ func TestHandler(t *testing.T) {
 			},
 		},
 		{
+			// Placeholders in the output must be expanded for regexp
+			// mappings too, the same as they are for literal mappings.
+			reqURI: "/?key=abc",
+			handler: Handler{
+				Source:       "{http.request.uri.query.key}",
+				Destinations: []string{"{output}"},
+				Mappings: []Mapping{
+					{
+						InputRegexp: "^abc$",
+						Outputs:     []any{"{http.request.method}"},
+					},
+				},
+			},
+			expect: map[string]any{
+				"output": "GET",
+			},
+		},
+		{
+			// A value inserted by placeholder expansion is data, not a
+			// template: a "$1" in it must not be reinterpreted as a
+			// capture reference when the output is expanded.
+			reqURI: "/?key=abc&value=%241",
+			handler: Handler{
+				Source:       "{http.request.uri.query.key}",
+				Destinations: []string{"{output}"},
+				Mappings: []Mapping{
+					{
+						InputRegexp: "^abc$",
+						Outputs:     []any{"{http.request.uri.query.value}"},
+					},
+				},
+			},
+			expect: map[string]any{
+				"output": "$1",
+			},
+		},
+		{
+			// Configured placeholders are expanded before capture
+			// references, so both work in the same output.
+			reqURI: "/?key=abc",
+			handler: Handler{
+				Source:       "{http.request.uri.query.key}",
+				Destinations: []string{"{output}"},
+				Mappings: []Mapping{
+					{
+						InputRegexp: "^(abc)$",
+						Outputs:     []any{"{http.request.method}:${1}"},
+					},
+				},
+			},
+			expect: map[string]any{
+				"output": "GET:abc",
+			},
+		},
+		{
+			// A capture group is data too: placeholder syntax inside it
+			// must not be evaluated, or request data could inject one.
+			reqURI: "/?key=%7Bhttp.request.method%7D",
+			handler: Handler{
+				Source:       "{http.request.uri.query.key}",
+				Destinations: []string{"{output}"},
+				Mappings: []Mapping{
+					{
+						InputRegexp: "^(.+)$",
+						Outputs:     []any{"$1"},
+					},
+				},
+			},
+			expect: map[string]any{
+				"output": "{http.request.method}",
+			},
+		},
+		{
 			// Test case from https://caddy.community/t/map-directive-and-regular-expressions/13866/14?u=matt
 			reqURI: "/?s=0%27+AND+%28SELECT+0+FROM+%28SELECT+count%28%2A%29%2C+CONCAT%28%28SELECT+%40%40version%29%2C+0x23%2C+FLOOR%28RAND%280%29%2A2%29%29+AS+x+FROM+information_schema.columns+GROUP+BY+x%29+y%29+-+-+%27",
 			handler: Handler{

@@ -148,13 +148,27 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 
 			// evaluate regular expression if configured
 			if m.re != nil {
-				var result []byte
 				matches := m.re.FindStringSubmatchIndex(input)
 				if matches == nil {
 					continue
 				}
-				result = m.re.ExpandString(result, outputStr, input, matches)
-				return string(result), true
+
+				// Expand the placeholders configured in the output first, and
+				// only then substitute capture references. Evaluation order
+				// matters: the output is a template written by the operator,
+				// while the values it resolves to are data. Escape "$" in those
+				// values so ExpandString cannot reinterpret it as a capture
+				// reference (a header value of "$1" stays "$1"), just as braces
+				// in a capture group are never re-evaluated.
+				//
+				// A braced capture reference such as ${1} would otherwise look
+				// like a placeholder to the replacer, so escape its opening
+				// brace first; the replacer drops the escape character again.
+				template := strings.ReplaceAll(outputStr, "${", `$\{`)
+				expanded, _ := repl.ReplaceFunc(template, func(_ string, val any) (any, error) {
+					return strings.ReplaceAll(caddy.ToString(val), "$", "$$"), nil
+				})
+				return string(m.re.ExpandString(nil, expanded, input, matches)), true
 			}
 
 			// otherwise simple string comparison
