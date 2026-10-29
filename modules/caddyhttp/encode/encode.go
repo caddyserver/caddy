@@ -624,7 +624,7 @@ func (rw *responseWriter) init() {
 		// sending subsequent requests back upstream, however, since upstream handlers
 		// don't know about our appending to their Etag since they've already done their work)
 		if etag := firstValue(hdr["Etag"]); etag != "" && !strings.HasPrefix(etag, "W/") {
-			etag = fmt.Sprintf(`%s-%s"`, strings.TrimSuffix(etag, `"`), rw.encodingName)
+			etag = strings.TrimSuffix(etag, `"`) + "-" + rw.encodingName + `"`
 			hdr["Etag"] = []string{etag}
 		}
 	}
