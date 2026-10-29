@@ -160,10 +160,6 @@ func (enc *Encode) Validate() error {
 	return nil
 }
 
-func isEncodeAllowed(h http.Header) bool {
-	return !httpguts.HeaderValuesContainsToken(h["Cache-Control"], "no-transform")
-}
-
 func hasNonEmptyValue(h http.Header, key string) bool {
 	for _, v := range h[key] {
 		if v != "" {
@@ -174,7 +170,7 @@ func hasNonEmptyValue(h http.Header, key string) bool {
 }
 
 func (enc *Encode) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	if isEncodeAllowed(r.Header) {
+	if !httpguts.HeaderValuesContainsToken(r.Header["Cache-Control"], "no-transform") {
 		for _, encName := range AcceptedEncodings(r, enc.Prefer) {
 			if _, ok := enc.writerPools[encName]; !ok {
 				continue // encoding not offered
@@ -538,7 +534,8 @@ func (rw *responseWriter) init() {
 
 	hdr := rw.Header()
 
-	if !hasNonEmptyValue(hdr, "Content-Encoding") && isEncodeAllowed(hdr) &&
+	if !hasNonEmptyValue(hdr, "Content-Encoding") &&
+		!httpguts.HeaderValuesContainsToken(hdr["Cache-Control"], "no-transform") &&
 		rw.config.Match(rw) {
 		rw.w = rw.config.writerPools[rw.encodingName].Get().(Encoder)
 		rw.w.Reset(rw.ResponseWriter)

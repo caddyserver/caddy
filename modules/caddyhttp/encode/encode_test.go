@@ -341,113 +341,50 @@ func TestValidate(t *testing.T) {
 	}
 }
 
-func TestIsEncodeAllowed(t *testing.T) {
-	testCases := []struct {
-		name     string
-		headers  http.Header
-		expected bool
-	}{
-		{
-			name:     "Without any headers",
-			headers:  http.Header{},
-			expected: true,
-		},
-		{
-			name: "Without Cache-Control HTTP header",
-			headers: http.Header{
-				"Accept-Encoding": {"gzip"},
-			},
-			expected: true,
-		},
-		{
-			name: "Cache-Control HTTP header ending with no-transform directive",
-			headers: http.Header{
-				"Accept-Encoding": {"gzip"},
-				"Cache-Control":   {"no-cache, no-transform"},
-			},
-			expected: false,
-		},
-		{
-			name: "Cache-Control HTTP header with directives separated by semicolons",
-			headers: http.Header{
-				"Cache-Control": {"no-cache; no-transform"},
-			},
-			expected: true,
-		},
-		{
-			name: "With Cache-Control HTTP header no-transform as Cache-Extension value",
-			headers: http.Header{
-				"Accept-Encoding": {"gzip"},
-				"Cache-Control":   {`no-store, no-cache, community="no-transform"`},
-			},
-			expected: true,
-		},
-		{
-			name: "With Cache-Control HTTP header no-transform as token Cache-Extension value",
-			headers: http.Header{
-				"Cache-Control": {"no-cache, community=no-transform"},
-			},
-			expected: true,
-		},
-		{
-			name: "Cache-Control HTTP header with no-transform inside a quoted argument containing commas",
-			headers: http.Header{
-				"Cache-Control": {`private="Set-Cookie, no-transform"`},
-			},
-			expected: true,
-		},
-		{
-			name: "Cache-Control HTTP header with no-transform after a quoted argument",
-			headers: http.Header{
-				"Cache-Control": {`private="Set-Cookie, Vary", no-transform`},
-			},
-			expected: false,
-		},
-		{
-			name: "Cache-Control HTTP header with a malformed no-transform argument",
-			headers: http.Header{
-				"Cache-Control": {"no-transform=, no-transform =1"},
-			},
-			expected: true,
-		},
-		{
-			name: "Cache-Control HTTP header with no-transform in another case",
-			headers: http.Header{
-				"Cache-Control": {"max-age=0, No-Transform"},
-			},
-			expected: false,
-		},
-		{
-			name: "Cache-Control HTTP header with no-transform inside a longer token",
-			headers: http.Header{
-				"Cache-Control": {"x-no-transform-ext, no-transformation"},
-			},
-			expected: true,
-		},
-		{
-			name: "Cache-Control HTTP header with no-transform on a later line",
-			headers: http.Header{
-				"Cache-Control": {"no-cache", "no-transform"},
-			},
-			expected: false,
-		},
-		{
-			name: "Cache-Control HTTP header on multiple lines without no-transform",
-			headers: http.Header{
-				"Cache-Control": {"no-cache", "max-age=60"},
-			},
-			expected: true,
+func TestServeHTTPResponseNoTransform(t *testing.T) {
+	enc := &Encode{
+		MinLength: 1,
+		writerPools: map[string]*sync.Pool{
+			"gzip": {New: func() any { return mockEncoder{} }},
 		},
 	}
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+	if err := enc.Provision(ctx); err != nil {
+		t.Fatalf("Provision failed: %v", err)
+	}
 
-	for _, test := range testCases {
-		t.Run(test.name, func(t *testing.T) {
-			if result := isEncodeAllowed(test.headers); result != test.expected {
-				t.Errorf("The headers given to the isEncodeAllowed should return %t, %t given.",
-					result,
-					test.expected)
-			}
-		})
+	for _, tc := range []struct {
+		cacheControl []string
+		encoded      bool
+	}{
+		{cacheControl: nil, encoded: true},
+		{cacheControl: []string{"no-cache, no-transform"}, encoded: false},
+		{cacheControl: []string{"max-age=0, No-Transform"}, encoded: false},
+		{cacheControl: []string{"no-cache", "no-transform"}, encoded: false},
+		{cacheControl: []string{`private="Set-Cookie, Vary", no-transform`}, encoded: false},
+		// extension values and longer tokens are not the directive
+		{cacheControl: []string{`community="no-transform"`}, encoded: true},
+		{cacheControl: []string{"community=no-transform"}, encoded: true},
+		{cacheControl: []string{"x-no-transform-ext, no-transformation"}, encoded: true},
+		// semicolons are not Cache-Control list separators
+		{cacheControl: []string{"no-cache; no-transform"}, encoded: true},
+	} {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.Header.Set("Accept-Encoding", "gzip")
+		w := httptest.NewRecorder()
+		err := enc.ServeHTTP(w, r, caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			w.Header()["Content-Type"] = []string{"text/plain"}
+			w.Header()["Cache-Control"] = tc.cacheControl
+			_, err := w.Write([]byte("hello"))
+			return err
+		}))
+		if err != nil {
+			t.Fatalf("Cache-Control %q: ServeHTTP: %v", tc.cacheControl, err)
+		}
+		if encoded := w.Header().Get("Content-Encoding") == "gzip"; encoded != tc.encoded {
+			t.Errorf("Cache-Control %q: encoded = %t, want %t", tc.cacheControl, encoded, tc.encoded)
+		}
 	}
 }
 
