@@ -146,6 +146,7 @@ type IdleTimeoutReader struct {
 	unsupported bool
 	armed       armedDeadline
 	installed   time.Time // Last deadline successfully installed through Ctrl.
+	reading     bool
 	finished    bool
 	terminalErr error
 
@@ -170,20 +171,27 @@ const (
 // SetReadDeadline sets the read deadline on behalf of a handler and
 // keeps it as a ceiling for the idle deadline, until the handler sets
 // another one. A zero deadline removes the ceiling. HardDeadline still
-// applies.
+// applies, and so does the idle deadline of a read in flight.
 func (r *IdleTimeoutReader) SetReadDeadline(deadline time.Time) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	prev := r.handlerDeadline
 	r.handlerDeadline = deadline
-	ceiling := r.ceilingLocked()
-	if err := r.Ctrl.SetReadDeadline(ceiling); err != nil {
+	install := r.ceilingLocked()
+	pinned := r.reading && r.armed == deadlineIdle
+	if pinned && (install.IsZero() || r.installed.Before(install)) {
+		install = r.installed
+	}
+	if err := r.Ctrl.SetReadDeadline(install); err != nil {
 		r.handlerDeadline = prev
 		return err
 	}
-	r.installed = ceiling
-	if ceiling.IsZero() {
+	r.installed = install
+	if pinned {
+		return nil
+	}
+	if install.IsZero() {
 		r.armed = deadlineNone
 	} else {
 		r.armed = deadlineHard
@@ -211,11 +219,13 @@ func (r *IdleTimeoutReader) Read(p []byte) (int, error) {
 	if !r.finished && !r.unsupported {
 		r.setDeadlineLocked("could not set read deadline")
 	}
+	r.reading = true
 	r.mu.Unlock()
 
 	n, err := r.ReadCloser.Read(p)
 
 	r.mu.Lock()
+	r.reading = false
 	r.Deadline.transferred += int64(n)
 	if err != nil {
 		r.terminalErr = err

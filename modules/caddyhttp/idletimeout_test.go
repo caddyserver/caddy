@@ -1447,6 +1447,52 @@ func TestIdleTimeoutReader_HandlerDeadline(t *testing.T) {
 	}
 }
 
+// TestIdleTimeoutReaderHandlerDeadlineDuringRead checks that a handler
+// can bring the idle deadline of a blocked read forward but can't
+// remove it or push it back.
+func TestIdleTimeoutReaderHandlerDeadlineDuringRead(t *testing.T) {
+	earlier := time.Now().Add(time.Minute)
+	for i, tc := range []struct {
+		name          string
+		deadline      time.Time
+		expectHandler bool
+	}{
+		{name: "zero", deadline: time.Time{}},
+		{name: "later", deadline: time.Now().Add(2 * time.Hour)},
+		{name: "earlier", deadline: earlier, expectHandler: true},
+	} {
+		body := &blockingReadCloser{started: make(chan struct{}), release: make(chan struct{})}
+		w := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+		r := &IdleTimeoutReader{
+			ReadCloser: body,
+			Ctrl:       http.NewResponseController(w),
+			Deadline:   IdleDeadline{Timeout: time.Hour},
+			Logger:     zap.NewNop(),
+		}
+
+		readDone := make(chan struct{})
+		go func() {
+			defer close(readDone)
+			_, _ = r.Read(make([]byte, 1))
+		}()
+		<-body.started
+
+		require.NoError(t, r.SetReadDeadline(tc.deadline))
+		deadlines := w.snapshot()
+		require.Len(t, deadlines, 2, "Test %d (%s)", i, tc.name)
+		expected := deadlines[0]
+		if tc.expectHandler {
+			expected = earlier
+		}
+		assert.Equal(t, expected, deadlines[1], "Test %d (%s)", i, tc.name)
+
+		close(body.release)
+		<-readDone
+		deadlines = w.snapshot()
+		assert.True(t, deadlines[len(deadlines)-1].IsZero(), "Test %d (%s): the deadline should be cleared at EOF", i, tc.name)
+	}
+}
+
 // TestIdleTimeoutReaderHandlerDoneClearsReleasedHardDeadline checks
 // that the hard deadline put back after a partial read doesn't outlive
 // the handler when it returns without reading the rest of the body.
