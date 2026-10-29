@@ -605,6 +605,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		defer idleReader.HandlerDone()
 		r.Body = idleReader
+		w = &readDeadlineWriter{ResponseWriterWrapper: ResponseWriterWrapper{ResponseWriter: w}, reader: idleReader}
 	}
 	if s.WriteIdleTimeout > 0 {
 		idleWriter = &IdleTimeoutWriter{
