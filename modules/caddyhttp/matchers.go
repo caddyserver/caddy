@@ -29,7 +29,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 
 	"cel.dev/cel-go/cel"
@@ -39,6 +38,7 @@ import (
 	"cel.dev/cel-go/common/types/ref"
 	"cel.dev/cel-go/parser"
 	"golang.org/x/net/idna"
+	"golang.org/x/text/cases"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -81,6 +81,11 @@ type (
 	// Slashes are significant; i.e. `/foo*` matches `/foo`, `/foo/`, `/foo/bar`,
 	// and `/foobar`; but `/foo/*` does not match `/foo` or `/foobar`. Valid
 	// paths start with a slash `/`.
+	//
+	// Case-insensitivity follows Unicode default case folding, the comparison
+	// case-insensitive APFS volumes on macOS make, so `/secret` also matches
+	// `/SECRET` and `/ſecret`, and `/password` matches `/paßword`. Turkic
+	// mappings are not applied, so `ı` does not match `i`.
 	//
 	// Because there are, in general, multiple possible escaped forms of any
 	// path, path matchers operate in unescaped space; that is, path matchers
@@ -608,8 +613,11 @@ func (MatchPath) matchPatternWithEscapeSequence(escapedPath, matchPath string) b
 			remaining := escapedPath[iPath:]
 			until := len(escapedPath) - iPath // go until end of string...
 			if iPattern < len(matchPath)-1 {  // ...unless the * is not at the end
-				nextCh := matchPath[iPattern+1]
-				until = strings.IndexByte(remaining, nextCh)
+				if normalize {
+					until = indexEscapedChar(remaining, matchPath[iPattern+1:])
+				} else {
+					until = strings.IndexByte(remaining, matchPath[iPattern+1])
+				}
 				if until == -1 {
 					// terminating char of wildcard span not found, so definitely no match
 					return false
@@ -630,8 +638,23 @@ func (MatchPath) matchPatternWithEscapeSequence(escapedPath, matchPath string) b
 			sb.WriteString(next)
 			iPath += until
 		default:
+			if escapedPathCh != "" {
+				// a character outside ASCII spans one escape per byte;
+				// decode all of them so it is consumed as one character
+				ch, n, err := decodeEscapedChar(escapedPath[iPath-2:])
+				if err != nil {
+					return false
+				}
+				pathCh = ch
+				iPath += n - 3
+			}
 			sb.WriteString(pathCh)
 			iPath++
+			// the pattern holds the character in folded form, which can be
+			// shorter or longer ('ſ' folds to "s", 'ß' to "ss")
+			if len(pathCh) > 1 {
+				iPattern += len(foldPathCase(pathCh)) - 1
+			}
 		}
 
 		iPattern++
@@ -659,19 +682,67 @@ func (MatchPath) matchPatternWithEscapeSequence(escapedPath, matchPath string) b
 	return matches
 }
 
-// foldPathCase lower-cases p for the case-insensitive path matcher. Each
-// character is upper-cased before being lower-cased so that letters which
-// are their own lowercase form but upper-case to ASCII, such as 'ſ'
-// (U+017F) and 'ı' (U+0131), fold onto 's' and 'i'. strings.ToLower leaves
-// them alone, yet a case-insensitive filesystem (e.g. APFS on macOS) opens
-// /secret for a request to /ſecret, which would otherwise slip past a
-// matcher for /secret.
+// decodeEscapedChar decodes the character at the start of escaped and returns
+// it with the number of bytes of escaped it spans. A character outside ASCII
+// is written as one escape per UTF-8 byte, and all of them are consumed.
+func decodeEscapedChar(escaped string) (string, int, error) {
+	if escaped[0] != '%' || len(escaped) < 3 {
+		return escaped[:1], 1, nil
+	}
+	var buf [utf8.UTFMax]byte
+	size, n := 0, 0
+	for size < len(buf) && len(escaped) >= n+3 && escaped[n] == '%' {
+		b, err := url.PathUnescape(escaped[n : n+3])
+		if err != nil {
+			return "", 0, err
+		}
+		buf[size] = b[0]
+		size++
+		n += 3
+		if utf8.FullRune(buf[:size]) {
+			break
+		}
+	}
+	return string(buf[:size]), n, nil
+}
+
+// indexEscapedChar returns the offset in escaped of the first character that
+// lines up with the start of pattern, or -1. An escape sequence or wildcard at
+// the start of pattern is compared byte-wise in escaped space; anything else
+// is compared to the decoded, case-folded characters of escaped.
+func indexEscapedChar(escaped, pattern string) int {
+	if pattern[0] == '%' || pattern[0] == '*' {
+		return strings.IndexByte(escaped, pattern[0])
+	}
+	_, size := utf8.DecodeRuneInString(pattern)
+	want := pattern[:size]
+	for i := 0; i < len(escaped); {
+		ch, n, err := decodeEscapedChar(escaped[i:])
+		if err != nil {
+			return -1
+		}
+		if strings.HasPrefix(foldPathCase(ch), want) {
+			return i
+		}
+		i += n
+	}
+	return -1
+}
+
+// pathFolder case-folds paths for foldPathCase. It is stateless and safe
+// for concurrent use.
+var pathFolder = cases.Fold()
+
+// foldPathCase case-folds p for the case-insensitive path matcher using
+// Unicode default case folding (the C and F mappings in CaseFolding.txt).
+// That is the comparison case-insensitive APFS volumes make, so spellings
+// that open the same file there fold to the same string: /SECRET, /ſecret
+// and /secret, or /paßword and /password. Turkic mappings are not applied,
+// so 'ı' (U+0131) stays distinct from 'i'.
 func foldPathCase(p string) string {
 	for i := 0; i < len(p); i++ {
 		if p[i] >= utf8.RuneSelf {
-			return strings.Map(func(r rune) rune {
-				return unicode.ToLower(unicode.ToUpper(r))
-			}, p)
+			return pathFolder.String(p)
 		}
 	}
 	return strings.ToLower(p)
