@@ -15,6 +15,7 @@
 package rewrite
 
 import (
+	"context"
 	"net/http"
 	"reflect"
 	"regexp"
@@ -22,6 +23,7 @@ import (
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
 func TestRewrite(t *testing.T) {
@@ -360,6 +362,56 @@ func TestRewrite(t *testing.T) {
 			rule:   Rewrite{StripPathSuffix: "%2fsuffix"},
 			input:  newRequest(t, "GET", "/foo/bar/suffix"),
 			expect: newRequest(t, "GET", "/foo/bar/suffix"),
+		},
+		{
+			rule:   Rewrite{StripPathPrefix: "/café"},
+			input:  newRequest(t, "GET", "/caf%C3%A9/foo"),
+			expect: newRequest(t, "GET", "/foo"),
+		},
+		{
+			rule:   Rewrite{StripPathPrefix: "/café"},
+			input:  newRequest(t, "GET", "/café/foo"),
+			expect: newRequest(t, "GET", "/foo"),
+		},
+		{
+			rule:   Rewrite{StripPathPrefix: "/café"},
+			input:  newRequest(t, "GET", "/CAF%C3%89/foo"),
+			expect: newRequest(t, "GET", "/foo"),
+		},
+		{
+			rule:   Rewrite{StripPathPrefix: "/한"},
+			input:  newRequest(t, "GET", "/%ED%95%9C/foo"),
+			expect: newRequest(t, "GET", "/foo"),
+		},
+		{
+			rule:   Rewrite{StripPathPrefix: "/k"},
+			input:  newRequest(t, "GET", "/%E2%84%AA/foo"), // Kelvin sign lowercases to k
+			expect: newRequest(t, "GET", "/foo"),
+		},
+		{
+			rule:   Rewrite{StripPathPrefix: "/café"},
+			input:  newRequest(t, "GET", "/caf%C3%A8/foo"),
+			expect: newRequest(t, "GET", "/caf%C3%A8/foo"),
+		},
+		{
+			rule:   Rewrite{StripPathSuffix: "/café"},
+			input:  newRequest(t, "GET", "/foo/CAF%C3%89"),
+			expect: newRequest(t, "GET", "/foo"),
+		},
+		{
+			rule:   Rewrite{StripPathPrefix: "/%C3%A9"},
+			input:  newRequest(t, "GET", "/%c3%a9/foo"),
+			expect: newRequest(t, "GET", "/foo"),
+		},
+		{
+			rule:   Rewrite{StripPathPrefix: "/raw%2F/café"},
+			input:  newRequest(t, "GET", "/raw%2F/CAF%C3%89/foo"),
+			expect: newRequest(t, "GET", "/foo"),
+		},
+		{
+			rule:   Rewrite{StripPathSuffix: "/raw%2F/café"},
+			input:  newRequest(t, "GET", "/foo/raw%2F/CAF%C3%89"),
+			expect: newRequest(t, "GET", "/foo"),
 		},
 
 		{
@@ -709,6 +761,34 @@ func TestStripPathPrefixCanonicalizesRemainder(t *testing.T) {
 				t.Errorf("query or request target changed inconsistently: %q", r.RequestURI)
 			}
 		})
+	}
+}
+
+func TestUnicodePathMatcherAndRewriteAgree(t *testing.T) {
+	repl := caddy.NewReplacer()
+	req := newRequest(t, http.MethodGet, "/CAF%C3%89/foo")
+	req = req.WithContext(context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl))
+
+	matcher := caddyhttp.MatchPath{"/café/*"}
+	if err := matcher.Provision(caddy.Context{}); err != nil {
+		t.Fatal(err)
+	}
+	if !matcher.Match(req) {
+		t.Fatal("path matcher rejected Unicode case variant")
+	}
+
+	Rewrite{StripPathPrefix: "/café"}.Rewrite(req, repl)
+	if req.URL.EscapedPath() != "/foo" {
+		t.Fatalf("matched prefix was not stripped: %q", req.URL.EscapedPath())
+	}
+}
+
+func TestTrimPathInvalidUTF8RemainsByteOriented(t *testing.T) {
+	if got := trimPathPrefix("/%C2%A9/foo", "/\xc2"); got != "%A9/foo" {
+		t.Fatalf("prefix result = %q; want %q", got, "%A9/foo")
+	}
+	if got := trimPathSuffix("/foo/%C2%A9", "\xa9"); got != "/foo/%C2" {
+		t.Fatalf("suffix result = %q; want %q", got, "/foo/%C2")
 	}
 }
 
