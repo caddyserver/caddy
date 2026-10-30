@@ -533,6 +533,8 @@ func (h *HTTPTransport) NewTransport(caddyCtx caddy.Context) (*http.Transport, e
 
 	// if h2/c is enabled, configure it explicitly
 	if slices.Contains(h.Versions, "2") || slices.Contains(h.Versions, "h2c") {
+		// TODO: Migrate to http.Transport.Protocols once transport behaviour is covered.
+		//nolint:staticcheck
 		if err := http2.ConfigureTransport(rt); err != nil {
 			return nil, err
 		}
@@ -894,7 +896,10 @@ func (t *TLSConfig) MakeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) 
 
 	curvesAdded := make(map[tls.CurveID]struct{})
 	for _, curveName := range t.Curves {
-		curveID := caddytls.SupportedCurves[curveName]
+		curveID, ok := caddytls.SupportedCurves[curveName]
+		if !ok {
+			return nil, fmt.Errorf("unsupported curve: %s", curveName)
+		}
 		if _, ok := curvesAdded[curveID]; !ok {
 			curvesAdded[curveID] = struct{}{}
 			cfg.CurvePreferences = append(cfg.CurvePreferences, curveID)

@@ -65,6 +65,7 @@ func init() {
 	RegisterGlobalOption("persist_config", parseOptPersistConfig)
 	RegisterGlobalOption("dns", parseOptDNS)
 	RegisterGlobalOption("tls_resolvers", parseOptTLSResolvers)
+	RegisterGlobalOption("tls_automate_names", parseOptAutomateNames)
 	RegisterGlobalOption("ech", parseOptECH)
 	RegisterGlobalOption("renewal_window_ratio", parseOptRenewalWindowRatio)
 }
@@ -318,6 +319,22 @@ func parseOptTLSResolvers(d *caddyfile.Dispenser, _ any) (any, error) {
 		return nil, d.ArgErr()
 	}
 	return resolvers, nil
+}
+
+// parseOptAutomateNames parses the tls_automate_names global option, which
+// names subjects to manage certificates for without serving them. Repeating
+// the option appends to the list rather than replacing it, so a long list can
+// be split over several lines.
+func parseOptAutomateNames(d *caddyfile.Dispenser, existing any) (any, error) {
+	d.Next() // consume option name
+	names := d.RemainingArgs()
+	if len(names) == 0 {
+		return nil, d.ArgErr()
+	}
+	if previous, ok := existing.([]string); ok {
+		names = append(previous, names...)
+	}
+	return names, nil
 }
 
 func parseOptDefaultBind(d *caddyfile.Dispenser, _ any) (any, error) {

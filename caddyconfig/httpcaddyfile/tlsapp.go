@@ -344,20 +344,27 @@ func (st ServerType) buildTLSApp(
 		tlsApp.EncryptedClientHello = ech
 
 		// outer server names will need certificates, so make sure they're included
-		// in an automation policy for them that applies any global options
+		// in an automation policy for them that applies any global options. A name
+		// that a site block's policy already covers keeps that policy, because a
+		// second policy for it would be rejected as ambiguous or picked ahead of
+		// the site's.
 		ap, err := newBaseAutomationPolicy(options, warnings, true)
 		if err != nil {
 			return nil, warnings, err
 		}
 		for _, cfg := range ech.Configs {
-			if cfg.PublicName != "" {
-				ap.SubjectsRaw = append(ap.SubjectsRaw, cfg.PublicName)
+			if cfg.PublicName == "" || automationPolicyCoversName(tlsApp.Automation, cfg.PublicName) {
+				continue
 			}
+			ap.SubjectsRaw = append(ap.SubjectsRaw, cfg.PublicName)
 		}
-		if tlsApp.Automation == nil {
-			tlsApp.Automation = new(caddytls.AutomationConfig)
+		// without subjects, the policy would apply to every name as a catch-all
+		if len(ap.SubjectsRaw) > 0 {
+			if tlsApp.Automation == nil {
+				tlsApp.Automation = new(caddytls.AutomationConfig)
+			}
+			tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, ap)
 		}
-		tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, ap)
 	}
 
 	// if the storage clean interval is a boolean, then it's "off" to disable cleaning
@@ -424,6 +431,58 @@ func (st ServerType) buildTLSApp(
 		}
 		al = append(al, name)
 	}
+	// names from the tls_automate_names global option are managed without a
+	// site block of their own, so that asking for a certificate does not also
+	// mean serving the name; like force_automate, an explicitly listed name is
+	// managed even where auto-HTTPS would not have chosen it. Names that cannot
+	// get a public certificate are given the internal issuer, the same
+	// treatment they would get from a site block.
+	if automateNames, ok := options["tls_automate_names"].([]string); ok {
+		var publicNames []string
+		for _, name := range automateNames {
+			if slices.Contains(al, name) {
+				continue
+			}
+			al = append(al, name)
+			// a name that a site block already wrote a policy for keeps that
+			// policy: it is more specific than anything the global options can
+			// say, and a second policy naming the same subject is ambiguous --
+			// adapting would fail outright. The name still belongs in the
+			// automate loader, since a site block served only over HTTP does
+			// not get its certificate managed by auto-HTTPS.
+			if automationPolicyExistsForSubject(tlsApp.Automation, name) {
+				continue
+			}
+			if certmagic.SubjectQualifiesForPublicCert(name) {
+				publicNames = append(publicNames, name)
+			} else {
+				internalAP.SubjectsRaw = append(internalAP.SubjectsRaw, name)
+			}
+		}
+		// the names still need an automation policy of their own, or they would
+		// miss the issuer configured by global options -- the catch-all policy
+		// that would otherwise carry it is dropped once every other policy
+		// names its subjects. Consolidation folds this back into an identical
+		// policy, so a name listed here ends up in the same place it would have
+		// had it been given a site block.
+		if len(publicNames) > 0 {
+			// only worth a policy if it would carry something: either global
+			// automation options, or ACME defaults filled in further below.
+			// Without either, the names are managed with the defaults anyway,
+			// and an empty policy would just be noise in the output.
+			ap, err := newBaseAutomationPolicy(options, warnings, hasGlobalACMEDefaults(options))
+			if err != nil {
+				return nil, warnings, err
+			}
+			if ap != nil {
+				ap.SubjectsRaw = publicNames
+				if tlsApp.Automation == nil {
+					tlsApp.Automation = new(caddytls.AutomationConfig)
+				}
+				tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, ap)
+			}
+		}
+	}
 	slices.Sort(al) // to stabilize the adapt output
 	if len(al) > 0 {
 		tlsApp.CertificatesRaw["automate"] = caddyconfig.JSON(al, &warnings)
@@ -440,12 +499,7 @@ func (st ServerType) buildTLSApp(
 	if tlsApp.Automation != nil {
 		globalEmail := options["email"]
 		globalACMECA := options["acme_ca"]
-		globalACMECARoot := options["acme_ca_root"]
-		_, globalACMEDNS := options["acme_dns"] // can be set to nil (to use globally-defined "dns" value instead), but it is still set
-		globalACMEEAB := options["acme_eab"]
-		globalPreferredChains := options["preferred_chains"]
-		hasGlobalACMEDefaults := globalEmail != nil || globalACMECA != nil || globalACMECARoot != nil || globalACMEDNS || globalACMEEAB != nil || globalPreferredChains != nil
-		if hasGlobalACMEDefaults {
+		if hasGlobalACMEDefaults(options) {
 			for i := range tlsApp.Automation.Policies {
 				ap := tlsApp.Automation.Policies[i]
 				if len(ap.Issuers) == 0 && automationPolicyHasAllPublicNames(ap) {
@@ -895,6 +949,50 @@ func appendUniqueStrings(existing []string, additions ...string) []string {
 	return existing
 }
 
+// automationPolicyExistsForSubject reports whether some automation policy
+// already names subject. Subjects are compared exactly, which is the same
+// comparison the adapter uses to reject overlapping policies; a catch-all
+// policy names no subjects and so never matches.
+func automationPolicyExistsForSubject(automation *caddytls.AutomationConfig, subject string) bool {
+	if automation == nil {
+		return false
+	}
+	return slices.ContainsFunc(automation.Policies, func(ap *caddytls.AutomationPolicy) bool {
+		return slices.Contains(ap.SubjectsRaw, subject)
+	})
+}
+
+// automationPolicyCoversName reports whether some automation policy with
+// subjects would be selected for the ECH public name at runtime. The TLS app
+// trims and lowercases public names, then picks a policy for each one with
+// certmagic.MatchWildcard, so a wildcard or differently cased subject covers
+// it too. A catch-all policy names no subjects and so never matches.
+func automationPolicyCoversName(automation *caddytls.AutomationConfig, publicName string) bool {
+	if automation == nil {
+		return false
+	}
+	name := strings.ToLower(strings.TrimSpace(publicName))
+	return slices.ContainsFunc(automation.Policies, func(ap *caddytls.AutomationPolicy) bool {
+		return slices.ContainsFunc(ap.SubjectsRaw, func(subj string) bool {
+			return certmagic.MatchWildcard(name, subj)
+		})
+	})
+}
+
+// hasGlobalACMEDefaults reports whether any global option is set that an
+// automation policy without issuers of its own would later be filled in with.
+// A policy is worth creating for a subject when this is true, even if the
+// policy is otherwise empty at the time it is made.
+func hasGlobalACMEDefaults(options map[string]any) bool {
+	_, hasACMEDNS := options["acme_dns"] // can be set to nil (to use globally-defined "dns" value instead), but it is still set
+	return options["email"] != nil ||
+		options["acme_ca"] != nil ||
+		options["acme_ca_root"] != nil ||
+		hasACMEDNS ||
+		options["acme_eab"] != nil ||
+		options["preferred_chains"] != nil
+}
+
 // newBaseAutomationPolicy returns a new TLS automation policy that gets
 // its values from the global options map. It should be used as the base
 // for any other automation policies. A nil policy (and no error) will be
@@ -1057,7 +1155,8 @@ outer:
 						i--
 						continue outer
 					}
-				} else {
+				} else if !automationPolicyMergeShadows(i, j, aps) {
+					// merge only if it won't change which policy handles a name
 					// avoid repeated subjects
 					for _, subj := range aps[j].SubjectsRaw {
 						if !slices.Contains(aps[i].SubjectsRaw, subj) {
@@ -1107,6 +1206,36 @@ func automationPolicyShadows(i int, aps []*caddytls.AutomationPolicy) int {
 		}
 	}
 	return -1
+}
+
+// automationPolicyMergeShadows returns true if merging aps[j] into aps[i]
+// (where i < j) would change which policy handles a name. This happens
+// when a subject of a policy between i and j overlaps with a subject of
+// aps[j], in either direction.
+//
+// For example, say the policies are for "example.com" (i),
+// "foo.example.com" (i+1), and "*.example.com" (j). Merging j into i moves
+// "*.example.com" before the i+1 policy. Then the wildcard matches
+// "foo.example.com" first, and the i+1 policy is never used.
+//
+// The reverse case matters too. If the wildcard is in i+1 and the name is
+// in j, merging moves the name before the wildcard, and its policy changes.
+// A merge should not change the result, so it is skipped here as well.
+//
+// This uses certmagic.MatchWildcard, which the TLS app also uses to pick
+// a policy for a name.
+func automationPolicyMergeShadows(i, j int, aps []*caddytls.AutomationPolicy) bool {
+	for k := i + 1; k < j; k++ {
+		for _, kSubj := range aps[k].SubjectsRaw {
+			for _, jSubj := range aps[j].SubjectsRaw {
+				if certmagic.MatchWildcard(kSubj, jSubj) ||
+					certmagic.MatchWildcard(jSubj, kSubj) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // subjectQualifiesForPublicCert is like certmagic.SubjectQualifiesForPublicCert() except

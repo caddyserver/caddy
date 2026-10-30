@@ -255,9 +255,10 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	// commands like validate can be a better test
 	certCacheMu.RLock()
 	magic := certmagic.New(certCache, certmagic.Config{
-		Storage: ctx.Storage(),
-		Logger:  t.logger,
-		OnEvent: t.onEvent,
+		Storage:        ctx.Storage(),
+		Logger:         t.logger,
+		OnEvent:        t.onEvent,
+		ShouldEmitFunc: t.events.ShouldEmit,
 		OCSP: certmagic.OCSPConfig{
 			DisableStapling: t.DisableOCSPStapling,
 		},
