@@ -1,0 +1,120 @@
+# Identical policies for "a.example.com, b.example.com" and "*.api.example.com"
+# must not be merged: the wildcard would move before the policy for
+# "foo.api.example.com" and match that name first. force_automate makes
+# foo.api.example.com get its own certificate instead of using the wildcard's.
+a.example.com, b.example.com {
+	tls {
+		issuer acme
+	}
+}
+
+foo.api.example.com {
+	tls force_automate {
+		issuer internal
+	}
+}
+
+*.api.example.com {
+	tls {
+		issuer acme
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"foo.api.example.com"
+									]
+								}
+							],
+							"terminal": true
+						},
+						{
+							"match": [
+								{
+									"host": [
+										"a.example.com",
+										"b.example.com"
+									]
+								}
+							],
+							"terminal": true
+						},
+						{
+							"match": [
+								{
+									"host": [
+										"*.api.example.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					],
+					"tls_connection_policies": [
+						{
+							"match": {
+								"sni": [
+									"foo.api.example.com"
+								]
+							}
+						},
+						{}
+					]
+				}
+			}
+		},
+		"tls": {
+			"certificates": {
+				"automate": [
+					"foo.api.example.com"
+				]
+			},
+			"automation": {
+				"policies": [
+					{
+						"subjects": [
+							"a.example.com",
+							"b.example.com"
+						],
+						"issuers": [
+							{
+								"module": "acme"
+							}
+						]
+					},
+					{
+						"subjects": [
+							"foo.api.example.com"
+						],
+						"issuers": [
+							{
+								"module": "internal"
+							}
+						]
+					},
+					{
+						"subjects": [
+							"*.api.example.com"
+						],
+						"issuers": [
+							{
+								"module": "acme"
+							}
+						]
+					}
+				]
+			}
+		}
+	}
+}
