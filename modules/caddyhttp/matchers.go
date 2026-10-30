@@ -120,7 +120,7 @@ type (
 	// (potentially leading to collisions).
 	MatchPathRE struct{ MatchRegexp }
 
-	// MatchMethod matches requests by the method.
+	// MatchMethod matches requests by the case-sensitive HTTP method token.
 	MatchMethod []string
 
 	// MatchQuery matches requests by the URI's query string. It takes a JSON object
@@ -907,14 +907,9 @@ func (MatchMethod) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-// Provision uppercases all configured methods to ensure case-insensitive
-// matching against incoming requests, whose methods are always uppercase.
-func (m MatchMethod) Provision(_ caddy.Context) error {
-	for i := range m {
-		m[i] = strings.ToUpper(m[i])
-	}
-	return nil
-}
+// Provision is retained for compatibility. HTTP method tokens are
+// case-sensitive and need no preprocessing.
+func (MatchMethod) Provision(_ caddy.Context) error { return nil }
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 func (m *MatchMethod) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
