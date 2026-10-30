@@ -405,23 +405,27 @@ func TestTLSConnectionPoliciesAreIsolatedAcrossListeners(t *testing.T) {
 }
 
 func TestConflictingClientAuthIsRejected(t *testing.T) {
-	caddyfileStr := `example.com/public/* {
+	caddyfileStr := `example.com {
 		tls {
 			client_auth {
 				mode request
 			}
 		}
-		respond "public"
+		handle /public/* {
+			respond "public"
+		}
 	}
 
-	example.com/admin* {
+	example.com:443 {
 		tls {
 			client_auth {
 				mode require_and_verify
 				trust_pool file /tmp/root.crt
 			}
 		}
-		respond "admin"
+		handle /admin* {
+			respond "admin"
+		}
 	}`
 
 	adapter := caddyfile.Adapter{ServerType: ServerType{}}
