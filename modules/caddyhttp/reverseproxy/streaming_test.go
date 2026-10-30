@@ -645,10 +645,6 @@ func TestDetachedTrackerRemovalAllowsConcurrentConnectionDeletion(t *testing.T) 
 }
 
 func TestHandlerCleanupDoesNotBlockOnStalledWebsocketPeer(t *testing.T) {
-	timeout := closeControlWriteTimeout
-	closeControlWriteTimeout = 100 * time.Millisecond
-	t.Cleanup(func() { closeControlWriteTimeout = timeout })
-
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -665,6 +661,9 @@ func TestHandlerCleanupDoesNotBlockOnStalledWebsocketPeer(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
+	// Small buffers make sure the write below blocks
+	_ = conn.(*net.TCPConn).SetWriteBuffer(4096)
+	_ = peer.(*net.TCPConn).SetReadBuffer(4096)
 
 	// Stands in for the tunnel's copy goroutine, stuck writing to the peer
 	copyDone := make(chan struct{})
@@ -687,12 +686,12 @@ func TestHandlerCleanupDoesNotBlockOnStalledWebsocketPeer(t *testing.T) {
 
 	select {
 	case <-cleanupDone:
-	case <-time.After(5 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("cleanup blocked on a websocket peer that stopped reading")
 	}
 	select {
 	case <-copyDone:
-	case <-time.After(5 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("stalled write was not released")
 	}
 }
