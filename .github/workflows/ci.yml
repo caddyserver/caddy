@@ -49,7 +49,7 @@ jobs:
           SUCCESS: 0
 
         - os: mac
-          OS_LABEL: macos-14
+          OS_LABEL: macos-latest
           CADDY_BIN_PATH: ./cmd/caddy/caddy
           SUCCESS: 0
 
