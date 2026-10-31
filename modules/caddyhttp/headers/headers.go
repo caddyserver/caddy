@@ -152,6 +152,12 @@ func (ops *HeaderOps) Provision(_ caddy.Context) error {
 	}
 	for fieldName, replacements := range ops.Replace {
 		for i, r := range replacements {
+			// an empty search would match between every character; this is
+			// checked here rather than in validate() because users of
+			// HeaderOps (e.g. reverse_proxy) call Provision but not Validate
+			if r.Search == "" && r.SearchRegexp == "" {
+				return fmt.Errorf("replacement %d for header field '%s': search or search_regexp must be set", i, fieldName)
+			}
 			if r.SearchRegexp == "" {
 				continue
 			}
@@ -201,6 +207,9 @@ func (ops HeaderOps) validate() error {
 // Replacement describes a string replacement,
 // either a simple and fast substring search
 // or a slower but more powerful regex search.
+// Exactly one of Search or SearchRegexp must be
+// set. If the search is empty after placeholders
+// are expanded, the replacement is skipped.
 type Replacement struct {
 	// The substring to search for.
 	Search string `json:"search,omitempty"`
@@ -320,13 +329,17 @@ func (ops *HeaderOps) ApplyTo(hdr http.Header, repl *caddy.Replacer) {
 							// Use precompiled regular expressions
 							hdr[fieldName][i] = r.re.ReplaceAllString(hdr[fieldName][i], replace)
 						} else if r.SearchRegexp != "" {
-							// Runtime compilation of regular expressions
-							searchRegexp := repl.ReplaceKnown(r.SearchRegexp, "")
-							if re, err := regexp.Compile(searchRegexp); err == nil {
-								hdr[fieldName][i] = re.ReplaceAllString(hdr[fieldName][i], replace)
+							// Runtime compilation of regular expressions; an
+							// expression that expands to nothing is skipped
+							// because it would match between every character
+							if searchRegexp := repl.ReplaceKnown(r.SearchRegexp, ""); searchRegexp != "" {
+								if re, err := regexp.Compile(searchRegexp); err == nil {
+									hdr[fieldName][i] = re.ReplaceAllString(hdr[fieldName][i], replace)
+								}
+								// If compilation fails, skip this replacement
 							}
-							// If compilation fails, skip this replacement
-						} else {
+						} else if search != "" {
+							// an empty search is skipped for the same reason
 							hdr[fieldName][i] = strings.ReplaceAll(hdr[fieldName][i], search, replace)
 						}
 					}
@@ -348,11 +361,14 @@ func (ops *HeaderOps) ApplyTo(hdr http.Header, repl *caddy.Replacer) {
 					if r.re != nil {
 						hdr[hdrFieldName][i] = r.re.ReplaceAllString(hdr[hdrFieldName][i], replace)
 					} else if r.SearchRegexp != "" {
-						searchRegexp := repl.ReplaceKnown(r.SearchRegexp, "")
-						if re, err := regexp.Compile(searchRegexp); err == nil {
-							hdr[hdrFieldName][i] = re.ReplaceAllString(hdr[hdrFieldName][i], replace)
+						// skip an expression that expands to nothing
+						if searchRegexp := repl.ReplaceKnown(r.SearchRegexp, ""); searchRegexp != "" {
+							if re, err := regexp.Compile(searchRegexp); err == nil {
+								hdr[hdrFieldName][i] = re.ReplaceAllString(hdr[hdrFieldName][i], replace)
+							}
 						}
-					} else {
+					} else if search != "" {
+						// an empty search is skipped for the same reason
 						hdr[hdrFieldName][i] = strings.ReplaceAll(hdr[hdrFieldName][i], search, replace)
 					}
 				}

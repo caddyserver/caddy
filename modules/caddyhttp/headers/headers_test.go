@@ -434,3 +434,110 @@ func TestPlaceholderInSearchRegexp(t *testing.T) {
 		t.Errorf("Expected header value %q, got %q", expected, result)
 	}
 }
+
+func TestHandlerReplaceEmptySearch(t *testing.T) {
+	for i, tc := range []struct {
+		name        string
+		replacement Replacement
+		field       string
+		reqHeader   http.Header
+		expected    http.Header
+	}{
+		{
+			// a search that expands to nothing must not match between every character
+			name:        "substring search expanding to empty",
+			replacement: Replacement{Search: "{test.empty}", Replace: "-"},
+			field:       "X-Test",
+			reqHeader:   http.Header{"X-Test": {"abc"}},
+			expected:    http.Header{"X-Test": {"abc"}},
+		},
+		{
+			name:        "regexp search expanding to empty",
+			replacement: Replacement{SearchRegexp: "{test.empty}", Replace: "-"},
+			field:       "X-Test",
+			reqHeader:   http.Header{"X-Test": {"abc"}},
+			expected:    http.Header{"X-Test": {"abc"}},
+		},
+		{
+			name:        "substring search expanding to empty on all fields",
+			replacement: Replacement{Search: "{test.empty}", Replace: "-"},
+			field:       "*",
+			reqHeader:   http.Header{"X-Test": {"abc"}},
+			expected:    http.Header{"X-Test": {"abc"}},
+		},
+		{
+			name:        "regexp search expanding to empty on all fields",
+			replacement: Replacement{SearchRegexp: "{test.empty}", Replace: "-"},
+			field:       "*",
+			reqHeader:   http.Header{"X-Test": {"abc"}},
+			expected:    http.Header{"X-Test": {"abc"}},
+		},
+		{
+			// a non-empty search keeps working
+			name:        "substring search expanding to non-empty",
+			replacement: Replacement{Search: "{test.full}", Replace: "-"},
+			field:       "X-Test",
+			reqHeader:   http.Header{"X-Test": {"abc"}},
+			expected:    http.Header{"X-Test": {"a-c"}},
+		},
+	} {
+		h := Handler{
+			Request: &HeaderOps{
+				Replace: map[string][]Replacement{tc.field: {tc.replacement}},
+			},
+		}
+		if err := h.Provision(caddy.Context{}); err != nil {
+			t.Errorf("Test %d (%s): unexpected provision error: %v", i, tc.name, err)
+			continue
+		}
+
+		req := httptest.NewRequest("GET", "http://localhost/", nil)
+		req.Header = tc.reqHeader.Clone()
+		repl := caddy.NewReplacer()
+		repl.Set("test.empty", "")
+		repl.Set("test.full", "b")
+		req = req.WithContext(context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl))
+
+		next := nextHandler(func(w http.ResponseWriter, r *http.Request) error { return nil })
+		if err := h.ServeHTTP(httptest.NewRecorder(), req, next); err != nil {
+			t.Errorf("Test %d (%s): %v", i, tc.name, err)
+			continue
+		}
+
+		// ApplyToRequest manages the Host header; compare only what the test sets
+		for k := range tc.expected {
+			if actual := req.Header[k]; !reflect.DeepEqual(actual, tc.expected[k]) {
+				t.Errorf("Test %d (%s): expected %s: %v, got %v", i, tc.name, k, tc.expected[k], actual)
+			}
+		}
+	}
+}
+
+func TestHeaderOpsProvisionRejectsEmptySearch(t *testing.T) {
+	for i, tc := range []struct {
+		name        string
+		replacement Replacement
+		wantErr     bool
+	}{
+		{"neither search nor search_regexp", Replacement{Replace: "x"}, true},
+		{"empty strings for both", Replacement{Search: "", SearchRegexp: "", Replace: "x"}, true},
+		{"substring search", Replacement{Search: "a", Replace: "x"}, false},
+		{"regexp search", Replacement{SearchRegexp: "a+", Replace: "x"}, false},
+		// only known after placeholder expansion at runtime, so it is skipped there instead
+		{"placeholder search", Replacement{Search: "{test.empty}", Replace: "x"}, false},
+		{"placeholder regexp search", Replacement{SearchRegexp: "{test.empty}", Replace: "x"}, false},
+	} {
+		h := Handler{
+			Response: &RespHeaderOps{HeaderOps: &HeaderOps{
+				Replace: map[string][]Replacement{"X-Test": {tc.replacement}},
+			}},
+		}
+		err := h.Provision(caddy.Context{})
+		if tc.wantErr && err == nil {
+			t.Errorf("Test %d (%s): expected error but got none", i, tc.name)
+		}
+		if !tc.wantErr && err != nil {
+			t.Errorf("Test %d (%s): unexpected error: %v", i, tc.name, err)
+		}
+	}
+}
