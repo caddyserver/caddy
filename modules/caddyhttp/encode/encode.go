@@ -170,31 +170,34 @@ func hasNonEmptyValue(h http.Header, key string) bool {
 }
 
 func (enc *Encode) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	if !httpguts.HeaderValuesContainsToken(r.Header["Cache-Control"], "no-transform") {
-		for _, encName := range AcceptedEncodings(r, enc.Prefer) {
-			if _, ok := enc.writerPools[encName]; !ok {
-				continue // encoding not offered
-			}
-			w = enc.openResponseWriter(encName, w, r.Method == http.MethodConnect)
-			defer w.(*responseWriter).Close()
-
-			// to comply with RFC 9110 section 8.8.3(.3), we modify the Etag when encoding
-			// by appending a hyphen and the encoder name; the problem is, the client will
-			// send back that Etag in an If-None-Match header, but upstream handlers that set
-			// the Etag in the first place don't know that we appended to their Etag! so here
-			// we have to strip our addition so the upstream handlers can still honor client
-			// caches without knowing about our changes...
-			if etags := r.Header["If-None-Match"]; len(etags) > 0 {
-				etag := strings.Join(etags, ", ")
-				stripped := strings.ReplaceAll(etag, "-"+encName+`"`, `"`)
-				if stripped != etag || len(etags) > 1 {
-					r.Header["If-None-Match"] = []string{stripped}
-				}
-			}
-
-			break
+	var encodingName string
+	for _, encName := range AcceptedEncodings(r, enc.Prefer) {
+		if _, ok := enc.writerPools[encName]; !ok {
+			continue // encoding not offered
 		}
+		encodingName = encName
+
+		// to comply with RFC 9110 section 8.8.3(.3), we modify the Etag when encoding
+		// by appending a hyphen and the encoder name; the problem is, the client will
+		// send back that Etag in an If-None-Match header, but upstream handlers that set
+		// the Etag in the first place don't know that we appended to their Etag! so here
+		// we have to strip our addition so the upstream handlers can still honor client
+		// caches without knowing about our changes...
+		if etags := r.Header["If-None-Match"]; len(etags) > 0 {
+			etag := strings.Join(etags, ", ")
+			stripped := strings.ReplaceAll(etag, "-"+encName+`"`, `"`)
+			if stripped != etag || len(etags) > 1 {
+				r.Header["If-None-Match"] = []string{stripped}
+			}
+		}
+
+		break
 	}
+
+	// wrap even when no encoding was negotiated so eligible identity responses
+	// still carry Vary: Accept-Encoding for shared caches
+	w = enc.openResponseWriter(encodingName, w, r.Method == http.MethodConnect)
+	defer w.(*responseWriter).Close()
 
 	err := next.ServeHTTP(w, r)
 	// If there was an error, disable encoding completely
@@ -255,7 +258,7 @@ func (enc *Encode) initResponseWriter(rw *responseWriter, encodingName string, w
 // configured by config.
 type responseWriter struct {
 	http.ResponseWriter
-	encodingName string
+	encodingName string // empty when the client accepts no offered encoding
 	w            Encoder
 	config       *Encode
 	statusCode   int
@@ -534,16 +537,20 @@ func (rw *responseWriter) init() {
 
 	hdr := rw.Header()
 
+	// Only the response no-transform binds us; the request one addresses intermediaries.
 	if !hasNonEmptyValue(hdr, "Content-Encoding") &&
 		!httpguts.HeaderValuesContainsToken(hdr["Cache-Control"], "no-transform") &&
 		rw.config.Match(rw) {
+		if !hasVaryValue(hdr, "Accept-Encoding") {
+			hdr["Vary"] = append(hdr["Vary"], "Accept-Encoding")
+		}
+		if rw.encodingName == "" {
+			return
+		}
 		rw.w = rw.config.writerPools[rw.encodingName].Get().(Encoder)
 		rw.w.Reset(rw.ResponseWriter)
 		delete(hdr, "Content-Length") // https://github.com/golang/go/issues/14975
 		hdr["Content-Encoding"] = []string{rw.encodingName}
-		if !hasVaryValue(hdr, "Accept-Encoding") {
-			hdr["Vary"] = append(hdr["Vary"], "Accept-Encoding")
-		}
 		delete(hdr, "Accept-Ranges") // we don't know ranges for dynamically-encoded content
 
 		// strong ETags need to be distinct depending on the encoding ("selected representation")
