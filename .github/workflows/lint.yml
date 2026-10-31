@@ -36,7 +36,7 @@ jobs:
           OS_LABEL: ubuntu-latest
 
         - os: mac
-          OS_LABEL: macos-14
+          OS_LABEL: macos-latest
 
         - os: windows
           OS_LABEL: windows-latest
