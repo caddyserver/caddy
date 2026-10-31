@@ -195,6 +195,35 @@ func TestCleanPath(t *testing.T) {
 			input:  "/foo//./bar",
 			expect: "/foo//bar",
 		},
+		{
+			input:  "/public/..;foo/admin/secret",
+			expect: "/admin/secret",
+		},
+		{
+			input:        "/public/..;foo/admin/secret",
+			mergeSlashes: true,
+			expect:       "/admin/secret",
+		},
+		{
+			input:  "/a;v=1/b;v=2/c",
+			expect: "/a/b/c",
+		},
+		{
+			input:  "/foo;/bar",
+			expect: "/foo/bar",
+		},
+		{
+			input:  "/foo;param",
+			expect: "/foo",
+		},
+		{
+			input:  "/;a/;b/;c",
+			expect: "/",
+		},
+		{
+			input:  "/clean/path",
+			expect: "/clean/path",
+		},
 	} {
 		actual := CleanPath(tc.input, tc.mergeSlashes)
 		if actual != tc.expect {

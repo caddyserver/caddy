@@ -299,12 +299,44 @@ func CleanPath(p string, collapseSlashes bool) string {
 }
 
 // cleanPath does path.Clean(p) but preserves any trailing slash.
+// It also strips path parameters (semicolon-delimited values within
+// path segments) before cleaning, so that segments like "..;v=1"
+// are correctly resolved as ".." rather than treated as opaque.
 func cleanPath(p string) string {
+	p = stripPathParameters(p)
 	cleaned := path.Clean(p)
 	if cleaned != "/" && strings.HasSuffix(p, "/") {
 		cleaned = cleaned + "/"
 	}
 	return cleaned
+}
+
+// stripPathParameters removes path parameters (;...) from each
+// segment of the given path. Path parameters are defined in
+// RFC 3986 §3.3 and delimited by semicolons. Removing them before
+// path normalization prevents confusion when a proxy's route
+// matcher and a backend server interpret the same URI differently
+// (e.g. /a/..;x/b is opaque to path.Clean but backends that strip
+// parameters before resolving dot-segments will serve /b).
+func stripPathParameters(p string) string {
+	if !strings.Contains(p, ";") {
+		return p
+	}
+	var sb strings.Builder
+	sb.Grow(len(p))
+	for i := 0; i < len(p); i++ {
+		if p[i] == ';' {
+			for i < len(p) && p[i] != '/' {
+				i++
+			}
+			if i < len(p) {
+				sb.WriteByte('/')
+			}
+		} else {
+			sb.WriteByte(p[i])
+		}
+	}
+	return sb.String()
 }
 
 // tlsPlaceholderWrapper is a no-op listener wrapper that marks
