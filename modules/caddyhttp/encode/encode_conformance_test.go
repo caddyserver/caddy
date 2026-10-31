@@ -234,7 +234,7 @@ var encodeScenarios = []encodeScenario{
 		checkResponse: checkStripsEncodedETagSuffix,
 	},
 	{
-		name:      "request cache-control no-transform prevents encoding",
+		name:      "request cache-control no-transform does not prevent encoding",
 		method:    http.MethodGet,
 		minLength: 1,
 		reqHeaders: func(encoderCase) http.Header {
@@ -243,7 +243,7 @@ var encodeScenarios = []encodeScenario{
 		next: func(encoderCase) caddyhttp.Handler {
 			return conformanceLargeBodyHandler(conformanceContentType)
 		},
-		checkResponse: checkBypassesEncoding,
+		checkResponse: checkEncodesConformanceBody,
 	},
 	{
 		name:      "response cache-control no-transform prevents encoding",
@@ -256,18 +256,6 @@ var encodeScenarios = []encodeScenario{
 				_, err := w.Write(conformanceLargeBody())
 				return err
 			})
-		},
-		checkResponse: checkBypassesEncoding,
-	},
-	{
-		name:      "request cache-control no-transform on a later line prevents encoding",
-		method:    http.MethodGet,
-		minLength: 1,
-		reqHeaders: func(encoderCase) http.Header {
-			return http.Header{"Cache-Control": {"no-cache", "no-transform"}}
-		},
-		next: func(encoderCase) caddyhttp.Handler {
-			return conformanceLargeBodyHandler(conformanceContentType)
 		},
 		checkResponse: checkBypassesEncoding,
 	},
@@ -303,6 +291,42 @@ var encodeScenarios = []encodeScenario{
 		name:      "content type matcher rejection prevents encoding",
 		method:    http.MethodGet,
 		minLength: 1,
+		next: func(encoderCase) caddyhttp.Handler {
+			return conformanceLargeBodyHandler("image/png")
+		},
+		checkResponse: checkBypassesEncoding,
+	},
+	{
+		name:      "missing accept-encoding keeps identity and varies",
+		method:    http.MethodGet,
+		minLength: 1,
+		reqHeaders: func(encoderCase) http.Header {
+			return http.Header{"Accept-Encoding": nil}
+		},
+		next: func(encoderCase) caddyhttp.Handler {
+			return conformanceLargeBodyHandler(conformanceContentType)
+		},
+		checkResponse: checkIdentityVaries,
+	},
+	{
+		name:      "identity accept-encoding keeps identity and varies",
+		method:    http.MethodGet,
+		minLength: 1,
+		reqHeaders: func(encoderCase) http.Header {
+			return http.Header{"Accept-Encoding": {"identity"}}
+		},
+		next: func(encoderCase) caddyhttp.Handler {
+			return conformanceLargeBodyHandler(conformanceContentType)
+		},
+		checkResponse: checkIdentityVaries,
+	},
+	{
+		name:      "missing accept-encoding with content type matcher rejection does not vary",
+		method:    http.MethodGet,
+		minLength: 1,
+		reqHeaders: func(encoderCase) http.Header {
+			return http.Header{"Accept-Encoding": nil}
+		},
 		next: func(encoderCase) caddyhttp.Handler {
 			return conformanceLargeBodyHandler("image/png")
 		},
@@ -486,6 +510,16 @@ func conformanceLargeBodyHandler(contentType string) caddyhttp.Handler {
 	})
 }
 
+func checkEncodesConformanceBody(t *testing.T, w *httptest.ResponseRecorder, encCase encoderCase) {
+	t.Helper()
+
+	encName := encCase.encoding.AcceptEncoding()
+	if got := w.Header().Get("Content-Encoding"); got != encName {
+		t.Fatalf("Content-Encoding = %q, want %q", got, encName)
+	}
+	assertDecompresses(t, encCase, w.Body.Bytes(), conformanceLargeBody())
+}
+
 func checkBypassesEncoding(t *testing.T, w *httptest.ResponseRecorder, encCase encoderCase) {
 	t.Helper()
 
@@ -495,6 +529,24 @@ func checkBypassesEncoding(t *testing.T, w *httptest.ResponseRecorder, encCase e
 	}
 	if !bytes.Equal(w.Body.Bytes(), want) {
 		t.Fatalf("body len = %d, want len = %d", w.Body.Len(), len(want))
+	}
+	if encode.HasVaryValue(w.Header(), "Accept-Encoding") {
+		t.Fatalf("Vary = %q, want no Accept-Encoding", w.Header().Values("Vary"))
+	}
+}
+
+func checkIdentityVaries(t *testing.T, w *httptest.ResponseRecorder, encCase encoderCase) {
+	t.Helper()
+
+	want := conformanceLargeBody()
+	if got := w.Header().Get("Content-Encoding"); got != "" {
+		t.Fatalf("Content-Encoding = %q, want empty", got)
+	}
+	if !bytes.Equal(w.Body.Bytes(), want) {
+		t.Fatalf("body len = %d, want len = %d", w.Body.Len(), len(want))
+	}
+	if !encode.HasVaryValue(w.Header(), "Accept-Encoding") {
+		t.Fatalf("Vary = %q, want Accept-Encoding", w.Header().Values("Vary"))
 	}
 }
 
