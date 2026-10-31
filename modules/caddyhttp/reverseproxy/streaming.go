@@ -701,11 +701,23 @@ func writeCloseControl(conn io.Writer, isClient bool) error {
 		buf = appendMessage(buf)
 	}
 
+	// The tunnel's copy goroutine may still be writing to this connection,
+	// and a peer that stopped reading can block that write forever. The close
+	// message waits behind it while the caller holds the tunnel tracker lock, which
+	// in turn blocks config reloads. A write deadline unblocks both writes,
+	// and the connection is closed right after this anyway.
+	if dc, ok := conn.(interface{ SetWriteDeadline(time.Time) error }); ok {
+		_ = dc.SetWriteDeadline(time.Now().Add(closeControlWriteTimeout))
+	}
+
 	// simply best-effort, but return error for logging purposes
-	// TODO: we might need to ensure we are the exclusive writer by this point (io.Copy is stopped)?
 	_, err := conn.Write(buf[:msgLength])
 	return err
 }
+
+// closeControlWriteTimeout is how long writeCloseControl waits for a peer
+// to accept the close message before giving up on it.
+const closeControlWriteTimeout = 5 * time.Second
 
 // Copied from https://github.com/gorilla/websocket/blob/v1.5.0/mask.go
 func maskBytes(key [4]byte, pos int, b []byte) int {

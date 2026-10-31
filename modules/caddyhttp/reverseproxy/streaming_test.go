@@ -644,6 +644,58 @@ func TestDetachedTrackerRemovalAllowsConcurrentConnectionDeletion(t *testing.T) 
 	}
 }
 
+func TestHandlerCleanupDoesNotBlockOnStalledWebsocketPeer(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	// The peer never reads, so writes to it block once the socket buffers fill
+	peer, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer peer.Close()
+	conn, err := ln.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	// Small buffers make sure the write below blocks
+	_ = conn.(*net.TCPConn).SetWriteBuffer(4096)
+	_ = peer.(*net.TCPConn).SetReadBuffer(4096)
+
+	// Stands in for the tunnel's copy goroutine, stuck writing to the peer
+	copyDone := make(chan struct{})
+	go func() {
+		defer close(copyDone)
+		_, _ = conn.Write(make([]byte, 64<<20))
+	}()
+	time.Sleep(100 * time.Millisecond)
+
+	ts := newTunnelTracker(caddy.Log(), 0)
+	ts.registerConnection(conn, func() error {
+		return writeCloseControl(conn, false)
+	}, false, "upstream")
+
+	cleanupDone := make(chan struct{})
+	go func() {
+		defer close(cleanupDone)
+		_ = ts.cleanupAttachedConnections()
+	}()
+
+	select {
+	case <-cleanupDone:
+	case <-time.After(10 * time.Second):
+		t.Fatal("cleanup blocked on a websocket peer that stopped reading")
+	}
+	select {
+	case <-copyDone:
+	case <-time.After(10 * time.Second):
+		t.Fatal("stalled write was not released")
+	}
+}
+
 // opaqueUpgradeWriter supports hijacking but hides the recorder from the
 // detachment helper, as a middleware wrapper without Unwrap would do.
 type opaqueUpgradeWriter struct {
