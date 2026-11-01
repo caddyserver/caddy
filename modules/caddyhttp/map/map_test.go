@@ -199,6 +199,24 @@ func TestHandler(t *testing.T) {
 			},
 		},
 		{
+			// A literal dollar before a Caddy placeholder must not suppress
+			// the placeholder: ${http.request.method} is "$" + "{...}".
+			reqURI: "/?key=abc",
+			handler: Handler{
+				Source:       "{http.request.uri.query.key}",
+				Destinations: []string{"{output}"},
+				Mappings: []Mapping{
+					{
+						InputRegexp: "^abc$",
+						Outputs:     []any{"${http.request.method}"},
+					},
+				},
+			},
+			expect: map[string]any{
+				"output": "$GET",
+			},
+		},
+		{
 			// A capture group is data too: placeholder syntax inside it
 			// must not be evaluated, or request data could inject one.
 			reqURI: "/?key=%7Bhttp.request.method%7D",

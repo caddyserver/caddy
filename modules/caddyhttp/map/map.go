@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
@@ -124,6 +125,73 @@ func (h *Handler) Validate() error {
 	return nil
 }
 
+// escapeTemplate prepares an operator-written output template for the two
+// expansion passes in ServeHTTP. Placeholders ({...}) are expanded by the
+// replacer first, capture references ($1, ${1}, $name) by ExpandString last.
+//
+// A braced capture (${1}, ${name}) must not be read as a Caddy placeholder, so
+// its opening brace is escaped for the replacer. Every other "$" is data to
+// ExpandString and is doubled so a literal dollar survives; this keeps a Caddy
+// placeholder that follows a literal dollar working: "${http.request.method}"
+// becomes "$${http.request.method}", the replacer yields "$$GET", and
+// ExpandString restores "$GET".
+func escapeTemplate(template string, re *regexp.Regexp) string {
+	isCapture := func(name string) bool {
+		if name == "" {
+			return false
+		}
+		if n, err := strconv.Atoi(name); err == nil {
+			return n >= 0 && n <= re.NumSubexp()
+		}
+		for _, group := range re.SubexpNames() {
+			if group == name {
+				return true
+			}
+		}
+		return false
+	}
+
+	var b strings.Builder
+	for i := 0; i < len(template); {
+		if template[i] != '$' {
+			b.WriteByte(template[i])
+			i++
+			continue
+		}
+		if i+1 < len(template) && template[i+1] == '$' {
+			b.WriteString("$$")
+			i += 2
+			continue
+		}
+		if i+1 < len(template) && template[i+1] == '{' {
+			if end := strings.IndexByte(template[i+2:], '}'); end >= 0 {
+				name := template[i+2 : i+2+end]
+				if isCapture(name) {
+					b.WriteString(`$\{`)
+				} else {
+					b.WriteString("$${")
+				}
+				b.WriteString(name)
+				b.WriteByte('}')
+				i += 2 + end + 1
+				continue
+			}
+		}
+		j := i + 1
+		for j < len(template) && (template[j] == '_' || template[j] >= '0' && template[j] <= '9' || template[j] >= 'A' && template[j] <= 'Z' || template[j] >= 'a' && template[j] <= 'z') {
+			j++
+		}
+		if j > i+1 && isCapture(template[i+1:j]) {
+			b.WriteString(template[i:j])
+			i = j
+			continue
+		}
+		b.WriteString("$$")
+		i++
+	}
+	return b.String()
+}
+
 func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
@@ -164,7 +232,10 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 				// A braced capture reference such as ${1} would otherwise look
 				// like a placeholder to the replacer, so escape its opening
 				// brace first; the replacer drops the escape character again.
-				template := strings.ReplaceAll(outputStr, "${", `$\{`)
+				// Only real captures are escaped: a Caddy placeholder that
+				// follows a literal dollar, such as ${http.request.method},
+				// must still be expanded by the replacer.
+				template := escapeTemplate(outputStr, m.re)
 				expanded, _ := repl.ReplaceFunc(template, func(_ string, val any) (any, error) {
 					return strings.ReplaceAll(caddy.ToString(val), "$", "$$"), nil
 				})
