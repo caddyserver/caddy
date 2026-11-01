@@ -170,9 +170,12 @@ func TestHostMatcher(t *testing.T) {
 }
 
 func TestPathMatcher(t *testing.T) {
+	t.Setenv("CADDY_TEST_PATH_PREFIX", "admin")
+
 	for i, tc := range []struct {
-		match        MatchPath // not URI-encoded because not parsing from a URI
-		input        string    // should be valid URI encoding (escaped) since it will become part of a request
+		match        MatchPath   // not URI-encoded because not parsing from a URI
+		input        string      // should be valid URI encoding (escaped) since it will become part of a request
+		headers      http.Header // request headers, for header placeholders in the match
 		expect       bool
 		provisionErr bool
 	}{
@@ -437,6 +440,34 @@ func TestPathMatcher(t *testing.T) {
 			input:  "/admin%2fpanelX",
 			expect: false,
 		},
+		{
+			match:  MatchPath{"/{env.CADDY_TEST_PATH_PREFIX}/*"},
+			input:  "/admin/panel",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/{env.CADDY_TEST_PATH_PREFIX}/*"},
+			input:  "/other/panel",
+			expect: false,
+		},
+		{
+			match:   MatchPath{"/{http.request.header.X-Prefix}/*"},
+			input:   "/admin/panel",
+			headers: http.Header{"X-Prefix": []string{"Admin"}},
+			expect:  true,
+		},
+		{
+			match:   MatchPath{"/{http.request.header.X-Prefix}/*"},
+			input:   "/ADMIN/panel",
+			headers: http.Header{"X-Prefix": []string{"Admin"}},
+			expect:  true,
+		},
+		{
+			match:   MatchPath{"/{http.request.header.X-Prefix}%2f*"},
+			input:   "/admin%2fpanel",
+			headers: http.Header{"X-Prefix": []string{"Admin"}},
+			expect:  true,
+		},
 	} {
 		err := tc.match.Provision(caddy.Context{})
 		if err == nil && tc.provisionErr {
@@ -453,10 +484,11 @@ func TestPathMatcher(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Test %d (%v): Invalid request URI (should be rejected by Go's HTTP server): %v", i, tc.input, err)
 		}
-		req := &http.Request{URL: u}
+		req := &http.Request{URL: u, Header: tc.headers}
 		repl := caddy.NewReplacer()
 		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
 		req = req.WithContext(ctx)
+		addHTTPVarsToReplacer(repl, req, httptest.NewRecorder())
 
 		actual, err := tc.match.MatchWithError(req)
 		if err != nil {
