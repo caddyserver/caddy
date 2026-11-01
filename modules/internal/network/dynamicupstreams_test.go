@@ -38,7 +38,7 @@ func TestSRVResolvesAndCaches(t *testing.T) {
 		}, nil
 	}
 
-	targets, err := SRV(context.Background(), lookup, "svc-cache", "tcp", "x", time.Minute, 0, zap.NewNop())
+	targets, err := SRV(context.Background(), lookup, "", "svc-cache", "tcp", "x", time.Minute, 0, zap.NewNop())
 	if err != nil {
 		t.Fatalf("SRV: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestSRVResolvesAndCaches(t *testing.T) {
 	}
 
 	// second call within refresh must be served from cache (no extra lookup)
-	if _, err := SRV(context.Background(), lookup, "svc-cache", "tcp", "x", time.Minute, 0, zap.NewNop()); err != nil {
+	if _, err := SRV(context.Background(), lookup, "", "svc-cache", "tcp", "x", time.Minute, 0, zap.NewNop()); err != nil {
 		t.Fatalf("SRV (cached): %v", err)
 	}
 	if calls != 1 {
@@ -62,7 +62,7 @@ func TestSRVErrorWithoutGrace(t *testing.T) {
 	lookup := func(context.Context, string, string, string) (string, []*net.SRV, error) {
 		return "", nil, errors.New("dns boom")
 	}
-	if _, err := SRV(context.Background(), lookup, "svc-err", "tcp", "x", time.Minute, 0, zap.NewNop()); err == nil {
+	if _, err := SRV(context.Background(), lookup, "", "svc-err", "tcp", "x", time.Minute, 0, zap.NewNop()); err == nil {
 		t.Fatal("expected an error when lookup fails and nothing is cached")
 	}
 }
@@ -72,7 +72,7 @@ func TestSRVGracePeriodServesStale(t *testing.T) {
 		return "", []*net.SRV{{Target: "a.example.", Port: 1}}, nil
 	}
 	// tiny refresh so the entry is immediately stale on the next call
-	if _, err := SRV(context.Background(), ok, "svc-grace", "tcp", "x", time.Nanosecond, time.Hour, zap.NewNop()); err != nil {
+	if _, err := SRV(context.Background(), ok, "", "svc-grace", "tcp", "x", time.Nanosecond, time.Hour, zap.NewNop()); err != nil {
 		t.Fatalf("seeding cache: %v", err)
 	}
 
@@ -80,7 +80,7 @@ func TestSRVGracePeriodServesStale(t *testing.T) {
 		return "", nil, errors.New("dns boom")
 	}
 	// a level-enabled logger so the "using previously cached" error log fires
-	targets, err := SRV(context.Background(), fail, "svc-grace", "tcp", "x", time.Nanosecond, time.Hour, zaptest.NewLogger(t))
+	targets, err := SRV(context.Background(), fail, "", "svc-grace", "tcp", "x", time.Nanosecond, time.Hour, zaptest.NewLogger(t))
 	if err != nil {
 		t.Fatalf("grace period should suppress the error: %v", err)
 	}
@@ -95,11 +95,11 @@ func TestResetSRV(t *testing.T) {
 		calls++
 		return "", []*net.SRV{{Target: "a.example.", Port: 1}}, nil
 	}
-	if _, err := SRV(context.Background(), lookup, "svc-reset", "tcp", "x", time.Minute, 0, zap.NewNop()); err != nil {
+	if _, err := SRV(context.Background(), lookup, "", "svc-reset", "tcp", "x", time.Minute, 0, zap.NewNop()); err != nil {
 		t.Fatal(err)
 	}
-	ResetSRV("svc-reset", "tcp", "x")
-	if _, err := SRV(context.Background(), lookup, "svc-reset", "tcp", "x", time.Minute, 0, zap.NewNop()); err != nil {
+	ResetSRV("", "svc-reset", "tcp", "x")
+	if _, err := SRV(context.Background(), lookup, "", "svc-reset", "tcp", "x", time.Minute, 0, zap.NewNop()); err != nil {
 		t.Fatal(err)
 	}
 	if calls != 2 {
@@ -114,7 +114,7 @@ func TestAResolvesAndCaches(t *testing.T) {
 		return []net.IP{net.ParseIP("10.0.0.1"), net.ParseIP("10.0.0.2")}, nil
 	}
 
-	targets, err := A(context.Background(), lookup, "ip", "db.a-test", "5432", time.Minute, zap.NewNop())
+	targets, err := A(context.Background(), lookup, "", "ip", "db.a-test", "5432", time.Minute, zap.NewNop())
 	if err != nil {
 		t.Fatalf("A: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestAResolvesAndCaches(t *testing.T) {
 		t.Errorf("unexpected first target: %+v", targets[0])
 	}
 
-	if _, err := A(context.Background(), lookup, "ip", "db.a-test", "5432", time.Minute, zap.NewNop()); err != nil {
+	if _, err := A(context.Background(), lookup, "", "ip", "db.a-test", "5432", time.Minute, zap.NewNop()); err != nil {
 		t.Fatalf("A (cached): %v", err)
 	}
 	if calls != 1 {
@@ -137,7 +137,7 @@ func TestAError(t *testing.T) {
 	lookup := func(context.Context, string, string) ([]net.IP, error) {
 		return nil, errors.New("dns boom")
 	}
-	if _, err := A(context.Background(), lookup, "ip", "db.a-err", "5432", time.Minute, zap.NewNop()); err == nil {
+	if _, err := A(context.Background(), lookup, "", "ip", "db.a-err", "5432", time.Minute, zap.NewNop()); err == nil {
 		t.Fatal("expected an error when the A lookup fails")
 	}
 }
@@ -151,7 +151,7 @@ func TestSRVFilteredRecords(t *testing.T) {
 			errors.New("some SRV names were filtered out")
 	}
 	// a level-enabled logger so the "SRV records filtered" warning fires
-	targets, err := SRV(context.Background(), lookup, "svc-filtered", "tcp", "x", time.Minute, 0, zaptest.NewLogger(t))
+	targets, err := SRV(context.Background(), lookup, "", "svc-filtered", "tcp", "x", time.Minute, 0, zaptest.NewLogger(t))
 	if err != nil {
 		t.Fatalf("usable records must be returned despite the partial error: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestResetAllSRV(t *testing.T) {
 	lookup := func(context.Context, string, string, string) (string, []*net.SRV, error) {
 		return "", []*net.SRV{{Target: "a.example.", Port: 1}}, nil
 	}
-	if _, err := SRV(context.Background(), lookup, "svc-reset-all", "tcp", "x", time.Minute, 0, zap.NewNop()); err != nil {
+	if _, err := SRV(context.Background(), lookup, "", "svc-reset-all", "tcp", "x", time.Minute, 0, zap.NewNop()); err != nil {
 		t.Fatalf("SRV: %v", err)
 	}
 	srvMu.RLock()
@@ -197,7 +197,7 @@ func TestSRVCacheBound(t *testing.T) {
 	}
 	for i := 0; i < maxCacheEntries+5; i++ {
 		name := fmt.Sprintf("svc-bound-%d", i)
-		if _, err := SRV(context.Background(), lookup, name, "tcp", "x", time.Minute, 0, zap.NewNop()); err != nil {
+		if _, err := SRV(context.Background(), lookup, "", name, "tcp", "x", time.Minute, 0, zap.NewNop()); err != nil {
 			t.Fatalf("SRV[%d]: %v", i, err)
 		}
 	}
@@ -206,6 +206,64 @@ func TestSRVCacheBound(t *testing.T) {
 	srvMu.RUnlock()
 	if n > maxCacheEntries {
 		t.Fatalf("srvCache len = %d, want <= %d (cache must stay bounded)", n, maxCacheEntries)
+	}
+}
+
+// TestSRVResolverKeyIsolatesCache verifies that two lookups for the same SRV
+// record but with different resolver keys do not share a cache entry.
+func TestSRVResolverKeyIsolatesCache(t *testing.T) {
+	ResetAllSRV()
+	t.Cleanup(ResetAllSRV)
+
+	lookupA := func(context.Context, string, string, string) (string, []*net.SRV, error) {
+		return "", []*net.SRV{{Target: "a.example.", Port: 1}}, nil
+	}
+	lookupB := func(context.Context, string, string, string) (string, []*net.SRV, error) {
+		return "", []*net.SRV{{Target: "b.example.", Port: 2}}, nil
+	}
+
+	ta, err := SRV(context.Background(), lookupA, "resolver-a", "svc", "tcp", "x", time.Minute, 0, zap.NewNop())
+	if err != nil {
+		t.Fatalf("resolver-a: %v", err)
+	}
+	tb, err := SRV(context.Background(), lookupB, "resolver-b", "svc", "tcp", "x", time.Minute, 0, zap.NewNop())
+	if err != nil {
+		t.Fatalf("resolver-b: %v", err)
+	}
+	if len(ta) != 1 || ta[0].Host != "a.example." {
+		t.Fatalf("resolver-a targets = %+v, want a.example.", ta)
+	}
+	if len(tb) != 1 || tb[0].Host != "b.example." {
+		t.Fatalf("resolver-b targets = %+v, want b.example. (resolver-a's entry leaked across resolvers)", tb)
+	}
+}
+
+// TestAResolverKeyIsolatesCache is the A-cache equivalent of the above.
+func TestAResolverKeyIsolatesCache(t *testing.T) {
+	aMu.Lock()
+	aCache = make(map[string]cacheEntry)
+	aMu.Unlock()
+
+	lookupA := func(context.Context, string, string) ([]net.IP, error) {
+		return []net.IP{net.ParseIP("10.0.0.1")}, nil
+	}
+	lookupB := func(context.Context, string, string) ([]net.IP, error) {
+		return []net.IP{net.ParseIP("10.0.0.2")}, nil
+	}
+
+	ta, err := A(context.Background(), lookupA, "resolver-a", "ip", "db.iso", "5432", time.Minute, zap.NewNop())
+	if err != nil {
+		t.Fatalf("resolver-a: %v", err)
+	}
+	tb, err := A(context.Background(), lookupB, "resolver-b", "ip", "db.iso", "5432", time.Minute, zap.NewNop())
+	if err != nil {
+		t.Fatalf("resolver-b: %v", err)
+	}
+	if len(ta) != 1 || ta[0].Host != "10.0.0.1" {
+		t.Fatalf("resolver-a targets = %+v, want 10.0.0.1", ta)
+	}
+	if len(tb) != 1 || tb[0].Host != "10.0.0.2" {
+		t.Fatalf("resolver-b targets = %+v, want 10.0.0.2 (resolver-a's entry leaked across resolvers)", tb)
 	}
 }
 
@@ -220,7 +278,7 @@ func TestACacheBound(t *testing.T) {
 	}
 	for i := 0; i < maxCacheEntries+5; i++ {
 		name := fmt.Sprintf("db.bound-%d", i)
-		if _, err := A(context.Background(), lookup, "ip", name, "5432", time.Minute, zap.NewNop()); err != nil {
+		if _, err := A(context.Background(), lookup, "", "ip", name, "5432", time.Minute, zap.NewNop()); err != nil {
 			t.Fatalf("A[%d]: %v", i, err)
 		}
 	}
@@ -264,7 +322,7 @@ func TestSRVConcurrentRefreshDeduplicates(t *testing.T) {
 	done := make(chan struct{}, 2)
 	// G1: takes the write lock and blocks inside lookup.
 	go func() {
-		_, _ = SRV(context.Background(), lookup, "svc-conc", "tcp", "x", time.Minute, 0, zap.NewNop())
+		_, _ = SRV(context.Background(), lookup, "", "svc-conc", "tcp", "x", time.Minute, 0, zap.NewNop())
 		done <- struct{}{}
 	}()
 	<-inLookup // G1 now holds the write lock; cache is still empty
@@ -275,7 +333,7 @@ func TestSRVConcurrentRefreshDeduplicates(t *testing.T) {
 	// performs no lookup. Ordering here is enforced by the channels below, not
 	// by timing.
 	go func() {
-		_, _ = SRV(context.Background(), lookup, "svc-conc", "tcp", "x", time.Minute, 0, zap.NewNop())
+		_, _ = SRV(context.Background(), lookup, "", "svc-conc", "tcp", "x", time.Minute, 0, zap.NewNop())
 		done <- struct{}{}
 	}()
 
@@ -317,7 +375,7 @@ func TestAConcurrentRefreshDeduplicates(t *testing.T) {
 
 	done := make(chan struct{}, 2)
 	go func() {
-		_, _ = A(context.Background(), lookup, "ip", "db.conc", "5432", time.Minute, zap.NewNop())
+		_, _ = A(context.Background(), lookup, "", "ip", "db.conc", "5432", time.Minute, zap.NewNop())
 		done <- struct{}{}
 	}()
 	<-inLookup
@@ -325,7 +383,7 @@ func TestAConcurrentRefreshDeduplicates(t *testing.T) {
 	// Second caller for the same key; ordering is enforced by the channels,
 	// not by timing (see the SRV test above).
 	go func() {
-		_, _ = A(context.Background(), lookup, "ip", "db.conc", "5432", time.Minute, zap.NewNop())
+		_, _ = A(context.Background(), lookup, "", "ip", "db.conc", "5432", time.Minute, zap.NewNop())
 		done <- struct{}{}
 	}()
 
@@ -342,12 +400,12 @@ func TestAConcurrentRefreshDeduplicates(t *testing.T) {
 }
 
 func TestSRVGracePeriodWithoutCachedResult(t *testing.T) {
-	ResetSRV("svc-cold-grace", "tcp", "x")
-	t.Cleanup(func() { ResetSRV("svc-cold-grace", "tcp", "x") })
+	ResetSRV("", "svc-cold-grace", "tcp", "x")
+	t.Cleanup(func() { ResetSRV("", "svc-cold-grace", "tcp", "x") })
 	lookup := func(context.Context, string, string, string) (string, []*net.SRV, error) {
 		return "", nil, errors.New("dns boom")
 	}
-	targets, err := SRV(context.Background(), lookup, "svc-cold-grace", "tcp", "x", time.Minute, time.Minute, zap.NewNop())
+	targets, err := SRV(context.Background(), lookup, "", "svc-cold-grace", "tcp", "x", time.Minute, time.Minute, zap.NewNop())
 	if err != nil || len(targets) != 0 {
 		t.Fatalf("cold-cache failure with grace: targets = %v, err = %v; want no targets and no error", targets, err)
 	}
@@ -355,15 +413,15 @@ func TestSRVGracePeriodWithoutCachedResult(t *testing.T) {
 
 func TestDiscoveryLoggingOnlyOnRefresh(t *testing.T) {
 	t.Run("SRV", func(t *testing.T) {
-		ResetSRV("svc-log", "tcp", "x")
-		t.Cleanup(func() { ResetSRV("svc-log", "tcp", "x") })
+		ResetSRV("", "svc-log", "tcp", "x")
+		t.Cleanup(func() { ResetSRV("", "svc-log", "tcp", "x") })
 		core, logs := observer.New(zap.DebugLevel)
 		logger := zap.New(core)
 		lookup := func(context.Context, string, string, string) (string, []*net.SRV, error) {
 			return "", []*net.SRV{{Target: "a.example.", Port: 5432, Priority: 1, Weight: 10}}, nil
 		}
 		for range 2 {
-			if _, err := SRV(context.Background(), lookup, "svc-log", "tcp", "x", time.Minute, 0, logger); err != nil {
+			if _, err := SRV(context.Background(), lookup, "", "svc-log", "tcp", "x", time.Minute, 0, logger); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -389,7 +447,7 @@ func TestDiscoveryLoggingOnlyOnRefresh(t *testing.T) {
 			return []net.IP{net.ParseIP("10.0.0.1")}, nil
 		}
 		for range 2 {
-			if _, err := A(context.Background(), lookup, "ip", "db.log", "5432", time.Minute, logger); err != nil {
+			if _, err := A(context.Background(), lookup, "", "ip", "db.log", "5432", time.Minute, logger); err != nil {
 				t.Fatal(err)
 			}
 		}
