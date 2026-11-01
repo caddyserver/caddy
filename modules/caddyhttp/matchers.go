@@ -410,6 +410,8 @@ func (MatchPath) CaddyModule() caddy.ModuleInfo {
 }
 
 // Provision lower-cases the paths in m to ensure case-insensitive matching.
+// Placeholder names are left as-is, since some of them are case-sensitive
+// (e.g. environment variables).
 func (m MatchPath) Provision(_ caddy.Context) error {
 	for i := range m {
 		if m[i] == "*" && i > 0 {
@@ -417,9 +419,53 @@ func (m MatchPath) Provision(_ caddy.Context) error {
 			m[0] = m[i]
 			break
 		}
-		m[i] = strings.ToLower(m[i])
+		m[i] = lowerOutsidePlaceholders(m[i])
 	}
 	return nil
+}
+
+// lowerOutsidePlaceholders lower-cases s except for the placeholders
+// it contains, which are found the same way caddy.Replacer finds them.
+func lowerOutsidePlaceholders(s string) string {
+	if !strings.Contains(s, "{") {
+		return strings.ToLower(s)
+	}
+
+	var sb strings.Builder
+	sb.Grow(len(s))
+	var lastWriteCursor int
+
+scan:
+	for i := 0; i < len(s); i++ {
+		// skip literal characters and escaped opening braces
+		if s[i] != '{' || (i > 0 && s[i-1] == '\\') {
+			continue
+		}
+
+		// find the end of the placeholder
+		end := strings.IndexByte(s[i:], '}') + i
+		if end < i {
+			continue
+		}
+
+		// if necessary look for the first closing brace that is not escaped
+		for end > 0 && end < len(s)-1 && s[end-1] == '\\' {
+			nextEnd := strings.IndexByte(s[end+1:], '}')
+			if nextEnd < 0 {
+				continue scan
+			}
+			end += nextEnd + 1
+		}
+
+		// lower-case the text before the placeholder, keep the placeholder
+		sb.WriteString(strings.ToLower(s[lastWriteCursor:i]))
+		sb.WriteString(s[i : end+1])
+		lastWriteCursor = end + 1
+		i = end
+	}
+
+	sb.WriteString(strings.ToLower(s[lastWriteCursor:]))
+	return sb.String()
 }
 
 // Match returns true if r matches m.
@@ -441,7 +487,9 @@ func (m MatchPath) MatchWithError(r *http.Request) (bool, error) {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	for _, matchPattern := range m {
-		matchPattern = repl.ReplaceAll(matchPattern, "")
+		// placeholder values are lower-cased here, since their
+		// names are left untouched during provisioning
+		matchPattern = strings.ToLower(repl.ReplaceAll(matchPattern, ""))
 
 		// special case: whole path is wildcard; this is unnecessary
 		// as it matches all requests, which is the same as no matcher
