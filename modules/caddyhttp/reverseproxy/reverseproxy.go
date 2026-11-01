@@ -591,35 +591,33 @@ func (h *Handler) Cleanup() error {
 	return err
 }
 
-// bodyNopCloserIfNotRead wraps a request body to prevent closing if not read, i.e., when
-// dialing to upstream fails.
-// It will close the body as normal if the body is read.
-type bodyNopCloserIfNotRead struct {
+// bodyCloserIfConnected wraps a request body to prevent closing it until a
+// connection to the upstream is obtained or reading has begun, i.e., a failed
+// dial leaves the body intact so the request can be retried. Afterwards, the
+// body is closed as normal.
+type bodyCloserIfConnected struct {
 	io.ReadCloser
-	read int // tracks the number of bytes read, -1 when first Read returns 0, io.EOF
+
+	// connected is set once a connection to the upstream was obtained.
+	connected atomic.Bool
+
+	// started is set on the first Read, which covers transports that do not
+	// report a connection through httptrace.
+	started atomic.Bool
 }
 
-func (b *bodyNopCloserIfNotRead) Read(p []byte) (int, error) {
-	if b.read == -1 {
-		return 0, io.EOF
-	}
-	n, err := b.ReadCloser.Read(p)
-	// first Read returns 0, io.EOF
-	if b.read == 0 && n == 0 && err == io.EOF {
-		b.read = -1
-	} else {
-		b.read += n
-	}
-	return n, err
+func (b *bodyCloserIfConnected) Read(p []byte) (int, error) {
+	b.started.Store(true)
+	return b.ReadCloser.Read(p)
 }
 
-func (b *bodyNopCloserIfNotRead) Close() error {
-	// don't close the body
-	if b.read == 0 {
+func (b *bodyCloserIfConnected) Close() error {
+	// don't close the body when no connection to the upstream was obtained
+	// and nothing has tried to read it
+	if !b.connected.Load() && !b.started.Load() {
 		return nil
 	}
-	// close as usual, when -1, any read will return EOF as the original read will do
-	// in other cases, the read will fail as body is closed because we do not want partial bodies to be sent to the upstream
+	// close as usual: reads will fail as the body is closed because we do not want partial bodies to be sent to the upstream
 	// users can buffer the entire request body to allow the request to be resent
 	return b.ReadCloser.Close()
 }
@@ -689,7 +687,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 				bufPool.Put(bufferedReqBody)
 			}()
 		} else {
-			clonedReq.Body = &bodyNopCloserIfNotRead{ReadCloser: clonedReq.Body}
+			clonedReq.Body = &bodyCloserIfConnected{ReadCloser: clonedReq.Body}
 		}
 	}
 
@@ -1212,6 +1210,11 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 		roundTripDone  bool
 	)
 	trace := &httptrace.ClientTrace{
+		GotConn: func(httptrace.GotConnInfo) {
+			if b, ok := req.Body.(*bodyCloserIfConnected); ok {
+				b.connected.Store(true)
+			}
+		},
 		Got1xxResponse: func(code int, header textproto.MIMEHeader) error {
 			roundTripMutex.Lock()
 			defer roundTripMutex.Unlock()
