@@ -1288,8 +1288,7 @@ func consolidateConnPolicies(cps caddytls.ConnectionPolicies) (caddytls.Connecti
 					return nil, fmt.Errorf("two policies with same match criteria have conflicting cipher suites: %v vs. %v",
 						cps[i].CipherSuites, cps[j].CipherSuites)
 				}
-				if cps[i].ClientAuthentication == nil &&
-					cps[j].ClientAuthentication != nil &&
+				if cps[j].ClientAuthentication != nil &&
 					!reflect.DeepEqual(cps[i].ClientAuthentication, cps[j].ClientAuthentication) {
 					return nil, fmt.Errorf("two policies with same match criteria have conflicting client auth configuration: %+v vs. %+v",
 						cps[i].ClientAuthentication, cps[j].ClientAuthentication)
