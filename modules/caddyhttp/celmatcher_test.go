@@ -188,6 +188,24 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 			wantResult: true,
 		},
 		{
+			name: "extension method matches exact case (MatchMethod)",
+			expression: &MatchExpression{
+				Expr: `method('foo')`,
+			},
+			urlTarget:  "https://foo.example.com",
+			httpMethod: "foo",
+			wantResult: true,
+		},
+		{
+			name: "extension method does not fold case (MatchMethod)",
+			expression: &MatchExpression{
+				Expr: `method('foo')`,
+			},
+			urlTarget:  "https://foo.example.com",
+			httpMethod: "FOO",
+			wantResult: false,
+		},
+		{
 			name: "method error not enough arguments (MatchMethod)",
 			expression: &MatchExpression{
 				Expr: `method()`,
