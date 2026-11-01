@@ -19,8 +19,11 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"go.uber.org/zap"
 
@@ -435,99 +438,219 @@ func buildQueryString(qs string, repl *caddy.Replacer) string {
 // path prefix matching. The string prefix will be trimmed from the beginning
 // of escapedPath if escapedPath starts with prefix. Rather than a naive 1:1
 // comparison of each byte to determine if escapedPath starts with prefix,
-// both strings are iterated in lock-step, and if prefix has a '%' encoding
-// at a particular position, escapedPath must also have the same encoding
-// representation for that character. In other words, if the prefix string
-// uses the escaped form for a character, escapedPath must literally use the
-// same escape at that position. Otherwise, all character comparisons are
-// performed in normalized/unescaped space.
+// literal patterns are compared as decoded Unicode. If prefix uses a '%'
+// encoding, escapedPath must use the same representation at that position.
 func trimPathPrefix(escapedPath, prefix string) string {
-	var iPath, iPrefix int
-	for iPath < len(escapedPath) && iPrefix < len(prefix) {
-		prefixCh := prefix[iPrefix]
-		ch := string(escapedPath[iPath])
-
-		if ch == "%" && prefixCh != '%' && len(escapedPath) >= iPath+3 {
-			var err error
-			ch, err = url.PathUnescape(escapedPath[iPath : iPath+3])
-			if err != nil {
-				// should be impossible unless EscapedPath() is returning invalid values!
+	iPath := 0
+	for _, token := range pathPatternTokens(prefix) {
+		if token.escaped {
+			if len(escapedPath)-iPath < len(token.value) ||
+				!strings.EqualFold(escapedPath[iPath:iPath+len(token.value)], token.value) {
 				return escapedPath
 			}
-			iPath += 2
+			iPath += len(token.value)
+			continue
 		}
 
-		// prefix comparisons are case-insensitive to consistency with
-		// path matcher, which is case-insensitive for good reasons
-		if !strings.EqualFold(ch, string(prefixCh)) {
+		consumed, ok := matchEscapedPrefix(escapedPath[iPath:], token.value)
+		if !ok {
 			return escapedPath
 		}
-
-		iPath++
-		iPrefix++
+		iPath += consumed
 	}
-
-	// if we iterated through the entire prefix, we found it, so trim it
-	if iPrefix >= len(prefix) {
-		return escapedPath[iPath:]
-	}
-
-	// otherwise we did not find the prefix
-	return escapedPath
+	return escapedPath[iPath:]
 }
 
 // trimPathSuffix is the suffix counterpart of trimPathPrefix: it trims suffix
-// from the end of escapedPath using the same escape-aware, case-insensitive
-// comparison semantics. Both strings are iterated in lock-step from their ends,
-// and if escapedPath has a '%' encoding at a particular position where the
-// suffix pattern uses the decoded character, escapedPath's escape is decoded so
-// the comparison happens in normalized/unescaped space. Conversely, if the
-// suffix pattern itself uses an escape (`%xx`), escapedPath must literally use
-// the same escape at that position (the escapes are then compared byte-for-byte).
-//
-// A naive reverse-then-trimPathPrefix approach cannot be used here: reversing
-// the strings moves the '%' to the end of each escape sequence, which defeats
-// trimPathPrefix's escape detection (it expects '%' to precede the two hex
-// digits) and makes escaped path bytes compare unequal to their decoded form.
+// from the end of escapedPath using the same decoded and escaped comparison
+// semantics.
 func trimPathSuffix(escapedPath, suffix string) string {
-	iPath, iSuffix := len(escapedPath), len(suffix)
-	for iPath > 0 && iSuffix > 0 {
-		suffixCh := suffix[iSuffix-1]
-		ch := string(escapedPath[iPath-1])
-		step := 1
-
-		// if escapedPath uses a percent-encoding that ends at this position but
-		// the suffix pattern does not encode this position, decode escapedPath's
-		// escape so the comparison happens in normalized/unescaped space
-		pathHasEscape := iPath >= 3 && escapedPath[iPath-3] == '%'
-		suffixHasEscape := iSuffix >= 3 && suffix[iSuffix-3] == '%'
-		if pathHasEscape && !suffixHasEscape {
-			decoded, err := url.PathUnescape(escapedPath[iPath-3 : iPath])
-			if err != nil {
-				// should be impossible unless EscapedPath() is returning invalid values!
+	iPath := len(escapedPath)
+	tokens := pathPatternTokens(suffix)
+	for _, token := range slices.Backward(tokens) {
+		if token.escaped {
+			if iPath < len(token.value) ||
+				!strings.EqualFold(escapedPath[iPath-len(token.value):iPath], token.value) {
 				return escapedPath
 			}
-			ch = decoded
-			step = 3
+			iPath -= len(token.value)
+			continue
 		}
 
-		// suffix comparisons are case-insensitive for consistency with
-		// trimPathPrefix, which is case-insensitive for good reasons
-		if !strings.EqualFold(ch, string(suffixCh)) {
+		start, ok := matchEscapedSuffix(escapedPath[:iPath], token.value)
+		if !ok {
 			return escapedPath
 		}
-
-		iPath -= step
-		iSuffix--
+		iPath = start
 	}
+	return escapedPath[:iPath]
+}
 
-	// if we iterated through the entire suffix, we found it, so trim it
-	if iSuffix <= 0 {
-		return escapedPath[:iPath]
+type pathPatternToken struct {
+	value   string
+	escaped bool
+}
+
+func pathPatternTokens(pattern string) []pathPatternToken {
+	var tokens []pathPatternToken
+	for len(pattern) > 0 {
+		if pattern[0] == '%' {
+			length := 1
+			if len(pattern) >= 3 {
+				if decoded, err := url.PathUnescape(pattern[:3]); err == nil && len(decoded) == 1 {
+					length = 3
+				}
+			}
+			tokens = append(tokens, pathPatternToken{value: pattern[:length], escaped: true})
+			pattern = pattern[length:]
+			continue
+		}
+
+		end := strings.IndexByte(pattern, '%')
+		if end < 0 {
+			end = len(pattern)
+		}
+		tokens = append(tokens, pathPatternToken{value: pattern[:end]})
+		pattern = pattern[end:]
 	}
+	return tokens
+}
 
-	// otherwise we did not find the suffix
-	return escapedPath
+func matchEscapedPrefix(escapedPath, literal string) (int, bool) {
+	iPath := 0
+	for len(literal) > 0 {
+		patternRune, patternSize := utf8.DecodeRuneInString(literal)
+		patternValid := patternRune != utf8.RuneError || patternSize > 1
+		if !patternValid {
+			patternRune = rune(literal[0])
+			pathByte, pathSize := nextEscapedByte(escapedPath[iPath:])
+			if pathSize == 0 || !asciiEqualFold(pathByte, byte(patternRune)) {
+				return 0, false
+			}
+			iPath += pathSize
+			literal = literal[patternSize:]
+			continue
+		}
+
+		pathRune, pathSize, pathValid := nextEscapedRune(escapedPath[iPath:])
+		if pathSize == 0 || !equalPathRune(pathRune, pathValid, patternRune, patternValid) {
+			return 0, false
+		}
+		iPath += pathSize
+		literal = literal[patternSize:]
+	}
+	return iPath, true
+}
+
+func matchEscapedSuffix(escapedPath, literal string) (int, bool) {
+	iPath := len(escapedPath)
+	for len(literal) > 0 {
+		patternRune, patternSize := utf8.DecodeLastRuneInString(literal)
+		patternValid := patternRune != utf8.RuneError || patternSize > 1
+		if !patternValid {
+			patternRune = rune(literal[len(literal)-1])
+			pathByte, pathStart := prevEscapedByte(escapedPath[:iPath])
+			if pathStart == iPath || !asciiEqualFold(pathByte, byte(patternRune)) {
+				return 0, false
+			}
+			iPath = pathStart
+			literal = literal[:len(literal)-patternSize]
+			continue
+		}
+
+		pathRune, pathStart, pathValid := prevEscapedRune(escapedPath[:iPath])
+		if pathStart == iPath || !equalPathRune(pathRune, pathValid, patternRune, patternValid) {
+			return 0, false
+		}
+		iPath = pathStart
+		literal = literal[:len(literal)-patternSize]
+	}
+	return iPath, true
+}
+
+func nextEscapedRune(s string) (rune, int, bool) {
+	var decoded [utf8.UTFMax]byte
+	var rawEnds [utf8.UTFMax]int
+	rawPos := 0
+	for i := range decoded {
+		b, size := nextEscapedByte(s[rawPos:])
+		if size == 0 {
+			break
+		}
+		decoded[i] = b
+		rawPos += size
+		rawEnds[i] = rawPos
+		r, runeSize := utf8.DecodeRune(decoded[:i+1])
+		if runeSize == i+1 && (r != utf8.RuneError || runeSize > 1) {
+			return r, rawEnds[runeSize-1], true
+		}
+	}
+	b, size := nextEscapedByte(s)
+	return rune(b), size, false
+}
+
+func prevEscapedRune(s string) (rune, int, bool) {
+	var decoded [utf8.UTFMax]byte
+	end := len(s)
+	for count := 1; count <= len(decoded); count++ {
+		b, start := prevEscapedByte(s[:end])
+		if start == end {
+			break
+		}
+		decoded[len(decoded)-count] = b
+		end = start
+		candidate := decoded[len(decoded)-count:]
+		r, size := utf8.DecodeRune(candidate)
+		if size == count && (r != utf8.RuneError || size > 1) {
+			return r, end, true
+		}
+	}
+	b, start := prevEscapedByte(s)
+	return rune(b), start, false
+}
+
+func nextEscapedByte(s string) (byte, int) {
+	if len(s) >= 3 && s[0] == '%' {
+		if decoded, err := url.PathUnescape(s[:3]); err == nil && len(decoded) == 1 {
+			return decoded[0], 3
+		}
+	}
+	if len(s) == 0 {
+		return 0, 0
+	}
+	return s[0], 1
+}
+
+func prevEscapedByte(s string) (byte, int) {
+	if len(s) >= 3 && s[len(s)-3] == '%' {
+		if decoded, err := url.PathUnescape(s[len(s)-3:]); err == nil && len(decoded) == 1 {
+			return decoded[0], len(s) - 3
+		}
+	}
+	if len(s) == 0 {
+		return 0, 0
+	}
+	return s[len(s)-1], len(s) - 1
+}
+
+func equalPathRune(a rune, aValid bool, b rune, bValid bool) bool {
+	if aValid && bValid {
+		return unicode.ToLower(a) == unicode.ToLower(b)
+	}
+	if aValid != bValid || a > 0xff || b > 0xff {
+		return false
+	}
+	return asciiEqualFold(byte(a), byte(b))
+}
+
+func asciiEqualFold(a, b byte) bool {
+	if 'A' <= a && a <= 'Z' {
+		a += 'a' - 'A'
+	}
+	if 'A' <= b && b <= 'Z' {
+		b += 'a' - 'A'
+	}
+	return a == b
 }
 
 // substrReplacer describes either a simple and fast substring replacement.
