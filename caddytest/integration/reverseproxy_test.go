@@ -2,6 +2,8 @@ package integration
 
 import (
 	"bufio"
+	"bytes"
+	"crypto/rand"
 	"crypto/sha1"
 	"encoding/base64"
 	"errors"
@@ -11,7 +13,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/textproto"
-	"os"
 	"runtime"
 	"strings"
 	"sync/atomic"
@@ -69,14 +70,7 @@ func TestDialWithPlaceholderUnix(t *testing.T) {
 		t.SkipNow()
 	}
 
-	f, err := os.CreateTemp("", "*.sock")
-	if err != nil {
-		t.Errorf("failed to create TempFile: %s", err)
-		return
-	}
-	// a hack to get a file name within a valid path to use as socket
-	socketName := f.Name()
-	os.Remove(f.Name())
+	socketName := tempSocketName(t)
 
 	server := http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -462,14 +456,7 @@ func TestReverseProxyHealthCheckUnixSocket(t *testing.T) {
 		t.SkipNow()
 	}
 	tester := caddytest.NewTester(t)
-	f, err := os.CreateTemp("", "*.sock")
-	if err != nil {
-		t.Errorf("failed to create TempFile: %s", err)
-		return
-	}
-	// a hack to get a file name within a valid path to use as socket
-	socketName := f.Name()
-	os.Remove(f.Name())
+	socketName := tempSocketName(t)
 
 	server := http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -520,14 +507,7 @@ func TestReverseProxyHealthCheckUnixSocketWithoutPort(t *testing.T) {
 		t.SkipNow()
 	}
 	tester := caddytest.NewTester(t)
-	f, err := os.CreateTemp("", "*.sock")
-	if err != nil {
-		t.Errorf("failed to create TempFile: %s", err)
-		return
-	}
-	// a hack to get a file name within a valid path to use as socket
-	socketName := f.Name()
-	os.Remove(f.Name())
+	socketName := tempSocketName(t)
 
 	server := http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -1158,22 +1138,23 @@ func TestReverseProxyUnlimitedRequestBuffersRespectMaxSize(t *testing.T) {
 }
 
 // TestReverseProxyWebSocketUpgradeUnixSocket verifies that a WebSocket
-// upgrade is proxied to a unix socket upstream, and that the upgraded
-// connection carries data in both directions
+// upgrade is proxied to a unix socket upstream, that the upgraded
+// connection carries data in both directions, and that closing the
+// client side tears down the upstream connection
 func TestReverseProxyWebSocketUpgradeUnixSocket(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.SkipNow()
 	}
 
-	// only used to reserve a short, unique path; t.TempDir() can exceed
-	// the unix socket path length limit on macOS
-	f, err := os.CreateTemp("", "*.sock")
-	if err != nil {
-		t.Fatalf("failed to create temporary socket file: %v", err)
-	}
-	socketName := f.Name()
-	_ = f.Close()
-	_ = os.Remove(socketName)
+	socketName := tempSocketName(t)
+
+	// sent in the same write as the 101 response, so it may arrive in the
+	// same read as the response headers and must not be dropped by the proxy
+	const greeting = "hello from upstream"
+
+	// closed once the upstream's echo loop ends, i.e. when the proxy
+	// closes the upstream connection
+	upstreamDone := make(chan struct{})
 
 	// upstream completes the handshake, then echoes everything it reads
 	backend := http.Server{
@@ -1192,13 +1173,15 @@ func TestReverseProxyWebSocketUpgradeUnixSocket(t *testing.T) {
 			if err != nil {
 				return
 			}
+			defer close(upstreamDone)
 			defer conn.Close()
 
 			_, _ = brw.WriteString("HTTP/1.1 101 Switching Protocols\r\n" +
 				"Upgrade: websocket\r\n" +
 				"Connection: Upgrade\r\n" +
 				"Sec-WebSocket-Accept: " + computeWebSocketAccept(wsKey) + "\r\n" +
-				"\r\n")
+				"\r\n" +
+				greeting)
 			if brw.Flush() != nil {
 				return
 			}
@@ -1214,7 +1197,6 @@ func TestReverseProxyWebSocketUpgradeUnixSocket(t *testing.T) {
 	t.Cleanup(func() {
 		_ = backend.Close()
 		_ = unixListener.Close()
-		_ = os.Remove(socketName)
 	})
 
 	tester := caddytest.NewTester(t)
@@ -1264,17 +1246,41 @@ func TestReverseProxyWebSocketUpgradeUnixSocket(t *testing.T) {
 		t.Fatalf("unexpected Sec-WebSocket-Accept header: got %q, want %q", got, want)
 	}
 
-	// the payload doesn't need to be framed; the proxy just tunnels bytes
-	const payload = "hello over unix socket"
-	if _, err := io.WriteString(conn, payload); err != nil {
-		t.Fatalf("failed to write to upgraded connection: %v", err)
+	gotGreeting := make([]byte, len(greeting))
+	if _, err := io.ReadFull(br, gotGreeting); err != nil {
+		t.Fatalf("failed to read upstream greeting: %v", err)
 	}
+	if string(gotGreeting) != greeting {
+		t.Fatalf("unexpected greeting: got %q, want %q", gotGreeting, greeting)
+	}
+
+	// the payload doesn't need to be framed since the proxy just tunnels
+	// bytes; make it much larger than any single read or write buffer, and
+	// write it concurrently so the echo can't back up and deadlock
+	payload := make([]byte, 256*1024)
+	_, _ = rand.Read(payload)
+	writeErr := make(chan error, 1)
+	go func() {
+		_, err := conn.Write(payload)
+		writeErr <- err
+	}()
 	echo := make([]byte, len(payload))
 	if _, err := io.ReadFull(br, echo); err != nil {
-		t.Fatalf("failed to read from upgraded connection: %v", err)
+		t.Fatalf("failed to read echo from upgraded connection: %v", err)
 	}
-	if string(echo) != payload {
-		t.Fatalf("unexpected echo: got %q, want %q", echo, payload)
+	if err := <-writeErr; err != nil {
+		t.Fatalf("failed to write to upgraded connection: %v", err)
+	}
+	if !bytes.Equal(echo, payload) {
+		t.Fatal("echoed payload does not match what was sent")
+	}
+
+	// closing the client should make the proxy close the upstream connection
+	_ = conn.Close()
+	select {
+	case <-upstreamDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("upstream connection was not closed after the client disconnected")
 	}
 }
 
