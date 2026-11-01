@@ -439,6 +439,33 @@ type ListenQUICOptions struct {
 	PacketConnWrappers []PacketConnWrapper
 	Allow0RTT          *bool
 	EnableWebTransport bool
+
+	// InitialPacketSize overrides the default initial packet size
+	// of 1200 bytes if non-zero.
+	InitialPacketSize       uint16
+	DisablePathMTUDiscovery bool
+}
+
+// quicConfig returns the QUIC config for a listener created with opts.
+func (opts ListenQUICOptions) quicConfig() *quic.Config {
+	allow0rtt := true
+	if opts.Allow0RTT != nil {
+		allow0rtt = *opts.Allow0RTT
+	}
+	initialPacketSize := uint16(1200)
+	if opts.InitialPacketSize != 0 {
+		initialPacketSize = opts.InitialPacketSize
+	}
+	// EnableDatagrams and EnableStreamResetPartialDelivery are required by
+	// WebTransport; only enable them when WebTransport support is requested.
+	return &quic.Config{
+		InitialPacketSize:                initialPacketSize,
+		DisablePathMTUDiscovery:          opts.DisablePathMTUDiscovery,
+		Allow0RTT:                        allow0rtt,
+		Tracer:                           h3qlog.DefaultConnectionTracer,
+		EnableDatagrams:                  opts.EnableWebTransport,
+		EnableStreamResetPartialDelivery: opts.EnableWebTransport,
+	}
 }
 
 // ListenQUIC returns a http3.QUICEarlyListener suitable for use in a Caddy module.
@@ -451,7 +478,7 @@ type ListenQUICOptions struct {
 // parameters are passed in opts.
 //
 // The underlying listener is pooled per address: the first creator's configuration
-// (Allow0RTT, WebTransport capabilities) wins; subsequent callers reuse that listener.
+// (Allow0RTT, WebTransport capabilities, packet size and PMTUD) wins; subsequent callers reuse that listener.
 //
 // NOTE: This API is EXPERIMENTAL and may be changed or removed.
 // NOTE: user should close the returned listener twice, once to stop accepting new connections, the second time to free up the packet conn.
@@ -497,22 +524,7 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 			Conn:                h3ln,
 			VerifySourceAddress: func(addr net.Addr) bool { return !limiter.Allow() },
 		}
-		allow0rtt := true
-		if opts.Allow0RTT != nil {
-			allow0rtt = *opts.Allow0RTT
-		}
-		// EnableDatagrams and EnableStreamResetPartialDelivery are required by
-		// WebTransport; only enable them when WebTransport support is requested.
-		earlyLn, err := tr.ListenEarly(
-			http3.ConfigureTLSConfig(quicTlsConfig),
-			&quic.Config{
-				InitialPacketSize:                1200,
-				Allow0RTT:                        allow0rtt,
-				Tracer:                           h3qlog.DefaultConnectionTracer,
-				EnableDatagrams:                  opts.EnableWebTransport,
-				EnableStreamResetPartialDelivery: opts.EnableWebTransport,
-			},
-		)
+		earlyLn, err := tr.ListenEarly(http3.ConfigureTLSConfig(quicTlsConfig), opts.quicConfig())
 		if err != nil {
 			return nil, err
 		}

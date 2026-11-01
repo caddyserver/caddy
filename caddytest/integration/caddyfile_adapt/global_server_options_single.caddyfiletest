@@ -23,6 +23,10 @@
 		keepalive_idle 20s
 		keepalive_count 10
 		0rtt off
+		quic {
+			initial_packet_size 1350
+			disable_pmtud
+		}
 	}
 }
 
@@ -94,7 +98,11 @@ foo.com {
 						"h2c",
 						"h3"
 					],
-					"allow_0rtt": false
+					"allow_0rtt": false,
+					"quic": {
+						"initial_packet_size": 1350,
+						"disable_pmtud": true
+					}
 				}
 			}
 		}

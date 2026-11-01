@@ -68,6 +68,7 @@ type serverOptions struct {
 	// If set, overrides whether QUIC listeners allow 0-RTT (early data).
 	// If nil, the default behavior is used (currently allowed).
 	Allow0RTT *bool
+	QUIC      *caddyhttp.QUICConfig
 }
 
 func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
@@ -401,6 +402,39 @@ func unmarshalCaddyfileServerOptions(d *caddyfile.Dispenser) (any, error) {
 			boolVal := false
 			serverOpts.Allow0RTT = &boolVal
 
+		case "quic":
+			if d.NextArg() {
+				return nil, d.ArgErr()
+			}
+			if serverOpts.QUIC == nil {
+				serverOpts.QUIC = new(caddyhttp.QUICConfig)
+			}
+			for nesting := d.Nesting(); d.NextBlock(nesting); {
+				switch d.Val() {
+				case "initial_packet_size":
+					if !d.NextArg() {
+						return nil, d.ArgErr()
+					}
+					size, err := strconv.ParseUint(d.Val(), 10, 16)
+					if err != nil {
+						return nil, d.Errf("parsing initial_packet_size: %v", err)
+					}
+					serverOpts.QUIC.InitialPacketSize = uint16(size)
+					if d.NextArg() {
+						return nil, d.ArgErr()
+					}
+
+				case "disable_pmtud":
+					if d.NextArg() {
+						return nil, d.ArgErr()
+					}
+					serverOpts.QUIC.DisablePMTUD = true
+
+				default:
+					return nil, d.Errf("unrecognized quic option '%s'", d.Val())
+				}
+			}
+
 		default:
 			return nil, d.Errf("unrecognized servers option '%s'", d.Val())
 		}
@@ -474,6 +508,7 @@ func applyServerOptions(
 		server.TrustedProxiesUnix = opts.TrustedProxiesUnix
 		server.Metrics = opts.Metrics
 		server.Allow0RTT = opts.Allow0RTT
+		server.QUIC = opts.QUIC
 		if opts.ShouldLogCredentials {
 			if server.Logs == nil {
 				server.Logs = new(caddyhttp.ServerLogConfig)

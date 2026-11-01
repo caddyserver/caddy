@@ -772,6 +772,29 @@ func TestListenQUICOptions_ZeroValueAllows0RTT(t *testing.T) {
 	}
 }
 
+func TestListenQUICOptionsQUICConfig(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		opts              ListenQUICOptions
+		initialPacketSize uint16
+		disablePMTUD      bool
+	}{
+		{name: "defaults", initialPacketSize: 1200},
+		{name: "initial packet size", opts: ListenQUICOptions{InitialPacketSize: 1350}, initialPacketSize: 1350},
+		{name: "PMTUD disabled", opts: ListenQUICOptions{DisablePathMTUDiscovery: true}, initialPacketSize: 1200, disablePMTUD: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			qc := tc.opts.quicConfig()
+			if qc.InitialPacketSize != tc.initialPacketSize {
+				t.Errorf("InitialPacketSize = %d, want %d", qc.InitialPacketSize, tc.initialPacketSize)
+			}
+			if qc.DisablePathMTUDiscovery != tc.disablePMTUD {
+				t.Errorf("DisablePathMTUDiscovery = %v, want %v", qc.DisablePathMTUDiscovery, tc.disablePMTUD)
+			}
+		})
+	}
+}
+
 // TestListenQUICWebTransportCapability verifies that WebTransport QUIC
 // capabilities are fixed by the first creator of a pooled QUIC listener.
 func TestListenQUICWebTransportCapability(t *testing.T) {
