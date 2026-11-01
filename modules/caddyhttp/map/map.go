@@ -19,8 +19,8 @@ import (
 	"net/http"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -129,67 +129,59 @@ func (h *Handler) Validate() error {
 // expansion passes in ServeHTTP. Placeholders ({...}) are expanded by the
 // replacer first, capture references ($1, ${1}, $name) by ExpandString last.
 //
-// A braced capture (${1}, ${name}) must not be read as a Caddy placeholder, so
-// its opening brace is escaped for the replacer. Every other "$" is data to
-// ExpandString and is doubled so a literal dollar survives; this keeps a Caddy
-// placeholder that follows a literal dollar working: "${http.request.method}"
-// becomes "$${http.request.method}", the replacer yields "$$GET", and
-// ExpandString restores "$GET".
-func escapeTemplate(template string, re *regexp.Regexp) string {
-	isCapture := func(name string) bool {
-		if name == "" {
-			return false
-		}
-		if n, err := strconv.Atoi(name); err == nil {
-			return n >= 0 && n <= re.NumSubexp()
-		}
-		for _, group := range re.SubexpNames() {
-			if group == name {
-				return true
-			}
-		}
-		return false
-	}
-
+// The two syntaxes overlap on "${", so the precedence is fixed here rather
+// than inferred from the capture groups of a particular regular expression:
+//
+//   - "${" up to the next "}" is a capture reference when the text between the
+//     braces is a possible reference name, i.e. letters, digits and
+//     underscores only. Its opening brace is escaped for the replacer, which
+//     drops the escape character again, so ExpandString sees the original
+//     "${name}". This also keeps references to a group the expression does not
+//     define expanding to the empty string, as they always have.
+//   - any other "${" is a literal dollar followed by a Caddy placeholder: the
+//     dollar is doubled so it survives ExpandString, and the placeholder is
+//     left for the replacer. "${http.request.method}" becomes "$${...}", the
+//     replacer yields "$$GET" and ExpandString restores "$GET".
+//
+// Everything else is passed through untouched, which is exactly what
+// ExpandString documents: "$$" is a literal dollar, a "$" that does not begin
+// a reference is literal text, and a reference to an unknown or out-of-range
+// group expands to the empty string.
+func escapeTemplate(template string) string {
 	var b strings.Builder
+	b.Grow(len(template))
+
 	for i := 0; i < len(template); {
-		if template[i] != '$' {
+		if template[i] != '$' || i+1 >= len(template) || template[i+1] != '{' {
 			b.WriteByte(template[i])
 			i++
 			continue
 		}
-		if i+1 < len(template) && template[i+1] == '$' {
-			b.WriteString("$$")
-			i += 2
+		if end := strings.IndexByte(template[i+2:], '}'); end >= 0 && isReferenceName(template[i+2:i+2+end]) {
+			b.WriteString(`$\{`)
+			b.WriteString(template[i+2 : i+2+end])
+			b.WriteByte('}')
+			i += end + 3
 			continue
 		}
-		if i+1 < len(template) && template[i+1] == '{' {
-			if end := strings.IndexByte(template[i+2:], '}'); end >= 0 {
-				name := template[i+2 : i+2+end]
-				if isCapture(name) {
-					b.WriteString(`$\{`)
-				} else {
-					b.WriteString("$${")
-				}
-				b.WriteString(name)
-				b.WriteByte('}')
-				i += 2 + end + 1
-				continue
-			}
-		}
-		j := i + 1
-		for j < len(template) && (template[j] == '_' || template[j] >= '0' && template[j] <= '9' || template[j] >= 'A' && template[j] <= 'Z' || template[j] >= 'a' && template[j] <= 'z') {
-			j++
-		}
-		if j > i+1 && isCapture(template[i+1:j]) {
-			b.WriteString(template[i:j])
-			i = j
-			continue
-		}
-		b.WriteString("$$")
+		// A literal dollar in front of a Caddy placeholder: the dollar is
+		// data for ExpandString, the placeholder is not.
+		b.WriteString(`$$`)
 		i++
 	}
 	return b.String()
+}
+
+// isReferenceName reports whether name is what regexp.ExpandString accepts
+// between the braces of a "${name}" reference: a run, possibly empty, of
+// letters, digits and underscores.
+func isReferenceName(name string) bool {
+	for _, r := range name {
+		if r != '_' && !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			return false
+		}
+	}
+	return true
 }
 
 func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
@@ -232,10 +224,10 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 				// A braced capture reference such as ${1} would otherwise look
 				// like a placeholder to the replacer, so escape its opening
 				// brace first; the replacer drops the escape character again.
-				// Only real captures are escaped: a Caddy placeholder that
-				// follows a literal dollar, such as ${http.request.method},
-				// must still be expanded by the replacer.
-				template := escapeTemplate(outputStr, m.re)
+				// escapeTemplate() decides which "${" that applies to: a Caddy
+				// placeholder that follows a literal dollar, such as
+				// ${http.request.method}, must still be expanded.
+				template := escapeTemplate(outputStr)
 				expanded, _ := repl.ReplaceFunc(template, func(_ string, val any) (any, error) {
 					return strings.ReplaceAll(caddy.ToString(val), "$", "$$"), nil
 				})

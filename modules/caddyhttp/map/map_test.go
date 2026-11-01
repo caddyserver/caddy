@@ -217,6 +217,44 @@ func TestHandler(t *testing.T) {
 			},
 		},
 		{
+			// References to a group the expression does not define keep
+			// expanding to the empty string, as regexp.ExpandString
+			// documents. Only the precedence between "${" and a Caddy
+			// placeholder is new, not the fate of the reference itself.
+			reqURI: "/abcdef",
+			handler: Handler{
+				Source:       "{http.request.uri.path}",
+				Destinations: []string{"{output}"},
+				Mappings: []Mapping{
+					{
+						InputRegexp: "(abc)",
+						Outputs:     []any{"[$2][$missing][${2}][${missing}][$1x]"},
+					},
+				},
+			},
+			expect: map[string]any{
+				"output": "[][][][][]",
+			},
+		},
+		{
+			// The whole match is reference zero, in both forms, and an
+			// escaped dollar stays a literal one.
+			reqURI: "/abcdef",
+			handler: Handler{
+				Source:       "{http.request.uri.path}",
+				Destinations: []string{"{output}"},
+				Mappings: []Mapping{
+					{
+						InputRegexp: "(abc)",
+						Outputs:     []any{"$0|${0}|$1|$$"},
+					},
+				},
+			},
+			expect: map[string]any{
+				"output": "abc|abc|abc|$",
+			},
+		},
+		{
 			// A capture group is data too: placeholder syntax inside it
 			// must not be evaluated, or request data could inject one.
 			reqURI: "/?key=%7Bhttp.request.method%7D",
