@@ -1,0 +1,49 @@
+{
+	servers {
+		listener_wrappers {
+			http_redirect {
+				status_code 307
+			}
+			tls
+		}
+	}
+}
+
+foo.com {
+}
+
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"listener_wrappers": [
+						{
+							"status_code": 307,
+							"wrapper": "http_redirect"
+						},
+						{
+							"wrapper": "tls"
+						}
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"foo.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		}
+	}
+}
