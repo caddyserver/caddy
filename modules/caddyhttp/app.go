@@ -445,6 +445,11 @@ func (app *App) Validate() error {
 			}
 		}
 
+		// zero disables strict parsing; a negative count would silently do the same
+		if srv.TrustedProxiesStrict < 0 {
+			return fmt.Errorf("server %s: trusted_proxies_strict must not be negative: %d", srvName, srv.TrustedProxiesStrict)
+		}
+
 		// logger names must not have ports
 		if srv.Logs != nil {
 			for host := range srv.Logs.LoggerNames {
