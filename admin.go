@@ -693,16 +693,13 @@ func (remote RemoteAdmin) enforceAccessControls(r *http.Request) error {
 					}
 
 					// key recognized; make sure its HTTP request is permitted
+					// by at least one of the permission entries (if none are
+					// configured, all permissions are granted)
+					if len(adminAccess.Permissions) == 0 {
+						return nil
+					}
+					var pathAllowedSomewhere bool
 					for _, accessPerm := range adminAccess.Permissions {
-						// verify method
-						methodFound := accessPerm.Methods == nil || slices.Contains(accessPerm.Methods, r.Method)
-						if !methodFound {
-							return APIError{
-								HTTPStatus: http.StatusForbidden,
-								Message:    "not authorized to use this method",
-							}
-						}
-
 						// verify path
 						pathFound := accessPerm.Paths == nil
 						for _, allowedPath := range accessPerm.Paths {
@@ -712,15 +709,29 @@ func (remote RemoteAdmin) enforceAccessControls(r *http.Request) error {
 							}
 						}
 						if !pathFound {
-							return APIError{
-								HTTPStatus: http.StatusForbidden,
-								Message:    "not authorized to access this path",
-							}
+							continue
+						}
+						pathAllowedSomewhere = true
+
+						// verify method
+						if accessPerm.Methods == nil || slices.Contains(accessPerm.Methods, r.Method) {
+							// public key authorized, method and path allowed
+							return nil
 						}
 					}
 
-					// public key authorized, method and path allowed
-					return nil
+					// no permission entry allows this request; if the path
+					// is allowed by some entry, the method is what's missing
+					if pathAllowedSomewhere {
+						return APIError{
+							HTTPStatus: http.StatusForbidden,
+							Message:    "not authorized to use this method",
+						}
+					}
+					return APIError{
+						HTTPStatus: http.StatusForbidden,
+						Message:    "not authorized to access this path",
+					}
 				}
 			}
 		}

@@ -805,6 +805,110 @@ func TestRemoteAdminAccessControlPathSegmentMatching(t *testing.T) {
 	}
 }
 
+func TestRemoteAdminAccessControlMultiplePermissions(t *testing.T) {
+	const authorizedKey testAdminPublicKey = "authorized"
+	peerCert := &x509.Certificate{PublicKey: authorizedKey}
+
+	tests := []struct {
+		name        string
+		permissions []AdminPermissions
+		method      string
+		requestPath string
+		wantErr     string
+	}{
+		{
+			name:        "no permissions grants all",
+			permissions: nil,
+			method:      http.MethodDelete,
+			requestPath: "/config/",
+		},
+		{
+			name: "first entry matches",
+			permissions: []AdminPermissions{
+				{Methods: []string{http.MethodGet}, Paths: []string{"/config/"}},
+				{Methods: []string{http.MethodPost}, Paths: []string{"/load"}},
+			},
+			method:      http.MethodGet,
+			requestPath: "/config/",
+		},
+		{
+			name: "second entry matches",
+			permissions: []AdminPermissions{
+				{Methods: []string{http.MethodGet}, Paths: []string{"/config/"}},
+				{Methods: []string{http.MethodPost}, Paths: []string{"/load"}},
+			},
+			method:      http.MethodPost,
+			requestPath: "/load",
+		},
+		{
+			name: "same path different methods across entries",
+			permissions: []AdminPermissions{
+				{Methods: []string{http.MethodGet}, Paths: []string{"/config/"}},
+				{Methods: []string{http.MethodPatch}, Paths: []string{"/config/"}},
+			},
+			method:      http.MethodPatch,
+			requestPath: "/config/",
+		},
+		{
+			name: "method and path from different entries",
+			permissions: []AdminPermissions{
+				{Methods: []string{http.MethodGet}, Paths: []string{"/config/"}},
+				{Methods: []string{http.MethodPost}, Paths: []string{"/load"}},
+			},
+			method:      http.MethodPost,
+			requestPath: "/config/",
+			wantErr:     "not authorized to use this method",
+		},
+		{
+			name: "path allowed by no entry",
+			permissions: []AdminPermissions{
+				{Methods: []string{http.MethodGet}, Paths: []string{"/config/"}},
+				{Methods: []string{http.MethodPost}, Paths: []string{"/load"}},
+			},
+			method:      http.MethodGet,
+			requestPath: "/stop",
+			wantErr:     "not authorized to access this path",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			remote := RemoteAdmin{
+				AccessControl: []*AdminAccess{
+					{
+						Permissions: test.permissions,
+						publicKeys:  []crypto.PublicKey{authorizedKey},
+					},
+				},
+			}
+
+			req := httptest.NewRequest(test.method, "https://localhost:2021"+test.requestPath, nil)
+			req.TLS = &tls.ConnectionState{
+				VerifiedChains: [][]*x509.Certificate{{peerCert}},
+			}
+
+			err := remote.enforceAccessControls(req)
+			if test.wantErr == "" {
+				if err != nil {
+					t.Errorf("%s %s: expected no error, got %v", test.method, test.requestPath, err)
+				}
+				return
+			}
+
+			var apiErr APIError
+			if !errors.As(err, &apiErr) {
+				t.Fatalf("%s %s: expected APIError, got %T: %v", test.method, test.requestPath, err, err)
+			}
+			if apiErr.HTTPStatus != http.StatusForbidden {
+				t.Errorf("%s %s: expected HTTP status %d, got %d", test.method, test.requestPath, http.StatusForbidden, apiErr.HTTPStatus)
+			}
+			if apiErr.Message != test.wantErr {
+				t.Errorf("%s %s: expected message %q, got %q", test.method, test.requestPath, test.wantErr, apiErr.Message)
+			}
+		})
+	}
+}
+
 func TestReplaceRemoteAdminServer(t *testing.T) {
 	const testCert = `MIIDCTCCAfGgAwIBAgIUXsqJ1mY8pKlHQtI3HJ23x2eZPqwwDQYJKoZIhvcNAQEL
 BQAwFDESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTIzMDEwMTAwMDAwMFoXDTI0MDEw
