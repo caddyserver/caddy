@@ -1165,12 +1165,15 @@ func TestReverseProxyWebSocketUpgradeUnixSocket(t *testing.T) {
 		t.SkipNow()
 	}
 
+	// only used to reserve a short, unique path; t.TempDir() can exceed
+	// the unix socket path length limit on macOS
 	f, err := os.CreateTemp("", "*.sock")
 	if err != nil {
 		t.Fatalf("failed to create temporary socket file: %v", err)
 	}
-	_ = os.Remove(f.Name())
 	socketName := f.Name()
+	_ = f.Close()
+	_ = os.Remove(socketName)
 
 	// upstream completes the handshake, then echoes everything it reads
 	backend := http.Server{
