@@ -1,0 +1,36 @@
+:80
+
+file_server {
+	browse {
+		plain_time_format "2006-01-02 15:04:05 MST"
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"browse": {
+										"plain_time_format": "2006-01-02 15:04:05 MST"
+									},
+									"handler": "file_server",
+									"hide": [
+										"./Caddyfile"
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}
