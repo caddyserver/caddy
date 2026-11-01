@@ -509,6 +509,51 @@ func TestPathMatcher(t *testing.T) {
 			input:  "/%EF%AC%81rst%2Fpanel",
 			expect: true,
 		},
+		{
+			match:  MatchPath{"/*s%2fpanel"},
+			input:  "/x%C3%9F%2fpanel", // 'ß' folds to "ss", split by the wildcard
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/*s%2fpanel"},
+			input:  "/xss%2fpanel",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/*s%2fpanel"},
+			input:  "/x%2fs%2fpanel",
+			expect: false,
+		},
+		{
+			match:  MatchPath{"/caf%C3%A9/*"},
+			input:  "/cafe%CC%81/file", // 'e' + U+0301 COMBINING ACUTE ACCENT
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/caf%C3%A9/*"},
+			input:  "/cafe/file",
+			expect: false,
+		},
+		{
+			match:  MatchPath{"/café/*"},
+			input:  "/cafe%CC%81/file",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/café/*"},
+			input:  "/caf%C3%A9/file",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/caf%C3%A9%2f*"},
+			input:  "/caf%65%CC%81%2Ffile",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/bands/%*%2fdc"},
+			input:  "/bands/ac%2Fx%2Fdc",
+			expect: true,
+		},
 	} {
 		err := tc.match.Provision(caddy.Context{})
 		if err == nil && tc.provisionErr {
@@ -660,6 +705,7 @@ func TestPathMatcherFilesystemCaseFolding(t *testing.T) {
 		}{
 			{MatchPath{"/" + name + "/*"}, "/" + url.PathEscape(variant) + "/f.txt"},
 			{MatchPath{"/" + name + "%2fpanel"}, "/" + url.PathEscape(variant) + "%2Fpanel"},
+			{MatchPath{"/" + url.PathEscape(name) + "%2fpanel"}, "/" + url.PathEscape(variant) + "%2Fpanel"},
 		} {
 			if err := tc.match.Provision(caddy.Context{}); err != nil {
 				t.Fatalf("provisioning %v: %v", tc.match, err)
@@ -705,6 +751,20 @@ func TestPathMatcherFilesystemCaseFolding(t *testing.T) {
 		{"ffl", "ﬄ"},
 		{"st", "ﬅ"},
 		{"st", "ﬆ"},
+	} {
+		if err := os.WriteFile(filepath.Join(dir, tc.name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(filepath.Join(dir, tc.variant)); err == nil {
+			expectMatch(tc.name, tc.variant)
+		}
+	}
+
+	// canonically equivalent spellings, precomposed and decomposed
+	for _, tc := range []struct{ name, variant string }{
+		{"café", "café"},
+		{"naïve", "naïve"},
+		{"Ångström", "Ångström"},
 	} {
 		if err := os.WriteFile(filepath.Join(dir, tc.name), nil, 0o600); err != nil {
 			t.Fatal(err)
