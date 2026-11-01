@@ -147,6 +147,25 @@ func appWithPendingResponse(t *testing.T, http2 bool) (*App, *http.Response, fun
 // written to http.Server.ErrorLog surface at ERROR level (so they're visible
 // at the default log level), while other standard library server messages stay
 // at DEBUG. Regression test for #7923.
+func TestValidateQUICInitialPacketSize(t *testing.T) {
+	for _, tc := range []struct {
+		size    uint16
+		wantErr bool
+	}{
+		{size: 0},
+		{size: 1199, wantErr: true},
+		{size: 1200},
+		{size: 1350},
+	} {
+		app := &App{Servers: map[string]*Server{
+			"srv0": {QUIC: &QUICConfig{InitialPacketSize: tc.size}},
+		}}
+		if err := app.Validate(); (err != nil) != tc.wantErr {
+			t.Errorf("initial_packet_size %d: got error %v, want error %v", tc.size, err, tc.wantErr)
+		}
+	}
+}
+
 func TestServerErrorLoggerLevels(t *testing.T) {
 	for _, tc := range []struct {
 		name      string

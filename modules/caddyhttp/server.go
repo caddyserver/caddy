@@ -382,6 +382,9 @@ type Server struct {
 	// don't perform a retry, so disabling 0-RTT can smooth it out.
 	Allow0RTT *bool `json:"allow_0rtt,omitempty"`
 
+	// Overrides QUIC transport settings for HTTP/3.
+	QUIC *QUICConfig `json:"quic,omitempty"`
+
 	// If set, metrics observations will be enabled.
 	// This setting is EXPERIMENTAL and subject to change.
 	// DEPRECATED: Use the app-level `metrics` field.
@@ -1104,6 +1107,24 @@ func (s *Server) findLastRouteWithHostMatcher() int {
 	return lastIndex
 }
 
+// QUICConfig overrides QUIC transport settings for HTTP/3. Only
+// change these when packet captures or qlogs show a path MTU
+// problem: they apply to new QUIC connections from every client
+// on the server. Like allow_0rtt, they are fixed when the QUIC
+// listener is created, so a config reload that keeps the listen
+// address keeps using the previous values.
+type QUICConfig struct {
+	// The size of the first packets sent on a connection, in bytes,
+	// and the smallest size path MTU discovery will use. It does not
+	// cap the packet size on its own; set disable_pmtud for that.
+	// Must be at least 1200, the default.
+	InitialPacketSize uint16 `json:"initial_packet_size,omitempty"`
+
+	// Turns off path MTU discovery, so packets stay at
+	// initial_packet_size for the whole connection.
+	DisablePMTUD bool `json:"disable_pmtud,omitempty"`
+}
+
 // serveHTTP3 creates a QUIC listener, configures an HTTP/3 server if
 // not already done, and then uses that server to serve HTTP/3 over
 // the listener, with Server s as the handler.
@@ -1113,12 +1134,17 @@ func (s *Server) serveHTTP3(addr caddy.NetworkAddress, tlsCfg *tls.Config) error
 		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
 	}
 	addr.Network = h3net
-	h3ln, err := addr.ListenQUIC(s.ctx, 0, net.ListenConfig{}, caddy.ListenQUICOptions{
+	opts := caddy.ListenQUICOptions{
 		TLSConfig:          tlsCfg,
 		PacketConnWrappers: s.packetConnWrappers,
 		Allow0RTT:          s.Allow0RTT,
 		EnableWebTransport: s.webTransportEnabled(),
-	})
+	}
+	if s.QUIC != nil {
+		opts.InitialPacketSize = s.QUIC.InitialPacketSize
+		opts.DisablePathMTUDiscovery = s.QUIC.DisablePMTUD
+	}
+	h3ln, err := addr.ListenQUIC(s.ctx, 0, net.ListenConfig{}, opts)
 	if err != nil {
 		return fmt.Errorf("starting HTTP/3 QUIC listener: %v", err)
 	}

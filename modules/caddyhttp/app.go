@@ -445,6 +445,10 @@ func (app *App) Validate() error {
 			}
 		}
 
+		if srv.QUIC != nil && srv.QUIC.InitialPacketSize != 0 && srv.QUIC.InitialPacketSize < 1200 {
+			return fmt.Errorf("server %s: QUIC initial packet size must be at least 1200 bytes, got %d", srvName, srv.QUIC.InitialPacketSize)
+		}
+
 		// logger names must not have ports
 		if srv.Logs != nil {
 			for host := range srv.Logs.LoggerNames {
