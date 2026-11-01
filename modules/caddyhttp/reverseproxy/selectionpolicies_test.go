@@ -148,6 +148,24 @@ func TestWeightedRoundRobinPolicyFewerWeightsThanUpstreams(t *testing.T) {
 	}
 }
 
+func TestWeightedRoundRobinPolicySingleWeight(t *testing.T) {
+	pool := testPool()
+	wrrPolicy := WeightedRoundRobinSelection{
+		Weights:     []int{1},
+		totalWeight: 1,
+	}
+	req, _ := http.NewRequest("GET", "/", nil)
+
+	if h := wrrPolicy.Select(pool, req, nil); h != pool[0] {
+		t.Errorf("got %v, want the only weighted host %v", h, pool[0])
+	}
+
+	pool[0].setHealthy(false)
+	if h := wrrPolicy.Select(pool, req, nil); h != nil {
+		t.Errorf("got %v, want nil when the only weighted host is unavailable", h)
+	}
+}
+
 func TestWeightedRoundRobinSelection_Validate(t *testing.T) {
 	tests := []struct {
 		name    string
