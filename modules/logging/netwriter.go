@@ -200,12 +200,16 @@ func (reconn *redialerConn) Write(b []byte) (n int, err error) {
 			os.Stderr.Write(b)
 			return n, err
 		}
-		if n, err = conn2.Write(b); err == nil {
-			if reconn.Conn != nil {
-				reconn.Conn.Close()
-			}
-			reconn.Conn = conn2
+		if n, err = conn2.Write(b); err != nil {
+			// the new connection is broken too; don't leak it, and dump the log to stderr
+			conn2.Close()
+			os.Stderr.Write(b)
+			return n, err
 		}
+		if reconn.Conn != nil {
+			reconn.Conn.Close()
+		}
+		reconn.Conn = conn2
 	} else {
 		// last redial attempt was too recent; just dump to stderr for now
 		os.Stderr.Write(b)
