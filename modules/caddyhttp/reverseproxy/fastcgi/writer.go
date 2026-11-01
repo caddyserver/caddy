@@ -81,6 +81,11 @@ func (w *streamWriter) writePairs(pairs map[string]string) error {
 	// init headers
 	w.buf.Write(b)
 	for k, v := range pairs {
+		// a name that cannot fit in a record even with an empty value
+		// can't be sent; skip the pair, like oversized values are truncated
+		if len(k) > maxWrite-8 {
+			continue
+		}
 		m := 8 + len(k) + len(v)
 		if m > maxWrite {
 			// param data size exceed 65535 bytes"
