@@ -50,8 +50,9 @@ hash is written to stdout as a base64 string.
     Selects the hashing algorithm. Valid options are:
       * 'argon2id' (recommended for modern security)
       * 'bcrypt'  (legacy, slower, configurable cost)
-      * the name of any other installed module in the
-        http.authentication.hashes namespace
+      * the name of another installed http.authentication.hashes
+        module that can generate hashes with its default
+        configuration; its output is base64-encoded
 
 bcrypt-specific parameters:
 
@@ -194,10 +195,11 @@ func cmdHashPassword(fs caddycmd.Flags) (int, error) {
 }
 
 // hashWithModule hashes plaintext using the installed password
-// hashing module with the given name. The module must implement
-// Hasher to be usable for generating hashes. Hashes in Modular Crypt
-// Format are returned as-is; any other hash is base64-encoded, which is
-// the form HTTPBasicAuth reads non-MCF passwords in.
+// hashing module with the given name, loaded with an empty
+// configuration. The module must implement Hasher to be usable for
+// generating hashes. Its output is arbitrary bytes, so it is always
+// base64-encoded, which is the form HTTPBasicAuth reads passwords in
+// when they do not start with "$".
 func hashWithModule(algorithm string, plaintext []byte) (string, error) {
 	modInfo, err := hashModuleInfo(algorithm)
 	if err != nil {
@@ -219,9 +221,6 @@ func hashWithModule(algorithm string, plaintext []byte) (string, error) {
 	hash, err := hasher.Hash(plaintext)
 	if err != nil {
 		return "", err
-	}
-	if bytes.HasPrefix(hash, []byte("$")) {
-		return string(hash), nil
 	}
 	return base64.StdEncoding.EncodeToString(hash), nil
 }

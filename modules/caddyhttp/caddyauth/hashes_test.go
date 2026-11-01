@@ -83,7 +83,7 @@ func (testCompareOnlyHash) Compare(hashed, plaintext []byte) (bool, error) {
 	return bytes.Equal(hashed, plaintext), nil
 }
 
-// testMCFHash produces hashes in Modular Crypt Format.
+// testMCFHash produces hashes that start with "$", like Modular Crypt Format.
 type testMCFHash struct{}
 
 func (testMCFHash) CaddyModule() caddy.ModuleInfo {
@@ -248,8 +248,10 @@ func TestHashPasswordCommandHashModule(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if out != "$testmcf$secret" {
-		t.Errorf("expected MCF output %q unchanged, got %q", "$testmcf$secret", out)
+	// A leading "$" does not make a third-party hash MCF, so it is
+	// base64-encoded like any other module output.
+	if out != "JHRlc3RtY2Ykc2VjcmV0" { // base64("$testmcf$secret")
+		t.Errorf("expected output %q, got %q", "JHRlc3RtY2Ykc2VjcmV0", out)
 	}
 }
 
