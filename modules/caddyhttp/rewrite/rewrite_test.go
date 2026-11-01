@@ -678,6 +678,124 @@ func TestQueryOpsReplaceScopedToKey(t *testing.T) {
 	}
 }
 
+func TestQueryOpsReplaceEmptySearch(t *testing.T) {
+	for i, tc := range []struct {
+		name   string
+		input  *http.Request
+		expect map[string][]string
+		ops    *queryOps
+	}{
+		{
+			// a search that expands to nothing must not match between every character
+			name: "keyed search expanding to empty",
+			ops: &queryOps{
+				Replace: []*queryOpsReplacement{{Key: "a", Search: "{test.empty}", Replace: "-"}},
+			},
+			input:  newRequest(t, "GET", "/?a=abc&b=abc"),
+			expect: map[string][]string{"a": {"abc"}, "b": {"abc"}},
+		},
+		{
+			name: "wildcard search expanding to empty",
+			ops: &queryOps{
+				Replace: []*queryOpsReplacement{{Key: "*", Search: "{test.empty}", Replace: "-"}},
+			},
+			input:  newRequest(t, "GET", "/?a=abc&b=abc"),
+			expect: map[string][]string{"a": {"abc"}, "b": {"abc"}},
+		},
+		{
+			// a non-empty search keeps working
+			name: "search expanding to non-empty",
+			ops: &queryOps{
+				Replace: []*queryOpsReplacement{{Key: "a", Search: "{test.full}", Replace: "-"}},
+			},
+			input:  newRequest(t, "GET", "/?a=abc&b=abc"),
+			expect: map[string][]string{"a": {"a-c"}, "b": {"abc"}},
+		},
+	} {
+		repl := caddy.NewReplacer()
+		repl.Set("test.empty", "")
+		repl.Set("test.full", "b")
+
+		for _, rep := range tc.ops.Replace {
+			if err := rep.Provision(caddy.Context{}); err != nil {
+				t.Fatalf("Test %d (%s): %v", i, tc.name, err)
+			}
+		}
+
+		tc.ops.do(tc.input, repl)
+
+		if actual := tc.input.URL.Query(); !reflect.DeepEqual(tc.expect, map[string][]string(actual)) {
+			t.Errorf("Test %d (%s): Expected query=%v but got %v", i, tc.name, tc.expect, actual)
+		}
+	}
+}
+
+func TestQueryOpsReplacementProvisionRejectsEmptySearch(t *testing.T) {
+	for i, tc := range []struct {
+		name    string
+		rep     queryOpsReplacement
+		wantErr bool
+	}{
+		{"neither search nor search_regexp", queryOpsReplacement{Key: "a", Replace: "x"}, true},
+		{"substring search", queryOpsReplacement{Key: "a", Search: "foo", Replace: "x"}, false},
+		{"regexp search", queryOpsReplacement{Key: "a", SearchRegexp: "fo+", Replace: "x"}, false},
+		// only known after placeholder expansion at runtime, so it is skipped there instead
+		{"placeholder search", queryOpsReplacement{Key: "a", Search: "{test.empty}", Replace: "x"}, false},
+	} {
+		err := tc.rep.Provision(caddy.Context{})
+		if tc.wantErr && err == nil {
+			t.Errorf("Test %d (%s): expected error but got none", i, tc.name)
+		}
+		if !tc.wantErr && err != nil {
+			t.Errorf("Test %d (%s): unexpected error: %v", i, tc.name, err)
+		}
+	}
+}
+
+func TestSubstrReplacerEmptyExpandedFind(t *testing.T) {
+	for i, tc := range []struct {
+		name   string
+		rule   Rewrite
+		input  *http.Request
+		expect *http.Request
+	}{
+		{
+			// a find that is non-empty in the config but expands to nothing
+			// must not insert the replacement between every character
+			name:   "find expanding to empty",
+			rule:   Rewrite{URISubstring: []substrReplacer{{Find: "{test.empty}", Replace: "-"}}},
+			input:  newRequest(t, "GET", "/abc?x=yz"),
+			expect: newRequest(t, "GET", "/abc?x=yz"),
+		},
+		{
+			name:   "literally empty find",
+			rule:   Rewrite{URISubstring: []substrReplacer{{Find: "", Replace: "-"}}},
+			input:  newRequest(t, "GET", "/abc?x=yz"),
+			expect: newRequest(t, "GET", "/abc?x=yz"),
+		},
+		{
+			// a non-empty find keeps working
+			name:   "find expanding to non-empty",
+			rule:   Rewrite{URISubstring: []substrReplacer{{Find: "{test.full}", Replace: "-"}}},
+			input:  newRequest(t, "GET", "/abc?x=yz"),
+			expect: newRequest(t, "GET", "/a-c?x=yz"),
+		},
+	} {
+		repl := caddy.NewReplacer()
+		repl.Set("test.empty", "")
+		repl.Set("test.full", "b")
+		repl.Set("http.request.uri", tc.input.RequestURI)
+		repl.Set("http.request.uri.path", tc.input.URL.Path)
+		repl.Set("http.request.uri.query", tc.input.URL.RawQuery)
+
+		tc.rule.Rewrite(tc.input, repl)
+
+		if expected, actual := tc.expect.URL.String(), tc.input.URL.String(); expected != actual {
+			t.Errorf("Test %d (%s): Expected URL='%s' but got '%s'", i, tc.name, expected, actual)
+		}
+	}
+}
+
 func TestStripPathPrefixCanonicalizesRemainder(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

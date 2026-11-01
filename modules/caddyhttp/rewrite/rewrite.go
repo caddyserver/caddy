@@ -121,7 +121,7 @@ func (rewr *Rewrite) Provision(ctx caddy.Context) error {
 		for _, replacementOp := range rewr.Query.Replace {
 			err := replacementOp.Provision(ctx)
 			if err != nil {
-				return fmt.Errorf("compiling regular expression %s in query rewrite replace operation: %v", replacementOp.SearchRegexp, err)
+				return fmt.Errorf("provisioning query rewrite replace operation: %v", err)
 			}
 		}
 	}
@@ -555,6 +555,11 @@ func (rep substrReplacer) do(r *http.Request, repl *caddy.Replacer) {
 	}
 
 	find := repl.ReplaceAll(rep.Find, "")
+	if find == "" {
+		// the placeholders expanded to nothing; an empty find
+		// would match between every character
+		return
+	}
 	replace := repl.ReplaceAll(rep.Replace, "")
 
 	mergeSlashes := !strings.Contains(rep.Find, "//")
@@ -659,6 +664,9 @@ type queryOps struct {
 
 // Provision compiles the query replace operation regex.
 func (replacement *queryOpsReplacement) Provision(_ caddy.Context) error {
+	if replacement.Search == "" && replacement.SearchRegexp == "" {
+		return fmt.Errorf("replacement for query field '%s': search or search_regexp must be set", replacement.Key)
+	}
 	if replacement.SearchRegexp != "" {
 		re, err := regexp.Compile(replacement.SearchRegexp)
 		if err != nil {
@@ -717,7 +725,7 @@ func (q *queryOps) do(r *http.Request, repl *caddy.Replacer) {
 				for i := range vals {
 					if replaceParam.re != nil {
 						query[fieldName][i] = replaceParam.re.ReplaceAllString(query[fieldName][i], replace)
-					} else {
+					} else if search != "" {
 						query[fieldName][i] = strings.ReplaceAll(query[fieldName][i], search, replace)
 					}
 				}
@@ -732,7 +740,7 @@ func (q *queryOps) do(r *http.Request, repl *caddy.Replacer) {
 		for i := range vals {
 			if replaceParam.re != nil {
 				query[key][i] = replaceParam.re.ReplaceAllString(query[key][i], replace)
-			} else {
+			} else if search != "" {
 				query[key][i] = strings.ReplaceAll(query[key][i], search, replace)
 			}
 		}
