@@ -348,6 +348,9 @@ func ParseNetworkAddressWithDefaults(addr, defaultNetwork string, defaultPort ui
 		start = uint64(defaultPort)
 		end = uint64(defaultPort)
 	} else {
+		if len(port) > maxPortLen {
+			return NetworkAddress{}, fmt.Errorf("invalid port: longer than %d characters", maxPortLen)
+		}
 		before, after, found := strings.Cut(port, "-")
 		if !found {
 			after = before
@@ -776,3 +779,6 @@ type PacketConnWrapper interface {
 var listenerPool = NewUsagePool()
 
 const maxPortSpan = 65535
+
+// maxPortLen is the length of the longest valid port range.
+const maxPortLen = len("65535-65535")

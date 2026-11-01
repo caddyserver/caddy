@@ -113,6 +113,10 @@ func (d *IdleDeadline) restore(o idleOverride) {
 // requests. An expired deadline is kept when DrainDeadline is set to bound
 // net/http's post-handler drain.
 // see: https://github.com/caddyserver/caddy/issues/8103
+//
+// A read deadline set by a handler through http.ResponseController
+// reaches SetReadDeadline and caps every idle reset, so a handler can
+// tighten the idle timeout but can't loosen it.
 type IdleTimeoutReader struct {
 	io.ReadCloser
 	Ctrl     *http.ResponseController
@@ -126,23 +130,27 @@ type IdleTimeoutReader struct {
 	// HTTP/2) for other protocols or requests without a body.
 	DrainDeadline bool
 
-	// ClearBetweenReads makes the reader put back HardDeadline (no
-	// deadline unless a hard ceiling is configured) after every
-	// successful read, so the idle deadline only bounds reads in
-	// flight. It is required for HTTP/2, where the read deadline is a
-	// timer that fails the body when it fires, even with no read in
-	// flight: otherwise a handler that stops reading for longer than the
-	// timeout (e.g. while an upstream is slow to accept the body) loses
-	// the body, although the client is only held back by flow control.
-	// Other protocols only check the deadline during a read.
+	// ClearBetweenReads makes the reader put back the earliest of
+	// HardDeadline and the deadline set by the handler (no deadline if
+	// there is neither) after every successful read, so the idle
+	// deadline only bounds reads in flight. It is required for HTTP/2,
+	// where the read deadline is a timer that fails the body when it
+	// fires, even with no read in flight: otherwise a handler that stops
+	// reading for longer than the timeout (e.g. while an upstream is
+	// slow to accept the body) loses the body, although the client is
+	// only held back by flow control. Other protocols only check the
+	// deadline during a read.
 	ClearBetweenReads bool
 
 	mu          sync.Mutex
 	unsupported bool
 	armed       armedDeadline
 	installed   time.Time // Last deadline successfully installed through Ctrl.
+	reading     bool
 	finished    bool
 	terminalErr error
+
+	handlerDeadline time.Time
 }
 
 // armedDeadline is which read deadline IdleTimeoutReader has armed.
@@ -154,10 +162,53 @@ const (
 	// deadlineIdle means the idle deadline from IdleDeadline.next is
 	// armed.
 	deadlineIdle
-	// deadlineHard means only HardDeadline is armed, as put back
-	// between reads with ClearBetweenReads.
+	// deadlineHard means only the ceiling (HardDeadline or the
+	// deadline set by the handler) is armed, as put back between reads
+	// with ClearBetweenReads or set by the handler.
 	deadlineHard
 )
+
+// SetReadDeadline sets the read deadline on behalf of a handler and
+// keeps it as a ceiling for the idle deadline, until the handler sets
+// another one. A zero deadline removes the ceiling. HardDeadline still
+// applies, and so does the idle deadline of a read in flight or the
+// expired one bounding the drain of a timed-out body.
+func (r *IdleTimeoutReader) SetReadDeadline(deadline time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	prev := r.handlerDeadline
+	r.handlerDeadline = deadline
+	install := r.ceilingLocked()
+	pinned := (r.reading && r.armed == deadlineIdle) || r.keepExpiredLocked()
+	if pinned && (install.IsZero() || r.installed.Before(install)) {
+		install = r.installed
+	}
+	if err := r.Ctrl.SetReadDeadline(install); err != nil {
+		r.handlerDeadline = prev
+		return err
+	}
+	r.installed = install
+	if pinned {
+		return nil
+	}
+	if install.IsZero() {
+		r.armed = deadlineNone
+	} else {
+		r.armed = deadlineHard
+	}
+	return nil
+}
+
+// ceilingLocked returns the earliest of HardDeadline and the deadline
+// set by the handler, or zero if there is neither.
+func (r *IdleTimeoutReader) ceilingLocked() time.Time {
+	hard := r.Deadline.HardDeadline
+	if r.handlerDeadline.IsZero() || (!hard.IsZero() && hard.Before(r.handlerDeadline)) {
+		return hard
+	}
+	return r.handlerDeadline
+}
 
 func (r *IdleTimeoutReader) Read(p []byte) (int, error) {
 	r.mu.Lock()
@@ -169,11 +220,13 @@ func (r *IdleTimeoutReader) Read(p []byte) (int, error) {
 	if !r.finished && !r.unsupported {
 		r.setDeadlineLocked("could not set read deadline")
 	}
+	r.reading = true
 	r.mu.Unlock()
 
 	n, err := r.ReadCloser.Read(p)
 
 	r.mu.Lock()
+	r.reading = false
 	r.Deadline.transferred += int64(n)
 	if err != nil {
 		r.terminalErr = err
@@ -191,9 +244,9 @@ func (r *IdleTimeoutReader) Read(p []byte) (int, error) {
 // HandlerDone prevents later body reads from using the response controller.
 // If the body is not finished and DrainDeadline is set, it leaves an idle
 // deadline armed for net/http's post-handler drain. Otherwise, it clears a
-// deadline left from a finished body or put back between reads, unless the
-// body timed out with an expired drain deadline. It must be called before the
-// installing handler returns.
+// deadline left from a finished body, put back between reads or set by the
+// handler, unless the body timed out with an expired drain deadline. It must
+// be called before the installing handler returns.
 func (r *IdleTimeoutReader) HandlerDone() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -201,10 +254,13 @@ func (r *IdleTimeoutReader) HandlerDone() {
 	if r.finished {
 		return
 	}
-	if r.terminalErr != nil || r.armed == deadlineHard {
+	switch {
+	case r.terminalErr != nil:
 		r.clearDeadlineLocked()
-	} else if r.DrainDeadline && r.armed != deadlineIdle && !r.unsupported {
+	case r.DrainDeadline && r.armed != deadlineIdle && !r.unsupported:
 		r.setDeadlineLocked("could not set final read deadline")
+	case r.armed == deadlineHard:
+		r.clearDeadlineLocked()
 	}
 	r.finished = true
 }
@@ -239,7 +295,12 @@ func (r *IdleTimeoutReader) rearmLocked() {
 }
 
 func (r *IdleTimeoutReader) setDeadlineLocked(logMessage string) {
-	if r.setReadDeadlineLocked(r.Deadline.next(), logMessage) {
+	deadline := r.Deadline.next()
+	if !r.handlerDeadline.IsZero() && deadline.After(r.handlerDeadline) {
+		deadline = r.handlerDeadline
+	}
+
+	if r.setReadDeadlineLocked(deadline, logMessage) {
 		r.armed = deadlineIdle
 	}
 }
@@ -259,22 +320,24 @@ func (r *IdleTimeoutReader) setReadDeadlineLocked(deadline time.Time, logMessage
 	return true
 }
 
-// releaseDeadlineLocked replaces the idle deadline with HardDeadline.
+// releaseDeadlineLocked replaces the idle deadline with the earliest of
+// HardDeadline and the deadline set by the handler.
 func (r *IdleTimeoutReader) releaseDeadlineLocked() {
 	if r.armed != deadlineIdle || r.unsupported {
 		return
 	}
 
-	// once the hard deadline has passed, the deadline set before the
-	// read (capped to it) has already expired; keep it
-	if !r.Deadline.HardDeadline.IsZero() && !time.Now().Before(r.Deadline.HardDeadline) {
+	// once the ceiling has passed, the deadline set before the read
+	// (capped to it) has already expired; keep it
+	ceiling := r.ceilingLocked()
+	if !ceiling.IsZero() && !time.Now().Before(ceiling) {
 		return
 	}
 
-	if !r.setReadDeadlineLocked(r.Deadline.HardDeadline, "could not release read deadline") {
+	if !r.setReadDeadlineLocked(ceiling, "could not release read deadline") {
 		return
 	}
-	if r.Deadline.HardDeadline.IsZero() {
+	if ceiling.IsZero() {
 		r.armed = deadlineNone
 	} else {
 		r.armed = deadlineHard
@@ -285,17 +348,23 @@ func (r *IdleTimeoutReader) clearDeadlineLocked() {
 	if r.armed == deadlineNone {
 		return
 	}
-	if r.DrainDeadline && !r.installed.IsZero() && !time.Now().Before(r.installed) &&
-		errors.Is(r.terminalErr, os.ErrDeadlineExceeded) {
-		// HTTP/1 drains a small unread body before writing the response.
-		// Clearing its expired deadline would let a stalled client block
-		// that drain, and therefore the error response, indefinitely.
+	if r.keepExpiredLocked() {
 		return
 	}
 	if !r.setReadDeadlineLocked(time.Time{}, "could not clear read deadline") {
 		return
 	}
 	r.armed = deadlineNone
+}
+
+// keepExpiredLocked reports whether the installed deadline expired with
+// the body and must be kept. HTTP/1 drains a small unread body before
+// writing the response. Clearing its expired deadline would let a
+// stalled client block that drain, and therefore the error response,
+// indefinitely.
+func (r *IdleTimeoutReader) keepExpiredLocked() bool {
+	return r.DrainDeadline && !r.installed.IsZero() && !time.Now().Before(r.installed) &&
+		errors.Is(r.terminalErr, os.ErrDeadlineExceeded)
 }
 
 // IdleTimeoutWriter wraps a ResponseWriter with IdleDeadline, resetting
@@ -534,6 +603,18 @@ func (w *IdleTimeoutWriter) FlushError() error {
 	return nil
 }
 
+// readDeadlineWriter routes read deadlines set by handlers through
+// http.ResponseController to the IdleTimeoutReader of the request,
+// which would otherwise replace them before the next read.
+type readDeadlineWriter struct {
+	ResponseWriterWrapper
+	reader *IdleTimeoutReader
+}
+
+func (w *readDeadlineWriter) SetReadDeadline(deadline time.Time) error {
+	return w.reader.SetReadDeadline(deadline)
+}
+
 // idleTimeouts holds the wrappers applying a request's idle timeouts.
 type idleTimeouts struct {
 	reader *IdleTimeoutReader
@@ -563,6 +644,7 @@ func ContextWithIdleTimeouts(ctx context.Context, reader *IdleTimeoutReader, wri
 // Interface guards
 var (
 	_ io.ReadCloser                   = (*IdleTimeoutReader)(nil)
+	_ http.ResponseWriter             = (*readDeadlineWriter)(nil)
 	_ http.ResponseWriter             = (*IdleTimeoutWriter)(nil)
 	_ io.ReaderFrom                   = (*IdleTimeoutWriter)(nil)
 	_ interface{ FlushError() error } = (*IdleTimeoutWriter)(nil)
