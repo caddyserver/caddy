@@ -24,6 +24,8 @@ import (
 	"strings"
 	"sync"
 
+	"golang.org/x/net/http/httpguts"
+
 	"github.com/caddyserver/caddy/v2"
 )
 
@@ -107,7 +109,7 @@ func (adminLoad) handleLoad(w http.ResponseWriter, r *http.Request) error {
 		body = result
 	}
 
-	forceReload := r.Header.Get("Cache-Control") == "must-revalidate"
+	forceReload := httpguts.HeaderValuesContainsToken(r.Header["Cache-Control"], "must-revalidate")
 
 	err = caddy.Load(body, forceReload)
 	if err != nil {
