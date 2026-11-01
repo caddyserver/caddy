@@ -679,6 +679,10 @@ func (ctx Context) IdentityCredentials(logger *zap.Logger) ([]tls.Certificate, e
 // trust, and then looks for a matching, authorized public key that is allowed to access
 // the defined path(s) using the defined method(s).
 func (remote RemoteAdmin) enforceAccessControls(r *http.Request) error {
+	// the same public key may appear in more than one access control entry;
+	// the request is allowed if any entry containing the key permits it
+	var keyRecognized, pathAllowedSomewhere bool
+
 	for _, chain := range r.TLS.VerifiedChains {
 		for _, peerCert := range chain {
 			for _, adminAccess := range remote.AccessControl {
@@ -691,6 +695,7 @@ func (remote RemoteAdmin) enforceAccessControls(r *http.Request) error {
 					if !ok || !comparer.Equal(allowedKey) {
 						continue
 					}
+					keyRecognized = true
 
 					// key recognized; make sure its HTTP request is permitted
 					// by at least one of the permission entries (if none are
@@ -698,7 +703,6 @@ func (remote RemoteAdmin) enforceAccessControls(r *http.Request) error {
 					if len(adminAccess.Permissions) == 0 {
 						return nil
 					}
-					var pathAllowedSomewhere bool
 					for _, accessPerm := range adminAccess.Permissions {
 						// verify path
 						pathFound := accessPerm.Paths == nil
@@ -720,20 +724,26 @@ func (remote RemoteAdmin) enforceAccessControls(r *http.Request) error {
 						}
 					}
 
-					// no permission entry allows this request; if the path
-					// is allowed by some entry, the method is what's missing
-					if pathAllowedSomewhere {
-						return APIError{
-							HTTPStatus: http.StatusForbidden,
-							Message:    "not authorized to use this method",
-						}
-					}
-					return APIError{
-						HTTPStatus: http.StatusForbidden,
-						Message:    "not authorized to access this path",
-					}
+					// this entry does not permit the request; other entries
+					// containing the same key may
+					break
 				}
 			}
+		}
+	}
+
+	if keyRecognized {
+		// no entry allows this request; if the path is allowed by
+		// some entry, the method is what's missing
+		if pathAllowedSomewhere {
+			return APIError{
+				HTTPStatus: http.StatusForbidden,
+				Message:    "not authorized to use this method",
+			}
+		}
+		return APIError{
+			HTTPStatus: http.StatusForbidden,
+			Message:    "not authorized to access this path",
 		}
 	}
 

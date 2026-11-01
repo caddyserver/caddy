@@ -812,6 +812,8 @@ func TestRemoteAdminAccessControlMultiplePermissions(t *testing.T) {
 	tests := []struct {
 		name        string
 		permissions []AdminPermissions
+		// extraAccess adds further access control entries holding the same key
+		extraAccess [][]AdminPermissions
 		method      string
 		requestPath string
 		wantErr     string
@@ -869,6 +871,29 @@ func TestRemoteAdminAccessControlMultiplePermissions(t *testing.T) {
 			requestPath: "/stop",
 			wantErr:     "not authorized to access this path",
 		},
+		{
+			name: "later access entry with the same key matches",
+			permissions: []AdminPermissions{
+				{Methods: []string{http.MethodGet}, Paths: []string{"/config/"}},
+			},
+			extraAccess: [][]AdminPermissions{
+				{{Methods: []string{http.MethodPost}, Paths: []string{"/load"}}},
+			},
+			method:      http.MethodPost,
+			requestPath: "/load",
+		},
+		{
+			name: "no access entry with the same key matches",
+			permissions: []AdminPermissions{
+				{Methods: []string{http.MethodGet}, Paths: []string{"/config/"}},
+			},
+			extraAccess: [][]AdminPermissions{
+				{{Methods: []string{http.MethodGet}, Paths: []string{"/load"}}},
+			},
+			method:      http.MethodPost,
+			requestPath: "/load",
+			wantErr:     "not authorized to use this method",
+		},
 	}
 
 	for _, test := range tests {
@@ -880,6 +905,12 @@ func TestRemoteAdminAccessControlMultiplePermissions(t *testing.T) {
 						publicKeys:  []crypto.PublicKey{authorizedKey},
 					},
 				},
+			}
+			for _, permissions := range test.extraAccess {
+				remote.AccessControl = append(remote.AccessControl, &AdminAccess{
+					Permissions: permissions,
+					publicKeys:  []crypto.PublicKey{authorizedKey},
+				})
 			}
 
 			req := httptest.NewRequest(test.method, "https://localhost:2021"+test.requestPath, nil)
