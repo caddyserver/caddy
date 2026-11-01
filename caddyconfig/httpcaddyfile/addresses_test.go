@@ -1,8 +1,23 @@
 package httpcaddyfile
 
 import (
+	"strings"
 	"testing"
 )
+
+func TestSystemdListenPlaceholderSurvivesAdaptation(t *testing.T) {
+	adapted := adaptCaddyfile(t, `{
+		auto_https off
+	}
+
+	http://localhost {
+		bind fd/{systemd.listen.web}
+		respond ok
+	}`)
+	if !strings.Contains(adapted, `"listen":["fd/{systemd.listen.web}"]`) {
+		t.Fatalf("adapted listener lost systemd placeholder: %s", adapted)
+	}
+}
 
 func TestParseAddress(t *testing.T) {
 	for i, test := range []struct {
