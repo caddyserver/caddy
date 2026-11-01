@@ -59,6 +59,36 @@ func (rwc extendedConnectReadWriteCloser) Write(p []byte) (n int, err error) {
 	return n, nil
 }
 
+// SetWriteDeadline bounds writes to the extended CONNECT stream, so a peer
+// that stopped reading cannot block the close message forever.
+func (rwc extendedConnectReadWriteCloser) SetWriteDeadline(deadline time.Time) error {
+	//nolint:bodyclose
+	return http.NewResponseController(rwc.ResponseWriter).SetWriteDeadline(deadline)
+}
+
+// upstreamConnHolder remembers the connection a round trip used, so an
+// upgraded HTTP/1 response can reach the socket hidden behind its body.
+type upstreamConnHolder struct {
+	mu   sync.Mutex
+	conn net.Conn
+}
+
+func (h *upstreamConnHolder) set(conn net.Conn) {
+	h.mu.Lock()
+	h.conn = conn
+	h.mu.Unlock()
+}
+
+func (h *upstreamConnHolder) get() net.Conn {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.conn
+}
+
+// upstreamConnCtxKey is the context key for the *upstreamConnHolder of an
+// upgrade request.
+type upstreamConnCtxKey struct{}
+
 func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWriter, req *http.Request, res *http.Response, upstreamAddr string) {
 	// Until the tunnel takes ownership, every setup failure must close the
 	// backend body and any hijacked client connection. net/http no longer
@@ -208,16 +238,31 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 	// need to know whether the connection is considered the server or the
 	// client side of the proxy. Note that gracefulClose must not capture h,
 	// since the tunnel may outlive the handler instance.
-	gracefulClose := func(conn io.ReadWriteCloser, isClient bool) func() error {
+	gracefulClose := func(conn io.Writer, isClient bool) func(time.Time) error {
 		if isWebsocket(req) {
-			return func() error {
-				return writeCloseControl(conn, isClient)
+			return func(deadline time.Time) error {
+				return writeCloseControl(conn, isClient, deadline)
 			}
 		}
 		return nil
 	}
+	// The close message to the upstream must be bounded by a write deadline
+	// too, but for HTTP/1 upgrades net/http hands the upstream socket back
+	// inside a body type that hides its deadline methods and writes straight
+	// through to the socket. So write the close message to the socket
+	// recorded during the round trip instead. An HTTP/1 connection is
+	// dedicated to this request; HTTP/2 and HTTP/3 share theirs between
+	// streams, so their bodies are used as they are.
+	var backCloser io.Writer = backConn
+	if res.ProtoMajor == 1 {
+		if holder, ok := req.Context().Value(upstreamConnCtxKey{}).(*upstreamConnHolder); ok {
+			if uc := holder.get(); uc != nil {
+				backCloser = uc
+			}
+		}
+	}
 	deleteFrontConn := tunnel.registerConnection(conn, gracefulClose(conn, false), detached, upstreamAddr)
-	deleteBackConn := tunnel.registerConnection(backConn, gracefulClose(backConn, true), detached, upstreamAddr)
+	deleteBackConn := tunnel.registerConnection(backConn, gracefulClose(backCloser, true), detached, upstreamAddr)
 	if h.streamLogsSkipHandshake() {
 		caddyhttp.SetVar(req.Context(), caddyhttp.LogSkipVar, true)
 	}
@@ -543,7 +588,7 @@ func (h Handler) copyBuffer(dst io.Writer, src io.Reader, buf []byte, logger *za
 // closed when the upstream is removed from the config, not on every reload.
 type openConnection struct {
 	conn          io.ReadWriteCloser
-	gracefulClose func() error
+	gracefulClose func(deadline time.Time) error
 	detached      bool
 	upstream      string
 }
@@ -556,22 +601,26 @@ type tunnelTracker struct {
 	connections map[io.ReadWriteCloser]openConnection
 	closeTimer  *time.Timer
 	closeDelay  time.Duration
-	stopped     bool
-	mu          sync.Mutex
-	logger      *zap.Logger
+	// closeWriteTimeout bounds how long one batch of graceful closes may
+	// spend writing close messages while holding mu.
+	closeWriteTimeout time.Duration
+	stopped           bool
+	mu                sync.Mutex
+	logger            *zap.Logger
 }
 
 func newTunnelTracker(logger *zap.Logger, closeDelay time.Duration) *tunnelTracker {
 	return &tunnelTracker{
-		connections: make(map[io.ReadWriteCloser]openConnection),
-		closeDelay:  closeDelay,
-		logger:      logger,
+		connections:       make(map[io.ReadWriteCloser]openConnection),
+		closeDelay:        closeDelay,
+		closeWriteTimeout: closeControlWriteTimeout,
+		logger:            logger,
 	}
 }
 
 // registerConnection stores conn in the tracking map. The caller must invoke
 // the returned del func when the connection is done.
-func (ts *tunnelTracker) registerConnection(conn io.ReadWriteCloser, gracefulClose func() error, detached bool, upstream string) (del func()) {
+func (ts *tunnelTracker) registerConnection(conn io.ReadWriteCloser, gracefulClose func(deadline time.Time) error, detached bool, upstream string) (del func()) {
 	ts.mu.Lock()
 	ts.connections[conn] = openConnection{conn, gracefulClose, detached, upstream}
 	ts.mu.Unlock()
@@ -599,13 +648,16 @@ func (ts *tunnelTracker) closeAttachedConnections() error {
 	var err error
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
+	// One absolute deadline for the whole batch: the loop is serial and holds
+	// the lock, so per-connection timeouts would add up across stalled peers.
+	deadline := time.Now().Add(ts.closeWriteTimeout)
 	for _, oc := range ts.connections {
 		// detached connections are only closed when the upstream is gone from the config
 		if oc.detached {
 			continue
 		}
 		if oc.gracefulClose != nil {
-			if gracefulErr := oc.gracefulClose(); gracefulErr != nil && err == nil {
+			if gracefulErr := oc.gracefulClose(deadline); gracefulErr != nil && err == nil {
 				err = gracefulErr
 			}
 		}
@@ -657,7 +709,26 @@ func (ts *tunnelTracker) cleanupAttachedConnections() error {
 // from his simple implementation of this I was able to learn from at:
 // github.com/pascaldekloe/websocket. Further work for handling masking
 // taken from github.com/gorilla/websocket.
-func writeCloseControl(conn io.Writer, isClient bool) error {
+//
+// The write must finish by deadline. The tunnel's copy goroutine may still
+// be writing to this connection, and a peer that stopped reading can block
+// that write forever. The close message would wait behind it while the
+// caller holds the tunnel tracker lock, which in turn blocks config reloads.
+// The deadline unblocks both writes, and the connection is closed right
+// after this anyway. Connections that cannot set a write deadline are
+// skipped rather than risk that hang.
+func writeCloseControl(conn io.Writer, isClient bool, deadline time.Time) error {
+	dc, ok := conn.(interface{ SetWriteDeadline(time.Time) error })
+	if !ok {
+		return nil
+	}
+	if err := dc.SetWriteDeadline(deadline); err != nil {
+		if errors.Is(err, http.ErrNotSupported) {
+			return nil
+		}
+		return err
+	}
+
 	// Sources:
 	// https://github.com/pascaldekloe/websocket/blob/32050af67a5d/websocket.go#L119
 	// https://github.com/gorilla/websocket/blob/v1.5.0/conn.go#L413
@@ -701,22 +772,14 @@ func writeCloseControl(conn io.Writer, isClient bool) error {
 		buf = appendMessage(buf)
 	}
 
-	// The tunnel's copy goroutine may still be writing to this connection,
-	// and a peer that stopped reading can block that write forever. The close
-	// message waits behind it while the caller holds the tunnel tracker lock, which
-	// in turn blocks config reloads. A write deadline unblocks both writes,
-	// and the connection is closed right after this anyway.
-	if dc, ok := conn.(interface{ SetWriteDeadline(time.Time) error }); ok {
-		_ = dc.SetWriteDeadline(time.Now().Add(closeControlWriteTimeout))
-	}
-
 	// simply best-effort, but return error for logging purposes
+	// TODO: we might need to ensure we are the exclusive writer by this point (io.Copy is stopped)?
 	_, err := conn.Write(buf[:msgLength])
 	return err
 }
 
-// closeControlWriteTimeout is how long writeCloseControl waits for a peer
-// to accept the close message before giving up on it.
+// closeControlWriteTimeout is how long one batch of graceful closes waits
+// for peers to accept their close messages before giving up on them.
 const closeControlWriteTimeout = 5 * time.Second
 
 // Copied from https://github.com/gorilla/websocket/blob/v1.5.0/mask.go
@@ -785,12 +848,14 @@ func (ts *tunnelTracker) closeConnectionsForUpstream(addr string) error {
 	if !ts.stopped {
 		return nil
 	}
+	// One absolute deadline for the whole batch; see closeAttachedConnections.
+	deadline := time.Now().Add(ts.closeWriteTimeout)
 	for _, oc := range ts.connections {
 		if !oc.detached || oc.upstream != addr {
 			continue
 		}
 		if oc.gracefulClose != nil {
-			if gracefulErr := oc.gracefulClose(); gracefulErr != nil && err == nil {
+			if gracefulErr := oc.gracefulClose(deadline); gracefulErr != nil && err == nil {
 				err = gracefulErr
 			}
 		}

@@ -1242,6 +1242,13 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	// http.Transport reads a newer value to dial a new connection when that new
 	// value is updated by another reverse proxy handler, typically forward_auth.
 	ctx := context.WithValue(req.Context(), dialInfoCtxKey, di)
+	// Upgraded HTTP/1 responses hide the upstream socket behind their body,
+	// so remember it for the tunnel's graceful close; see handleUpgradeResponse.
+	if upgradeType(req.Header) != "" {
+		upstreamConn := new(upstreamConnHolder)
+		trace.GotConn = func(info httptrace.GotConnInfo) { upstreamConn.set(info.Conn) }
+		ctx = context.WithValue(ctx, upstreamConnCtxKey{}, upstreamConn)
+	}
 	req = req.WithContext(httptrace.WithClientTrace(ctx, trace))
 
 	// do the round-trip
