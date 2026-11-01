@@ -21,8 +21,10 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/caddyserver/caddy/v2"
 )
@@ -437,6 +439,121 @@ func TestPathMatcher(t *testing.T) {
 			input:  "/admin%2fpanelX",
 			expect: false,
 		},
+		{
+			match:  MatchPath{"/secret/*"},
+			input:  "/%C5%BFecret/f.txt", // U+017F LATIN SMALL LETTER LONG S
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/secret"},
+			input:  "/%C5%BFECRET",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/ſecret"},
+			input:  "/SECRET",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/admin"},
+			input:  "/adm%C4%B1n", // U+0131 LATIN SMALL LETTER DOTLESS I
+			expect: false,
+		},
+		{
+			match:  MatchPath{"/a%2fsecret"},
+			input:  "/a%2F%C5%BFecret",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/secret%2fpanel"},
+			input:  "/%C5%BFecret%2Fpanel",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/secret%2fpanel"},
+			input:  "/%C5%BFecret%2Fpanelx",
+			expect: false,
+		},
+		{
+			match:  MatchPath{"/kelvin%2fpanel"},
+			input:  "/%E2%84%AAelvin%2Fpanel", // U+212A KELVIN SIGN
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/*secret%2fpanel"},
+			input:  "/x%C5%BFecret%2Fpanel",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/password/*"},
+			input:  "/pa%C3%9Fword/f.txt", // U+00DF LATIN SMALL LETTER SHARP S
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/password/*"},
+			input:  "/pa%E1%BA%9Eword/f.txt", // U+1E9E LATIN CAPITAL LETTER SHARP S
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/first/*"},
+			input:  "/%EF%AC%81rst/f.txt", // U+FB01 LATIN SMALL LIGATURE FI
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/password%2fpanel"},
+			input:  "/pa%C3%9Fword%2Fpanel",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/first%2fpanel"},
+			input:  "/%EF%AC%81rst%2Fpanel",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/*s%2fpanel"},
+			input:  "/x%C3%9F%2fpanel", // 'ß' folds to "ss", split by the wildcard
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/*s%2fpanel"},
+			input:  "/xss%2fpanel",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/*s%2fpanel"},
+			input:  "/x%2fs%2fpanel",
+			expect: false,
+		},
+		{
+			match:  MatchPath{"/caf%C3%A9/*"},
+			input:  "/cafe%CC%81/file", // 'e' + U+0301 COMBINING ACUTE ACCENT
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/caf%C3%A9/*"},
+			input:  "/cafe/file",
+			expect: false,
+		},
+		{
+			match:  MatchPath{"/café/*"},
+			input:  "/cafe%CC%81/file",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/café/*"},
+			input:  "/caf%C3%A9/file",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/caf%C3%A9%2f*"},
+			input:  "/caf%65%CC%81%2Ffile",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/bands/%*%2fdc"},
+			input:  "/bands/ac%2Fx%2Fdc",
+			expect: true,
+		},
 	} {
 		err := tc.match.Provision(caddy.Context{})
 		if err == nil && tc.provisionErr {
@@ -559,6 +676,102 @@ func TestPathMatcherWindows(t *testing.T) {
 				t.Errorf("Expected %q to match %v", req.URL.Path, tc.match)
 			}
 		})
+	}
+}
+
+// TestPathMatcherFilesystemCaseFolding checks the path matcher against a real
+// case-insensitive filesystem (APFS on macOS, NTFS on Windows): whenever the
+// filesystem opens an entry under another spelling of its name, the matcher
+// must match that spelling too, or a guard in front of file_server could be
+// bypassed by requesting it.
+func TestPathMatcherFilesystemCaseFolding(t *testing.T) {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
+		t.Skip("default filesystem is case-sensitive on this platform")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "probe"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "PROBE")); err != nil {
+		t.Skip("filesystem is case-sensitive")
+	}
+
+	repl := caddy.NewReplacer()
+	expectMatch := func(name, variant string) {
+		t.Helper()
+		for _, tc := range []struct {
+			match MatchPath
+			input string
+		}{
+			{MatchPath{"/" + name + "/*"}, "/" + url.PathEscape(variant) + "/f.txt"},
+			{MatchPath{"/" + name + "%2fpanel"}, "/" + url.PathEscape(variant) + "%2Fpanel"},
+			{MatchPath{"/" + url.PathEscape(name) + "%2fpanel"}, "/" + url.PathEscape(variant) + "%2Fpanel"},
+		} {
+			if err := tc.match.Provision(caddy.Context{}); err != nil {
+				t.Fatalf("provisioning %v: %v", tc.match, err)
+			}
+			u, err := url.ParseRequestURI(tc.input)
+			if err != nil {
+				t.Fatalf("parsing %q: %v", tc.input, err)
+			}
+			req := &http.Request{URL: u}
+			req = req.WithContext(context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl))
+			if !tc.match.Match(req) {
+				t.Errorf("filesystem opens %q as %q, but %v does not match %q", variant, name, tc.match, tc.input)
+			}
+		}
+	}
+
+	// every character the filesystem resolves onto an ASCII letter or digit
+	for _, c := range "abcdefghijklmnopqrstuvwxyz0123456789" {
+		if err := os.WriteFile(filepath.Join(dir, "x"+string(c)), []byte{byte(c)}, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for r := rune(utf8.RuneSelf); r <= 0xFFFF; r++ {
+		if r >= 0xD800 && r <= 0xDFFF {
+			continue // surrogates
+		}
+		variant := "x" + string(r)
+		data, err := os.ReadFile(filepath.Join(dir, variant))
+		if err != nil {
+			continue
+		}
+		expectMatch("x"+string(data), variant)
+	}
+
+	// characters that fold onto more than one letter
+	for _, tc := range []struct{ name, variant string }{
+		{"pass", "paß"},
+		{"pass", "paẞ"},
+		{"ff", "ﬀ"},
+		{"fi", "ﬁ"},
+		{"fl", "ﬂ"},
+		{"ffi", "ﬃ"},
+		{"ffl", "ﬄ"},
+		{"st", "ﬅ"},
+		{"st", "ﬆ"},
+	} {
+		if err := os.WriteFile(filepath.Join(dir, tc.name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(filepath.Join(dir, tc.variant)); err == nil {
+			expectMatch(tc.name, tc.variant)
+		}
+	}
+
+	// canonically equivalent spellings, precomposed and decomposed
+	for _, tc := range []struct{ name, variant string }{
+		{"café", "café"},
+		{"naïve", "naïve"},
+		{"Ångström", "Ångström"},
+	} {
+		if err := os.WriteFile(filepath.Join(dir, tc.name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(filepath.Join(dir, tc.variant)); err == nil {
+			expectMatch(tc.name, tc.variant)
+		}
 	}
 }
 

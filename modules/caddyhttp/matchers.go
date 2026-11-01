@@ -29,6 +29,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"cel.dev/cel-go/cel"
 	"cel.dev/cel-go/common"
@@ -37,6 +38,8 @@ import (
 	"cel.dev/cel-go/common/types/ref"
 	"cel.dev/cel-go/parser"
 	"golang.org/x/net/idna"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/unicode/norm"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -80,6 +83,13 @@ type (
 	// and `/foobar`; but `/foo/*` does not match `/foo` or `/foobar`. Valid
 	// paths start with a slash `/`.
 	//
+	// Paths are compared under Unicode default case folding and canonical
+	// normalization, which is how case-insensitive APFS volumes on macOS
+	// compare names, so `/secret` also matches `/SECRET` and `/ſecret`,
+	// `/password` matches `/paßword`, and `/café` matches the same name
+	// spelled with `e` and a combining acute accent (U+0301). Turkic
+	// mappings are not applied, so `ı` does not match `i`.
+	//
 	// Because there are, in general, multiple possible escaped forms of any
 	// path, path matchers operate in unescaped space; that is, path matchers
 	// should be written in their unescaped form to prevent ambiguities and
@@ -91,7 +101,8 @@ type (
 	// In other words, a matcher of `/foo%2Fbar` will match a request path
 	// of precisely `/foo%2Fbar`, but not `/foo/bar`. It follows that matching
 	// the literal percent sign (%) in normalized space can be done using the
-	// escaped form, `%25`.
+	// escaped form, `%25`. Escape sequences that encode a character outside
+	// ASCII, such as `%C3%A9`, are compared like the character itself.
 	//
 	// Even though wildcards (`*`) operate in the normalized space, the special
 	// escaped wildcard (`%*`), which is not a valid escape sequence, may be
@@ -409,7 +420,7 @@ func (MatchPath) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-// Provision lower-cases the paths in m to ensure case-insensitive matching.
+// Provision folds the paths in m to ensure case-insensitive matching.
 func (m MatchPath) Provision(_ caddy.Context) error {
 	for i := range m {
 		if m[i] == "*" && i > 0 {
@@ -417,7 +428,11 @@ func (m MatchPath) Provision(_ caddy.Context) error {
 			m[0] = m[i]
 			break
 		}
-		m[i] = strings.ToLower(m[i])
+		// patterns with escape sequences are folded around their escape
+		// sequences when they are parsed, in matchPatternWithEscapeSequence
+		if !strings.Contains(m[i], "%") {
+			m[i] = foldPath(m[i])
+		}
 	}
 	return nil
 }
@@ -436,7 +451,7 @@ func (m MatchPath) MatchWithError(r *http.Request) (bool, error) {
 	// related to differences between operating systems, applications,
 	// etc; if case-sensitive matching is needed, the regex matcher
 	// can be used instead.
-	reqPath := normalizeWindowsPath(strings.ToLower(r.URL.Path))
+	reqPath := normalizeWindowsPath(foldPath(r.URL.Path))
 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
@@ -537,124 +552,328 @@ func (m MatchPath) MatchWithError(r *http.Request) (bool, error) {
 	return false, nil
 }
 
-func (MatchPath) matchPatternWithEscapeSequence(escapedPath, matchPath string) bool {
-	escapedPath = strings.ToLower(escapedPath)
-	// We would just compare the pattern against r.URL.Path,
-	// but the pattern contains %, indicating that we should
-	// compare at least some part of the path in raw/escaped
-	// space, not normalized space; so we build the string we
-	// will compare against by adding the normalized parts
-	// of the path, then switching to the escaped parts where
-	// the pattern hints to us wherever % is present.
-	var sb strings.Builder
+// matchPatternWithEscapeSequence reports whether escapedPath matches pattern,
+// a path pattern containing '%'. An escape sequence of an ASCII byte in the
+// pattern only matches that same escape sequence in the path, and a "%*" span
+// may contain escaped slashes; everything else is compared in unescaped space
+// after foldPath, like patterns without escape sequences. Wildcards and
+// character classes otherwise behave as in path.Match.
+func (MatchPath) matchPatternWithEscapeSequence(escapedPath, pattern string) bool {
+	elems, keep, ok := parseEscapedPattern(pattern)
+	if !ok {
+		return false
+	}
+	units := escapedPathUnits(escapedPath, &keep)
 
-	// iterate the pattern and escaped path in lock-step;
-	// increment iPattern every time we consume a char from the pattern,
-	// increment iPath every time we consume a char from the path;
-	// iPattern and iPath are our cursors/iterator positions for each string
-	var iPattern, iPath int
-	for {
-		if iPattern >= len(matchPath) || iPath >= len(escapedPath) {
+	// matched[j] reports whether the elements so far match units[:j]
+	rows := make([]bool, 2*(len(units)+1))
+	matched, next := rows[:len(units)+1], rows[len(units)+1:]
+	matched[0] = true
+	for _, e := range elems {
+		alive := false
+		if e.kind == escStar || e.kind == escRawStar {
+			next[0] = matched[0]
+			alive = next[0]
+			for j, u := range units {
+				next[j+1] = matched[j+1] || (next[j] && e.spans(u))
+				alive = alive || next[j+1]
+			}
+		} else {
+			next[0] = false
+			for j, u := range units {
+				next[j+1] = matched[j] && e.matches(u)
+				alive = alive || next[j+1]
+			}
+		}
+		if !alive {
+			return false
+		}
+		matched, next = next, matched
+	}
+	return matched[len(units)]
+}
+
+// escapedPathUnit is one character of a request path being matched against a
+// pattern with escape sequences.
+type escapedPathUnit struct {
+	// r is the character after foldPath, or -1 for a byte that is not
+	// valid UTF-8.
+	r rune
+	// esc is the byte encoded by the escape sequence the character was
+	// written as, if the pattern may need to compare it in escaped space,
+	// or -1.
+	esc int16
+}
+
+// escapedPatternElem is one element of a path pattern with escape sequences.
+type escapedPatternElem struct {
+	kind  escapedPatternKind
+	r     rune   // for escLiteral
+	b     byte   // for escByte
+	class string // for escClass, including the brackets
+}
+
+type escapedPatternKind uint8
+
+const (
+	escLiteral escapedPatternKind = iota // a character, compared in unescaped space
+	escByte                              // an escape sequence, compared in escaped space
+	escAny                               // '?'
+	escClass                             // a character class, such as "[a-z]"
+	escStar                              // '*'
+	escRawStar                           // "%*"
+)
+
+// matches reports whether e, which is not a wildcard, matches u.
+func (e escapedPatternElem) matches(u escapedPathUnit) bool {
+	switch e.kind {
+	case escLiteral:
+		return u.r == e.r
+	case escByte:
+		return u.esc == int16(e.b)
+	case escAny:
+		return u.r != '/'
+	case escClass:
+		ok, _ := path.Match(e.class, string(u.r))
+		return ok
+	case escStar, escRawStar:
+		// wildcards span units instead; see spans
+	}
+	return false
+}
+
+// spans reports whether u may be part of the span matched by e, a wildcard.
+// Neither wildcard spans a slash, but "%*" spans an escaped one.
+func (e escapedPatternElem) spans(u escapedPathUnit) bool {
+	return u.r != '/' || (e.kind == escRawStar && u.esc >= 0)
+}
+
+// parseEscapedPattern splits pattern into the elements compared by
+// matchPatternWithEscapeSequence. It also returns the ASCII bytes whose escape
+// sequences in a request path must be kept escaped to be compared with the
+// pattern. It reports false if pattern is malformed.
+func parseEscapedPattern(pattern string) ([]escapedPatternElem, [utf8.RuneSelf]bool, bool) {
+	var (
+		elems = make([]escapedPatternElem, 0, len(pattern))
+		keep  [utf8.RuneSelf]bool
+		lit   []byte // literal text not yet folded
+	)
+	flush := func() {
+		foldEach(lit, func(r rune) {
+			elems = append(elems, escapedPatternElem{kind: escLiteral, r: r})
+		})
+		lit = lit[:0]
+	}
+	for i := 0; i < len(pattern); {
+		if b, ok := unescapeByte(pattern[i:]); ok {
+			if b < utf8.RuneSelf {
+				flush()
+				elems = append(elems, escapedPatternElem{kind: escByte, b: b})
+				keep[b] = true
+				i += 3
+				continue
+			}
+			// a character outside ASCII has only one escaped form, so
+			// it is compared like the character itself
+			r, n := unescapeChar(pattern[i:])
+			if n == 3 && r == utf8.RuneError {
+				flush()
+				elems = append(elems, escapedPatternElem{kind: escByte, b: b})
+			} else {
+				lit = utf8.AppendRune(lit, r)
+			}
+			i += n
+			continue
+		}
+		switch pattern[i] {
+		case '%':
+			if i+1 < len(pattern) && pattern[i+1] == '*' {
+				flush()
+				elems = append(elems, escapedPatternElem{kind: escRawStar})
+				keep['/'] = true
+				i += 2
+				continue
+			}
+			lit = append(lit, '%')
+			i++
+		case '*':
+			flush()
+			elems = append(elems, escapedPatternElem{kind: escStar})
+			i++
+		case '?':
+			flush()
+			elems = append(elems, escapedPatternElem{kind: escAny})
+			i++
+		case '[':
+			n := classLen(pattern[i:])
+			if n < 0 {
+				return nil, keep, false
+			}
+			class := foldPath(pattern[i : i+n])
+			if _, err := path.Match(class, ""); err != nil {
+				return nil, keep, false
+			}
+			flush()
+			elems = append(elems, escapedPatternElem{kind: escClass, class: class})
+			i += n
+		case '\\':
+			if i+1 >= len(pattern) {
+				return nil, keep, false
+			}
+			_, n := utf8.DecodeRuneInString(pattern[i+1:])
+			lit = append(lit, pattern[i+1:i+1+n]...)
+			i += 1 + n
+		default:
+			lit = append(lit, pattern[i])
+			i++
+		}
+	}
+	flush()
+	return elems, keep, true
+}
+
+// escapedPathUnits decodes escapedPath into the characters compared by
+// matchPatternWithEscapeSequence. The escape sequences of the ASCII bytes in
+// keep are kept as units of their own; everything else is unescaped and run
+// through foldPath, so the unescaped text is folded and normalized as a whole
+// (e.g. "e%CC%81" becomes one 'é').
+func escapedPathUnits(escapedPath string, keep *[utf8.RuneSelf]bool) []escapedPathUnit {
+	units := make([]escapedPathUnit, 0, len(escapedPath))
+	text := make([]byte, 0, len(escapedPath)) // unescaped text not yet folded
+	flush := func() {
+		foldEach(text, func(r rune) {
+			units = append(units, escapedPathUnit{r: r, esc: -1})
+		})
+		text = text[:0]
+	}
+	for i := 0; i < len(escapedPath); {
+		b, ok := unescapeByte(escapedPath[i:])
+		switch {
+		case !ok:
+			text = append(text, escapedPath[i])
+			i++
+		case b < utf8.RuneSelf && keep[b]:
+			flush()
+			r := rune(b)
+			if 'A' <= r && r <= 'Z' {
+				r += 'a' - 'A'
+			}
+			units = append(units, escapedPathUnit{r: r, esc: int16(b)})
+			i += 3
+		case b < utf8.RuneSelf:
+			text = append(text, b)
+			i += 3
+		default:
+			r, n := unescapeChar(escapedPath[i:])
+			if n == 3 && r == utf8.RuneError {
+				flush()
+				units = append(units, escapedPathUnit{r: -1, esc: int16(b)})
+			} else {
+				text = utf8.AppendRune(text, r)
+			}
+			i += n
+		}
+	}
+	flush()
+	return units
+}
+
+// foldEach calls fn with each character of foldPath(text).
+func foldEach(text []byte, fn func(rune)) {
+	for _, c := range text {
+		if c >= utf8.RuneSelf {
+			for _, r := range foldPath(string(text)) {
+				fn(r)
+			}
+			return
+		}
+	}
+	for _, c := range text {
+		if 'A' <= c && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		fn(rune(c))
+	}
+}
+
+// unescapeByte decodes the escape sequence at the start of s, if any.
+func unescapeByte(s string) (byte, bool) {
+	if len(s) < 3 || s[0] != '%' {
+		return 0, false
+	}
+	hi, ok1 := unhex(s[1])
+	lo, ok2 := unhex(s[2])
+	return hi<<4 | lo, ok1 && ok2
+}
+
+// unescapeChar decodes the character outside ASCII that is written at the
+// start of s as one escape sequence per UTF-8 byte. It returns the character
+// and the number of bytes of s it spans, or utf8.RuneError and 3 if the first
+// byte does not start a valid UTF-8 sequence.
+func unescapeChar(s string) (rune, int) {
+	var buf [utf8.UTFMax]byte
+	n := 0
+	for n < len(buf) && !utf8.FullRune(buf[:n]) {
+		b, ok := unescapeByte(s[3*n:])
+		if !ok {
 			break
 		}
-		// get the next character from the request path
-
-		pathCh := string(escapedPath[iPath])
-		var escapedPathCh string
-
-		// normalize (decode) escape sequences
-		if pathCh == "%" && len(escapedPath) >= iPath+3 {
-			// hold onto this in case we find out the intent is to match in escaped space here;
-			// we lowercase it even though technically the spec says: "For consistency, URI
-			// producers and normalizers should use uppercase hexadecimal digits for all percent-
-			// encodings" (RFC 3986 section 2.1) - we lowercased the matcher pattern earlier in
-			// provisioning so we do the same here to gain case-insensitivity in equivalence;
-			// besides, this string is never shown visibly
-			escapedPathCh = strings.ToLower(escapedPath[iPath : iPath+3])
-
-			var err error
-			pathCh, err = url.PathUnescape(escapedPathCh)
-			if err != nil {
-				// should be impossible unless EscapedPath() is giving us an invalid sequence!
-				return false
-			}
-			iPath += 2 // escape sequence is 2 bytes longer than normal char
-		}
-
-		// now get the next character from the pattern
-
-		normalize := true
-		switch matchPath[iPattern] {
-		case '%':
-			// escape sequence
-
-			// if not a wildcard ("%*"), compare literally; consume next two bytes of pattern
-			if len(matchPath) >= iPattern+3 && matchPath[iPattern+1] != '*' {
-				sb.WriteString(escapedPathCh)
-				iPath++
-				iPattern += 2
-				break
-			}
-
-			// escaped wildcard sequence; consume next byte only ('*')
-			iPattern++
-			normalize = false
-
-			fallthrough
-		case '*':
-			// wildcard, so consume until next matching character
-			remaining := escapedPath[iPath:]
-			until := len(escapedPath) - iPath // go until end of string...
-			if iPattern < len(matchPath)-1 {  // ...unless the * is not at the end
-				nextCh := matchPath[iPattern+1]
-				until = strings.IndexByte(remaining, nextCh)
-				if until == -1 {
-					// terminating char of wildcard span not found, so definitely no match
-					return false
-				}
-			}
-			if until == 0 {
-				// empty span; nothing to add on this iteration
-				break
-			}
-			next := remaining[:until]
-			if normalize {
-				var err error
-				next, err = url.PathUnescape(next)
-				if err != nil {
-					return false // should be impossible anyway
-				}
-			}
-			sb.WriteString(next)
-			iPath += until
-		default:
-			sb.WriteString(pathCh)
-			iPath++
-		}
-
-		iPattern++
+		buf[n] = b
+		n++
 	}
+	r, size := utf8.DecodeRune(buf[:n])
+	if r == utf8.RuneError && size <= 1 {
+		return utf8.RuneError, 3
+	}
+	return r, 3 * size
+}
 
-	// if the pattern was fully consumed before the path, the remaining path
-	// bytes still have to be part of the string we match against; otherwise a
-	// pattern with no trailing wildcard (e.g. "/foo%2fbar") would behave like a
-	// prefix match and incorrectly match longer paths (e.g. "/foo%2fbarbaz").
-	// the pattern has no more escape hints here, so compare in normalised space.
-	if iPath < len(escapedPath) {
-		remaining := escapedPath[iPath:]
-		if unescaped, err := url.PathUnescape(remaining); err == nil {
-			sb.WriteString(unescaped)
-		} else {
-			sb.WriteString(remaining)
+func unhex(c byte) (byte, bool) {
+	switch {
+	case '0' <= c && c <= '9':
+		return c - '0', true
+	case 'a' <= c && c <= 'f':
+		return c - 'a' + 10, true
+	case 'A' <= c && c <= 'F':
+		return c - 'A' + 10, true
+	}
+	return 0, false
+}
+
+// classLen returns the length of the character class at the start of s, or
+// -1 if it is not closed.
+func classLen(s string) int {
+	for i := 1; i < len(s); i++ {
+		switch s[i] {
+		case '\\':
+			i++
+		case ']':
+			return i + 1
 		}
 	}
+	return -1
+}
 
-	// we can now treat rawpath globs (%*) as regular globs (*)
-	matchPath = strings.ReplaceAll(matchPath, "%*", "*")
+// pathFolder case-folds paths for foldPath. It is stateless and safe for
+// concurrent use.
+var pathFolder = cases.Fold()
 
-	// ignore error here because we can't handle it anyway
-	matches, _ := path.Match(matchPath, strings.ToLower(sb.String()))
-	return matches
+// foldPath maps p to the form the case-insensitive path matcher compares:
+// Unicode default case folding (the C and F mappings in CaseFolding.txt) of
+// its canonical decomposition, recomposed into NFC. Two paths fold to the same
+// string exactly when they are canonical caseless matches (Unicode section
+// 3.13), which is how case-insensitive APFS volumes on macOS compare names:
+// /SECRET, /ſecret and /secret fold together, as do /paßword and /password,
+// and "café" spelled with a precomposed 'é' or with 'e' and a combining acute
+// accent. Turkic mappings are not applied, so 'ı' (U+0131) stays distinct
+// from 'i'.
+func foldPath(p string) string {
+	for i := 0; i < len(p); i++ {
+		if p[i] >= utf8.RuneSelf {
+			return norm.NFC.String(pathFolder.String(norm.NFD.String(p)))
+		}
+	}
+	return strings.ToLower(p)
 }
 
 // windowsEscapedPathSeparatorRepl normalizes Windows backslash separators
