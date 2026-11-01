@@ -39,6 +39,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/caddyserver/caddy/v2/internal"
 	"github.com/caddyserver/caddy/v2/internal/filesystems"
 	"github.com/caddyserver/caddy/v2/notify"
 )
@@ -432,6 +433,7 @@ func run(newCfg *Config, start bool) (Context, error) {
 		// partially copied from provisionContext
 		if err != nil {
 			globalMetrics.configSuccess.Set(0)
+			ctx.cfg.Logging.releaseStdLogSink()
 			ctx.cfg.cancelFunc(fmt.Errorf("configuration start error: %w", err))
 
 			if currentCtx.cfg != nil {
@@ -510,6 +512,7 @@ func provisionContext(newCfg *Config, replaceAdminServer bool) (Context, error) 
 			// since the associated config won't be used;
 			// this will cause all modules that were newly
 			// provisioned to clean themselves up
+			newCfg.Logging.releaseStdLogSink()
 			cancelCause(fmt.Errorf("configuration error: %w", err))
 
 			// also undo any other state changes we made
@@ -779,6 +782,14 @@ func exitProcess(ctx context.Context, logger *zap.Logger) {
 		logger.Error("failed to stop apps", zap.Error(err))
 		exitCode = ExitCodeFailedQuit
 	}
+
+	// Allow held module cleanup to finish, but do not wait indefinitely.
+	cleanupCtx, cancelCleanup := context.WithTimeout(ctx, moduleCleanupTimeout)
+	if err := internal.WaitForCleanup(cleanupCtx); err != nil {
+		logger.Error("timed out waiting for module cleanup", zap.Error(err))
+		exitCode = ExitCodeFailedQuit
+	}
+	cancelCleanup()
 
 	// clean up certmagic locks
 	certmagic.CleanUpOwnLocks(ctx, logger)
@@ -1325,3 +1336,6 @@ var errSameConfig = errors.New("config is unchanged")
 // ImportPath is the package import path for Caddy core.
 // This identifier may be removed in the future.
 const ImportPath = "github.com/caddyserver/caddy/v2"
+
+// moduleCleanupTimeout bounds process-exit waiting for retired module cleanup.
+const moduleCleanupTimeout = 30 * time.Second
