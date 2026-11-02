@@ -12,6 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Multipath TCP is disabled on listeners by default. Since Go 1.24 it is
+// enabled by default for listeners on Linux; Caddy does not rely on it, and
+// MPTCP listeners are the demonstrated exploit path for CVE-2026-98432.
+// Users who want MPTCP can opt back in with GODEBUG=multipathtcp=2.
+//
+//go:debug multipathtcp=0
+
 // Package main is the entry point of the Caddy application.
 // Most of Caddy's functionality is provided through modules,
 // which can be plugged in by adding their import below.
