@@ -44,7 +44,7 @@ require (
 	go.uber.org/zap v1.28.0
 	go.uber.org/zap/exp v0.3.0
 	golang.org/x/crypto v0.57.0
-	golang.org/x/crypto/x509roots/fallback v0.0.0-20260929172509-b39ff6d641ec
+	golang.org/x/crypto/x509roots/fallback v0.0.0-20261030153154-30a33513ff6d
 	golang.org/x/net v0.60.0
 	golang.org/x/sync v0.23.0
 	golang.org/x/term v0.46.0
