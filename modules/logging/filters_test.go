@@ -31,6 +31,28 @@ func TestIPMaskSingleValue(t *testing.T) {
 	}
 }
 
+func TestIPMaskInvalidCIDR(t *testing.T) {
+	for _, f := range []IPMaskFilter{
+		{IPv4MaskRaw: 33},
+		{IPv4MaskRaw: -1},
+		{IPv6MaskRaw: 129},
+		{IPv6MaskRaw: -8},
+	} {
+		if err := f.Provision(caddy.Context{}); err == nil {
+			t.Errorf("expected error for ipv4=%d ipv6=%d", f.IPv4MaskRaw, f.IPv6MaskRaw)
+		}
+	}
+
+	f := IPMaskFilter{IPv4MaskRaw: 32, IPv6MaskRaw: 128}
+	if err := f.Provision(caddy.Context{}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := f.Filter(zapcore.Field{String: "1.2.3.4, 2001:db8::1"})
+	if out.String != "1.2.3.4, 2001:db8::1" {
+		t.Fatalf("field changed with full masks: %s", out.String)
+	}
+}
+
 func TestIPMaskCommaValue(t *testing.T) {
 	f := IPMaskFilter{IPv4MaskRaw: 16, IPv6MaskRaw: 32}
 	f.Provision(caddy.Context{})
@@ -102,6 +124,23 @@ func TestQueryFilterSingleValue(t *testing.T) {
 	out := f.Filter(zapcore.Field{String: "/path?foo=a&foo=b&bar=c&bar=d&baz=e&hash=hashed"})
 	if out.String != "/path?baz=e&foo=REDACTED&foo=REDACTED&hash=1a06df82" {
 		t.Fatalf("query parameters have not been filtered: %s", out.String)
+	}
+}
+
+func TestQueryFilterHashInRequestURI(t *testing.T) {
+	f := QueryFilter{[]queryFilterAction{
+		{replaceAction, "token", "REDACTED"},
+	}}
+
+	// A request-target has no fragment, so '#' is part of the query.
+	for uri, expected := range map[string]string{
+		"/path?x=1#&token=secret": "/path?token=REDACTED&x=1%23",
+		"/path?token=secret#%zz":  "/path",
+	} {
+		out := f.Filter(zapcore.Field{String: uri})
+		if out.String != expected {
+			t.Errorf("filtering %q: got %q, expected %q", uri, out.String, expected)
+		}
 	}
 }
 

@@ -16,6 +16,7 @@ package caddyhttp
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -156,4 +157,70 @@ func TestMatchVarsREDoesNotExpandResolvedValues(t *testing.T) {
 			}
 		})
 	}
+}
+// TestVarsMatchersTreatErrorsByType verifies the error handling split in the
+// vars matchers: only the request-body limit marker aborts request handling,
+// while unrelated errors are matched on their text exactly like before.
+func TestVarsMatchersTreatErrorsByType(t *testing.T) {
+	unrelated := HandlerError{Err: errors.New("boom"), StatusCode: http.StatusInternalServerError}
+	bodyLimit := RequestBodyLimitError{Err: &http.MaxBytesError{Limit: 10}}
+
+	t.Run("vars matcher matches unrelated errors on text like before", func(t *testing.T) {
+		req, _ := newVarsTestRequest(t, "", nil, map[string]any{"k": unrelated})
+		matched, err := (VarsMatcher{"k": []string{unrelated.Error()}}).MatchWithError(req)
+		if err != nil {
+			t.Fatalf("unrelated handler errors must not control request handling but got %v", err)
+		}
+		if !matched {
+			t.Error("expected a text match like before")
+		}
+	})
+
+	t.Run("vars regexp matcher matches unrelated errors on text like before", func(t *testing.T) {
+		req, _ := newVarsTestRequest(t, "", nil, map[string]any{"k": unrelated})
+		re := MatchVarsRE{"k": &MatchRegexp{Pattern: "^.*HTTP 500.*$"}}
+		if err := re.Provision(caddy.Context{}); err != nil {
+			t.Fatalf("provisioning the regexp: %v", err)
+		}
+		matched, err := re.MatchWithError(req)
+		if err != nil {
+			t.Fatalf("unrelated handler errors must not control request handling but got %v", err)
+		}
+		if !matched {
+			t.Error("expected the error text to match the regexp like before")
+		}
+	})
+
+	t.Run("body limit marker is the only propagated error", func(t *testing.T) {
+		req, _ := newVarsTestRequest(t, "", nil, map[string]any{"k": bodyLimit})
+
+		matched, err := (VarsMatcher{"k": []string{"x"}}).MatchWithError(req)
+		var marker RequestBodyLimitError
+		if err == nil || !errors.As(err, &marker) {
+			t.Fatalf("expected the body limit marker from the vars matcher but got %v", err)
+		}
+		handlerErr, ok := err.(HandlerError)
+		if !ok || handlerErr.StatusCode != http.StatusRequestEntityTooLarge {
+			t.Errorf("expected a 413 handler error carrying the marker but got %v", err)
+		}
+		if matched {
+			t.Error("no vars match should happen when the marker aborts")
+		}
+
+		re := MatchVarsRE{"k": &MatchRegexp{Pattern: ".*"}}
+		if err := re.Provision(caddy.Context{}); err != nil {
+			t.Fatalf("provisioning the regexp: %v", err)
+		}
+		matched, err = re.MatchWithError(req)
+		if err == nil || !errors.As(err, &marker) {
+			t.Fatalf("expected the body limit marker from the regexp matcher too but got %v", err)
+		}
+		handlerErr, ok = err.(HandlerError)
+		if !ok || handlerErr.StatusCode != http.StatusRequestEntityTooLarge {
+			t.Errorf("expected a 413 handler error carrying the marker but got %v", err)
+		}
+		if matched {
+			t.Error("no regexp match should happen when the marker aborts")
+		}
+	})
 }

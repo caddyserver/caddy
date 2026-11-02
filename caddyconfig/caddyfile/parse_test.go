@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -476,6 +477,43 @@ func TestRecursiveImport(t *testing.T) {
 	}
 	if !isExpected(result) {
 		t.Error("relative+absolute import failed")
+	}
+}
+
+// TestParseImportInaccessibleFile ensures that an import path which exists
+// but cannot be accessed reports the underlying OS error instead of the
+// misleading "File to import not found" (issue #8161). A path through a
+// regular file fails stat with ENOTDIR, unlike a genuinely missing file,
+// which must keep the "not found" message. Windows reports that same path
+// as not existing instead, so the through-a-file case is skipped there;
+// the permission-denied case from the issue is unaffected.
+func TestParseImportInaccessibleFile(t *testing.T) {
+	testParseOne := func(input string) (ServerBlock, error) {
+		p := testParser(input)
+		p.Next() // parseOne doesn't call Next() to start, so we must
+		err := p.parseOne()
+		return p.block, err
+	}
+
+	if runtime.GOOS != "windows" {
+		_, err := testParseOne("import testdata/import_test1.txt/child.txt")
+		if err == nil {
+			t.Fatal("expected error importing through a regular file, got nil")
+		}
+		if strings.Contains(err.Error(), "not found") {
+			t.Errorf("expected OS error to be reported, got: %v", err)
+		}
+		if !strings.Contains(err.Error(), "child.txt") {
+			t.Errorf("expected error to name the import path, got: %v", err)
+		}
+	}
+
+	_, err := testParseOne("import testdata/not_found.txt")
+	if err == nil {
+		t.Fatal("expected error importing a missing file, got nil")
+	}
+	if !strings.Contains(err.Error(), "File to import not found") {
+		t.Errorf("expected 'File to import not found' for a missing file, got: %v", err)
 	}
 }
 
@@ -1069,6 +1107,21 @@ func TestImportedSnippetDefinitionRetainsBlockPlaceholder(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestResolveImportGlob(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "a.caddy"), []byte("a\n"), 0o600)
+	os.WriteFile(filepath.Join(dir, "b.caddy"), []byte("b\n"), 0o600)
+	os.WriteFile(filepath.Join(dir, ".hidden.caddy"), []byte("h\n"), 0o600)
+	importer := filepath.Join(dir, "Caddyfile")
+	matches, _, err := resolveImportGlob(importer, "*.caddy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 2 { // dotfile skipped for glob
+		t.Errorf("got %d matches, want 2: %v", len(matches), matches)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -11,16 +12,20 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/http3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 type syncBuffer struct {
@@ -1531,6 +1536,240 @@ func TestServer_ServeHTTP_DelayedHandlerErrorWritesErrorStatus(t *testing.T) {
 
 			eventuallyLogged(t, buf, `"status":418`)
 			assert.NotContains(t, buf.String(), "write_error")
+		})
+	}
+}
+
+func TestServer_ServeHTTP_IdleTimeouts(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		timeout caddy.Duration
+		applied bool
+	}{
+		{name: "positive", timeout: caddy.Duration(time.Minute), applied: true},
+		{name: "negative disables", timeout: -1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var reader *IdleTimeoutReader
+			var writer *IdleTimeoutWriter
+			s := &Server{
+				ReadIdleTimeout:  tc.timeout,
+				WriteIdleTimeout: tc.timeout,
+				logger:           zap.NewNop(),
+				errorLogger:      zap.NewNop(),
+				primaryHandlerChain: HandlerFunc(func(_ http.ResponseWriter, r *http.Request) error {
+					reader, writer = IdleTimeoutsFromContext(r.Context())
+					return nil
+				}),
+			}
+			ts := httptest.NewServer(http.HandlerFunc(s.ServeHTTP))
+			t.Cleanup(ts.Close)
+
+			resp, err := ts.Client().Post(ts.URL, "text/plain", strings.NewReader("x"))
+			require.NoError(t, err)
+			resp.Body.Close()
+
+			assert.Equal(t, tc.applied, reader != nil)
+			assert.Equal(t, tc.applied, writer != nil)
+		})
+	}
+}
+
+// TestServer_ServeHTTP_HandlerReadDeadline checks that a read deadline
+// set by a handler through http.ResponseController still applies to a
+// stalled request body, instead of being replaced by the idle reader.
+func TestServer_ServeHTTP_HandlerReadDeadline(t *testing.T) {
+	readErr := make(chan error, 1)
+	s := &Server{
+		ReadIdleTimeout: caddy.Duration(time.Minute),
+		logger:          zap.NewNop(),
+		errorLogger:     zap.NewNop(),
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			if err := http.NewResponseController(w).SetReadDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
+				readErr <- err
+				return nil
+			}
+			_, err := io.ReadAll(r.Body)
+			readErr <- err
+			return nil
+		}),
+	}
+	ts := httptest.NewServer(http.HandlerFunc(s.ServeHTTP))
+	t.Cleanup(ts.Close)
+
+	conn, err := net.Dial("tcp", ts.Listener.Addr().String())
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+
+	// announce a body, send one byte of it and stall
+	_, err = io.WriteString(conn, "POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 10\r\n\r\nx")
+	require.NoError(t, err)
+
+	select {
+	case err := <-readErr:
+		require.ErrorIs(t, err, os.ErrDeadlineExceeded)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the handler's read deadline was replaced by the idle timeout")
+	}
+}
+
+// TestServer_BuildHTTP3ServerEnablesWebTransport asserts that with
+// WebTransport set the http3.Server advertises WebTransport in
+// its SETTINGS and wires the prerequisites webtransport.Server.Upgrade
+// relies on: DATAGRAM support, a non-nil ConnContext hook (used to stash
+// the underlying *quic.Conn for Upgrade to retrieve), and QUIC
+// stream-reset partial delivery.
+func TestServer_BuildHTTP3ServerEnablesWebTransport(t *testing.T) {
+	s := &Server{WebTransport: new(WebTransportConfig)}
+	h3 := s.buildHTTP3Server(&tls.Config{})
+
+	assert.NotNil(t, h3, "expected non-nil http3.Server")
+	assert.True(t, h3.EnableDatagrams, "EnableDatagrams must be true for WebTransport DATAGRAMs")
+	assert.NotEmpty(t, h3.AdditionalSettings, "AdditionalSettings must advertise WebTransport enablement")
+	assert.NotNil(t, h3.ConnContext, "ConnContext must be set so webtransport.Server.Upgrade can retrieve the *quic.Conn")
+	assert.NotNil(t, h3.QUICConfig, "QUICConfig must be set")
+	assert.True(t, h3.QUICConfig.EnableStreamResetPartialDelivery, "EnableStreamResetPartialDelivery is required by webtransport-go")
+}
+
+// TestServer_BuildHTTP3ServerWithoutWebTransport asserts that with
+// WebTransport unset (the default) the http3.Server does NOT
+// advertise WebTransport and does not enable the related QUIC/HTTP/3
+// features. This is the load-bearing regression guard: non-WT HTTP/3
+// deployments must pay zero cost for the WebTransport feature.
+func TestServer_BuildHTTP3ServerWithoutWebTransport(t *testing.T) {
+	s := &Server{}
+	h3 := s.buildHTTP3Server(&tls.Config{})
+
+	assert.NotNil(t, h3)
+	assert.False(t, h3.EnableDatagrams, "EnableDatagrams must be false when WebTransport is disabled")
+	assert.Empty(t, h3.AdditionalSettings, "AdditionalSettings must be empty when WebTransport is disabled")
+	assert.Nil(t, h3.ConnContext, "ConnContext must be nil when WebTransport is disabled")
+	assert.NotNil(t, h3.QUICConfig)
+	assert.False(t, h3.QUICConfig.EnableStreamResetPartialDelivery, "EnableStreamResetPartialDelivery must be false when WebTransport is disabled")
+}
+
+// TestServer_BuildHTTP3ServerAppliesHandlerAndTLS is a smoke test for the
+// non-WebTransport fields of the constructed http3.Server, guarding against a
+// refactor accidentally dropping them.
+func TestServer_BuildHTTP3ServerAppliesHandlerAndTLS(t *testing.T) {
+	s := &Server{MaxHeaderBytes: 4096}
+	tlsCfg := &tls.Config{}
+	h3 := s.buildHTTP3Server(tlsCfg)
+
+	assert.Same(t, s, h3.Handler, "http3.Server.Handler should be the caddyhttp.Server itself")
+	assert.Same(t, tlsCfg, h3.TLSConfig, "http3.Server.TLSConfig should be the config passed in")
+	assert.Equal(t, 4096, h3.MaxHeaderBytes)
+}
+
+// TestServer_WebTransportServerNilUntilH3 asserts the accessor returns nil
+// when HTTP/3 has not been configured.
+func TestServer_WebTransportServerNilUntilH3(t *testing.T) {
+	s := &Server{}
+	assert.Nil(t, s.WebTransportServer(), "expected nil before HTTP/3 setup")
+}
+
+// stubQUICListenerWithoutWT implements http3.QUICListener and reports that
+// WebTransport is not supported. Accept returns immediately with an error so
+// that h3server.ServeListener exits promptly when the fallback path is taken.
+type stubQUICListenerWithoutWT struct{}
+
+func (stubQUICListenerWithoutWT) Accept(context.Context) (*quic.Conn, error) {
+	return nil, errors.New("stub: no connections")
+}
+
+func (stubQUICListenerWithoutWT) Addr() net.Addr {
+	return &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 9443}
+}
+
+func (stubQUICListenerWithoutWT) Close() error { return nil }
+
+func (stubQUICListenerWithoutWT) SupportsWebTransport() bool { return false }
+
+// TestServeH3AcceptLoopFallsBackWhenListenerLacksWebTransport verifies that
+// when WebTransport is enabled but the QUIC listener was created without
+// DATAGRAM support, serveH3AcceptLoop falls back to plain HTTP/3 with a
+// warning instead of calling webtransport.Server.ServeQUICConn. wtServer is
+// intentionally nil so the WebTransport branch cannot be silently taken; the
+// logged warning proves the fallback path was used.
+func TestServeH3AcceptLoopFallsBackWhenListenerLacksWebTransport(t *testing.T) {
+	core, logs := observer.New(zapcore.WarnLevel)
+	s := &Server{
+		WebTransport: new(WebTransportConfig),
+		logger:       zap.New(core),
+		h3server:     &http3.Server{},
+		// wtServer left nil: WebTransport path would nil-panic
+	}
+	// Must not panic: fallback uses a plain ServeListener, not wtServer.
+	s.serveH3AcceptLoop(stubQUICListenerWithoutWT{})
+
+	if logs.FilterMessageSnippet("WebTransport unavailable").Len() != 1 {
+		t.Errorf("expected fallback warning to be logged, got logs: %v", logs.All())
+	}
+}
+
+// TestHTTP3ServerForListenerOmitsWebTransportSettingsWhenListenerLacksSupport
+// is the SETTINGS half of the fallback: the server used for that listener
+// must not advertise WebTransport, even though the parent Server opted in.
+func TestHTTP3ServerForListenerOmitsWebTransportSettingsWhenListenerLacksSupport(t *testing.T) {
+	core, logs := observer.New(zapcore.WarnLevel)
+	tlsCfg := &tls.Config{}
+	s := &Server{
+		WebTransport: new(WebTransportConfig),
+		logger:       zap.New(core),
+	}
+	s.h3server = s.buildHTTP3Server(tlsCfg)
+	assert.True(t, s.h3server.EnableDatagrams)
+	assert.NotEmpty(t, s.h3server.AdditionalSettings)
+
+	plain := s.http3ServerForListener(stubQUICListenerWithoutWT{})
+	if plain == s.h3server {
+		t.Fatal("fallback must not reuse the WebTransport-configured HTTP/3 server")
+	}
+	assert.False(t, plain.EnableDatagrams, "fallback must not enable DATAGRAMs")
+	assert.Empty(t, plain.AdditionalSettings, "fallback must not advertise WebTransport SETTINGS")
+	assert.Nil(t, plain.ConnContext)
+	assert.False(t, plain.QUICConfig.EnableStreamResetPartialDelivery)
+	if logs.FilterMessageSnippet("WebTransport unavailable").Len() != 1 {
+		t.Errorf("expected fallback warning to be logged, got logs: %v", logs.All())
+	}
+}
+
+func TestServerLogLevel(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		level   any
+		status  int
+		minimum zapcore.Level
+		want    zapcore.Level
+		skip    bool
+		count   int
+	}{
+		{"default info", nil, 200, zapcore.DebugLevel, zapcore.InfoLevel, false, 1},
+		{"default error", nil, 500, zapcore.DebugLevel, zapcore.ErrorLevel, false, 1},
+		{"debug", "debug", 200, zapcore.DebugLevel, zapcore.DebugLevel, false, 1},
+		{"warn", "WARN", 200, zapcore.DebugLevel, zapcore.WarnLevel, false, 1},
+		{"error", "ERROR", 200, zapcore.DebugLevel, zapcore.ErrorLevel, false, 1},
+		{"override error", "INFO", 500, zapcore.DebugLevel, zapcore.InfoLevel, false, 1},
+		{"invalid", "invalid", 500, zapcore.DebugLevel, zapcore.ErrorLevel, false, 1},
+		{"unsafe level", "FATAL", 200, zapcore.DebugLevel, zapcore.InfoLevel, false, 1},
+		{"wrong type", 2, 200, zapcore.DebugLevel, zapcore.InfoLevel, false, 1},
+		{"filtered", "INFO", 200, zapcore.WarnLevel, zapcore.InfoLevel, false, 0},
+		{"promoted", "WARN", 200, zapcore.WarnLevel, zapcore.WarnLevel, false, 1},
+		{"skipped", "ERROR", 200, zapcore.DebugLevel, zapcore.ErrorLevel, true, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			core, logs := observer.New(tc.minimum)
+			ctx := context.WithValue(context.Background(), ExtraLogFieldsCtxKey, new(ExtraLogFields))
+			ctx = context.WithValue(ctx, VarsCtxKey, map[string]any{LogLevelVar: tc.level, LogSkipVar: tc.skip})
+			req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
+			rec := NewResponseRecorder(httptest.NewRecorder(), nil, nil)
+			rec.WriteHeader(tc.status)
+			duration := time.Millisecond
+			(&Server{}).logRequest(zap.New(core), req, rec, &duration, nil, NewTestReplacer(req), nil, false)
+			require.Equal(t, tc.count, logs.Len())
+			if tc.count > 0 {
+				assert.Equal(t, tc.want, logs.All()[0].Level)
+			}
 		})
 	}
 }

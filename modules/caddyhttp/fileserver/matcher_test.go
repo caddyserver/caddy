@@ -55,7 +55,28 @@ func TestFileMatcher(t *testing.T) {
 		f.Close()
 	}
 
+	if err := os.WriteFile("./testdata/.env", []byte("SECRET=1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		os.Remove("./testdata/.env")
+	})
+
 	for i, tc := range []testCase{
+		{
+			path:         "/.env",
+			expectedPath: "/.env",
+			expectedType: "file",
+			matched:      true,
+		},
+		{
+			path:    "/.env/",
+			matched: false,
+		},
+		{
+			path:    "/.env/./",
+			matched: false,
+		},
 		{
 			path:         "/foo.txt",
 			expectedPath: "/foo.txt",
@@ -63,9 +84,21 @@ func TestFileMatcher(t *testing.T) {
 			matched:      true,
 		},
 		{
-			path:         "/foo.txt/",
-			expectedPath: "/foo.txt",
-			expectedType: "file",
+			path:    "/foo.txt/",
+			matched: false,
+		},
+		{
+			path:    "/foo.txt/./",
+			matched: false,
+		},
+		{
+			path:    "/foo.txt//",
+			matched: false,
+		},
+		{
+			path:         "/foodir/./",
+			expectedPath: "/foodir/",
+			expectedType: "directory",
 			matched:      true,
 		},
 		{
@@ -330,8 +363,18 @@ func TestPHPFileMatcher(t *testing.T) {
 			matched:      true,
 		},
 		{
-			path:         "/notphp.php.txt/",
-			expectedPath: "/notphp.php.txt",
+			path:    "/notphp.php.txt/",
+			matched: false,
+		},
+		{
+			path:         "/index.php/",
+			expectedPath: "/index.php",
+			expectedType: "file",
+			matched:      true,
+		},
+		{
+			path:         "/index.php/somewhere/",
+			expectedPath: "/index.php",
 			expectedType: "file",
 			matched:      true,
 		},
@@ -545,5 +588,201 @@ func TestMatchExpressionMatch(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// try_policy first_exist_fallback is documented to match unconditionally,
+// falling back to the last try_files entry when no earlier candidate exists.
+// It must therefore match even when that last entry names a file that is not
+// on disk. php_fastcgi relies on this: its generated rewrite route is the only
+// step that normalizes r.URL.Path before the FastCGI transport reads it, so a
+// matcher that fails here silently removes that normalization.
+func TestFirstExistFallbackMatchesWhenFinalFileIsAbsent(t *testing.T) {
+	for i, tc := range []struct {
+		name         string
+		tryFiles     []string
+		policy       string
+		path         string
+		matched      bool
+		expectedPath string
+	}{
+		{
+			name:         "fallback matches although the final file is absent",
+			tryFiles:     []string{"{http.request.uri.path}", "no-such-index.php"},
+			policy:       tryPolicyFirstExistFallback,
+			path:         "/does-not-exist.php",
+			matched:      true,
+			expectedPath: "/no-such-index.php",
+		},
+		{
+			name:         "fallback still prefers an earlier candidate that exists",
+			tryFiles:     []string{"{http.request.uri.path}", "no-such-index.php"},
+			policy:       tryPolicyFirstExistFallback,
+			path:         "/foo.txt",
+			matched:      true,
+			expectedPath: "/foo.txt",
+		},
+		{
+			name:         "fallback uses the final entry when it does exist",
+			tryFiles:     []string{"{http.request.uri.path}", "index.php"},
+			policy:       tryPolicyFirstExistFallback,
+			path:         "/does-not-exist.php",
+			matched:      true,
+			expectedPath: "/index.php",
+		},
+		{
+			name:     "first_exist does NOT fall back",
+			tryFiles: []string{"{http.request.uri.path}", "no-such-index.php"},
+			policy:   tryPolicyFirstExist,
+			path:     "/does-not-exist.php",
+			matched:  false,
+		},
+		{
+			name:     "empty policy behaves as first_exist",
+			tryFiles: []string{"{http.request.uri.path}", "no-such-index.php"},
+			policy:   "",
+			path:     "/does-not-exist.php",
+			matched:  false,
+		},
+		{
+			name:         "fallback uses the final entry literally when its glob expands to nothing",
+			tryFiles:     []string{"{http.request.uri.path}", "absent[0-9].php"},
+			policy:       tryPolicyFirstExistFallback,
+			path:         "/does-not-exist.php",
+			matched:      true,
+			expectedPath: "/absent[0-9].php",
+		},
+		{
+			name:     "first_exist does not use a pattern expanding to nothing literally",
+			tryFiles: []string{"absent[0-9].txt"},
+			policy:   tryPolicyFirstExist,
+			path:     "/whatever",
+			matched:  false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := &MatchFile{
+				fsmap:     &filesystems.FileSystemMap{},
+				Root:      "./testdata",
+				TryFiles:  tc.tryFiles,
+				TryPolicy: tc.policy,
+				SplitPath: []string{".php"},
+			}
+
+			u, err := url.Parse(tc.path)
+			if err != nil {
+				t.Fatalf("Test %d: parsing path: %v", i, err)
+			}
+			req := &http.Request{URL: u}
+			repl := caddyhttp.NewTestReplacer(req)
+
+			result, err := m.MatchWithError(req)
+			if err != nil {
+				t.Fatalf("Test %d: unexpected error: %v", i, err)
+			}
+			if result != tc.matched {
+				t.Fatalf("Test %d: expected match=%t, got %t", i, tc.matched, result)
+			}
+			if !result {
+				return
+			}
+
+			rel, _ := repl.Get("http.matchers.file.relative")
+			if rel != tc.expectedPath {
+				t.Errorf("Test %d: actual path: %v, expected: %v", i, rel, tc.expectedPath)
+			}
+		})
+	}
+}
+
+// Only the final entry of first_exist_fallback may be used without globbing.
+// Every other policy must keep expanding patterns as globs, so a file whose
+// literal name contains glob metacharacters is not matched by that name.
+func TestLiteralGlobNameMatchesOnlyAsFallback(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("globs are not evaluated on Windows")
+	}
+
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "lit[1].txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for i, tc := range []struct {
+		tryFiles          []string
+		policy            string
+		path              string
+		matched           bool
+		expectedPath      string
+		expectedRemainder string
+	}{
+		{tryFiles: []string{"lit[1].txt"}, policy: tryPolicyFirstExist, path: "/", matched: false},
+		{tryFiles: []string{"lit[1].txt"}, policy: tryPolicyLargestSize, path: "/", matched: false},
+		{tryFiles: []string{"lit[1].txt"}, policy: tryPolicySmallestSize, path: "/", matched: false},
+		{tryFiles: []string{"lit[1].txt"}, policy: tryPolicyMostRecentlyMod, path: "/", matched: false},
+		{
+			tryFiles:     []string{"{http.request.uri.path}", "lit[1].txt"},
+			policy:       tryPolicyFirstExistFallback,
+			path:         "/absent.txt",
+			matched:      true,
+			expectedPath: "/lit[1].txt",
+		},
+		{
+			// only the final entry is used literally; earlier entries are
+			// still globbed, so lit[1].txt is not matched by its literal name
+			tryFiles:     []string{"lit[1].txt", "fallback.txt"},
+			policy:       tryPolicyFirstExistFallback,
+			path:         "/",
+			matched:      true,
+			expectedPath: "/fallback.txt",
+		},
+		{
+			tryFiles:          []string{"{http.request.uri.path}"},
+			policy:            tryPolicyFirstExistFallback,
+			path:              "/absent.php/extra",
+			matched:           true,
+			expectedPath:      "/absent.php",
+			expectedRemainder: "/extra",
+		},
+		{
+			// placeholder values are glob-escaped for expansion, but the
+			// literal fallback must use the unescaped value
+			tryFiles:     []string{"{http.request.uri.path}"},
+			policy:       tryPolicyFirstExistFallback,
+			path:         "/a[b].txt",
+			matched:      true,
+			expectedPath: "/a[b].txt",
+		},
+	} {
+		m := &MatchFile{
+			fsmap:     &filesystems.FileSystemMap{},
+			Root:      root,
+			TryFiles:  tc.tryFiles,
+			TryPolicy: tc.policy,
+			SplitPath: []string{".php"},
+		}
+
+		req := &http.Request{URL: &url.URL{Path: tc.path}}
+		repl := caddyhttp.NewTestReplacer(req)
+
+		result, err := m.MatchWithError(req)
+		if err != nil {
+			t.Fatalf("Test %d: unexpected error: %v", i, err)
+		}
+		if result != tc.matched {
+			t.Fatalf("Test %d (%s): expected match=%t, got %t", i, tc.policy, tc.matched, result)
+		}
+		if !result {
+			continue
+		}
+
+		rel, _ := repl.Get("http.matchers.file.relative")
+		if rel != tc.expectedPath {
+			t.Errorf("Test %d: actual path: %v, expected: %v", i, rel, tc.expectedPath)
+		}
+		rem, _ := repl.Get("http.matchers.file.remainder")
+		if rem != tc.expectedRemainder {
+			t.Errorf("Test %d: actual remainder: %v, expected: %v", i, rem, tc.expectedRemainder)
+		}
 	}
 }

@@ -569,6 +569,46 @@ func TestRewrite(t *testing.T) {
 	}
 }
 
+func TestRewriteEscapesFileMatcherRemainder(t *testing.T) {
+	for i, tc := range []struct {
+		input     string
+		remainder string
+		expect    string
+	}{
+		{
+			input:     "/index.php/foo/bar?a=b",
+			remainder: "/foo/bar",
+			expect:    "/index.php/foo/bar?a=b",
+		},
+		{
+			input:     "/index.php/..%252fprivate%252fsecret.txt",
+			remainder: "/..%2fprivate%2fsecret.txt",
+			expect:    "/index.php/..%252fprivate%252fsecret.txt",
+		},
+		{
+			input:     "/index.php/x%3Fa=evil?a=b",
+			remainder: "/x?a=evil",
+			expect:    "/index.php/x%3Fa=evil?a=b",
+		},
+		{
+			input:     "/index.php/x%23frag?a=b",
+			remainder: "/x#frag",
+			expect:    "/index.php/x%23frag?a=b",
+		},
+	} {
+		req := newRequest(t, "GET", tc.input)
+		repl := caddy.NewReplacer()
+		repl.Set("http.matchers.file.relative", "/index.php")
+		repl.Set("http.matchers.file.remainder", tc.remainder)
+
+		Rewrite{URI: "{http.matchers.file.relative}{http.matchers.file.remainder}"}.Rewrite(req, repl)
+
+		if expected, actual := tc.expect, req.URL.RequestURI(); expected != actual {
+			t.Errorf("Test %d: Expected URL.RequestURI()='%s' but got '%s'", i, expected, actual)
+		}
+	}
+}
+
 func TestQueryOpsRenameNoOpCases(t *testing.T) {
 	repl := caddy.NewReplacer()
 

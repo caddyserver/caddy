@@ -352,6 +352,15 @@ func escapePathPlaceholders(path string, r *http.Request, repl *caddy.Replacer) 
 		}
 	}
 
+	fileMatchRemainderPlaceholder := "{http.matchers.file.remainder}"
+	if strings.Contains(path, fileMatchRemainderPlaceholder) {
+		if val, ok := repl.Get("http.matchers.file.remainder"); ok {
+			if remainder, ok := val.(string); ok {
+				path = strings.ReplaceAll(path, fileMatchRemainderPlaceholder, escapePathPreservingSlashes(remainder))
+			}
+		}
+	}
+
 	return path
 }
 

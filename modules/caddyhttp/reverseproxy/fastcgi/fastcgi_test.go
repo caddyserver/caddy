@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -484,4 +485,92 @@ func TestBuildEnvDropsProxyHeader(t *testing.T) {
 
 		assert.Equal(t, "http://trusted.example:3128", env["HTTP_PROXY"])
 	})
+}
+
+// A request path containing dot segments must not let the client select a
+// different script than the one every path matcher in the chain evaluated.
+// Matchers judge the cleaned path (see caddyhttp.MatchPath), so the transport
+// must derive SCRIPT_NAME/SCRIPT_FILENAME/PATH_INFO from the cleaned path too.
+// Before this was fixed, /admin.php/../../other.php was matched as /other.php
+// but executed <root>/admin.php.
+func TestBuildEnvDotSegmentsCannotSelectAnotherScript(t *testing.T) {
+	t.Parallel()
+
+	newRequest := func(target string) *http.Request {
+		r := httptest.NewRequest(http.MethodGet, target, nil)
+		ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer())
+		ctx = context.WithValue(ctx, caddyhttp.VarsCtxKey, map[string]any{})
+		ctx = context.WithValue(ctx, caddyhttp.OriginalRequestCtxKey, *r)
+		return r.WithContext(ctx)
+	}
+
+	for _, tc := range []struct {
+		name               string
+		target             string
+		expectedScriptName string
+		expectedPathInfo   string
+	}{
+		{
+			name:               "literal dot segments",
+			target:             "/admin.php/../../other.php",
+			expectedScriptName: "/other.php",
+			expectedPathInfo:   "",
+		},
+		{
+			name:               "single dot segment",
+			target:             "/admin.php/../other.php",
+			expectedScriptName: "/other.php",
+			expectedPathInfo:   "",
+		},
+		{
+			name:               "percent-encoded separators",
+			target:             "/admin.php/..%2f..%2fother.php",
+			expectedScriptName: "/other.php",
+			expectedPathInfo:   "",
+		},
+		{
+			name:               "percent-encoded dots",
+			target:             "/admin.php/%2e%2e/other.php",
+			expectedScriptName: "/other.php",
+			expectedPathInfo:   "",
+		},
+		{
+			name:               "dot segments before legitimate path info",
+			target:             "/admin.php/../other.php/extra/path",
+			expectedScriptName: "/other.php",
+			expectedPathInfo:   "/extra/path",
+		},
+		{
+			name:               "no dot segments is unaffected",
+			target:             "/other.php/extra/path",
+			expectedScriptName: "/other.php",
+			expectedPathInfo:   "/extra/path",
+		},
+		{
+			// path.Clean("") is ".", which must not become the script name;
+			// an absolute-form request-target can leave URL.Path empty.
+			name:               "empty path stays empty",
+			target:             "http://example.com",
+			expectedScriptName: "",
+			expectedPathInfo:   "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			tr := Transport{Root: root, SplitPath: []string{".php"}}
+			env, err := tr.buildEnv(newRequest(tc.target))
+			require.NoError(t, err)
+
+			assert.Equal(t, tc.expectedScriptName, env["SCRIPT_NAME"],
+				"SCRIPT_NAME must come from the cleaned path")
+			assert.Equal(t, tc.expectedPathInfo, env["PATH_INFO"],
+				"PATH_INFO must come from the cleaned path")
+			if tc.expectedScriptName != "" {
+				assert.Equal(t, filepath.Join(root, filepath.FromSlash(tc.expectedScriptName)), env["SCRIPT_FILENAME"],
+					"SCRIPT_FILENAME must name the script the matchers evaluated")
+			}
+			assert.NotContains(t, env["SCRIPT_FILENAME"], "admin.php",
+				"a pre-clean path component must never become the executed script")
+		})
+	}
 }

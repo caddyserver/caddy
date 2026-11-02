@@ -1,0 +1,76 @@
+{
+	email nobody@example.com
+	ech example.com ech.example.net
+}
+
+example.com {
+	tls internal
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"host": [
+										"example.com"
+									]
+								}
+							],
+							"terminal": true
+						}
+					]
+				}
+			}
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"subjects": [
+							"example.com"
+						],
+						"issuers": [
+							{
+								"module": "internal"
+							}
+						]
+					},
+					{
+						"subjects": [
+							"ech.example.net"
+						],
+						"issuers": [
+							{
+								"email": "nobody@example.com",
+								"module": "acme"
+							},
+							{
+								"ca": "https://acme.zerossl.com/v2/DV90",
+								"email": "nobody@example.com",
+								"module": "acme"
+							}
+						]
+					}
+				]
+			},
+			"encrypted_client_hello": {
+				"configs": [
+					{
+						"public_name": "example.com"
+					},
+					{
+						"public_name": "ech.example.net"
+					}
+				]
+			}
+		}
+	}
+}
