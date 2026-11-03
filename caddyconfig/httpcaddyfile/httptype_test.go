@@ -2,6 +2,7 @@ package httpcaddyfile
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -404,36 +405,61 @@ func TestTLSConnectionPoliciesAreIsolatedAcrossListeners(t *testing.T) {
 	}
 }
 
-func TestConflictingClientAuthIsRejected(t *testing.T) {
-	caddyfileStr := `example.com {
-		tls {
-			client_auth {
+func TestClientAuthConsolidation(t *testing.T) {
+	const requestAuth = `client_auth {
 				mode request
-			}
+			}`
+	const verifyAuth = `client_auth {
+				mode require_and_verify
+				trust_pool file /tmp/root.crt
+			}`
+
+	tlsBlock := func(auth string) string {
+		if auth == "" {
+			return ""
 		}
+		return fmt.Sprintf("tls {\n\t\t\t%s\n\t\t}", auth)
+	}
+
+	for _, tc := range []struct {
+		name       string
+		firstAuth  string
+		secondAuth string
+		wantErr    bool
+	}{
+		{"conflicting, laxer policy first", requestAuth, verifyAuth, true},
+		{"conflicting, stricter policy first", verifyAuth, requestAuth, true},
+		{"only first sets client auth", verifyAuth, "", false},
+		{"only second sets client auth", "", verifyAuth, false},
+		{"identical client auth", verifyAuth, verifyAuth, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			caddyfileStr := fmt.Sprintf(`example.com {
+		%s
 		handle /public/* {
 			respond "public"
 		}
 	}
 
 	example.com:443 {
-		tls {
-			client_auth {
-				mode require_and_verify
-				trust_pool file /tmp/root.crt
-			}
-		}
+		%s
 		handle /admin* {
 			respond "admin"
 		}
-	}`
+	}`, tlsBlock(tc.firstAuth), tlsBlock(tc.secondAuth))
 
-	adapter := caddyfile.Adapter{ServerType: ServerType{}}
-	result, _, err := adapter.Adapt([]byte(caddyfileStr), nil)
-	if err == nil {
-		t.Fatalf("Expected conflicting client auth to be rejected, got: %s", result)
-	}
-	if !strings.Contains(err.Error(), "conflicting client auth configuration") {
-		t.Fatalf("Expected conflicting client auth error, got: %v", err)
+			adapter := caddyfile.Adapter{ServerType: ServerType{}}
+			result, _, err := adapter.Adapt([]byte(caddyfileStr), nil)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected conflicting client auth to be rejected, got: %s", result)
+				}
+				if !strings.Contains(err.Error(), "conflicting client auth configuration") {
+					t.Fatalf("expected conflicting client auth error, got: %v", err)
+				}
+			} else if err != nil {
+				t.Fatalf("expected adapt to succeed, got: %v", err)
+			}
+		})
 	}
 }
