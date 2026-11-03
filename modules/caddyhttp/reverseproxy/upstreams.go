@@ -290,12 +290,20 @@ func (au *AUpstreams) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-func (au AUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+// ResetCache clears the cached lookup for the given request, or the entire
+// A/AAAA cache if r is nil.
+func (au *AUpstreams) ResetCache(r *http.Request) error {
+	if r == nil {
+		network.ResetAllA()
+		return nil
+	}
+	ipVersion, name, port := au.expandedAddr(r)
+	network.ResetA(au.resolverKey, ipVersion, name, port)
+	return nil
+}
 
-	ipVersion := resolveIpVersion(au.Versions)
-	name := repl.ReplaceAll(au.Name, "")
-	port := repl.ReplaceAll(au.Port, "")
+func (au AUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
+	ipVersion, name, port := au.expandedAddr(r)
 
 	targets, err := network.A(r.Context(), au.resolver.LookupIP,
 		au.resolverKey, ipVersion, name, port, time.Duration(au.Refresh), au.logger)
@@ -311,6 +319,13 @@ func (au AUpstreams) GetUpstreams(r *http.Request) ([]*Upstream, error) {
 }
 
 func (au AUpstreams) String() string { return net.JoinHostPort(au.Name, au.Port) }
+
+// expandedAddr returns the IP version to resolve and the placeholder-expanded
+// name and port, which together identify the request's cache entry.
+func (au AUpstreams) expandedAddr(r *http.Request) (ipVersion, name, port string) {
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	return resolveIpVersion(au.Versions), repl.ReplaceAll(au.Name, ""), repl.ReplaceAll(au.Port, "")
+}
 
 // MultiUpstreams is a single dynamic upstream source that
 // aggregates the results of multiple dynamic upstream sources.
@@ -452,4 +467,5 @@ var (
 	_ CachingUpstreamSource = (*SRVUpstreams)(nil)
 	_ caddy.Provisioner     = (*AUpstreams)(nil)
 	_ UpstreamSource        = (*AUpstreams)(nil)
+	_ CachingUpstreamSource = (*AUpstreams)(nil)
 )
