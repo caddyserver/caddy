@@ -20,13 +20,26 @@ jobs:
       contents: write
       pull-requests: write
       issues: write
-    
+
     outputs:
       verification_passed: ${{ steps.verify.outputs.passed }}
       tag_version: ${{ steps.info.outputs.version }}
       proposal_issue_number: ${{ steps.find_proposal.outputs.result && fromJson(steps.find_proposal.outputs.result).number || '' }}
-    
+
+    # Values from the event, step outputs and API results are only ever
+    # passed through env:, never interpolated as expressions into run: or
+    # script: bodies.
     steps:
+      # Validate the tag name before anything else uses it. Git allows
+      # characters like $, ( and ; in tag names that match the v*.*.* trigger,
+      # and the tag name ends up in shell commands (including GoReleaser hooks).
+      - name: Validate tag name
+        run: |
+          if [[ ! "$GITHUB_REF" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "❌ Refusing to release $GITHUB_REF: not a vMAJOR.MINOR.PATCH[-PRERELEASE] tag"
+            exit 1
+          fi
+
       - name: Checkout code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -45,8 +58,8 @@ jobs:
       - name: Get tag info
         id: info
         run: |
-          echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-          echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+          echo "version=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
        # https://github.community/t5/GitHub-Actions/How-to-get-just-the-tag-name/m-p/32167/highlight/true#M1027
       - name: Print Go version and environment
@@ -80,61 +93,62 @@ jobs:
         id: verify
         env:
           signing_keys: ${{ secrets.SIGNING_KEYS }}
+          TAG: ${{ steps.vars.outputs.version_tag }}
         run: |
           # Read the string into an array, splitting by IFS
           IFS=";" read -ra keys_collection <<< "$signing_keys"
-          
+
           # ref: https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#example-usage-of-the-runner-context
-          touch "${{ runner.temp }}/allowed_signers"
+          touch "$RUNNER_TEMP/allowed_signers"
 
           # Iterate and print the split elements
           for item in "${keys_collection[@]}"; do
-          
+
             # trim leading whitespaces
             item="${item##*( )}"
 
             # trim trailing whitespaces
             item="${item%%*( )}"
-            
+
             IFS=" " read -ra key_components <<< "$item"
             # git wants it in format: email address, type, public key
             # ssh has it in format: type, public key, email address
-            echo "${key_components[2]} namespaces=\"git\" ${key_components[0]} ${key_components[1]}" >> "${{ runner.temp }}/allowed_signers"
+            echo "${key_components[2]} namespaces=\"git\" ${key_components[0]} ${key_components[1]}" >> "$RUNNER_TEMP/allowed_signers"
           done
 
-          git config set --global gpg.ssh.allowedSignersFile "${{ runner.temp }}/allowed_signers"
+          git config set --global gpg.ssh.allowedSignersFile "$RUNNER_TEMP/allowed_signers"
 
-          echo "Verifying the tag: ${{ steps.vars.outputs.version_tag }}"
-          
+          echo "Verifying the tag: $TAG"
+
           # Verify the tag is signed
-          if ! git verify-tag -v "${{ steps.vars.outputs.version_tag }}" 2>&1; then
+          if ! git verify-tag -v "$TAG" 2>&1; then
             echo "❌ Tag verification failed!"
             echo "passed=false" >> $GITHUB_OUTPUT
-            git push --delete origin "${{ steps.vars.outputs.version_tag }}"
+            git push --delete origin "$TAG"
             exit 1
           fi
           # Run it again to capture the output
-          git verify-tag -v "${{ steps.vars.outputs.version_tag }}" 2>&1 | tee /tmp/verify-output.txt;
+          git verify-tag -v "$TAG" 2>&1 | tee /tmp/verify-output.txt;
 
           # SSH verification output typically includes the key fingerprint
           # Use GNU grep with Perl regex for cleaner extraction (Linux environment)
           KEY_SHA256=$(grep -oP "SHA256:[\"']?\K[A-Za-z0-9+/=]+(?=[\"']?)" /tmp/verify-output.txt | head -1 || echo "")
-          
+
           if [ -z "$KEY_SHA256" ]; then
             # Try alternative pattern with "key" prefix
             KEY_SHA256=$(grep -oP "key SHA256:[\"']?\K[A-Za-z0-9+/=]+(?=[\"']?)" /tmp/verify-output.txt | head -1 || echo "")
           fi
-          
+
           if [ -z "$KEY_SHA256" ]; then
             # Fallback: extract any base64-like string (40+ chars)
             KEY_SHA256=$(grep -oP '[A-Za-z0-9+/]{40,}=?' /tmp/verify-output.txt | head -1 || echo "")
           fi
-          
+
           if [ -z "$KEY_SHA256" ]; then
             echo "Somehow could not extract SSH key fingerprint from git verify-tag output"
             echo "Cancelling flow and deleting tag"
             echo "passed=false" >> $GITHUB_OUTPUT
-            git push --delete origin "${{ steps.vars.outputs.version_tag }}"
+            git push --delete origin "$TAG"
             exit 1
           fi
 
@@ -142,189 +156,136 @@ jobs:
           echo "passed=true" >> $GITHUB_OUTPUT
           echo "key_id=$KEY_SHA256" >> $GITHUB_OUTPUT
 
+      # Fails closed: there must be exactly one open proposal for this exact
+      # version, with enough maintainer approvals of its current head commit.
+      # The tag is left in place on failure, so the job can be re-run once
+      # the proposal is approved.
       - name: Find related release proposal
         id: find_proposal
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          TAG: ${{ steps.vars.outputs.version_tag }}
+          MAINTAINER_LOGINS: ${{ secrets.MAINTAINER_LOGINS }}
         with:
           script: |
-            const version = '${{ steps.vars.outputs.version_tag }}';
-            
-            // Search for PRs with release-proposal label that match this version
-            const prs = await github.rest.pulls.list({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open', // Changed to 'all' to find both open and closed PRs
-              sort: 'updated',
-              direction: 'desc'
+            const { checkProposal, REQUIRED_APPROVALS } = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/release-proposal.js`);
+
+            const { pr, targetCommit, approvers, approved } = await checkProposal({
+              github, context, version: process.env.TAG, maintainerLogins: process.env.MAINTAINER_LOGINS,
             });
-            
-            // Find the most recent PR for this version
-            const proposal = prs.data.find(pr => 
-              pr.title.includes(version) && 
-              pr.labels.some(label => label.name === 'release-proposal')
-            );
-            
-            if (!proposal) {
-              console.log(`⚠️  No release proposal PR found for ${version}`);
-              console.log('This might be a hotfix or emergency release');
-              return { number: null, approved: true, approvals: 0, proposedCommit: null };
+            console.log(`Found proposal PR #${pr.number}, for commit ${targetCommit}`);
+            console.log(`Maintainer approvals of ${pr.head.sha}: ${approvers.join(', ') || 'none'}`);
+
+            if (!approved) {
+              core.setFailed(`Proposal #${pr.number} has ${approvers.length} maintainer approvals of its current head commit; ${REQUIRED_APPROVALS} are required`);
+              return;
             }
-            
-            console.log(`Found proposal PR #${proposal.number} for version ${version}`);
-            
-            // Extract commit hash from PR body
-            const commitMatch = proposal.body.match(/\*\*Target Commit:\*\*\s*`([a-f0-9]+)`/);
-            const proposedCommit = commitMatch ? commitMatch[1] : null;
-            
-            if (proposedCommit) {
-              console.log(`Proposal was for commit: ${proposedCommit}`);
-            } else {
-              console.log('⚠️  No target commit hash found in PR body');
-            }
-            
-            // Get PR reviews to extract approvers
-            let approvers = 'Validated by automation';
-            let approvalCount = 2; // Minimum required
-            
-            try {
-              const reviews = await github.rest.pulls.listReviews({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: proposal.number
-              });
-              
-              // Get latest review per user and filter for approvals
-              const latestReviewsByUser = {};
-              reviews.data.forEach(review => {
-                const username = review.user.login;
-                if (!latestReviewsByUser[username] || new Date(review.submitted_at) > new Date(latestReviewsByUser[username].submitted_at)) {
-                  latestReviewsByUser[username] = review;
-                }
-              });
-              
-              const approvalReviews = Object.values(latestReviewsByUser).filter(review => 
-                review.state === 'APPROVED'
-              );
-              
-              if (approvalReviews.length > 0) {
-                approvers = approvalReviews.map(r => '@' + r.user.login).join(', ');
-                approvalCount = approvalReviews.length;
-                console.log(`Found ${approvalCount} approvals from: ${approvers}`);
-              }
-            } catch (error) {
-              console.log(`Could not fetch reviews: ${error.message}`);
-            }
-            
+
             return {
-              number: proposal.number,
-              approved: true,
-              approvals: approvalCount,
-              approvers: approvers,
-              proposedCommit: proposedCommit
+              number: pr.number,
+              approvals: approvers.length,
+              approvers: approvers.map(login => `@${login}`).join(', '),
+              proposedCommit: targetCommit
             };
           result-encoding: json
 
       - name: Verify proposal commit
+        env:
+          PROPOSED_COMMIT: ${{ fromJson(steps.find_proposal.outputs.result).proposedCommit }}
+          CURRENT_COMMIT: ${{ steps.info.outputs.sha }}
+          TAG: ${{ steps.vars.outputs.version_tag }}
         run: |
-          APPROVALS='${{ steps.find_proposal.outputs.result }}'
-          
-          # Parse JSON
-          PROPOSED_COMMIT=$(echo "$APPROVALS" | jq -r '.proposedCommit')
-          CURRENT_COMMIT="${{ steps.info.outputs.sha }}"
-          
           echo "Proposed commit: $PROPOSED_COMMIT"
           echo "Current commit: $CURRENT_COMMIT"
-          
-          # Check if commits match (if proposal had a target commit)
-          if [ "$PROPOSED_COMMIT" != "null" ] && [ -n "$PROPOSED_COMMIT" ]; then
-            # Normalize both commits to full SHA for comparison
-            PROPOSED_FULL=$(git rev-parse "$PROPOSED_COMMIT" 2>/dev/null || echo "")
-            CURRENT_FULL=$(git rev-parse "$CURRENT_COMMIT" 2>/dev/null || echo "")
-            
-            if [ -z "$PROPOSED_FULL" ]; then
-              echo "⚠️  Could not resolve proposed commit: $PROPOSED_COMMIT"
-            elif [ "$PROPOSED_FULL" != "$CURRENT_FULL" ]; then
-              echo "❌ Commit mismatch!"
-              echo "The tag points to commit $CURRENT_FULL but the proposal was for $PROPOSED_FULL"
-              echo "This indicates an error in tag creation."
-              # Delete the tag remotely
-              git push --delete origin "${{ steps.vars.outputs.version_tag }}"
-              echo "Tag ${{steps.vars.outputs.version_tag}} has been deleted"
-              exit 1
-            else
-              echo "✅ Commit hash matches proposal"
-            fi
-          else
-            echo "⚠️  No target commit found in proposal (might be legacy release)"
+
+          # Both are full SHAs, so compare them exactly
+          if [[ ! "$PROPOSED_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "❌ Proposal has no valid target commit: $PROPOSED_COMMIT"
+            exit 1
           fi
-          
-          echo "✅ Tag verification completed"
+          if [ "$PROPOSED_COMMIT" != "$CURRENT_COMMIT" ]; then
+            echo "❌ Commit mismatch!"
+            echo "The tag points to commit $CURRENT_COMMIT but the proposal was for $PROPOSED_COMMIT"
+            echo "This indicates an error in tag creation."
+            # Delete the tag remotely
+            git push --delete origin "$TAG"
+            echo "Tag $TAG has been deleted"
+            exit 1
+          fi
+
+          echo "✅ Commit hash matches proposal"
 
       - name: Update release proposal PR
-        if: fromJson(steps.find_proposal.outputs.result).number != null
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          RESULT: ${{ steps.find_proposal.outputs.result }}
+          TAG: ${{ steps.info.outputs.version }}
+          KEY_ID: ${{ steps.verify.outputs.key_id }}
+          SHA: ${{ steps.info.outputs.sha }}
         with:
           script: |
-            const result = ${{ steps.find_proposal.outputs.result }};
-            
-            if (result.number) {
-              // Add in-progress label
-              await github.rest.issues.addLabels({
+            const result = JSON.parse(process.env.RESULT);
+
+            // Add in-progress label
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: result.number,
+              labels: ['release-in-progress']
+            });
+
+            // Remove approved label if present
+            try {
+              await github.rest.issues.removeLabel({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: result.number,
-                labels: ['release-in-progress']
+                name: 'approved'
               });
-              
-              // Remove approved label if present
-              try {
-                await github.rest.issues.removeLabel({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: result.number,
-                  name: 'approved'
-                });
-              } catch (e) {
-                console.log('Approved label not found:', e.message);
-              }
-              
-              const commentBody = [
-                '## 🚀 Release Workflow Started',
-                '',
-                '- **Tag:** ${{ steps.info.outputs.version }}',
-                '- **Signed by key:** ${{ steps.verify.outputs.key_id }}',
-                '- **Commit:** ${{ steps.info.outputs.sha }}',
-                '- **Approved by:** ' + result.approvers,
-                '',
-                'Release workflow is now running. This PR will be updated when the release is published.'
-              ].join('\n');
-              
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: result.number,
-                body: commentBody
-              });
+            } catch (e) {
+              console.log('Approved label not found:', e.message);
             }
 
+            const commentBody = [
+              '## 🚀 Release Workflow Started',
+              '',
+              `- **Tag:** ${process.env.TAG}`,
+              `- **Signed by key:** ${process.env.KEY_ID}`,
+              `- **Commit:** ${process.env.SHA}`,
+              `- **Approved by:** ${result.approvers}`,
+              '',
+              'Release workflow is now running. This PR will be updated when the release is published.'
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: result.number,
+              body: commentBody
+            });
+
       - name: Summary
+        env:
+          PROPOSED_COMMIT: ${{ fromJson(steps.find_proposal.outputs.result).proposedCommit }}
+          APPROVERS: ${{ fromJson(steps.find_proposal.outputs.result).approvers }}
+          TAG: ${{ steps.info.outputs.version }}
+          SHA: ${{ steps.info.outputs.sha }}
+          KEY_ID: ${{ steps.verify.outputs.key_id }}
         run: |
-          APPROVALS='${{ steps.find_proposal.outputs.result }}'
-          PROPOSED_COMMIT=$(echo "$APPROVALS" | jq -r '.proposedCommit // "N/A"')
-          APPROVERS=$(echo "$APPROVALS" | jq -r '.approvers // "N/A"')
-          
-          echo "## Tag Verification Summary 🔐" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Tag:** ${{ steps.info.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Commit:** ${{ steps.info.outputs.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Proposed Commit:** $PROPOSED_COMMIT" >> $GITHUB_STEP_SUMMARY
-          echo "- **Signature:** ✅ Verified" >> $GITHUB_STEP_SUMMARY
-          echo "- **Signed by:** ${{ steps.verify.outputs.key_id }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Approvals:** ✅ Sufficient" >> $GITHUB_STEP_SUMMARY
-          echo "- **Approved by:** $APPROVERS" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Proceeding with release build..." >> $GITHUB_STEP_SUMMARY
-      
+          {
+            echo "## Tag Verification Summary 🔐"
+            echo ""
+            echo "- **Tag:** $TAG"
+            echo "- **Commit:** $SHA"
+            echo "- **Proposed Commit:** $PROPOSED_COMMIT"
+            echo "- **Signature:** ✅ Verified"
+            echo "- **Signed by:** $KEY_ID"
+            echo "- **Approvals:** ✅ Sufficient"
+            echo "- **Approved by:** $APPROVERS"
+            echo ""
+            echo "Proceeding with release build..."
+          } >> "$GITHUB_STEP_SUMMARY"
+
   release:
     name: Release
     needs: verify-tag
@@ -354,6 +315,15 @@ jobs:
       pull-requests: write
 
     steps:
+    # Same check as in verify-tag: the tag name ends up in GoReleaser's
+    # shell hooks via $TAG.
+    - name: Validate tag name
+      run: |
+        if [[ ! "$GITHUB_REF" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+          echo "❌ Refusing to release $GITHUB_REF: not a vMAJOR.MINOR.PATCH[-PRERELEASE] tag"
+          exit 1
+        fi
+
     - name: Harden the runner (Audit all outbound calls)
       uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
       with:
@@ -426,12 +396,28 @@ jobs:
       run: |
         go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
         xcaddy version
+    # Generate the draft's notes in the same format as GitHub's "Generate
+    # release notes" button, compared against the previous *published*
+    # release by version (not the previous tag, which may be an abandoned
+    # release attempt), and without PRs that already shipped in it as
+    # backports. GoReleaser's own changelog can do neither.
+    - name: Generate release notes
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        TAG: ${{ steps.vars.outputs.version_tag }}
+        NOTES_FILE: ${{ runner.temp }}/release-notes.md
+      run: |
+        PREVIOUS_RELEASE=$(.github/scripts/previous-release.sh "$TAG")
+        echo "Previous published release: ${PREVIOUS_RELEASE:-none}"
+        .github/scripts/release-notes.sh "$TAG" "$TAG" "$PREVIOUS_RELEASE" > "$NOTES_FILE"
+        cat "$NOTES_FILE"
+
     # GoReleaser will take care of publishing those artifacts into the release
     - name: Run GoReleaser
       uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
       with:
         version: latest
-        args: release --clean --timeout 60m
+        args: release --clean --timeout 60m --release-notes ${{ runner.temp }}/release-notes.md
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         TAG: ${{ steps.vars.outputs.version_tag }}
@@ -497,9 +483,11 @@ jobs:
     - name: Update release proposal PR
       if: needs.verify-tag.outputs.proposal_issue_number != ''
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      env:
+        PROPOSAL_NUMBER: ${{ needs.verify-tag.outputs.proposal_issue_number }}
       with:
         script: |
-          const prNumber = parseInt('${{ needs.verify-tag.outputs.proposal_issue_number }}');
+          const prNumber = parseInt(process.env.PROPOSAL_NUMBER, 10);
           
           if (prNumber) {
             // Get PR details to find the branch
