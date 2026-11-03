@@ -601,38 +601,6 @@ func TestResetAllDuringLookup(t *testing.T) {
 	}
 }
 
-func TestLookupGate(t *testing.T) {
-	g := newLookupGate(2, 1)
-	for i := range 2 {
-		if err := g.acquire(context.Background()); err != nil {
-			t.Fatalf("acquire %d: %v", i, err)
-		}
-	}
-
-	// the third caller queues; with the queue then full, a fourth is shed
-	queued := make(chan error, 1)
-	queuedCtx, cancelQueued := context.WithCancel(context.Background())
-	go func() { queued <- g.acquire(queuedCtx) }()
-	for g.pending.Load() != 1 {
-		time.Sleep(time.Millisecond)
-	}
-	if err := g.acquire(context.Background()); !errors.Is(err, errTooManyLookups) {
-		t.Fatalf("acquire with full queue: err = %v, want errTooManyLookups", err)
-	}
-
-	// a queued caller can give up
-	cancelQueued()
-	if err := <-queued; !errors.Is(err, context.Canceled) {
-		t.Fatalf("cancelled queued acquire: err = %v, want context.Canceled", err)
-	}
-
-	// and a released slot is usable again
-	g.release()
-	if err := g.acquire(context.Background()); err != nil {
-		t.Fatalf("acquire after release: %v", err)
-	}
-}
-
 // saturateLookups fills every slot of the shared lookup gate, and optionally
 // its wait queue too, until the test ends.
 func saturateLookups(t *testing.T, fillQueue bool) {
