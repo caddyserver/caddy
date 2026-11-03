@@ -1229,6 +1229,7 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 		if statusCodeStr := rh.StatusCode.String(); statusCodeStr != "" {
 			statusCode, err := strconv.Atoi(repl.ReplaceAll(statusCodeStr, ""))
 			if err != nil {
+				res.Body.Close()
 				return caddyhttp.Error(http.StatusInternalServerError, err)
 			}
 			if statusCode != 0 {
