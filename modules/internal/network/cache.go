@@ -60,7 +60,7 @@ type cache struct {
 
 	mu      sync.RWMutex
 	entries map[string]cacheEntry
-	epoch   uint64 // bumped by resetAll; guarded by mu
+	epoch   uint64 // bumped by every reset; guarded by mu
 
 	group singleflight.Group
 }
@@ -100,7 +100,8 @@ func (c *cache) get(ctx context.Context, key string, refresh, grace time.Duratio
 	}
 	gen := cached.gen
 
-	flightKey := strconv.FormatUint(epoch, 10) + "\x00" + strconv.FormatUint(gen, 10) + "\x00" + key
+	flightKey := strconv.FormatUint(epoch, 10) + "\x00" + strconv.FormatUint(gen, 10) + "\x00" +
+		strconv.FormatInt(int64(grace), 10) + "\x00" + key
 	ch := c.group.DoChan(flightKey, func() (any, error) {
 		return c.refresh(ctx, key, epoch, gen, refresh, grace, logger, lookup)
 	})
@@ -187,6 +188,8 @@ func (c *cache) store(key string, epoch, gen uint64, e cacheEntry) {
 func (c *cache) reset(key string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	// Keep the reset effective if cache pressure evicts its per-key marker.
+	c.epoch++
 	c.makeRoom(key)
 	c.entries[key] = cacheEntry{gen: c.entries[key].gen + 1}
 }

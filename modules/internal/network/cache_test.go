@@ -19,6 +19,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 func TestLookupGate(t *testing.T) {
@@ -50,5 +52,107 @@ func TestLookupGate(t *testing.T) {
 	g.release()
 	if err := g.acquire(context.Background()); err != nil {
 		t.Fatalf("acquire after release: %v", err)
+	}
+}
+
+func TestEvictedResetMarkerRejectsStaleLookup(t *testing.T) {
+	c := newCache("test")
+	started := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan error, 1)
+
+	go func() {
+		_, err := c.get(context.Background(), "key", time.Minute, 0, zap.NewNop(), func(context.Context) ([]Target, error) {
+			close(started)
+			<-release
+			return []Target{{Host: "old.example"}}, nil
+		})
+		done <- err
+	}()
+	<-started
+
+	c.reset("key")
+	c.mu.Lock()
+	delete(c.entries, "key")
+	c.mu.Unlock()
+	close(release)
+
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	c.mu.RLock()
+	_, exists := c.entries["key"]
+	c.mu.RUnlock()
+	if exists {
+		t.Fatal("lookup repopulated an entry after its reset marker was evicted")
+	}
+}
+
+func TestDifferentGracePoliciesDoNotShareLookup(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		graceFirst bool
+	}{
+		{name: "no grace first"},
+		{name: "grace first", graceFirst: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newCache("test")
+			c.entries["key"] = cacheEntry{
+				refresh:   time.Minute,
+				freshness: time.Now().Add(-time.Hour),
+				targets:   []Target{{Host: "stale.example"}},
+			}
+
+			started := make(chan struct{}, 2)
+			release := make(chan struct{})
+			lookup := func(context.Context) ([]Target, error) {
+				started <- struct{}{}
+				<-release
+				return nil, errors.New("lookup failed")
+			}
+			type result struct {
+				targets []Target
+				err     error
+			}
+			start := func(grace time.Duration) <-chan result {
+				ch := make(chan result, 1)
+				go func() {
+					targets, err := c.get(context.Background(), "key", time.Minute, grace, zap.NewNop(), lookup)
+					ch <- result{targets, err}
+				}()
+				return ch
+			}
+
+			firstGrace := time.Duration(0)
+			secondGrace := time.Minute
+			if tc.graceFirst {
+				firstGrace, secondGrace = secondGrace, firstGrace
+			}
+			first := start(firstGrace)
+			<-started
+			second := start(secondGrace)
+			select {
+			case <-started:
+			case <-time.After(time.Second):
+				close(release)
+				<-first
+				<-second
+				t.Fatalf("different grace policies shared one lookup")
+			}
+			close(release)
+
+			firstResult := <-first
+			secondResult := <-second
+			if tc.graceFirst {
+				firstResult, secondResult = secondResult, firstResult
+			}
+			if firstResult.err == nil {
+				t.Fatal("caller without grace did not receive the lookup error")
+			}
+			if secondResult.err != nil || len(secondResult.targets) != 1 || secondResult.targets[0].Host != "stale.example" {
+				t.Fatalf("caller with grace: targets = %v, err = %v", secondResult.targets, secondResult.err)
+			}
+		})
 	}
 }
