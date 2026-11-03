@@ -39,6 +39,7 @@ import (
 	"github.com/quic-go/webtransport-go"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"golang.org/x/net/http/httpguts"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyevents"
@@ -865,6 +866,19 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) error {
 	if r.ProtoMajor == 1 && r.ProtoMinor == 1 && r.Host == "" {
 		return HandlerError{
 			Err:        errors.New("rfc9112 forbids empty Host"),
+			StatusCode: http.StatusBadRequest,
+		}
+	}
+
+	// the host may be used in a file path (`root /srv/{host}`): HTTP/2 and HTTP/3 don't
+	// validate :authority, and Windows trims trailing dots, so "..." can act like ".."
+	host, _, err := net.SplitHostPort(r.Host)
+	if err != nil {
+		host = r.Host
+	}
+	if !httpguts.ValidHostHeader(r.Host) || (host != "" && strings.Trim(host, ".") == "") {
+		return HandlerError{
+			Err:        errors.New("invalid host"),
 			StatusCode: http.StatusBadRequest,
 		}
 	}

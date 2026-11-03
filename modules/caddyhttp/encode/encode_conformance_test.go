@@ -11,8 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/net/http/httpguts"
+
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp/encode"
 )
 
 const conformanceContentType = "text/plain"
@@ -404,7 +405,7 @@ func checkEncodedCorpusResponse(t *testing.T, w *httptest.ResponseRecorder, encC
 	if got := w.Header().Get("Content-Encoding"); got != encName {
 		t.Fatalf("Content-Encoding = %q, want %q", got, encName)
 	}
-	if !encode.HasVaryValue(w.Header(), "Accept-Encoding") {
+	if !httpguts.HeaderValuesContainsToken(w.Header()["Vary"], "Accept-Encoding") {
 		t.Fatalf("Vary = %q, want Accept-Encoding", w.Header().Values("Vary"))
 	}
 	if got := w.Header().Get("Content-Length"); got != "" {
@@ -440,7 +441,7 @@ func checkNotModifiedVary(t *testing.T, w *httptest.ResponseRecorder, encCase en
 	if got := w.Header().Get("Content-Encoding"); got != "" {
 		t.Fatalf("Content-Encoding = %q, want empty", got)
 	}
-	if !encode.HasVaryValue(w.Header(), "Accept-Encoding") {
+	if !httpguts.HeaderValuesContainsToken(w.Header()["Vary"], "Accept-Encoding") {
 		t.Fatalf("Vary = %q, want Accept-Encoding", w.Header().Values("Vary"))
 	}
 	if got := w.Body.Len(); got != 0 {
@@ -496,7 +497,7 @@ func checkStripsEncodedETagSuffix(t *testing.T, w *httptest.ResponseRecorder, en
 	if got := w.Code; got != http.StatusNotModified {
 		t.Fatalf("status = %d, want %d", got, http.StatusNotModified)
 	}
-	if !encode.HasVaryValue(w.Header(), "Accept-Encoding") {
+	if !httpguts.HeaderValuesContainsToken(w.Header()["Vary"], "Accept-Encoding") {
 		t.Fatalf("Vary = %q, want Accept-Encoding", w.Header().Values("Vary"))
 	}
 }
@@ -530,7 +531,7 @@ func checkBypassesEncoding(t *testing.T, w *httptest.ResponseRecorder, encCase e
 	if !bytes.Equal(w.Body.Bytes(), want) {
 		t.Fatalf("body len = %d, want len = %d", w.Body.Len(), len(want))
 	}
-	if encode.HasVaryValue(w.Header(), "Accept-Encoding") {
+	if httpguts.HeaderValuesContainsToken(w.Header()["Vary"], "Accept-Encoding") {
 		t.Fatalf("Vary = %q, want no Accept-Encoding", w.Header().Values("Vary"))
 	}
 }
@@ -545,7 +546,7 @@ func checkIdentityVaries(t *testing.T, w *httptest.ResponseRecorder, encCase enc
 	if !bytes.Equal(w.Body.Bytes(), want) {
 		t.Fatalf("body len = %d, want len = %d", w.Body.Len(), len(want))
 	}
-	if !encode.HasVaryValue(w.Header(), "Accept-Encoding") {
+	if !httpguts.HeaderValuesContainsToken(w.Header()["Vary"], "Accept-Encoding") {
 		t.Fatalf("Vary = %q, want Accept-Encoding", w.Header().Values("Vary"))
 	}
 }
