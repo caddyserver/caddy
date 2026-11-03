@@ -112,7 +112,7 @@ func makeArgsReplacer(args []string) *caddy.Replacer {
 					"Placeholder {args." + matches[1] + "} has an invalid index")
 				return nil, false
 			}
-			if value >= len(args) {
+			if value < 0 || value >= len(args) {
 				caddy.Log().Named("caddyfile").Warn(
 					"Placeholder {args." + matches[1] + "} index is out of bounds, only " + strconv.Itoa(len(args)) + " argument(s) exist")
 				return nil, false
@@ -140,7 +140,7 @@ func makeArgsReplacer(args []string) *caddy.Replacer {
 					"Placeholder {args[" + matches[1] + "]} has an invalid index")
 				return nil, false
 			}
-			if value >= len(args) {
+			if value < 0 || value >= len(args) {
 				caddy.Log().Named("caddyfile").Warn(
 					"Placeholder {args[" + matches[1] + "]} index is out of bounds, only " + strconv.Itoa(len(args)) + " argument(s) exist")
 				return nil, false

@@ -809,6 +809,46 @@ func TestImportReplacementInJSONWithBrace(t *testing.T) {
 	}
 }
 
+func TestArgsReplacerOutOfBoundsIndex(t *testing.T) {
+	for i, test := range []struct {
+		args   []string
+		input  string
+		expect string
+	}{
+		{
+			args:   []string{"a", "b"},
+			input:  "{args[1]}",
+			expect: "b",
+		},
+		{
+			args:   []string{"a", "b"},
+			input:  "{args[2]}",
+			expect: "{args[2]}",
+		},
+		{
+			args:   []string{"a", "b"},
+			input:  "{args[-1]}",
+			expect: "{args[-1]}",
+		},
+		{
+			args:   []string{"a", "b"},
+			input:  "{args.-1}",
+			expect: "{args.-1}",
+		},
+		{
+			args:   nil,
+			input:  "{args[-1]}",
+			expect: "{args[-1]}",
+		},
+	} {
+		repl := makeArgsReplacer(test.args)
+		actual := repl.ReplaceKnown(test.input, "")
+		if actual != test.expect {
+			t.Errorf("Test %d: Expected: '%s' but got '%s'", i, test.expect, actual)
+		}
+	}
+}
+
 func TestSnippets(t *testing.T) {
 	p := testParser(`
 		(common) {
