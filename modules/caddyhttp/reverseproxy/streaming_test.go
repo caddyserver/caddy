@@ -703,7 +703,7 @@ func TestUpgradeDetachmentRequiresWriterSupport(t *testing.T) {
 			initReverseProxyMetrics(h, prometheus.NewRegistry())
 			recorder := caddyhttp.NewResponseRecorder(pipeUpgradeWriter{httptest.NewRecorder(), front}, nil, nil)
 			writer := tc.wrap(recorder)
-			req := prepareTestRequest(httptest.NewRequest(http.MethodGet, "/upgrade", nil))
+			req := caddyhttp.PrepareRequest(httptest.NewRequest(http.MethodGet, "/upgrade", nil), caddy.NewReplacer(), recorder, &caddyhttp.Server{})
 			req.Header.Set("Connection", "Upgrade")
 			req.Header.Set("Upgrade", "test-stream")
 			res := &http.Response{StatusCode: http.StatusSwitchingProtocols, Header: req.Header.Clone(), Body: back}
