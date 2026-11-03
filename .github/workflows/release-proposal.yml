@@ -169,7 +169,7 @@ jobs:
             echo "Generating changelog since $LAST_RELEASE"
             COMMITS=$(git log --pretty=format:"- %s (%h)" --reverse "${LAST_RELEASE}..$COMMIT_HASH")
           fi
-          echo "last_release=${LAST_RELEASE:-none}" >> $GITHUB_OUTPUT
+          echo "last_release=${LAST_RELEASE:-the beginning}" >> $GITHUB_OUTPUT
           
           # Store changelog for PR body
           CLEANSED_COMMITS=$(echo "$COMMITS" | sed 's/`/\\`/g')
@@ -205,7 +205,6 @@ jobs:
             **Target Commit:** \`${{ steps.inputs.outputs.commit_hash }}\`
             **Requested by:** @${{ github.actor }}
             **Commit Status:** ${{ steps.setup.outputs.behind_info }}
-            **Previous Release:** \`${{ steps.setup.outputs.last_release }}\`
 
             This PR proposes creating release tag \`${{ steps.inputs.outputs.version }}\` at commit \`${{ steps.inputs.outputs.commit_hash }}\`.
             
@@ -221,7 +220,7 @@ jobs:
             4. The release workflow is triggered automatically by the tag push
             5. Upon release completion, this PR is closed and the branch is deleted
             
-            ### Changes Since Last Release
+            ### Changes Since ${{ steps.setup.outputs.last_release }}
             
             ${changelog}
             
