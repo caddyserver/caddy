@@ -89,6 +89,27 @@ func (h *upstreamConnHolder) get() net.Conn {
 // upgrade request.
 type upstreamConnCtxKey struct{}
 
+// upstreamCloseWriter returns where to write the close message to the
+// upstream. It must be bounded by a write deadline, but for HTTP/1 upgrades
+// net/http hands the upstream socket back inside a body type that hides its
+// deadline methods and writes straight through to the socket. So the close
+// message goes to the socket recorded during the round trip instead. An
+// HTTP/1 connection is dedicated to this request; HTTP/2 and HTTP/3 share
+// theirs between streams, so their bodies are used as they are.
+func upstreamCloseWriter(req *http.Request, res *http.Response, backConn io.ReadWriteCloser) io.Writer {
+	if res.ProtoMajor != 1 {
+		return backConn
+	}
+	holder, ok := req.Context().Value(upstreamConnCtxKey{}).(*upstreamConnHolder)
+	if !ok {
+		return backConn
+	}
+	if uc := holder.get(); uc != nil {
+		return uc
+	}
+	return backConn
+}
+
 func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWriter, req *http.Request, res *http.Response, upstreamAddr string) {
 	// Until the tunnel takes ownership, every setup failure must close the
 	// backend body and any hijacked client connection. net/http no longer
@@ -246,23 +267,8 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 		}
 		return nil
 	}
-	// The close message to the upstream must be bounded by a write deadline
-	// too, but for HTTP/1 upgrades net/http hands the upstream socket back
-	// inside a body type that hides its deadline methods and writes straight
-	// through to the socket. So write the close message to the socket
-	// recorded during the round trip instead. An HTTP/1 connection is
-	// dedicated to this request; HTTP/2 and HTTP/3 share theirs between
-	// streams, so their bodies are used as they are.
-	var backCloser io.Writer = backConn
-	if res.ProtoMajor == 1 {
-		if holder, ok := req.Context().Value(upstreamConnCtxKey{}).(*upstreamConnHolder); ok {
-			if uc := holder.get(); uc != nil {
-				backCloser = uc
-			}
-		}
-	}
 	deleteFrontConn := tunnel.registerConnection(conn, gracefulClose(conn, false), detached, upstreamAddr)
-	deleteBackConn := tunnel.registerConnection(backConn, gracefulClose(backCloser, true), detached, upstreamAddr)
+	deleteBackConn := tunnel.registerConnection(backConn, gracefulClose(upstreamCloseWriter(req, res, backConn), true), detached, upstreamAddr)
 	if h.streamLogsSkipHandshake() {
 		caddyhttp.SetVar(req.Context(), caddyhttp.LogSkipVar, true)
 	}
