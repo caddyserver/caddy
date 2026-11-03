@@ -45,6 +45,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"golang.org/x/net/http/httpguts"
 
 	"github.com/caddyserver/caddy/v2/caddyconfig/warning"
 	"github.com/caddyserver/caddy/v2/internal"
@@ -1085,7 +1086,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 			body = buf.Bytes()
 		}
 
-		forceReload := r.Header.Get("Cache-Control") == "must-revalidate"
+		forceReload := httpguts.HeaderValuesContainsToken(r.Header["Cache-Control"], "must-revalidate")
 
 		err := changeConfig(r.Method, r.URL.Path, body, r.Header.Get("If-Match"), forceReload)
 		if err != nil && !errors.Is(err, errSameConfig) {
