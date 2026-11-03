@@ -456,7 +456,7 @@ func trimPathPrefix(escapedPath, prefix string) string {
 		prefixCh := prefix[iPrefix]
 		ch := string(escapedPath[iPath])
 
-		if ch == "%" && prefixCh != '%' && len(escapedPath) >= iPath+3 {
+		if ch == "%" && !hasValidPercentEncoding(prefix, iPrefix) && len(escapedPath) >= iPath+3 {
 			var err error
 			ch, err = url.PathUnescape(escapedPath[iPath : iPath+3])
 			if err != nil {
@@ -512,7 +512,8 @@ func trimPathSuffix(escapedPath, suffix string) string {
 		// either when an escape ends here (a '%' two bytes back) or when the
 		// cursor has reached that escape's introducing '%' itself.
 		pathHasEscape := iPath >= 3 && escapedPath[iPath-3] == '%'
-		suffixHasEscape := (iSuffix >= 3 && suffix[iSuffix-3] == '%') || suffixCh == '%'
+		suffixHasEscape := hasValidPercentEncoding(suffix, iSuffix-3) ||
+			hasValidPercentEncoding(suffix, iSuffix-1)
 		if pathHasEscape && !suffixHasEscape {
 			decoded, err := url.PathUnescape(escapedPath[iPath-3 : iPath])
 			if err != nil {
@@ -540,6 +541,14 @@ func trimPathSuffix(escapedPath, suffix string) string {
 
 	// otherwise we did not find the suffix
 	return escapedPath
+}
+
+func hasValidPercentEncoding(s string, i int) bool {
+	if i < 0 || i+3 > len(s) || s[i] != '%' {
+		return false
+	}
+	_, err := url.PathUnescape(s[i : i+3])
+	return err == nil
 }
 
 // substrReplacer describes either a simple and fast substring replacement.
