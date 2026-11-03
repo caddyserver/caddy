@@ -684,17 +684,24 @@ func TestLookupsAreBounded(t *testing.T) {
 func TestShedLookups(t *testing.T) {
 	var calls atomic.Int32
 	seed := instantSRV("stale.example.", &calls)
-	if _, err := SRV(context.Background(), seed, "", "svc-shed-stale", "tcp", "x", time.Nanosecond, time.Hour, zap.NewNop()); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := SRV(context.Background(), seed, "", "svc-shed-nograce", "tcp", "x", time.Nanosecond, 0, zap.NewNop()); err != nil {
-		t.Fatal(err)
+	for _, service := range []string{"svc-shed-stale", "svc-shed-nograce"} {
+		if _, err := SRV(context.Background(), seed, "", service, "tcp", "x", time.Minute, 0, zap.NewNop()); err != nil {
+			t.Fatal(err)
+		}
+		// backdate rather than relying on a tiny refresh, which a coarse
+		// clock (e.g. on Windows) can still report as fresh
+		key := srvKey("", service, "tcp", "x")
+		srvCache.mu.Lock()
+		e := srvCache.entries[key]
+		e.freshness = time.Now().Add(-time.Hour)
+		srvCache.entries[key] = e
+		srvCache.mu.Unlock()
 	}
 	calls.Store(0)
 
 	saturateLookups(t, true)
 
-	targets, err := SRV(context.Background(), seed, "", "svc-shed-stale", "tcp", "x", time.Nanosecond, time.Hour, zap.NewNop())
+	targets, err := SRV(context.Background(), seed, "", "svc-shed-stale", "tcp", "x", time.Minute, time.Hour, zap.NewNop())
 	if err != nil || len(targets) != 1 || targets[0].Host != "stale.example." {
 		t.Fatalf("shed with grace and a stale entry: targets = %v, err = %v; want the stale entry", targets, err)
 	}
@@ -705,7 +712,7 @@ func TestShedLookups(t *testing.T) {
 		{name: "svc-shed-nograce"},
 		{name: "svc-shed-cold", grace: time.Hour},
 	} {
-		if _, err := SRV(context.Background(), seed, "", tc.name, "tcp", "x", time.Nanosecond, tc.grace, zap.NewNop()); !errors.Is(err, errTooManyLookups) {
+		if _, err := SRV(context.Background(), seed, "", tc.name, "tcp", "x", time.Minute, tc.grace, zap.NewNop()); !errors.Is(err, errTooManyLookups) {
 			t.Errorf("%s: err = %v, want errTooManyLookups", tc.name, err)
 		}
 	}
