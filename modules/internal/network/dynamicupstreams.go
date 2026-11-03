@@ -49,6 +49,9 @@ type SRVLookupFunc func(ctx context.Context, service, proto, name string) (cname
 
 // SRV resolves the given SRV record into targets, caching the result for
 // refresh. lookup is the resolver to use (typically (*net.Resolver).LookupSRV).
+// resolverKey identifies that resolver, so results looked up with different
+// resolvers for the same record are cached separately; pass "" for the default
+// resolver.
 //
 // If the lookup fails but returns some records (e.g. a few invalid names were
 // filtered out), those records are still used. If it fails with no records and
@@ -56,8 +59,8 @@ type SRVLookupFunc func(ctx context.Context, service, proto, name string) (cname
 // past its refresh instead of returning an error. With no cached result, grace
 // also suppresses the error and returns no targets, preserving the reverse
 // proxy's existing behavior.
-func SRV(ctx context.Context, lookup SRVLookupFunc, service, proto, name string, refresh, grace time.Duration, logger *zap.Logger) ([]Target, error) {
-	key := srvKey(service, proto, name)
+func SRV(ctx context.Context, lookup SRVLookupFunc, resolverKey, service, proto, name string, refresh, grace time.Duration, logger *zap.Logger) ([]Target, error) {
+	key := srvKey(resolverKey, service, proto, name)
 
 	// fast path: a fresh cached result under a read lock
 	srvMu.RLock()
@@ -126,10 +129,11 @@ func SRV(ctx context.Context, lookup SRVLookupFunc, service, proto, name string,
 	return targets, nil
 }
 
-// ResetSRV removes the cached result for a single SRV record.
-func ResetSRV(service, proto, name string) {
+// ResetSRV removes the cached result for a single SRV record resolved with the
+// given resolver (see [SRV] for resolverKey).
+func ResetSRV(resolverKey, service, proto, name string) {
 	srvMu.Lock()
-	delete(srvCache, srvKey(service, proto, name))
+	delete(srvCache, srvKey(resolverKey, service, proto, name))
 	srvMu.Unlock()
 }
 
@@ -140,8 +144,8 @@ func ResetAllSRV() {
 	srvMu.Unlock()
 }
 
-func srvKey(service, proto, name string) string {
-	return service + "\x00" + proto + "\x00" + name
+func srvKey(resolverKey, service, proto, name string) string {
+	return resolverKey + "\x00" + service + "\x00" + proto + "\x00" + name
 }
 
 const maxCacheEntries = 100
@@ -164,9 +168,11 @@ type IPLookupFunc func(ctx context.Context, network, host string) ([]net.IP, err
 // A resolves name's A/AAAA records into targets (one per address, all using the
 // given port), caching the result for refresh. network selects the IP versions
 // ("ip", "ip4" or "ip6"). lookup is the resolver to use (typically
-// (*net.Resolver).LookupIP).
-func A(ctx context.Context, lookup IPLookupFunc, network, name, port string, refresh time.Duration, logger *zap.Logger) ([]Target, error) {
-	key := name + "\x00" + port + "\x00" + network
+// (*net.Resolver).LookupIP). resolverKey identifies that resolver, so results
+// looked up with different resolvers for the same name are cached separately;
+// pass "" for the default resolver.
+func A(ctx context.Context, lookup IPLookupFunc, resolverKey, network, name, port string, refresh time.Duration, logger *zap.Logger) ([]Target, error) {
+	key := resolverKey + "\x00" + name + "\x00" + port + "\x00" + network
 
 	aMu.RLock()
 	cached := aCache[key]
