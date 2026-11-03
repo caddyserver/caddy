@@ -210,6 +210,13 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 		fsrv.IndexNames = defaultIndexNames
 	}
 
+	// a relative data directory sits under the working directory and holds private keys
+	if dataDir := caddy.AppDataDir(); !filepath.IsAbs(dataDir) {
+		if abs, err := caddy.FastAbs(dataDir); err == nil {
+			fsrv.Hide = append(fsrv.Hide, abs)
+		}
+	}
+
 	// for hide paths that are static (i.e. no placeholders), we can transform them into
 	// absolute paths before the server starts for very slight performance improvement
 	for i, h := range fsrv.Hide {
