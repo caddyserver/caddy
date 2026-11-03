@@ -144,3 +144,29 @@ func newUnknownLengthPost(t *testing.T, body string) *http.Request {
 	req.ContentLength = -1
 	return req
 }
+
+func TestRequestBodyMaxSizeLimitsErrorRoute(t *testing.T) {
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`
+	{
+		skip_install_trust
+		admin localhost:2999
+		http_port     9080
+		https_port    9443
+		grace_period  1ns
+	}
+	http://localhost:9080 {
+		request_body {
+			max_size 10
+		}
+		respond "next handler reached"
+		handle_errors {
+			respond "{http.request.body}" {err.status_code}
+		}
+	}
+  `, "caddyfile")
+
+	// the declared length is rejected before respond runs, and the error
+	// route reading the body must still be held to max_size
+	tester.AssertPostResponseBody("http://localhost:9080/", nil, bytes.NewBufferString("abcdefghijklm"), http.StatusRequestEntityTooLarge, "request body: http: request body too large")
+}

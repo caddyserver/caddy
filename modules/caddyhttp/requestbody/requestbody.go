@@ -69,11 +69,11 @@ func (rb RequestBody) ServeHTTP(w http.ResponseWriter, r *http.Request, next cad
 		return next.ServeHTTP(w, r)
 	}
 	if rb.MaxSize > 0 {
-		// don't start later handlers on a body already known to exceed the limit
+		// wrap before rejecting: error routes get this request and may read the body
+		r.Body = errorWrapper{http.MaxBytesReader(w, r.Body, rb.MaxSize)}
 		if r.ContentLength > rb.MaxSize {
 			return caddyhttp.Error(http.StatusRequestEntityTooLarge, &http.MaxBytesError{Limit: rb.MaxSize})
 		}
-		r.Body = errorWrapper{http.MaxBytesReader(w, r.Body, rb.MaxSize)}
 	}
 	return next.ServeHTTP(w, r)
 }
