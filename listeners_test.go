@@ -19,6 +19,7 @@ import (
 	"crypto/tls"
 	"net"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2/internal"
@@ -343,6 +344,21 @@ func TestParseNetworkAddress(t *testing.T) {
 			defaultNetwork: "tcp",
 			expectErr:      true,
 		},
+		{
+			input:          "localhost:65535-65535",
+			defaultNetwork: "tcp",
+			expectAddr: NetworkAddress{
+				Network:   "tcp",
+				Host:      "localhost",
+				StartPort: 65535,
+				EndPort:   65535,
+			},
+		},
+		{
+			input:          "localhost:000000000080",
+			defaultNetwork: "tcp",
+			expectErr:      true,
+		},
 	} {
 		actualAddr, err := ParseNetworkAddressWithDefaults(tc.input, tc.defaultNetwork, tc.defaultPort)
 		if tc.expectErr && err == nil {
@@ -357,6 +373,26 @@ func TestParseNetworkAddress(t *testing.T) {
 		}
 		if !reflect.DeepEqual(tc.expectAddr, actualAddr) {
 			t.Errorf("Test %d: Expected addresses %v but got %v", i, tc.expectAddr, actualAddr)
+		}
+	}
+}
+
+// A very long port should fail with a short error (issue #8229).
+func TestParseNetworkAddressLongPort(t *testing.T) {
+	junk := strings.Repeat("\x7f", 1<<20)
+	for i, input := range []string{
+		":" + junk,
+		":80-" + junk,
+		":" + junk + "-80",
+		"localhost:" + strings.Repeat("9", 1<<20),
+	} {
+		_, err := ParseNetworkAddress(input)
+		if err == nil {
+			t.Errorf("Test %d: expected error but got none", i)
+			continue
+		}
+		if len(err.Error()) > 100 {
+			t.Errorf("Test %d: error message is %d bytes, expected at most 100", i, len(err.Error()))
 		}
 	}
 }

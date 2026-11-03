@@ -55,7 +55,28 @@ func TestFileMatcher(t *testing.T) {
 		f.Close()
 	}
 
+	if err := os.WriteFile("./testdata/.env", []byte("SECRET=1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		os.Remove("./testdata/.env")
+	})
+
 	for i, tc := range []testCase{
+		{
+			path:         "/.env",
+			expectedPath: "/.env",
+			expectedType: "file",
+			matched:      true,
+		},
+		{
+			path:    "/.env/",
+			matched: false,
+		},
+		{
+			path:    "/.env/./",
+			matched: false,
+		},
 		{
 			path:         "/foo.txt",
 			expectedPath: "/foo.txt",
@@ -63,9 +84,21 @@ func TestFileMatcher(t *testing.T) {
 			matched:      true,
 		},
 		{
-			path:         "/foo.txt/",
-			expectedPath: "/foo.txt",
-			expectedType: "file",
+			path:    "/foo.txt/",
+			matched: false,
+		},
+		{
+			path:    "/foo.txt/./",
+			matched: false,
+		},
+		{
+			path:    "/foo.txt//",
+			matched: false,
+		},
+		{
+			path:         "/foodir/./",
+			expectedPath: "/foodir/",
+			expectedType: "directory",
 			matched:      true,
 		},
 		{
@@ -330,8 +363,18 @@ func TestPHPFileMatcher(t *testing.T) {
 			matched:      true,
 		},
 		{
-			path:         "/notphp.php.txt/",
-			expectedPath: "/notphp.php.txt",
+			path:    "/notphp.php.txt/",
+			matched: false,
+		},
+		{
+			path:         "/index.php/",
+			expectedPath: "/index.php",
+			expectedType: "file",
+			matched:      true,
+		},
+		{
+			path:         "/index.php/somewhere/",
+			expectedPath: "/index.php",
 			expectedType: "file",
 			matched:      true,
 		},
@@ -741,5 +784,77 @@ func TestLiteralGlobNameMatchesOnlyAsFallback(t *testing.T) {
 		if rem != tc.expectedRemainder {
 			t.Errorf("Test %d: actual remainder: %v, expected: %v", i, rem, tc.expectedRemainder)
 		}
+	}
+}
+
+// An empty file is a valid candidate for the size policies: smallest_size
+// must keep it once chosen, and largest_size must be able to choose it.
+func TestSizePoliciesWithEmptyFiles(t *testing.T) {
+	root := t.TempDir()
+	for name, content := range map[string]string{
+		"empty.txt": "",
+		"small.txt": "x",
+		"big.txt":   "xxxxx",
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for _, tc := range []struct {
+		name         string
+		tryFiles     []string
+		policy       string
+		expectedPath string
+	}{
+		{
+			name:         "smallest_size keeps an empty file listed first",
+			tryFiles:     []string{"empty.txt", "small.txt", "big.txt"},
+			policy:       tryPolicySmallestSize,
+			expectedPath: "/empty.txt",
+		},
+		{
+			name:         "smallest_size chooses an empty file listed last",
+			tryFiles:     []string{"big.txt", "small.txt", "empty.txt"},
+			policy:       tryPolicySmallestSize,
+			expectedPath: "/empty.txt",
+		},
+		{
+			name:         "largest_size chooses the only file even if empty",
+			tryFiles:     []string{"missing.txt", "empty.txt"},
+			policy:       tryPolicyLargestSize,
+			expectedPath: "/empty.txt",
+		},
+		{
+			name:         "largest_size prefers a larger file after an empty one",
+			tryFiles:     []string{"empty.txt", "big.txt", "small.txt"},
+			policy:       tryPolicyLargestSize,
+			expectedPath: "/big.txt",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := &MatchFile{
+				fsmap:     &filesystems.FileSystemMap{},
+				Root:      root,
+				TryFiles:  tc.tryFiles,
+				TryPolicy: tc.policy,
+			}
+
+			req := &http.Request{URL: &url.URL{Path: "/"}}
+			repl := caddyhttp.NewTestReplacer(req)
+
+			result, err := m.MatchWithError(req)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !result {
+				t.Fatal("expected a match")
+			}
+
+			rel, _ := repl.Get("http.matchers.file.relative")
+			if rel != tc.expectedPath {
+				t.Errorf("actual path: %v, expected: %v", rel, tc.expectedPath)
+			}
+		})
 	}
 }

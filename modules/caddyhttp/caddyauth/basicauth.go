@@ -102,12 +102,12 @@ func (hba *HTTPBasicAuth) Provision(ctx caddy.Context) error {
 	// load account list
 	hba.Accounts = make(map[string]Account)
 	for i, acct := range hba.AccountList {
+		acct.Username = repl.ReplaceKnown(acct.Username, "")
+		acct.Password = repl.ReplaceKnown(acct.Password, "")
+
 		if _, ok := hba.Accounts[acct.Username]; ok {
 			return fmt.Errorf("account %d: username is not unique: %s", i, acct.Username)
 		}
-
-		acct.Username = repl.ReplaceKnown(acct.Username, "")
-		acct.Password = repl.ReplaceKnown(acct.Password, "")
 
 		if acct.Username == "" || acct.Password == "" {
 			return fmt.Errorf("account %d: username and password are required", i)
@@ -278,6 +278,25 @@ type Comparer interface {
 type Hasher interface {
 	Hash(plaintext []byte) ([]byte, error)
 	FakeHash() []byte
+}
+
+// hashesNamespace is the module namespace of password hashing modules.
+const hashesNamespace = "http.authentication.hashes"
+
+// hashModuleInfo returns the module info of the installed password
+// hashing module with the given name (e.g. "bcrypt"). If no such module
+// is installed, the returned error lists the available algorithms.
+func hashModuleInfo(name string) (caddy.ModuleInfo, error) {
+	mods := caddy.GetModules(hashesNamespace)
+	names := make([]string, 0, len(mods))
+	for _, mod := range mods {
+		if mod.ID.Name() == name {
+			return mod, nil
+		}
+		names = append(names, mod.ID.Name())
+	}
+	return caddy.ModuleInfo{}, fmt.Errorf("unrecognized hash algorithm: %s (available: %s)",
+		name, strings.Join(names, ", "))
 }
 
 // Account contains a username and password.
