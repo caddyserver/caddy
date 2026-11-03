@@ -361,6 +361,52 @@ func TestRewrite(t *testing.T) {
 			input:  newRequest(t, "GET", "/foo/bar/suffix"),
 			expect: newRequest(t, "GET", "/foo/bar/suffix"),
 		},
+		{
+			// the suffix pattern's own '%' must be compared literally: here the
+			// path's "%25" decodes to a literal '%', which is not the escape
+			// introducer the pattern asks for, so nothing may be stripped
+			rule:   Rewrite{StripPathSuffix: "%41"},
+			input:  newRequest(t, "GET", "/file%2541"), // decodes to "/file%41"
+			expect: newRequest(t, "GET", "/file%2541"),
+		},
+		{
+			rule:   Rewrite{StripPathSuffix: "%2f"},
+			input:  newRequest(t, "GET", "/file%252f"), // decodes to "/file%2f"
+			expect: newRequest(t, "GET", "/file%252f"),
+		},
+		{
+			rule:   Rewrite{StripPathSuffix: "%25"},
+			input:  newRequest(t, "GET", "/file%2525"), // decodes to "/file%25"
+			expect: newRequest(t, "GET", "/file%2525"),
+		},
+		{
+			// ...but a path that really does use the pattern's escape is stripped
+			rule:   Rewrite{StripPathSuffix: "%41"},
+			input:  newRequest(t, "GET", "/file%41"),
+			expect: newRequest(t, "GET", "/file"),
+		},
+		{
+			rule:   Rewrite{StripPathSuffix: "%2f"},
+			input:  newRequest(t, "GET", "/file%2f"),
+			expect: newRequest(t, "GET", "/file"),
+		},
+		{
+			rule:   Rewrite{StripPathSuffix: "%25"},
+			input:  newRequest(t, "GET", "/file%25"),
+			expect: newRequest(t, "GET", "/file"),
+		},
+		{
+			// an escaped suffix pattern must not match the decoded character
+			rule:   Rewrite{StripPathSuffix: "%2f"},
+			input:  newRequest(t, "GET", "/file/"),
+			expect: newRequest(t, "GET", "/file/"),
+		},
+		{
+			// a decoded suffix pattern still matches the path's escaped form
+			rule:   Rewrite{StripPathSuffix: ".html"},
+			input:  newRequest(t, "GET", "/a%2ehtml"), // %2e == '.'
+			expect: newRequest(t, "GET", "/a"),
+		},
 
 		{
 			rule:   Rewrite{URISubstring: []substrReplacer{{Find: "findme", Replace: "replaced"}}},
@@ -565,6 +611,46 @@ func TestRewrite(t *testing.T) {
 		}
 		if expected, actual := tc.expect.URL.Fragment, tc.input.URL.Fragment; expected != actual {
 			t.Errorf("Test %d: Expected URL.Fragment='%s' but got '%s'", i, expected, actual)
+		}
+	}
+}
+
+func TestRewriteEscapesFileMatcherRemainder(t *testing.T) {
+	for i, tc := range []struct {
+		input     string
+		remainder string
+		expect    string
+	}{
+		{
+			input:     "/index.php/foo/bar?a=b",
+			remainder: "/foo/bar",
+			expect:    "/index.php/foo/bar?a=b",
+		},
+		{
+			input:     "/index.php/..%252fprivate%252fsecret.txt",
+			remainder: "/..%2fprivate%2fsecret.txt",
+			expect:    "/index.php/..%252fprivate%252fsecret.txt",
+		},
+		{
+			input:     "/index.php/x%3Fa=evil?a=b",
+			remainder: "/x?a=evil",
+			expect:    "/index.php/x%3Fa=evil?a=b",
+		},
+		{
+			input:     "/index.php/x%23frag?a=b",
+			remainder: "/x#frag",
+			expect:    "/index.php/x%23frag?a=b",
+		},
+	} {
+		req := newRequest(t, "GET", tc.input)
+		repl := caddy.NewReplacer()
+		repl.Set("http.matchers.file.relative", "/index.php")
+		repl.Set("http.matchers.file.remainder", tc.remainder)
+
+		Rewrite{URI: "{http.matchers.file.relative}{http.matchers.file.remainder}"}.Rewrite(req, repl)
+
+		if expected, actual := tc.expect, req.URL.RequestURI(); expected != actual {
+			t.Errorf("Test %d: Expected URL.RequestURI()='%s' but got '%s'", i, expected, actual)
 		}
 	}
 }

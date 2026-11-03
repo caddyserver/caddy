@@ -99,6 +99,39 @@ func TestBasicAuthProvisionRejectsBracedPasswordInsteadOfRewritingIt(t *testing.
 	}
 }
 
+func TestBasicAuthProvisionRejectsUsernamesThatCollideAfterExpansion(t *testing.T) {
+	t.Setenv("CADDYTEST_BASICAUTH_X", "carol")
+	t.Setenv("CADDYTEST_BASICAUTH_Y", "carol")
+	t.Setenv("CADDYTEST_BASICAUTH_Z", "dave")
+
+	for _, tc := range []struct {
+		first, second string
+		wantErr       bool
+	}{
+		{"carol", "carol", true},
+		{"{env.CADDYTEST_BASICAUTH_X}", "{env.CADDYTEST_BASICAUTH_Y}", true},
+		{"carol", "{env.CADDYTEST_BASICAUTH_Y}", true},
+		{"{env.CADDYTEST_BASICAUTH_X}", "{env.CADDYTEST_BASICAUTH_X}", true},
+		{"{env.CADDYTEST_BASICAUTH_X}", "{env.CADDYTEST_BASICAUTH_Z}", false},
+	} {
+		hba := HTTPBasicAuth{
+			AccountList: []Account{
+				{Username: tc.first, Password: testBasicAuthHash},
+				{Username: tc.second, Password: testBasicAuthHash},
+			},
+		}
+		ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+		err := hba.Provision(ctx)
+		cancel()
+		if tc.wantErr && err == nil {
+			t.Errorf("%s + %s: expected a duplicate username error, got accounts %q", tc.first, tc.second, accountUsernames(hba))
+		}
+		if !tc.wantErr && err != nil {
+			t.Errorf("%s + %s: unexpected error: %v", tc.first, tc.second, err)
+		}
+	}
+}
+
 func accountUsernames(hba HTTPBasicAuth) []string {
 	names := make([]string, 0, len(hba.Accounts))
 	for name := range hba.Accounts {

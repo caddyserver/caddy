@@ -287,7 +287,7 @@ func (rw *responseWriter) WriteHeader(status int) {
 	// Not Modified must have certain headers set as if it was a 200 response, and according to the issue
 	// we would miss the Vary header in this case when compression was also enabled; note that we set this
 	// header in the responseWriter.init() method but that is only called if we are writing a response body
-	if status == http.StatusNotModified && !hasVaryValue(h, "Accept-Encoding") {
+	if status == http.StatusNotModified && !httpguts.HeaderValuesContainsToken(h["Vary"], "Accept-Encoding") {
 		h["Vary"] = append(h["Vary"], "Accept-Encoding")
 	}
 
@@ -541,7 +541,7 @@ func (rw *responseWriter) init() {
 	if !hasNonEmptyValue(hdr, "Content-Encoding") &&
 		!httpguts.HeaderValuesContainsToken(hdr["Cache-Control"], "no-transform") &&
 		rw.config.Match(rw) {
-		if !hasVaryValue(hdr, "Accept-Encoding") {
+		if !httpguts.HeaderValuesContainsToken(hdr["Vary"], "Accept-Encoding") {
 			hdr["Vary"] = append(hdr["Vary"], "Accept-Encoding")
 		}
 		if rw.encodingName == "" {
@@ -574,17 +574,6 @@ func firstValue(values []string) string {
 		return values[0]
 	}
 	return ""
-}
-
-func hasVaryValue(hdr http.Header, target string) bool {
-	for _, vary := range hdr["Vary"] {
-		for val := range strings.SplitSeq(vary, ",") {
-			if strings.EqualFold(strings.TrimSpace(val), target) {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // AcceptedEncodings returns the list of encodings that the
