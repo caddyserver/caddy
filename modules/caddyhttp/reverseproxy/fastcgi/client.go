@@ -134,6 +134,7 @@ var pad [maxPad]byte
 var (
 	errNoContentLength  = errors.New("request body has no known length; increase request_buffers so the body can be buffered in full to determine it")
 	errBadContentLength = errors.New("request body length is not a valid CONTENT_LENGTH")
+	errParamNameTooLong = errors.New("fastcgi param name too long")
 )
 
 // maxSurplus and maxSurplusWait bound how far a body reads on once a responder
