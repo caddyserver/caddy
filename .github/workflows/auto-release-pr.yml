@@ -1,9 +1,14 @@
 name: Release Proposal Approval Tracker
 
+# pull_request_target (instead of pull_request) runs in the context of the
+# base branch, so runs for fork PRs don't sit waiting for workflow approval
+# and expire. That's safe here because these jobs never check out or run
+# code from the PR: the only checkout is of the base branch, for the shared
+# release proposal script.
 on:
   pull_request_review:
     types: [submitted, dismissed]
-  pull_request:
+  pull_request_target:
     types: [labeled, unlabeled, synchronize, closed]
 
 permissions:
@@ -15,76 +20,59 @@ jobs:
   check-approvals:
     name: Track Maintainer Approvals
     runs-on: ubuntu-latest
-    # Only run on PRs with release-proposal label
-    if: contains(github.event.pull_request.labels.*.name, 'release-proposal') && github.event.pull_request.state == 'open'
-    
+    # Only run on open release proposals, which are created by the Release
+    # Proposal workflow from a branch in this repository
+    if: |
+      github.repository == 'caddyserver/caddy' &&
+      contains(github.event.pull_request.labels.*.name, 'release-proposal') &&
+      github.event.pull_request.state == 'open' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+
     steps:
+      - name: Checkout release scripts
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+
       - name: Check approvals and update PR
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           MAINTAINER_LOGINS: ${{ secrets.MAINTAINER_LOGINS }}
         with:
           script: |
-            const pr = context.payload.pull_request;
-            
+            const { checkProposal, REQUIRED_APPROVALS } = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/release-proposal.js`);
+            const payloadPR = context.payload.pull_request;
+
             // Extract version from PR title (e.g., "Release Proposal: v1.2.3")
-            const versionMatch = pr.title.match(/Release Proposal:\s*(v[\d.]+(?:-[\w.]+)?)/);
-            const commitMatch = pr.body.match(/\*\*Target Commit:\*\*\s*`([a-f0-9]+)`/);
-            
-            if (!versionMatch || !commitMatch) {
-              console.log('Could not extract version from title or commit from body');
+            const versionMatch = payloadPR.title.match(/^Release Proposal: (v\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)$/);
+            if (!versionMatch) {
+              console.log(`Not a release proposal title: ${payloadPR.title}`);
               return;
             }
-            
             const version = versionMatch[1];
-            const targetCommit = commitMatch[1];
-            
+
+            // Same checks as the release workflow runs when the tag is pushed
+            const { pr, targetCommit, approvers, approved } = await checkProposal({
+              github, context, version, maintainerLogins: process.env.MAINTAINER_LOGINS,
+            });
+            if (pr.number !== payloadPR.number) {
+              core.setFailed(`PR #${payloadPR.number} is not the open proposal for ${version} (#${pr.number} is)`);
+              return;
+            }
+
             console.log(`Version: ${version}, Target Commit: ${targetCommit}`);
-            
-            // Get all reviews
-            const reviews = await github.rest.pulls.listReviews({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: pr.number
-            });
-            
-            // Get list of maintainers
-            const maintainerLoginsRaw = process.env.MAINTAINER_LOGINS || '';
-            const maintainerLogins = maintainerLoginsRaw
-              .split(/[,;]/)
-              .map(login => login.trim())
-              .filter(login => login.length > 0);
-            
-            console.log(`Maintainer logins: ${maintainerLogins.join(', ')}`);
-            
-            // Get the latest review from each user
-            const latestReviewsByUser = {};
-            reviews.data.forEach(review => {
-              const username = review.user.login;
-              if (!latestReviewsByUser[username] || new Date(review.submitted_at) > new Date(latestReviewsByUser[username].submitted_at)) {
-                latestReviewsByUser[username] = review;
-              }
-            });
-            
-            // Count approvals from maintainers
-            const maintainerApprovals = Object.entries(latestReviewsByUser)
-              .filter(([username, review]) => 
-                maintainerLogins.includes(username) && 
-                review.state === 'APPROVED'
-              )
-              .map(([username, review]) => username);
-            
-            const approvalCount = maintainerApprovals.length;
-            console.log(`Found ${approvalCount} maintainer approvals from: ${maintainerApprovals.join(', ')}`);
-            
+            console.log(`Found ${approvers.length} maintainer approvals of ${pr.head.sha} from: ${approvers.join(', ')}`);
+
             // Get current labels
             const currentLabels = pr.labels.map(label => label.name);
             const hasApprovedLabel = currentLabels.includes('approved');
             const hasAwaitingApprovalLabel = currentLabels.includes('awaiting-approval');
-            
-            if (approvalCount >= 2 && !hasApprovedLabel) {
+
+            if (approved && !hasApprovedLabel) {
               console.log('✅ Quorum reached! Updating PR...');
-              
+
               // Remove awaiting-approval label if present
               if (hasAwaitingApprovalLabel) {
                 await github.rest.issues.removeLabel({
@@ -94,7 +82,7 @@ jobs:
                   name: 'awaiting-approval'
                 }).catch(e => console.log('Label not found:', e.message));
               }
-              
+
               // Add approved label
               await github.rest.issues.addLabels({
                 owner: context.repo.owner,
@@ -102,13 +90,13 @@ jobs:
                 issue_number: pr.number,
                 labels: ['approved']
               });
-              
+
               // Add comment with tagging instructions
-              const approversList = maintainerApprovals.map(u => `@${u}`).join(', ');
+              const approversList = approvers.map(u => `@${u}`).join(', ');
               const commentBody = [
                 '## ✅ Approval Quorum Reached',
                 '',
-                `This release proposal has been approved by ${approvalCount} maintainers: ${approversList}`,
+                `This release proposal has been approved by ${approvers.length} maintainers: ${approversList}`,
                 '',
                 '### Tagging Instructions',
                 '',
@@ -123,18 +111,18 @@ jobs:
                 '',
                 'The release workflow will automatically start when the tag is pushed.'
               ].join('\n');
-              
+
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: pr.number,
                 body: commentBody
               });
-              
+
               console.log('Posted tagging instructions');
-            } else if (approvalCount < 2 && hasApprovedLabel) {
+            } else if (!approved && hasApprovedLabel) {
               console.log('⚠️  Approval count dropped below quorum, removing approved label');
-              
+
               // Remove approved label
               await github.rest.issues.removeLabel({
                 owner: context.repo.owner,
@@ -142,7 +130,7 @@ jobs:
                 issue_number: pr.number,
                 name: 'approved'
               }).catch(e => console.log('Label not found:', e.message));
-              
+
               // Add awaiting-approval label
               if (!hasAwaitingApprovalLabel) {
                 await github.rest.issues.addLabels({
@@ -153,14 +141,17 @@ jobs:
                 });
               }
             } else {
-              console.log(`⏳ Waiting for more approvals (${approvalCount}/2 required)`);
+              console.log(`⏳ Waiting for more approvals (${approvers.length}/${REQUIRED_APPROVALS} required)`);
             }
+
 
   handle-pr-closed:
     name: Handle PR Closed Without Tag
     runs-on: ubuntu-latest
     if: |
+      github.repository == 'caddyserver/caddy' &&
       contains(github.event.pull_request.labels.*.name, 'release-proposal') &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.action == 'closed' && !contains(github.event.pull_request.labels.*.name, 'released')
     
     steps:
