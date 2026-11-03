@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -303,6 +304,49 @@ func TestResponseRecorderNestedDetach(t *testing.T) {
 			}
 			if DetachResponseWriterAfterHijack(outer, true) {
 				t.Error("detach should fail after hijack")
+			}
+		})
+	}
+}
+
+// Without an access log no writer records the hijacked connection, so
+// detachment must succeed unless a writer without Unwrap could hide one.
+func TestDetachResponseWriterAfterHijackWithoutRecorder(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		wrap func(http.ResponseWriter) http.ResponseWriter
+		want bool
+	}{
+		{
+			name: "net/http writer",
+			wrap: func(w http.ResponseWriter) http.ResponseWriter { return w },
+			want: true,
+		},
+		{
+			name: "wrapped net/http writer",
+			wrap: func(w http.ResponseWriter) http.ResponseWriter { return &ResponseWriterWrapper{ResponseWriter: w} },
+			want: true,
+		},
+		{
+			name: "writer without Unwrap",
+			wrap: func(w http.ResponseWriter) http.ResponseWriter { return struct{ http.ResponseWriter }{w} },
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := make(chan bool, 1)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				got <- DetachResponseWriterAfterHijack(tc.wrap(w), true)
+			}))
+			defer srv.Close()
+
+			resp, err := srv.Client().Get(srv.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp.Body.Close()
+
+			if detached := <-got; detached != tc.want {
+				t.Errorf("DetachResponseWriterAfterHijack() = %t, want %t", detached, tc.want)
 			}
 		})
 	}

@@ -410,10 +410,12 @@ func (hc *hijackedConn) ReadFrom(r io.Reader) (int64, error) {
 }
 
 // DetachResponseWriterAfterHijack configures w and its wrapped response
-// writers to detach when hijacked. It returns true if at least one writer
-// supports detachment and all such writers accept it. When detached,
-// bytes read or written stats will not be recorded for the hijacked
-// connection, and it's safe to use the connection after HTTP middleware returns.
+// writers to detach when hijacked. It returns true if no writer supporting
+// detachment rejects it, and either at least one accepts it or the chain
+// ends at net/http's own writer, so no writer without Unwrap can hide one.
+// When detached, bytes read or written stats will not be recorded for the
+// hijacked connection, and it's safe to use the connection after HTTP
+// middleware returns.
 func DetachResponseWriterAfterHijack(w http.ResponseWriter, detached bool) bool {
 	found := false
 	for w != nil {
@@ -425,7 +427,7 @@ func DetachResponseWriterAfterHijack(w http.ResponseWriter, detached bool) bool 
 		}
 		unwrapper, ok := w.(interface{ Unwrap() http.ResponseWriter })
 		if !ok {
-			return found
+			return found || isNetHTTPResponseWriter(w)
 		}
 		next := unwrapper.Unwrap()
 		if next == w {
@@ -434,6 +436,15 @@ func DetachResponseWriterAfterHijack(w http.ResponseWriter, detached bool) bool 
 		w = next
 	}
 	return found
+}
+
+// isNetHTTPResponseWriter reports whether w is the writer net/http passes to handlers.
+func isNetHTTPResponseWriter(w http.ResponseWriter) bool {
+	t := reflect.TypeOf(w)
+	if t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	return t.PkgPath() == "net/http"
 }
 
 // ResponseRecorder is a http.ResponseWriter that records
