@@ -22,13 +22,13 @@ import (
 	"net/http"
 	"net/textproto"
 	"net/url"
-	"path"
 	"regexp"
 	"runtime"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"cel.dev/cel-go/cel"
@@ -38,7 +38,6 @@ import (
 	"cel.dev/cel-go/common/types/ref"
 	"cel.dev/cel-go/parser"
 	"golang.org/x/net/idna"
-	"golang.org/x/text/cases"
 	"golang.org/x/text/unicode/norm"
 
 	"github.com/caddyserver/caddy/v2"
@@ -88,7 +87,11 @@ type (
 	// compare names, so `/secret` also matches `/SECRET` and `/ſecret`,
 	// `/password` matches `/paßword`, and `/café` matches the same name
 	// spelled with `e` and a combining acute accent (U+0301). Turkic
-	// mappings are not applied, so `ı` does not match `i`.
+	// mappings are not applied, so `ı` does not match `i`. The glob
+	// wildcard `?` and character classes (`[...]`) still match a single
+	// character of the request path as written, so `/?` and `/[ß]` match
+	// `/ß`, while `*` may end inside a character that folds to several,
+	// so `/*s` matches `/xß`.
 	//
 	// Because there are, in general, multiple possible escaped forms of any
 	// path, path matchers operate in unescaped space; that is, path matchers
@@ -428,9 +431,13 @@ func (m MatchPath) Provision(_ caddy.Context) error {
 			m[0] = m[i]
 			break
 		}
-		// patterns with escape sequences are folded around their escape
-		// sequences when they are parsed, in matchPatternWithEscapeSequence
-		if !strings.Contains(m[i], "%") {
+		// '?', character classes and escapes have to keep matching one
+		// character of the request path, so patterns that use them are only
+		// folded character by character here; matchFoldedPath folds the
+		// rest of them as it matches
+		if strings.ContainsAny(m[i], `%?[\`) {
+			m[i] = strings.Map(foldRune, m[i])
+		} else {
 			m[i] = foldPath(m[i])
 		}
 	}
@@ -451,7 +458,7 @@ func (m MatchPath) MatchWithError(r *http.Request) (bool, error) {
 	// related to differences between operating systems, applications,
 	// etc; if case-sensitive matching is needed, the regex matcher
 	// can be used instead.
-	reqPath := normalizeWindowsPath(foldPath(r.URL.Path))
+	reqPath := normalizeWindowsPath(r.URL.Path)
 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
@@ -506,14 +513,15 @@ func (m MatchPath) MatchWithError(r *http.Request) (bool, error) {
 
 		// for substring, prefix, and suffix matching, only perform those
 		// special, fast matches if they are the only wildcards in the pattern;
-		// otherwise we assume a globular match if any * appears in the middle
+		// otherwise we assume a globular match if any * appears in the middle;
+		// the fast matches compare the folded path and pattern as strings
 
 		// special case: first and last characters are wildcard,
 		// treat it as a fast substring match
 		if strings.Count(matchPattern, "*") == 2 &&
 			strings.HasPrefix(matchPattern, "*") &&
 			strings.HasSuffix(matchPattern, "*") {
-			if strings.Contains(reqPathForPattern, matchPattern[1:len(matchPattern)-1]) {
+			if strings.Contains(foldPath(reqPathForPattern), foldPath(matchPattern[1:len(matchPattern)-1])) {
 				return true, nil
 			}
 			continue
@@ -525,7 +533,7 @@ func (m MatchPath) MatchWithError(r *http.Request) (bool, error) {
 			// special case: first character is a wildcard,
 			// treat it as a fast suffix match
 			if strings.HasPrefix(matchPattern, "*") {
-				if strings.HasSuffix(reqPathForPattern, matchPattern[1:]) {
+				if strings.HasSuffix(foldPath(reqPathForPattern), foldPath(matchPattern[1:])) {
 					return true, nil
 				}
 				continue
@@ -534,7 +542,7 @@ func (m MatchPath) MatchWithError(r *http.Request) (bool, error) {
 			// special case: last character is a wildcard,
 			// treat it as a fast prefix match
 			if strings.HasSuffix(matchPattern, "*") {
-				if strings.HasPrefix(reqPathForPattern, matchPattern[:len(matchPattern)-1]) {
+				if strings.HasPrefix(foldPath(reqPathForPattern), foldPath(matchPattern[:len(matchPattern)-1])) {
 					return true, nil
 				}
 				continue
@@ -542,10 +550,8 @@ func (m MatchPath) MatchWithError(r *http.Request) (bool, error) {
 		}
 
 		// at last, use globular matching, which also is exact matching
-		// if there are no glob/wildcard chars; we ignore the error here
-		// because we can't handle it anyway
-		matches, _ := path.Match(matchPattern, reqPathForPattern)
-		if matches {
+		// if there are no glob/wildcard chars
+		if matchFoldedPath(matchPattern, reqPathForPattern, false) {
 			return true, nil
 		}
 	}
@@ -555,245 +561,658 @@ func (m MatchPath) MatchWithError(r *http.Request) (bool, error) {
 // matchPatternWithEscapeSequence reports whether escapedPath matches pattern,
 // a path pattern containing '%'. An escape sequence of an ASCII byte in the
 // pattern only matches that same escape sequence in the path, and a "%*" span
-// may contain escaped slashes; everything else is compared in unescaped space
-// after foldPath, like patterns without escape sequences. Wildcards and
-// character classes otherwise behave as in path.Match.
+// may contain escaped slashes; everything else is compared in unescaped space,
+// like patterns without escape sequences (see matchFoldedPath).
 func (MatchPath) matchPatternWithEscapeSequence(escapedPath, pattern string) bool {
-	elems, keep, ok := parseEscapedPattern(pattern)
-	if !ok {
-		return false
-	}
-	units := escapedPathUnits(escapedPath, &keep)
+	return matchFoldedPath(pattern, escapedPath, true)
+}
 
-	// matched[j] reports whether the elements so far match units[:j]
-	rows := make([]bool, 2*(len(units)+1))
-	matched, next := rows[:len(units)+1], rows[len(units)+1:]
-	matched[0] = true
-	for _, e := range elems {
-		alive := false
-		if e.kind == escStar || e.kind == escRawStar {
-			next[0] = matched[0]
-			alive = next[0]
-			for j, u := range units {
-				next[j+1] = matched[j+1] || (next[j] && e.spans(u))
-				alive = alive || next[j+1]
+// matchFoldedPath reports whether name matches pattern, with the syntax and
+// algorithm of path.Match, but case-insensitively: literal text in pattern
+// matches text in name that foldPath folds to the same runes, while '?' and
+// character classes match one character of name as written, compared after
+// foldRune. So "/password" matches "/paßword", and "/*s" matches "/xß" ('ß'
+// folds to "ss" and a '*' may end inside it), while "/?" and "/[ß]" still
+// match "/ß".
+//
+// If escaped is set, name is an escaped path, and pattern may use escape
+// sequences as described for matchPatternWithEscapeSequence.
+//
+// It does not allocate.
+func matchFoldedPath(pattern, name string, escaped bool) bool {
+	c := foldCursor{s: name, escaped: escaped}
+	for len(pattern) > 0 {
+		star, rawStar, chunk, rest := scanChunk(pattern, escaped)
+		pattern = rest
+		if star && chunk == "" {
+			// a trailing wildcard matches the rest of name, as long as
+			// that has no slash it cannot span
+			for c.skip(rawStar) {
 			}
-		} else {
-			next[0] = false
-			for j, u := range units {
-				next[j+1] = matched[j] && e.matches(u)
-				alive = alive || next[j+1]
+			return c.done()
+		}
+		// look for a match at the current position and, after a wildcard,
+		// at each later one it can reach; the last chunk has to match the
+		// rest of name. A "%*" span is in escaped space, so it ends where
+		// the pattern goes on, as if unescaped, with a character that is not
+		// escaped in name: "/%*/x" matches "/a%2Fb/x" (but not "/a%2Fx")
+		startsLiteral := chunk[0] != '?' && chunk[0] != '['
+		if _, isEsc := escapedPatternByte(chunk); isEsc {
+			startsLiteral = false
+		}
+		first := byte(0) // the ASCII character chunk starts with, if any
+		if startsLiteral && chunk[0] < utf8.RuneSelf && chunk[0] != '\\' && chunk[0] != '%' {
+			first = lowerASCII(chunk[0])
+		}
+		for {
+			if b, ok := c.nextASCII(); ok && first != 0 && lowerASCII(b) != first {
+				// cannot match here; skip it without copying c
+			} else if !rawStar || !startsLiteral || !c.atEscapedASCII() {
+				if t := c; matchChunk(chunk, &t, escaped) && (len(pattern) > 0 || t.done()) {
+					c = t
+					break
+				}
+			}
+			if !star || !c.skip(rawStar) {
+				return false
 			}
 		}
-		if !alive {
+	}
+	return c.done()
+}
+
+// scanChunk splits pattern into its leading wildcards and the chunk up to the
+// next wildcard, like the function of the same name in package path. rawStar
+// reports whether one of those wildcards is "%*", which is only recognized if
+// escaped is set.
+func scanChunk(pattern string, escaped bool) (star, rawStar bool, chunk, rest string) {
+	for {
+		if strings.HasPrefix(pattern, "*") {
+			pattern = pattern[1:]
+			star = true
+		} else if escaped && strings.HasPrefix(pattern, "%*") {
+			pattern = pattern[2:]
+			star, rawStar = true, true
+		} else {
+			break
+		}
+	}
+	inRange := false
+	i := 0
+scan:
+	for ; i < len(pattern); i++ {
+		switch pattern[i] {
+		case '\\':
+			if i+1 < len(pattern) {
+				i++
+			}
+		case '[':
+			inRange = true
+		case ']':
+			inRange = false
+		case '*':
+			if !inRange {
+				break scan
+			}
+		case '%':
+			if escaped && !inRange && i+1 < len(pattern) && pattern[i+1] == '*' {
+				break scan
+			}
+		}
+	}
+	return star, rawStar, pattern[:i], pattern[i:]
+}
+
+// matchChunk matches chunk, a part of a pattern without wildcards, against the
+// start of the rest of c's input, advancing c past the match.
+func matchChunk(chunk string, c *foldCursor, escaped bool) bool {
+	for len(chunk) > 0 {
+		var b byte
+		isEsc := false
+		if escaped {
+			b, isEsc = escapedPatternByte(chunk)
+		}
+		var ok bool
+		switch {
+		case chunk[0] == '?':
+			r, _, more := c.nextChar()
+			ok = more && r != '/'
+			chunk = chunk[1:]
+		case chunk[0] == '[':
+			r, _, more := c.nextChar()
+			n, match := matchClass(chunk, r)
+			if n < 0 {
+				return false
+			}
+			ok = more && match
+			chunk = chunk[n:]
+		case isEsc:
+			_, esc, more := c.nextChar()
+			ok = more && esc == int16(b)
+			chunk = chunk[3:]
+		default:
+			n := literalLen(chunk, escaped)
+			if n <= 0 {
+				return false
+			}
+			ok = matchLiteral(chunk[:n], c, escaped)
+			chunk = chunk[n:]
+		}
+		if !ok {
 			return false
 		}
-		matched, next = next, matched
 	}
-	return matched[len(units)]
+	return true
 }
 
-// escapedPathUnit is one character of a request path being matched against a
-// pattern with escape sequences.
-type escapedPathUnit struct {
-	// r is the character after foldPath, or -1 for a byte that is not
-	// valid UTF-8.
-	r rune
-	// esc is the byte encoded by the escape sequence the character was
-	// written as, if the pattern may need to compare it in escaped space,
-	// or -1.
-	esc int16
+// matchLiteral matches lit, literal text from a pattern, against the start of
+// the rest of c's input, advancing c past the match.
+func matchLiteral(lit string, c *foldCursor, escaped bool) bool {
+	// ASCII characters fold on their own, so compare those directly
+	for lit != "" && lit[0] < utf8.RuneSelf && lit[0] != '\\' && lit[0] != '%' {
+		b, ok := c.nextASCII()
+		if !ok {
+			break
+		}
+		if lowerASCII(lit[0]) != lowerASCII(b) {
+			return false
+		}
+		lit, c.s = lit[1:], c.s[1:]
+	}
+	if lit == "" {
+		return true
+	}
+	l := foldCursor{s: lit, escaped: escaped, pattern: true}
+	for {
+		want, ok := l.next()
+		if !ok {
+			return true
+		}
+		if r, ok := c.next(); !ok || r != want {
+			return false
+		}
+	}
 }
 
-// escapedPatternElem is one element of a path pattern with escape sequences.
-type escapedPatternElem struct {
-	kind  escapedPatternKind
-	r     rune   // for escLiteral
-	b     byte   // for escByte
-	class string // for escClass, including the brackets
+// matchClass reports whether r matches the character class at the start of
+// chunk, with the syntax of path.Match; r and the bounds of each range are
+// compared after foldRune. It also returns the length of the class, or -1 if
+// it is malformed.
+func matchClass(chunk string, r rune) (int, bool) {
+	if r < 0 {
+		r = utf8.RuneError // a byte that is not valid UTF-8, as path.Match sees it
+	}
+	r = foldRune(r)
+	i := 1
+	negated := i < len(chunk) && chunk[i] == '^'
+	if negated {
+		i++
+	}
+	match := false
+	for nrange := 0; ; nrange++ {
+		if i < len(chunk) && chunk[i] == ']' && nrange > 0 {
+			return i + 1, match != negated
+		}
+		lo, n := classChar(chunk[i:])
+		if n < 0 {
+			return -1, false
+		}
+		i += n
+		hi := lo
+		if chunk[i] == '-' {
+			if hi, n = classChar(chunk[i+1:]); n < 0 {
+				return -1, false
+			}
+			i += 1 + n
+		}
+		if foldRune(lo) <= r && r <= foldRune(hi) {
+			match = true
+		}
+	}
 }
 
-type escapedPatternKind uint8
+// classChar decodes the possibly escaped character at the start of s, which is
+// inside a character class, like getEsc in package path. It returns its length
+// in s, or -1 if the class is malformed there.
+func classChar(s string) (rune, int) {
+	if s == "" || s[0] == '-' || s[0] == ']' {
+		return 0, -1
+	}
+	n := 0
+	if s[0] == '\\' {
+		n = 1
+		if len(s) == 1 {
+			return 0, -1
+		}
+	}
+	r, size := utf8.DecodeRuneInString(s[n:])
+	if r == utf8.RuneError && size == 1 {
+		return 0, -1
+	}
+	if n += size; n == len(s) {
+		return 0, -1
+	}
+	return r, n
+}
 
+// literalLen returns the length of the literal text at the start of chunk,
+// that is, up to the next '?', character class or (if escaped is set) escape
+// sequence compared in escaped space. It returns -1 if chunk ends in an
+// unescaped backslash.
+func literalLen(chunk string, escaped bool) int {
+	i := 0
+	for i < len(chunk) {
+		switch chunk[i] {
+		case '?', '[':
+			return i
+		case '\\':
+			if i+1 == len(chunk) {
+				return -1
+			}
+			i++
+		case '%':
+			if !escaped {
+				break
+			}
+			if _, ok := escapedPatternByte(chunk[i:]); ok {
+				return i
+			}
+			if _, ok := unescapeByte(chunk[i:]); ok {
+				_, n := unescapeChar(chunk[i:])
+				i += n
+				continue
+			}
+		}
+		_, n := utf8.DecodeRuneInString(chunk[i:])
+		i += n
+	}
+	return i
+}
+
+// escapedPatternByte reports whether s starts with an escape sequence that a
+// pattern compares in escaped space, and returns the byte it encodes: an ASCII
+// byte, or one that does not start a valid UTF-8 sequence. A character outside
+// ASCII has only one escaped form, so it is compared like the character itself.
+func escapedPatternByte(s string) (byte, bool) {
+	b, ok := unescapeByte(s)
+	if !ok {
+		return 0, false
+	}
+	if b >= utf8.RuneSelf {
+		if r, n := unescapeChar(s); n != 3 || r != utf8.RuneError {
+			return 0, false
+		}
+	}
+	return b, true
+}
+
+// foldBufLen is the most runes a foldCursor holds at a time: a character, or
+// one followed by combining marks that have to be put in canonical order.
+const foldBufLen = 32
+
+// foldCursor reads its input as the runes the path matcher compares: those of
+// foldPath, which folds each character on its own and then puts combining
+// marks in canonical order. It also keeps track of where each character of the
+// input ends, so that '?' and character classes can match one character even
+// if it folds to several runes.
+type foldCursor struct {
+	s       string // input not yet read
+	escaped bool   // whether s is escaped; escape sequences are decoded
+	pattern bool   // whether s is literal text from a pattern; '\' quotes
+
+	units [foldBufLen]rune  // the folded runes of the current character
+	ccc   [foldBufLen]uint8 // the canonical combining class of each before folding
+	n, i  int               // units[i:n] are not consumed yet
+
+	char rune  // the current character as written
+	esc  int16 // the byte char was escaped as, if a single escape sequence, or -1
+}
+
+// done reports whether c's input is consumed.
+func (c *foldCursor) done() bool {
+	return c.i == c.n && c.s == ""
+}
+
+// nextASCII returns the next byte of the input if c is between characters and
+// that byte is an ASCII character as written, which folds to itself
+// lower-cased and is a character of its own.
+func (c *foldCursor) nextASCII() (byte, bool) {
+	if c.i < c.n || c.s == "" {
+		return 0, false
+	}
+	b := c.s[0]
+	return b, b < utf8.RuneSelf && (b != '%' || !c.escaped) && (b != '\\' || !c.pattern)
+}
+
+func lowerASCII(b byte) byte {
+	if 'A' <= b && b <= 'Z' {
+		b += 'a' - 'A'
+	}
+	return b
+}
+
+// next consumes the next folded rune, reporting false at the end of input.
+func (c *foldCursor) next() (rune, bool) {
+	if b, ok := c.nextASCII(); ok {
+		c.s = c.s[1:]
+		return rune(lowerASCII(b)), true
+	}
+	if c.i == c.n {
+		if c.s == "" {
+			return 0, false
+		}
+		c.load()
+	}
+	c.i++
+	return c.units[c.i-1], true
+}
+
+// nextChar consumes the next character of the input as written, along with the
+// byte it was escaped as (or -1). It reports false if the input is consumed or
+// the current position is inside the folded form of a character.
+func (c *foldCursor) nextChar() (rune, int16, bool) {
+	if b, ok := c.nextASCII(); ok {
+		c.s = c.s[1:]
+		return rune(b), -1, true
+	}
+	if c.i == c.n {
+		if c.s == "" {
+			return 0, -1, false
+		}
+		c.load()
+	} else if c.i > 0 {
+		return 0, -1, false
+	}
+	c.i = c.n
+	return c.char, c.esc, true
+}
+
+// skip consumes the next folded rune if a wildcard can span it. Neither
+// wildcard spans a slash, but "%*" (rawStar) spans an escaped one.
+func (c *foldCursor) skip(rawStar bool) bool {
+	if b, ok := c.nextASCII(); ok {
+		if b == '/' {
+			return false
+		}
+		c.s = c.s[1:]
+		return true
+	}
+	if c.i == c.n {
+		if c.s == "" {
+			return false
+		}
+		c.load()
+	}
+	// a slash is always a character of its own
+	if c.char == '/' && (!rawStar || c.esc < 0) {
+		return false
+	}
+	c.i++
+	return true
+}
+
+// atEscapedASCII reports whether the next character of the input is an ASCII
+// character written as an escape sequence.
+func (c *foldCursor) atEscapedASCII() bool {
+	if c.i == c.n {
+		if c.s == "" || c.s[0] != '%' {
+			return false
+		}
+		c.load()
+	}
+	return c.i == 0 && c.esc >= 0 && c.esc < utf8.RuneSelf
+}
+
+// load reads the next character of the input into c.units. If that character
+// ends in a combining mark and the marks after it are not in canonical order,
+// they are read along with it and sorted, as NFD does.
+func (c *foldCursor) load() {
+	r, esc, size := c.read(c.s)
+	c.s = c.s[size:]
+	c.char, c.esc = r, esc
+	c.n, c.i = 0, 0
+	c.appendFolded(r)
+	if c.ccc[c.n-1] == 0 || !c.marksOutOfOrder() {
+		return
+	}
+	for c.s != "" {
+		r, _, size := c.read(c.s)
+		if runeProperties(r).LeadCCC() == 0 {
+			break
+		}
+		c.s = c.s[size:]
+		c.appendFolded(r)
+	}
+	for i := 1; i < c.n; i++ {
+		for j := i; j > 0 && c.ccc[j] != 0 && c.ccc[j-1] > c.ccc[j]; j-- {
+			c.units[j], c.units[j-1] = c.units[j-1], c.units[j]
+			c.ccc[j], c.ccc[j-1] = c.ccc[j-1], c.ccc[j]
+		}
+	}
+}
+
+// marksOutOfOrder reports whether the combining marks at the start of c.s are
+// out of canonical order with each other or with those at the end of c.units,
+// provided they all fit into c.units.
+func (c *foldCursor) marksOutOfOrder() bool {
+	n, last, outOfOrder := c.n, c.ccc[c.n-1], false
+	for s := c.s; s != ""; {
+		r, _, size := c.read(s)
+		p := runeProperties(r)
+		if p.LeadCCC() == 0 {
+			break
+		}
+		if p.LeadCCC() < last {
+			outOfOrder = true
+		}
+		last = p.TrailCCC()
+		n += max(utf8.RuneCount(p.Decomposition()), 1)
+		if n > len(c.units) {
+			return false
+		}
+		s = s[size:]
+	}
+	return outOfOrder
+}
+
+// read decodes the character at the start of s, which is not empty. It returns
+// the character, or the negated byte if s starts with one that is not valid
+// UTF-8; the byte it was escaped as, if it was written as a single escape
+// sequence, or -1; and its length in s.
+func (c *foldCursor) read(s string) (rune, int16, int) {
+	switch {
+	case c.pattern && s[0] == '\\' && len(s) > 1:
+		r, n := decodeRune(s[1:])
+		return r, -1, n + 1
+	case c.escaped:
+		b, ok := unescapeByte(s)
+		if !ok {
+			break
+		}
+		if b < utf8.RuneSelf {
+			return rune(b), int16(b), 3
+		}
+		if r, n := unescapeChar(s); n != 3 || r != utf8.RuneError {
+			return r, -1, n
+		}
+		return -rune(b), int16(b), 3
+	}
+	r, n := decodeRune(s)
+	return r, -1, n
+}
+
+// decodeRune is utf8.DecodeRuneInString, except that it returns the negated
+// byte for one that is not valid UTF-8, so that it does not compare equal to
+// a valid character, nor to another invalid byte.
+func decodeRune(s string) (rune, int) {
+	if s[0] < utf8.RuneSelf {
+		return rune(s[0]), 1
+	}
+	r, n := utf8.DecodeRuneInString(s)
+	if r == utf8.RuneError && n == 1 {
+		return -rune(s[0]), 1
+	}
+	return r, n
+}
+
+// Hangul syllables decompose algorithmically, so norm.Properties does not
+// have their decompositions.
 const (
-	escLiteral escapedPatternKind = iota // a character, compared in unescaped space
-	escByte                              // an escape sequence, compared in escaped space
-	escAny                               // '?'
-	escClass                             // a character class, such as "[a-z]"
-	escStar                              // '*'
-	escRawStar                           // "%*"
+	hangulBase   = 0xAC00
+	hangulCount  = 11172
+	hangulLBase  = 0x1100
+	hangulVBase  = 0x1161
+	hangulTBase  = 0x11A7
+	hangulTCount = 28
+	hangulNCount = 588
 )
 
-// matches reports whether e, which is not a wildcard, matches u.
-func (e escapedPatternElem) matches(u escapedPathUnit) bool {
-	switch e.kind {
-	case escLiteral:
-		return u.r == e.r
-	case escByte:
-		return u.esc == int16(e.b)
-	case escAny:
-		return u.r != '/'
-	case escClass:
-		ok, _ := path.Match(e.class, string(u.r))
-		return ok
-	case escStar, escRawStar:
-		// wildcards span units instead; see spans
-	}
-	return false
-}
-
-// spans reports whether u may be part of the span matched by e, a wildcard.
-// Neither wildcard spans a slash, but "%*" spans an escaped one.
-func (e escapedPatternElem) spans(u escapedPathUnit) bool {
-	return u.r != '/' || (e.kind == escRawStar && u.esc >= 0)
-}
-
-// parseEscapedPattern splits pattern into the elements compared by
-// matchPatternWithEscapeSequence. It also returns the ASCII bytes whose escape
-// sequences in a request path must be kept escaped to be compared with the
-// pattern. It reports false if pattern is malformed.
-func parseEscapedPattern(pattern string) ([]escapedPatternElem, [utf8.RuneSelf]bool, bool) {
-	var (
-		elems = make([]escapedPatternElem, 0, len(pattern))
-		keep  [utf8.RuneSelf]bool
-		lit   []byte // literal text not yet folded
-	)
-	flush := func() {
-		foldEach(lit, func(r rune) {
-			elems = append(elems, escapedPatternElem{kind: escLiteral, r: r})
-		})
-		lit = lit[:0]
-	}
-	for i := 0; i < len(pattern); {
-		if b, ok := unescapeByte(pattern[i:]); ok {
-			if b < utf8.RuneSelf {
-				flush()
-				elems = append(elems, escapedPatternElem{kind: escByte, b: b})
-				keep[b] = true
-				i += 3
-				continue
-			}
-			// a character outside ASCII has only one escaped form, so
-			// it is compared like the character itself
-			r, n := unescapeChar(pattern[i:])
-			if n == 3 && r == utf8.RuneError {
-				flush()
-				elems = append(elems, escapedPatternElem{kind: escByte, b: b})
-			} else {
-				lit = utf8.AppendRune(lit, r)
-			}
-			i += n
-			continue
+// appendFolded appends the folded form of r to c.units: its canonical
+// decomposition with each rune case folded, along with the canonical combining
+// class of each rune of the decomposition.
+func (c *foldCursor) appendFolded(r rune) {
+	switch {
+	case r < utf8.RuneSelf:
+		c.push(foldRune(r), 0)
+	case hangulBase <= r && r < hangulBase+hangulCount:
+		s := r - hangulBase
+		c.push(hangulLBase+s/hangulNCount, 0)
+		c.push(hangulVBase+s%hangulNCount/hangulTCount, 0)
+		if t := s % hangulTCount; t != 0 {
+			c.push(hangulTBase+t, 0)
 		}
-		switch pattern[i] {
-		case '%':
-			if i+1 < len(pattern) && pattern[i+1] == '*' {
-				flush()
-				elems = append(elems, escapedPatternElem{kind: escRawStar})
-				keep['/'] = true
-				i += 2
-				continue
-			}
-			lit = append(lit, '%')
-			i++
-		case '*':
-			flush()
-			elems = append(elems, escapedPatternElem{kind: escStar})
-			i++
-		case '?':
-			flush()
-			elems = append(elems, escapedPatternElem{kind: escAny})
-			i++
-		case '[':
-			n := classLen(pattern[i:])
-			if n < 0 {
-				return nil, keep, false
-			}
-			class := foldPath(pattern[i : i+n])
-			if _, err := path.Match(class, ""); err != nil {
-				return nil, keep, false
-			}
-			flush()
-			elems = append(elems, escapedPatternElem{kind: escClass, class: class})
-			i += n
-		case '\\':
-			if i+1 >= len(pattern) {
-				return nil, keep, false
-			}
-			_, n := utf8.DecodeRuneInString(pattern[i+1:])
-			lit = append(lit, pattern[i+1:i+1+n]...)
-			i += 1 + n
-		default:
-			lit = append(lit, pattern[i])
-			i++
-		}
-	}
-	flush()
-	return elems, keep, true
-}
-
-// escapedPathUnits decodes escapedPath into the characters compared by
-// matchPatternWithEscapeSequence. The escape sequences of the ASCII bytes in
-// keep are kept as units of their own; everything else is unescaped and run
-// through foldPath, so the unescaped text is folded and normalized as a whole
-// (e.g. "e%CC%81" becomes one 'é').
-func escapedPathUnits(escapedPath string, keep *[utf8.RuneSelf]bool) []escapedPathUnit {
-	units := make([]escapedPathUnit, 0, len(escapedPath))
-	text := make([]byte, 0, len(escapedPath)) // unescaped text not yet folded
-	flush := func() {
-		foldEach(text, func(r rune) {
-			units = append(units, escapedPathUnit{r: r, esc: -1})
-		})
-		text = text[:0]
-	}
-	for i := 0; i < len(escapedPath); {
-		b, ok := unescapeByte(escapedPath[i:])
-		switch {
-		case !ok:
-			text = append(text, escapedPath[i])
-			i++
-		case b < utf8.RuneSelf && keep[b]:
-			flush()
-			r := rune(b)
-			if 'A' <= r && r <= 'Z' {
-				r += 'a' - 'A'
-			}
-			units = append(units, escapedPathUnit{r: r, esc: int16(b)})
-			i += 3
-		case b < utf8.RuneSelf:
-			text = append(text, b)
-			i += 3
-		default:
-			r, n := unescapeChar(escapedPath[i:])
-			if n == 3 && r == utf8.RuneError {
-				flush()
-				units = append(units, escapedPathUnit{r: -1, esc: int16(b)})
-			} else {
-				text = utf8.AppendRune(text, r)
-			}
-			i += n
-		}
-	}
-	flush()
-	return units
-}
-
-// foldEach calls fn with each character of foldPath(text).
-func foldEach(text []byte, fn func(rune)) {
-	for _, c := range text {
-		if c >= utf8.RuneSelf {
-			for _, r := range foldPath(string(text)) {
-				fn(r)
-			}
+	default:
+		p := runeProperties(r)
+		d := p.Decomposition()
+		if len(d) == 0 {
+			c.pushCaseFolded(r, p.CCC())
 			return
 		}
-	}
-	for _, c := range text {
-		if 'A' <= c && c <= 'Z' {
-			c += 'a' - 'A'
+		for len(d) > 0 {
+			dr, n := utf8.DecodeRune(d)
+			c.pushCaseFolded(dr, norm.NFD.Properties(d[:n]).CCC())
+			d = d[n:]
 		}
-		fn(rune(c))
 	}
+}
+
+func (c *foldCursor) pushCaseFolded(r rune, ccc uint8) {
+	if f, ok := fullCaseFolds[r]; ok {
+		for _, r := range f {
+			c.push(r, 0)
+		}
+		return
+	}
+	c.push(foldRune(r), ccc)
+}
+
+func (c *foldCursor) push(r rune, ccc uint8) {
+	c.units[c.n], c.ccc[c.n] = r, ccc
+	c.n++
+}
+
+// runeProperties returns the NFD properties of r.
+func runeProperties(r rune) norm.Properties {
+	var b [utf8.UTFMax]byte
+	if r < 0 {
+		return norm.Properties{}
+	}
+	return norm.NFD.Properties(b[:utf8.EncodeRune(b[:], r)])
+}
+
+// fullCaseFolds holds the case foldings to more than one rune (status F in
+// CaseFolding.txt) of the characters that have no canonical decomposition.
+// Precomposed characters with such foldings, like 'ΐ' (U+0390), get them by
+// folding their decomposition rune by rune.
+var fullCaseFolds = map[rune]string{
+	0x00DF: "ss",  // ß LATIN SMALL LETTER SHARP S
+	0x0149: "ʼn",  // ŉ LATIN SMALL LETTER N PRECEDED BY APOSTROPHE
+	0x0587: "եւ",  // և ARMENIAN SMALL LIGATURE ECH YIWN
+	0x1E9A: "aʾ",  // ẚ LATIN SMALL LETTER A WITH RIGHT HALF RING
+	0x1E9E: "ss",  // ẞ LATIN CAPITAL LETTER SHARP S
+	0xFB00: "ff",  // ﬀ LATIN SMALL LIGATURE FF
+	0xFB01: "fi",  // ﬁ LATIN SMALL LIGATURE FI
+	0xFB02: "fl",  // ﬂ LATIN SMALL LIGATURE FL
+	0xFB03: "ffi", // ﬃ LATIN SMALL LIGATURE FFI
+	0xFB04: "ffl", // ﬄ LATIN SMALL LIGATURE FFL
+	0xFB05: "st",  // ﬅ LATIN SMALL LIGATURE LONG S T
+	0xFB06: "st",  // ﬆ LATIN SMALL LIGATURE ST
+	0xFB13: "մն",  // ﬓ ARMENIAN SMALL LIGATURE MEN NOW
+	0xFB14: "մե",  // ﬔ ARMENIAN SMALL LIGATURE MEN ECH
+	0xFB15: "մի",  // ﬕ ARMENIAN SMALL LIGATURE MEN INI
+	0xFB16: "վն",  // ﬖ ARMENIAN SMALL LIGATURE VEW NOW
+	0xFB17: "մխ",  // ﬗ ARMENIAN SMALL LIGATURE MEN XEH
+}
+
+// foldRune maps r to one representative of the runes it is equal to under
+// Unicode simple case folding, so 'S', 's' and 'ſ' all map to 's'. Turkic
+// mappings are not applied: 'ı' and 'İ' map to themselves.
+func foldRune(r rune) rune {
+	if r < utf8.RuneSelf {
+		if 'A' <= r && r <= 'Z' {
+			r += 'a' - 'A'
+		}
+		return r
+	}
+	l := unicode.ToLower(unicode.ToUpper(r))
+	if l == r {
+		return r
+	}
+	// unicode.ToLower('İ') is 'i', for one, but they do not fold together
+	for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
+		if f == l {
+			return l
+		}
+	}
+	return r
+}
+
+// foldPath maps p to the form the path matcher compares literal text in: the
+// canonical decomposition of p (NFD) with Unicode default case folding (the C
+// and F mappings in CaseFolding.txt) applied. Two paths fold to the same
+// string exactly when they are canonical caseless matches (Unicode section
+// 3.13), which is how case-insensitive APFS volumes on macOS compare names:
+// /SECRET, /ſecret and /secret fold together, as do /paßword and /password,
+// and "café" spelled with a precomposed 'é' or with 'e' and a combining acute
+// accent. Turkic mappings are not applied, so 'ı' (U+0131) stays distinct
+// from 'i'. It only allocates if p is not already folded.
+func foldPath(p string) string {
+	ascii := true
+	for i := 0; i < len(p) && ascii; i++ {
+		ascii = p[i] < utf8.RuneSelf
+	}
+	if ascii {
+		return strings.ToLower(p)
+	}
+	c := foldCursor{s: p}
+	var sb strings.Builder
+	same, differs := 0, false // p[:same] folds to itself, and so does all of p unless differs
+	for {
+		r, ok := c.next()
+		if !ok {
+			break
+		}
+		if !differs {
+			if same < len(p) {
+				if pr, n := decodeRune(p[same:]); pr == r {
+					same += n
+					continue
+				}
+			}
+			differs = true
+			sb.Grow(len(p) + utf8.UTFMax)
+			sb.WriteString(p[:same])
+		}
+		if r < 0 {
+			sb.WriteByte(byte(-r))
+		} else {
+			sb.WriteRune(r)
+		}
+	}
+	if !differs {
+		return p
+	}
+	return sb.String()
 }
 
 // unescapeByte decodes the escape sequence at the start of s, if any.
@@ -838,42 +1257,6 @@ func unhex(c byte) (byte, bool) {
 		return c - 'A' + 10, true
 	}
 	return 0, false
-}
-
-// classLen returns the length of the character class at the start of s, or
-// -1 if it is not closed.
-func classLen(s string) int {
-	for i := 1; i < len(s); i++ {
-		switch s[i] {
-		case '\\':
-			i++
-		case ']':
-			return i + 1
-		}
-	}
-	return -1
-}
-
-// pathFolder case-folds paths for foldPath. It is stateless and safe for
-// concurrent use.
-var pathFolder = cases.Fold()
-
-// foldPath maps p to the form the case-insensitive path matcher compares:
-// Unicode default case folding (the C and F mappings in CaseFolding.txt) of
-// its canonical decomposition, recomposed into NFC. Two paths fold to the same
-// string exactly when they are canonical caseless matches (Unicode section
-// 3.13), which is how case-insensitive APFS volumes on macOS compare names:
-// /SECRET, /ſecret and /secret fold together, as do /paßword and /password,
-// and "café" spelled with a precomposed 'é' or with 'e' and a combining acute
-// accent. Turkic mappings are not applied, so 'ı' (U+0131) stays distinct
-// from 'i'.
-func foldPath(p string) string {
-	for i := 0; i < len(p); i++ {
-		if p[i] >= utf8.RuneSelf {
-			return norm.NFC.String(pathFolder.String(norm.NFD.String(p)))
-		}
-	}
-	return strings.ToLower(p)
 }
 
 // windowsEscapedPathSeparatorRepl normalizes Windows backslash separators

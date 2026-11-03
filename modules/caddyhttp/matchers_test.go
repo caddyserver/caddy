@@ -17,14 +17,21 @@ package caddyhttp
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
+	"unicode"
 	"unicode/utf8"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/unicode/norm"
 
 	"github.com/caddyserver/caddy/v2"
 )
@@ -554,6 +561,51 @@ func TestPathMatcher(t *testing.T) {
 			input:  "/bands/ac%2Fx%2Fdc",
 			expect: true,
 		},
+		{
+			match:  MatchPath{"/?"},
+			input:  "/%C3%9F", // '?' matches 'ß' although it folds to "ss"
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/[ß]"},
+			input:  "/%C3%9F",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/[ß]"},
+			input:  "/%E1%BA%9E", // U+1E9E LATIN CAPITAL LETTER SHARP S
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/??"},
+			input:  "/%C3%9F",
+			expect: false,
+		},
+		{
+			match:  MatchPath{"/pa?word"},
+			input:  "/pa%C3%9Fword",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/[s]ecret"},
+			input:  "/%C5%BFecret",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/?%2fpanel"},
+			input:  "/%C3%9F%2Fpanel",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/[ß]%2fpanel"},
+			input:  "/%C3%9F%2Fpanel",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/%*/x"},
+			input:  "/a%2Fx",
+			expect: false,
+		},
 	} {
 		err := tc.match.Provision(caddy.Context{})
 		if err == nil && tc.provisionErr {
@@ -771,6 +823,94 @@ func TestPathMatcherFilesystemCaseFolding(t *testing.T) {
 		}
 		if _, err := os.Stat(filepath.Join(dir, tc.variant)); err == nil {
 			expectMatch(tc.name, tc.variant)
+		}
+	}
+}
+
+// TestPathMatcherGlobLikePathMatch checks that on ASCII paths, the path
+// matcher's globbing agrees with path.Match on the lower-cased pattern and
+// path, as it did before it learned to fold Unicode.
+func TestPathMatcherGlobLikePathMatch(t *testing.T) {
+	rnd := rand.New(rand.NewPCG(1, 2))
+	gen := func(alphabet string, n int) string {
+		b := make([]byte, rnd.IntN(n+1))
+		for i := range b {
+			b[i] = alphabet[rnd.IntN(len(alphabet))]
+		}
+		return string(b)
+	}
+	for range 200000 {
+		pattern, name := gen(`aAbB/*?[]^-\`, 8), gen("aAbB/-^", 6)
+		want, _ := path.Match(strings.ToLower(pattern), strings.ToLower(name))
+		if got := matchFoldedPath(pattern, name, false); got != want {
+			t.Fatalf("matchFoldedPath(%q, %q) = %t, path.Match says %t", pattern, name, got, want)
+		}
+		if got := matchFoldedPath(pattern, name, true); got != want {
+			t.Fatalf("matchFoldedPath(%q, %q, escaped) = %t, path.Match says %t", pattern, name, got, want)
+		}
+	}
+}
+
+// TestFoldPathCanonicalCaseless checks foldPath against golang.org/x/text:
+// two strings must fold together exactly when their canonical caseless forms,
+// NFD(toCasefold(NFD(s))) (Unicode section 3.13), are equal. That holds if,
+// for every s, folding the canonical caseless form gives foldPath(s), and the
+// canonical caseless form of foldPath(s) is that of s.
+func TestFoldPathCanonicalCaseless(t *testing.T) {
+	fold := cases.Fold()
+	caseless := func(s string) string {
+		return norm.NFD.String(fold.String(norm.NFD.String(s)))
+	}
+	check := func(s string) {
+		t.Helper()
+		f, c := foldPath(s), caseless(s)
+		if foldPath(c) != f || caseless(f) != c {
+			t.Errorf("%+q: foldPath gives %+q, canonical caseless form is %+q", s, f, c)
+		}
+	}
+	for r := rune(utf8.RuneSelf); r <= unicode.MaxRune; r++ {
+		if !utf8.ValidRune(r) {
+			continue
+		}
+		s := string(r)
+		if f := fold.String(s); fold.String(f) != f {
+			// cases.Fold swaps the case of Cherokee letters instead of
+			// folding them, but both cases still have to fold together
+			if foldPath(s) != foldPath(f) {
+				t.Errorf("%+q and %+q fold to %+q and %+q", s, f, foldPath(s), foldPath(f))
+			}
+			continue
+		}
+		check(s)
+	}
+	// sequences: combining marks out of order, precomposed characters next
+	// to more marks, U+0345 (which folds to a letter), multi-rune folds
+	alphabet := []rune("aAeEsSſßẞiIıİjJǰćĆėẹệΑαΐᾳ\u0345\u0300\u0301\u0302\u0307\u0308\u0323\u0327\u0313한\u1100\u1161\u11a8ﬃK/")
+	rnd := rand.New(rand.NewPCG(3, 4))
+	for range 50000 {
+		s := make([]rune, 1+rnd.IntN(6))
+		for i := range s {
+			s[i] = alphabet[rnd.IntN(len(alphabet))]
+		}
+		check(string(s))
+	}
+}
+
+func TestPathMatcherDoesNotAllocate(t *testing.T) {
+	for _, tc := range []struct{ pattern, name string }{
+		{"/*s%2fpanel/caf%C3%A9/*", "/x%C3%9F%2Fpanel/cafe%CC%81/F.TXT"},
+		{"/bands/%*%2fdc", "/bands/ac%2Fx%2Fdc"},
+		{"/secret/*", "/\u017Fecret/f.txt"},
+		{"/pa?word/[a-z]*", "/PA\u00DFWORD/xyz"},
+	} {
+		escaped := strings.Contains(tc.pattern, "%")
+		allocs := testing.AllocsPerRun(100, func() {
+			if !matchFoldedPath(tc.pattern, tc.name, escaped) {
+				t.Fatalf("%q does not match %q", tc.pattern, tc.name)
+			}
+		})
+		if allocs > 0 {
+			t.Errorf("matching %q against %q allocates %v times", tc.pattern, tc.name, allocs)
 		}
 	}
 }
