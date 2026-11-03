@@ -146,6 +146,9 @@ func (r *WeightedRoundRobinSelection) Select(pool UpstreamPool, _ *http.Request,
 		return nil
 	}
 	if len(r.Weights) < 2 {
+		if !pool[0].Available() {
+			return nil
+		}
 		return pool[0]
 	}
 	var index, totalWeight int
