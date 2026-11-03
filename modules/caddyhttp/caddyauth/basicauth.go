@@ -21,6 +21,7 @@ import (
 	"fmt"
 	weakrand "math/rand/v2"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 
@@ -173,7 +174,9 @@ func (hba HTTPBasicAuth) correctPassword(account Account, plaintextPassword []by
 	}
 
 	// compute a cache key that is unique for these input parameters
-	cacheKey := hex.EncodeToString(append(account.password, plaintextPassword...))
+	// (build it in a new buffer: appending to account.password could write
+	// into its spare capacity, which is shared by all concurrent requests)
+	cacheKey := hex.EncodeToString(slices.Concat(account.password, plaintextPassword))
 
 	// fast track: if the result of the input is already cached, use it
 	hba.HashCache.mu.RLock()
