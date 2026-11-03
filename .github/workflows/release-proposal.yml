@@ -157,17 +157,21 @@ jobs:
           # literal, so they must not contain backticks.
           echo "behind_info=$BEHIND_INFO" >> $GITHUB_OUTPUT
 
-          # Base the changelog on the last *published* release reachable from
-          # the commit, not the last tag: abandoned release attempts leave
-          # tags behind that were never released.
-          LAST_RELEASE=$(.github/scripts/previous-release.sh "$COMMIT_HASH")
+          # Base the changelog on the previous *published* release by version,
+          # not the last tag, and leave out commits that already shipped in it
+          # as backports. See the scripts for details.
+          LAST_RELEASE=$(.github/scripts/previous-release.sh "$VERSION")
 
           if [ -z "$LAST_RELEASE" ]; then
             echo "No previous release found, generating full changelog"
             COMMITS=$(git log --pretty=format:"- %s (%h)" --reverse "$COMMIT_HASH")
           else
             echo "Generating changelog since $LAST_RELEASE"
-            COMMITS=$(git log --pretty=format:"- %s (%h)" --reverse "${LAST_RELEASE}..$COMMIT_HASH")
+            CHANGELOG_SHAS=$(.github/scripts/changelog-commits.sh "$LAST_RELEASE" "$COMMIT_HASH")
+            COMMITS=""
+            if [ -n "$CHANGELOG_SHAS" ]; then
+              COMMITS=$(git log --no-walk=unsorted --pretty=format:"- %s (%h)" --stdin <<< "$CHANGELOG_SHAS")
+            fi
           fi
           echo "last_release=${LAST_RELEASE:-the beginning}" >> $GITHUB_OUTPUT
           

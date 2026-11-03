@@ -426,31 +426,31 @@ jobs:
       run: |
         go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
         xcaddy version
-    # GoReleaser defaults to the previous tag as the changelog base, but tags
-    # from abandoned release attempts were never published (and can't be
-    # reused once the Go module proxy caches them), so base the changelog on
-    # the last published release instead. An empty value falls back to
-    # GoReleaser's default.
-    - name: Find previous published release
-      id: previous_release
+    # Generate the draft's notes in the same format as GitHub's "Generate
+    # release notes" button, compared against the previous *published*
+    # release by version (not the previous tag, which may be an abandoned
+    # release attempt), and without PRs that already shipped in it as
+    # backports. GoReleaser's own changelog can do neither.
+    - name: Generate release notes
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         TAG: ${{ steps.vars.outputs.version_tag }}
+        NOTES_FILE: ${{ runner.temp }}/release-notes.md
       run: |
-        PREVIOUS_RELEASE=$(.github/scripts/previous-release.sh "$TAG" "$TAG")
+        PREVIOUS_RELEASE=$(.github/scripts/previous-release.sh "$TAG")
         echo "Previous published release: ${PREVIOUS_RELEASE:-none}"
-        echo "tag=$PREVIOUS_RELEASE" >> $GITHUB_OUTPUT
+        .github/scripts/release-notes.sh "$TAG" "$TAG" "$PREVIOUS_RELEASE" > "$NOTES_FILE"
+        cat "$NOTES_FILE"
 
     # GoReleaser will take care of publishing those artifacts into the release
     - name: Run GoReleaser
       uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
       with:
         version: latest
-        args: release --clean --timeout 60m
+        args: release --clean --timeout 60m --release-notes ${{ runner.temp }}/release-notes.md
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         TAG: ${{ steps.vars.outputs.version_tag }}
-        GORELEASER_PREVIOUS_TAG: ${{ steps.previous_release.outputs.tag }}
 
     # Only publish on non-special tags (e.g. non-beta)
     # We will continue to push to Gemfury for the foreseeable future, although
