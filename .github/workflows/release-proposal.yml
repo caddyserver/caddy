@@ -128,36 +128,48 @@ jobs:
 
       - name: Generate changelog and create branch
         id: setup
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           VERSION="${{ steps.inputs.outputs.version }}"
           COMMIT_HASH="${{ steps.inputs.outputs.commit_hash }}"
-          
+
           # Create a new branch for the release proposal
           BRANCH_NAME="release_proposal-$VERSION"
           git checkout -b "$BRANCH_NAME"
-          
-          # Calculate how many commits behind HEAD
-          COMMITS_BEHIND=$(git rev-list --count ${COMMIT_HASH}..HEAD)
-          
-          if [ "$COMMITS_BEHIND" -eq 0 ]; then
-            BEHIND_INFO="This is the latest commit (HEAD)"
+
+          # Describe where the commit is relative to the branch this workflow
+          # was run from. The commit may be on a maintenance branch (e.g. 2.11)
+          # instead, in which case "behind HEAD" would be meaningless.
+          if git merge-base --is-ancestor "$COMMIT_HASH" HEAD; then
+            COMMITS_BEHIND=$(git rev-list --count "${COMMIT_HASH}..HEAD")
+            if [ "$COMMITS_BEHIND" -eq 0 ]; then
+              BEHIND_INFO="This is the latest commit on ${{ github.ref_name }}"
+            else
+              BEHIND_INFO="This commit is **${COMMITS_BEHIND} commits behind ${{ github.ref_name }}**"
+            fi
           else
-            BEHIND_INFO="This commit is **${COMMITS_BEHIND} commits behind HEAD**"
+            COMMIT_BRANCHES=$(git branch -r --contains "$COMMIT_HASH" --format='%(refname:lstrip=3)' | grep -v '^HEAD$' | paste -sd, - | sed 's/,/, /g')
+            BEHIND_INFO="This commit is not on ${{ github.ref_name }}; it is on: ${COMMIT_BRANCHES:-no branch}"
           fi
-          
-          echo "commits_behind=$COMMITS_BEHIND" >> $GITHUB_OUTPUT
+
+          # Outputs used in the PR body are interpolated into a JS template
+          # literal, so they must not contain backticks.
           echo "behind_info=$BEHIND_INFO" >> $GITHUB_OUTPUT
-          
-          # Get the last tag
-          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          
-          if [ -z "$LAST_TAG" ]; then
-            echo "No previous tag found, generating full changelog"
+
+          # Base the changelog on the last *published* release reachable from
+          # the commit, not the last tag: abandoned release attempts leave
+          # tags behind that were never released.
+          LAST_RELEASE=$(.github/scripts/previous-release.sh "$COMMIT_HASH")
+
+          if [ -z "$LAST_RELEASE" ]; then
+            echo "No previous release found, generating full changelog"
             COMMITS=$(git log --pretty=format:"- %s (%h)" --reverse "$COMMIT_HASH")
           else
-            echo "Generating changelog since $LAST_TAG"
-            COMMITS=$(git log --pretty=format:"- %s (%h)" --reverse "${LAST_TAG}..$COMMIT_HASH")
+            echo "Generating changelog since $LAST_RELEASE"
+            COMMITS=$(git log --pretty=format:"- %s (%h)" --reverse "${LAST_RELEASE}..$COMMIT_HASH")
           fi
+          echo "last_release=${LAST_RELEASE:-none}" >> $GITHUB_OUTPUT
           
           # Store changelog for PR body
           CLEANSED_COMMITS=$(echo "$COMMITS" | sed 's/`/\\`/g')
@@ -193,7 +205,8 @@ jobs:
             **Target Commit:** \`${{ steps.inputs.outputs.commit_hash }}\`
             **Requested by:** @${{ github.actor }}
             **Commit Status:** ${{ steps.setup.outputs.behind_info }}
-            
+            **Previous Release:** \`${{ steps.setup.outputs.last_release }}\`
+
             This PR proposes creating release tag \`${{ steps.inputs.outputs.version }}\` at commit \`${{ steps.inputs.outputs.commit_hash }}\`.
             
             ### Approval Process
