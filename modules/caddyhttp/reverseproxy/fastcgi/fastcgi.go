@@ -437,11 +437,6 @@ func (t Transport) buildEnv(r *http.Request) (envVars, error) {
 		}
 	}
 
-	// Add env variables from config (with support for placeholders in values)
-	for key, value := range t.EnvVars {
-		env[key] = repl.ReplaceAll(value, "")
-	}
-
 	// Add all HTTP headers to env variables
 	for field, val := range r.Header {
 		switch http.CanonicalHeaderKey(field) {
@@ -460,6 +455,13 @@ func (t Transport) buildEnv(r *http.Request) (envVars, error) {
 		header = headerNameReplacer.Replace(header)
 		env["HTTP_"+header] = strings.Join(val, ", ")
 	}
+
+	// Add env variables from config (with support for placeholders in values)
+	// last, so a client header cannot override an HTTP_* variable set by the operator
+	for key, value := range t.EnvVars {
+		env[key] = repl.ReplaceAll(value, "")
+	}
+
 	return env, nil
 }
 
