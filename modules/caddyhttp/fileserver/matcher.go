@@ -388,6 +388,12 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 		}
 		beforeSplit, afterSplit := m.firstSplit(cleanedFile)
 
+		// only a pattern ending in "/" matches a directory, so with "{path}" a
+		// request for "/dir/" falls through to the next entry (e.g. "{path}/index.php")
+		if beforeSplit != "/" && strings.HasSuffix(beforeSplit, "/") && !strings.HasSuffix(file, "/") {
+			return nil
+		}
+
 		// create the full path to the file by prepending the site root
 		fullPattern := caddyhttp.SanitizedPathJoin(root, beforeSplit)
 
