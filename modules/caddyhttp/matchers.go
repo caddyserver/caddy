@@ -29,6 +29,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"cel.dev/cel-go/cel"
 	"cel.dev/cel-go/common"
@@ -701,6 +702,57 @@ func normalizeWindowsPath(p string) string {
 		segments[i] = strings.TrimRight(s, ". ")
 	}
 	return strings.Join(segments, "/")
+}
+
+const windowsShortNamePunctuation = "$%'-_@~`!(){}^#&"
+
+// possibleWindowsShortNamePart reports whether s could be part of an 8.3
+// alias. Extended characters are allowed when Windows' allowextchar behavior
+// is enabled, so non-ASCII characters must be accepted here to fail closed.
+func possibleWindowsShortNamePart(s string) bool {
+	for _, c := range s {
+		if c >= utf8.RuneSelf ||
+			(c >= 'a' && c <= 'z') ||
+			(c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9') ||
+			strings.ContainsRune(windowsShortNamePunctuation, c) {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+// HasWindowsShortName reports whether any component of p has the syntax of an
+// NTFS 8.3 short name. Both slash types separate components on Windows, which
+// also ignores trailing dots and spaces in each component.
+func HasWindowsShortName(p string) bool {
+	for _, component := range strings.FieldsFunc(p, func(r rune) bool {
+		return r == '/' || r == '\\'
+	}) {
+		component = strings.TrimRight(component, ". ")
+		base, extension, hasExtension := strings.Cut(component, ".")
+		if utf8.RuneCountInString(base) > 8 || !possibleWindowsShortNamePart(base) ||
+			(hasExtension && (utf8.RuneCountInString(extension) > 3 || !possibleWindowsShortNamePart(extension))) {
+			continue
+		}
+
+		tilde := strings.LastIndexByte(base, '~')
+		if tilde <= 0 || tilde == len(base)-1 {
+			continue
+		}
+		shortNameNumber := base[tilde+1:]
+		for _, c := range shortNameNumber {
+			if c < '0' || c > '9' {
+				shortNameNumber = ""
+				break
+			}
+		}
+		if shortNameNumber != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // normalizeWindowsEscapedPath applies the same Windows normalization as
