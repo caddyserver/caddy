@@ -509,6 +509,30 @@ func TestBuildEnvIgnoresHostHeaderField(t *testing.T) {
 	}
 }
 
+// A client header must not override an HTTP_* variable set with the env subdirective.
+func TestBuildEnvConfiguredVarsOverrideHeaders(t *testing.T) {
+	t.Parallel()
+
+	r := httptest.NewRequest(http.MethodGet, "http://example.com/index.php", nil)
+	r.Header.Set("X-Forwarded-Proto", "http")
+	r.Header.Set("X-Auth-User", "admin")
+	repl := caddy.NewReplacer()
+	repl.Set("http.auth.user.id", "alice")
+	ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl)
+	ctx = context.WithValue(ctx, caddyhttp.VarsCtxKey, map[string]any{})
+	ctx = context.WithValue(ctx, caddyhttp.OriginalRequestCtxKey, *r)
+
+	tr := Transport{EnvVars: map[string]string{
+		"HTTP_X_FORWARDED_PROTO": "https",
+		"HTTP_X_AUTH_USER":       "{http.auth.user.id}",
+	}}
+	env, err := tr.buildEnv(r.WithContext(ctx))
+	require.NoError(t, err)
+
+	assert.Equal(t, "https", env["HTTP_X_FORWARDED_PROTO"])
+	assert.Equal(t, "alice", env["HTTP_X_AUTH_USER"])
+}
+
 // A request path containing dot segments must not let the client select a
 // different script than the one every path matcher in the chain evaluated.
 // Matchers judge the cleaned path (see caddyhttp.MatchPath), so the transport
