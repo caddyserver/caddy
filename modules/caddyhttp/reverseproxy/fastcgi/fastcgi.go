@@ -21,6 +21,7 @@ import (
 	"net"
 	"net/http"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -178,7 +179,7 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 
 	env, err := t.buildEnv(r)
 	if err != nil {
-		return nil, fmt.Errorf("building environment: %v", err)
+		return nil, fmt.Errorf("building environment: %w", err)
 	}
 
 	ctx := r.Context()
@@ -315,6 +316,12 @@ func (t Transport) buildEnv(r *http.Request) (envVars, error) {
 		scriptName = strings.TrimSuffix(scriptName, pathInfo)
 	}
 
+	// On Windows, an 8.3 alias or an alternate data stream can name a non-PHP file
+	// with a script-looking path, and path matchers cannot see through either.
+	if runtime.GOOS == "windows" && (strings.Contains(scriptName, ":") || caddyhttp.HasWindowsShortName(scriptName)) {
+		return nil, caddyhttp.Error(http.StatusBadRequest, errors.New("illegal script path"))
+	}
+
 	// Try to grab the path remainder from a file matcher
 	// if we didn't get a split result here.
 	// See https://github.com/caddyserver/caddy/issues/3718
@@ -437,10 +444,15 @@ func (t Transport) buildEnv(r *http.Request) (envVars, error) {
 
 	// Add all HTTP headers to env variables
 	for field, val := range r.Header {
+		switch http.CanonicalHeaderKey(field) {
+		// HTTP_HOST comes from r.Host, the host the request was routed on:
+		// over HTTP/2, net/http keeps a "host" field distinct from :authority.
+		case "Host":
+			continue
 		// HTTPoxy mitigation: client-supplied Proxy header must not
 		// be trusted for setting the HTTP_PROXY environment variable.
 		// See https://httpoxy.org for details.
-		if http.CanonicalHeaderKey(field) == "Proxy" {
+		case "Proxy":
 			continue
 		}
 
