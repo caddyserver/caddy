@@ -569,18 +569,6 @@ func TestBuildEnvDotSegmentsCannotSelectAnotherScript(t *testing.T) {
 			expectedPathInfo:   "",
 		},
 		{
-			name:               "percent-encoded separators",
-			target:             "/admin.php/..%2f..%2fother.php",
-			expectedScriptName: "/other.php",
-			expectedPathInfo:   "",
-		},
-		{
-			name:               "percent-encoded dots",
-			target:             "/admin.php/%2e%2e/other.php",
-			expectedScriptName: "/other.php",
-			expectedPathInfo:   "",
-		},
-		{
 			name:               "dot segments before legitimate path info",
 			target:             "/admin.php/../other.php/extra/path",
 			expectedScriptName: "/other.php",
@@ -617,6 +605,45 @@ func TestBuildEnvDotSegmentsCannotSelectAnotherScript(t *testing.T) {
 			}
 			assert.NotContains(t, env["SCRIPT_FILENAME"], "admin.php",
 				"a pre-clean path component must never become the executed script")
+		})
+	}
+}
+
+// Path matchers whose pattern contains "%" clean the escaped path, so
+// "/public/tool.php%2f..%2f..%2fadmin%2ftool.php" matches "path /public/%*"
+// while the decoded path selects admin/tool.php.
+func TestBuildEnvEscapedPathCannotSelectAnotherScript(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		target             string
+		wantErr            bool
+		expectedScriptName string
+	}{
+		{target: "/public/tool.php%2f..%2f..%2fadmin%2ftool.php", wantErr: true},
+		{target: "/admin.php/..%2f..%2fother.php", wantErr: true},
+		{target: "/admin.php/%2e%2e/other.php", wantErr: true},
+		{target: "/dir%2fscript.php/a", expectedScriptName: "/dir/script.php"},
+		{target: "/index.php/a%2f..%2fb", expectedScriptName: "/index.php"},
+		{target: "/index.php/a%2Fb", expectedScriptName: "/index.php"},
+	} {
+		t.Run(tc.target, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, tc.target, nil)
+			ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer())
+			ctx = context.WithValue(ctx, caddyhttp.VarsCtxKey, map[string]any{})
+			ctx = context.WithValue(ctx, caddyhttp.OriginalRequestCtxKey, *r)
+
+			tr := Transport{Root: t.TempDir(), SplitPath: []string{".php"}}
+			env, err := tr.buildEnv(r.WithContext(ctx))
+			if !tc.wantErr {
+				require.NoError(t, err)
+				assert.Equal(t, tc.expectedScriptName, env["SCRIPT_NAME"])
+				return
+			}
+
+			var herr caddyhttp.HandlerError
+			require.ErrorAs(t, err, &herr)
+			assert.Equal(t, http.StatusBadRequest, herr.StatusCode)
 		})
 	}
 }
