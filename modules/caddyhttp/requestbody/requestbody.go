@@ -32,6 +32,8 @@ func init() {
 type RequestBody struct {
 	// The maximum number of bytes to allow reading from the body by a later handler.
 	// If more bytes are read, an error with HTTP status 413 is returned.
+	// Requests declaring a larger Content-Length get the same error
+	// before any later handler runs.
 	MaxSize int64 `json:"max_size,omitempty"`
 
 	// This field permit to replace body on the fly
@@ -67,7 +69,11 @@ func (rb RequestBody) ServeHTTP(w http.ResponseWriter, r *http.Request, next cad
 		return next.ServeHTTP(w, r)
 	}
 	if rb.MaxSize > 0 {
+		// wrap before rejecting: error routes get this request and may read the body
 		r.Body = errorWrapper{http.MaxBytesReader(w, r.Body, rb.MaxSize)}
+		if r.ContentLength > rb.MaxSize {
+			return caddyhttp.Error(http.StatusRequestEntityTooLarge, &http.MaxBytesError{Limit: rb.MaxSize})
+		}
 	}
 	return next.ServeHTTP(w, r)
 }

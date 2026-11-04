@@ -16,9 +16,11 @@ package requestbody
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
@@ -146,6 +148,79 @@ func TestRequestBodySetHeaderPlaceholders(t *testing.T) {
 
 			if gotBody != tc.wantBody {
 				t.Errorf("got %q, want %q", gotBody, tc.wantBody)
+			}
+		})
+	}
+}
+
+// TestRequestBodyMaxSize verifies that a declared Content-Length over the limit
+// is rejected before the next handler runs, while bodies of unknown length still
+// fail on read, both with the same 413 error.
+func TestRequestBodyMaxSize(t *testing.T) {
+	const maxSize = 8
+
+	for _, tc := range []struct {
+		name          string
+		body          string
+		contentLength int64
+		wantNext      bool
+		wantErr       bool
+	}{
+		{
+			name:          "declared length over the limit",
+			body:          "0123456789",
+			contentLength: 10,
+			wantErr:       true,
+		},
+		{
+			name:          "declared length within the limit",
+			body:          "01234567",
+			contentLength: 8,
+			wantNext:      true,
+		},
+		{
+			name:          "unknown length over the limit",
+			body:          "0123456789",
+			contentLength: -1,
+			wantNext:      true,
+			wantErr:       true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rb := RequestBody{MaxSize: maxSize}
+
+			req := httptest.NewRequest(http.MethodPost, "https://example.com/upload", strings.NewReader(tc.body))
+			req.ContentLength = tc.contentLength
+			if tc.contentLength < 0 {
+				req.TransferEncoding = []string{"chunked"}
+			}
+
+			var nextCalled bool
+			next := caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+				nextCalled = true
+				_, err := io.ReadAll(r.Body)
+				return err
+			})
+
+			err := rb.ServeHTTP(httptest.NewRecorder(), req, next)
+
+			if nextCalled != tc.wantNext {
+				t.Errorf("next handler called = %t, want %t", nextCalled, tc.wantNext)
+			}
+
+			if !tc.wantErr {
+				if err != nil {
+					t.Fatalf("did not expect an error, but got: %v", err)
+				}
+				return
+			}
+
+			he, ok := errors.AsType[caddyhttp.HandlerError](err)
+			if !ok || he.StatusCode != http.StatusRequestEntityTooLarge {
+				t.Fatalf("want a %d handler error, got: %v", http.StatusRequestEntityTooLarge, err)
+			}
+			if mbe, ok := errors.AsType[*http.MaxBytesError](err); !ok || mbe.Limit != maxSize {
+				t.Errorf("want a *http.MaxBytesError with limit %d, got: %v", maxSize, err)
 			}
 		})
 	}

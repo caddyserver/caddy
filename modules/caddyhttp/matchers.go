@@ -95,13 +95,10 @@ type (
 	//
 	// Even though wildcards (`*`) operate in the normalized space, the special
 	// escaped wildcard (`%*`), which is not a valid escape sequence, may be
-	// used in place of a span that should NOT be decoded; that is, `/bands/%*`
-	// will match `/bands/AC%2fDC` whereas `/bands/*` will not.
-	//
-	// Even though path matching is done in normalized space, the special
-	// wildcard `%*` may be used in place of a span that should NOT be decoded;
-	// that is, `/bands/%*/` will match `/bands/AC%2fDC/` whereas `/bands/*/`
-	// will not.
+	// used in place of a span that should NOT be decoded; that is, `/bands/%*/`
+	// will match `/bands/AC%2fDC/` whereas `/bands/*/` will not. Note that a
+	// pattern ending in a bare trailing wildcard, such as `/bands/*`, is a
+	// prefix match in normalized space, so it does match `/bands/AC%2fDC`.
 	//
 	// This matcher is fast, so it does not support regular expressions or
 	// capture groups. For slower but more powerful matching, use the
@@ -409,7 +406,10 @@ func (MatchPath) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-// Provision lower-cases the paths in m to ensure case-insensitive matching.
+// Provision lower-cases the static paths in m to ensure case-insensitive
+// matching. Paths with placeholders are left untouched, since placeholder
+// names can be case-sensitive (e.g. environment variables); they are
+// lower-cased after replacement, at request time.
 func (m MatchPath) Provision(_ caddy.Context) error {
 	for i := range m {
 		if m[i] == "*" && i > 0 {
@@ -417,7 +417,9 @@ func (m MatchPath) Provision(_ caddy.Context) error {
 			m[0] = m[i]
 			break
 		}
-		m[i] = strings.ToLower(m[i])
+		if !strings.Contains(m[i], "{") {
+			m[i] = strings.ToLower(m[i])
+		}
 	}
 	return nil
 }
@@ -441,7 +443,9 @@ func (m MatchPath) MatchWithError(r *http.Request) (bool, error) {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	for _, matchPattern := range m {
-		matchPattern = repl.ReplaceAll(matchPattern, "")
+		if strings.Contains(matchPattern, "{") {
+			matchPattern = strings.ToLower(repl.ReplaceAll(matchPattern, ""))
+		}
 
 		// special case: whole path is wildcard; this is unnecessary
 		// as it matches all requests, which is the same as no matcher
