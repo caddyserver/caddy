@@ -344,20 +344,27 @@ func (st ServerType) buildTLSApp(
 		tlsApp.EncryptedClientHello = ech
 
 		// outer server names will need certificates, so make sure they're included
-		// in an automation policy for them that applies any global options
+		// in an automation policy for them that applies any global options. A name
+		// that a site block's policy already covers keeps that policy, because a
+		// second policy for it would be rejected as ambiguous or picked ahead of
+		// the site's.
 		ap, err := newBaseAutomationPolicy(options, warnings, true)
 		if err != nil {
 			return nil, warnings, err
 		}
 		for _, cfg := range ech.Configs {
-			if cfg.PublicName != "" {
-				ap.SubjectsRaw = append(ap.SubjectsRaw, cfg.PublicName)
+			if cfg.PublicName == "" || automationPolicyCoversName(tlsApp.Automation, cfg.PublicName) {
+				continue
 			}
+			ap.SubjectsRaw = append(ap.SubjectsRaw, cfg.PublicName)
 		}
-		if tlsApp.Automation == nil {
-			tlsApp.Automation = new(caddytls.AutomationConfig)
+		// without subjects, the policy would apply to every name as a catch-all
+		if len(ap.SubjectsRaw) > 0 {
+			if tlsApp.Automation == nil {
+				tlsApp.Automation = new(caddytls.AutomationConfig)
+			}
+			tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, ap)
 		}
-		tlsApp.Automation.Policies = append(tlsApp.Automation.Policies, ap)
 	}
 
 	// if the storage clean interval is a boolean, then it's "off" to disable cleaning
@@ -955,6 +962,23 @@ func automationPolicyExistsForSubject(automation *caddytls.AutomationConfig, sub
 	})
 }
 
+// automationPolicyCoversName reports whether some automation policy with
+// subjects would be selected for the ECH public name at runtime. The TLS app
+// trims and lowercases public names, then picks a policy for each one with
+// certmagic.MatchWildcard, so a wildcard or differently cased subject covers
+// it too. A catch-all policy names no subjects and so never matches.
+func automationPolicyCoversName(automation *caddytls.AutomationConfig, publicName string) bool {
+	if automation == nil {
+		return false
+	}
+	name := strings.ToLower(strings.TrimSpace(publicName))
+	return slices.ContainsFunc(automation.Policies, func(ap *caddytls.AutomationPolicy) bool {
+		return slices.ContainsFunc(ap.SubjectsRaw, func(subj string) bool {
+			return certmagic.MatchWildcard(name, subj)
+		})
+	})
+}
+
 // hasGlobalACMEDefaults reports whether any global option is set that an
 // automation policy without issuers of its own would later be filled in with.
 // A policy is worth creating for a subject when this is true, even if the
@@ -1131,7 +1155,8 @@ outer:
 						i--
 						continue outer
 					}
-				} else {
+				} else if !automationPolicyMergeShadows(i, j, aps) {
+					// merge only if it won't change which policy handles a name
 					// avoid repeated subjects
 					for _, subj := range aps[j].SubjectsRaw {
 						if !slices.Contains(aps[i].SubjectsRaw, subj) {
@@ -1181,6 +1206,36 @@ func automationPolicyShadows(i int, aps []*caddytls.AutomationPolicy) int {
 		}
 	}
 	return -1
+}
+
+// automationPolicyMergeShadows returns true if merging aps[j] into aps[i]
+// (where i < j) would change which policy handles a name. This happens
+// when a subject of a policy between i and j overlaps with a subject of
+// aps[j], in either direction.
+//
+// For example, say the policies are for "example.com" (i),
+// "foo.example.com" (i+1), and "*.example.com" (j). Merging j into i moves
+// "*.example.com" before the i+1 policy. Then the wildcard matches
+// "foo.example.com" first, and the i+1 policy is never used.
+//
+// The reverse case matters too. If the wildcard is in i+1 and the name is
+// in j, merging moves the name before the wildcard, and its policy changes.
+// A merge should not change the result, so it is skipped here as well.
+//
+// This uses certmagic.MatchWildcard, which the TLS app also uses to pick
+// a policy for a name.
+func automationPolicyMergeShadows(i, j int, aps []*caddytls.AutomationPolicy) bool {
+	for k := i + 1; k < j; k++ {
+		for _, kSubj := range aps[k].SubjectsRaw {
+			for _, jSubj := range aps[j].SubjectsRaw {
+				if certmagic.MatchWildcard(kSubj, jSubj) ||
+					certmagic.MatchWildcard(jSubj, kSubj) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // subjectQualifiesForPublicCert is like certmagic.SubjectQualifiesForPublicCert() except

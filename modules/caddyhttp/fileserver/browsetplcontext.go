@@ -34,13 +34,14 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
-func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, parentModTime time.Time, entries []fs.DirEntry, canGoUp bool, root, urlPath string, repl *caddy.Replacer) *browseTemplateContext {
+func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, parentModTime time.Time, entries []fs.DirEntry, canGoUp bool, dirPath, urlPath string, repl *caddy.Replacer) *browseTemplateContext {
 	filesToHide := fsrv.transformHidePaths(repl)
 
-	name, _ := url.PathUnescape(urlPath)
+	// urlPath is escaped, but filesystem lookups need the decoded path
+	reqPath, _ := url.PathUnescape(urlPath)
 
 	tplCtx := &browseTemplateContext{
-		Name:         path.Base(name),
+		Name:         path.Base(reqPath),
 		Path:         urlPath,
 		CanGoUp:      canGoUp,
 		lastModified: parentModTime,
@@ -56,14 +57,14 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, 
 
 		name := entry.Name()
 
-		if fileHidden(name, filesToHide) {
+		if fileHidden(caddyhttp.SanitizedPathJoin(dirPath, name), filesToHide) {
 			continue
 		}
 
 		info, err := entry.Info()
 		if err != nil {
 			if c := fsrv.logger.Check(zapcore.ErrorLevel, "could not get info about directory entry"); c != nil {
-				c.Write(zap.String("name", entry.Name()), zap.String("root", root))
+				c.Write(zap.String("name", entry.Name()), zap.String("dir_path", dirPath))
 			}
 			continue
 		}
@@ -82,7 +83,7 @@ func (fsrv *FileServer) directoryListing(ctx context.Context, fileSystem fs.FS, 
 		var targetInfo fs.FileInfo
 		var targetPath string
 		if fileIsSymlink {
-			targetPath = caddyhttp.SanitizedPathJoin(root, path.Join(urlPath, info.Name()))
+			targetPath = caddyhttp.SanitizedPathJoin(dirPath, info.Name())
 			// An error most likely means the symlink target doesn't exist,
 			// which isn't entirely unusual and shouldn't fail the listing.
 			// In this case, targetInfo stays nil and we fall back to
@@ -263,8 +264,8 @@ func (l *browseTemplateContext) applySortAndLimit(sortParam, orderParam, limitPa
 
 	if offsetParam != "" {
 		offset, _ := strconv.Atoi(offsetParam)
-		if offset > 0 && offset <= len(l.Items) {
-			l.Items = l.Items[offset:]
+		if offset > 0 {
+			l.Items = l.Items[min(offset, len(l.Items)):]
 			l.Offset = offset
 		}
 	}

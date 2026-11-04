@@ -361,3 +361,107 @@ func TestClientAuthenticationProvision(t *testing.T) {
 		})
 	}
 }
+
+func TestParseCaddyfileNestedMatcherSet(t *testing.T) {
+	for i, tc := range []struct {
+		input   string
+		expect  string
+		wantErr bool
+	}{
+		{
+			input:  `match sni example.com`,
+			expect: `{"sni":["example.com"]}`,
+		},
+		{
+			input: `match {
+				sni example.com
+				sni example.net
+			}`,
+			expect: `{"sni":["example.com","example.net"]}`,
+		},
+		{
+			input: `match {
+				remote_ip 10.0.0.0/8
+				sni example.com
+				remote_ip !10.1.2.3
+			}`,
+			expect: `{"remote_ip":{"ranges":["10.0.0.0/8"],"not_ranges":["10.1.2.3"]},"sni":["example.com"]}`,
+		},
+		{
+			input: `match {
+				sni_regexp ^a
+				sni_regexp ^b
+			}`,
+			wantErr: true,
+		},
+	} {
+		d := caddyfile.NewTestDispenser(tc.input)
+		d.Next() // consume "match"
+		matcherSet, err := ParseCaddyfileNestedMatcherSet(d)
+		if tc.wantErr {
+			if err == nil {
+				t.Errorf("Test %d: expected error but got none", i)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("Test %d: unexpected error: %v", i, err)
+			continue
+		}
+
+		actual, err := json.Marshal(matcherSet)
+		if err != nil {
+			t.Fatalf("Test %d: marshaling matcher set: %v", i, err)
+		}
+		if string(actual) != tc.expect {
+			t.Errorf("Test %d: expected %s, got %s", i, tc.expect, actual)
+		}
+	}
+}
+
+func TestConnectionPolicyRejectsUnknownNames(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		policy ConnectionPolicy
+	}{
+		{"unknown curve", ConnectionPolicy{Curves: []string{"X25519"}}},
+		{"unknown protocol_min", ConnectionPolicy{ProtocolMin: "TLS1.3"}},
+		{"unknown protocol_max", ConnectionPolicy{ProtocolMax: "tls13"}},
+		{"protocol_min greater than protocol_max", ConnectionPolicy{ProtocolMin: "tls1.3", ProtocolMax: "tls1.2"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, err := caddy.ProvisionContext(&caddy.Config{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := (ConnectionPolicies{&tc.policy}).Provision(ctx); err == nil {
+				t.Fatal("expected an error, got nil")
+			}
+		})
+	}
+}
+
+func TestConnectionPolicyProtocolDefaults(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		policy   ConnectionPolicy
+		min, max uint16
+	}{
+		{"both empty", ConnectionPolicy{}, tls.VersionTLS12, tls.VersionTLS13},
+		{"min only", ConnectionPolicy{ProtocolMin: "tls1.3"}, tls.VersionTLS13, tls.VersionTLS13},
+		{"max only", ConnectionPolicy{ProtocolMax: "tls1.2"}, tls.VersionTLS12, tls.VersionTLS12},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, err := caddy.ProvisionContext(&caddy.Config{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := (ConnectionPolicies{&tc.policy}).Provision(ctx); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got := tc.policy.TLSConfig; got.MinVersion != tc.min || got.MaxVersion != tc.max {
+				t.Fatalf("got min=%x max=%x, want min=%x max=%x", got.MinVersion, got.MaxVersion, tc.min, tc.max)
+			}
+		})
+	}
+}

@@ -129,7 +129,7 @@ func TestPreferOrder(t *testing.T) {
 			name:     "PreferOrder(): 2 accept (1 empty), 3 prefer",
 			accept:   "gzip,,zstd",
 			prefer:   []string{"zstd", "br", "gzip"},
-			expected: []string{"zstd", "gzip", ""},
+			expected: []string{"zstd", "gzip"},
 		},
 		{
 			name:     "PreferOrder(): 1 accept, 2 prefer",
@@ -341,50 +341,50 @@ func TestValidate(t *testing.T) {
 	}
 }
 
-func TestIsEncodeAllowed(t *testing.T) {
-	testCases := []struct {
-		name     string
-		headers  http.Header
-		expected bool
-	}{
-		{
-			name:     "Without any headers",
-			headers:  http.Header{},
-			expected: true,
-		},
-		{
-			name: "Without Cache-Control HTTP header",
-			headers: http.Header{
-				"Accept-Encoding": {"gzip"},
-			},
-			expected: true,
-		},
-		{
-			name: "Cache-Control HTTP header ending with no-transform directive",
-			headers: http.Header{
-				"Accept-Encoding": {"gzip"},
-				"Cache-Control":   {"no-cache; no-transform"},
-			},
-			expected: false,
-		},
-		{
-			name: "With Cache-Control HTTP header no-transform as Cache-Extension value",
-			headers: http.Header{
-				"Accept-Encoding": {"gzip"},
-				"Cache-Control":   {`no-store; no-cache; community="no-transform"`},
-			},
-			expected: false,
+func TestServeHTTPResponseNoTransform(t *testing.T) {
+	enc := &Encode{
+		MinLength: 1,
+		writerPools: map[string]*sync.Pool{
+			"gzip": {New: func() any { return mockEncoder{} }},
 		},
 	}
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+	if err := enc.Provision(ctx); err != nil {
+		t.Fatalf("Provision failed: %v", err)
+	}
 
-	for _, test := range testCases {
-		t.Run(test.name, func(t *testing.T) {
-			if result := isEncodeAllowed(test.headers); result != test.expected {
-				t.Errorf("The headers given to the isEncodeAllowed should return %t, %t given.",
-					result,
-					test.expected)
-			}
-		})
+	for _, tc := range []struct {
+		cacheControl []string
+		encoded      bool
+	}{
+		{cacheControl: nil, encoded: true},
+		{cacheControl: []string{"no-cache, no-transform"}, encoded: false},
+		{cacheControl: []string{"max-age=0, No-Transform"}, encoded: false},
+		{cacheControl: []string{"no-cache", "no-transform"}, encoded: false},
+		{cacheControl: []string{`private="Set-Cookie, Vary", no-transform`}, encoded: false},
+		// extension values and longer tokens are not the directive
+		{cacheControl: []string{`community="no-transform"`}, encoded: true},
+		{cacheControl: []string{"community=no-transform"}, encoded: true},
+		{cacheControl: []string{"x-no-transform-ext, no-transformation"}, encoded: true},
+		// semicolons are not Cache-Control list separators
+		{cacheControl: []string{"no-cache; no-transform"}, encoded: true},
+	} {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.Header.Set("Accept-Encoding", "gzip")
+		w := httptest.NewRecorder()
+		err := enc.ServeHTTP(w, r, caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			w.Header()["Content-Type"] = []string{"text/plain"}
+			w.Header()["Cache-Control"] = tc.cacheControl
+			_, err := w.Write([]byte("hello"))
+			return err
+		}))
+		if err != nil {
+			t.Fatalf("Cache-Control %q: ServeHTTP: %v", tc.cacheControl, err)
+		}
+		if encoded := w.Header().Get("Content-Encoding") == "gzip"; encoded != tc.encoded {
+			t.Errorf("Cache-Control %q: encoded = %t, want %t", tc.cacheControl, encoded, tc.encoded)
+		}
 	}
 }
 
@@ -454,5 +454,59 @@ func TestServeHTTPDefaultEncodingPreference(t *testing.T) {
 	contentEncoding2 := w2.Header().Get("Content-Encoding")
 	if contentEncoding2 != "gzip" {
 		t.Errorf("Expected Content-Encoding to be 'gzip' when explicitly preferred, got '%s'", contentEncoding2)
+	}
+}
+
+// RFC 9110 section 5.3: a recipient MAY combine multiple field lines with the
+// same name by joining their values with commas; the semantics of a list-based
+// field like Accept-Encoding do not change when it is split across lines.
+func TestAcceptedEncodingsMultipleFieldLines(t *testing.T) {
+	for _, tc := range []struct {
+		lines    []string
+		expected []string
+	}{
+		{[]string{"gzip", "br"}, []string{"br", "gzip"}},
+		{[]string{"identity", "br"}, []string{"br", "identity"}},
+		{[]string{"gzip;q=0", "br"}, []string{"br"}},
+		{[]string{"", "gzip"}, []string{"gzip"}},
+		{[]string{"gzip;q=0.5", "zstd;q=0.8, br;q=0"}, []string{"zstd", "gzip"}},
+	} {
+		r, _ := http.NewRequest(http.MethodGet, "/", nil)
+		for _, l := range tc.lines {
+			r.Header.Add("Accept-Encoding", l)
+		}
+		got := AcceptedEncodings(r, []string{"zstd", "br", "gzip"})
+		if !slices.Equal(got, tc.expected) {
+			t.Errorf("Accept-Encoding lines %q: got %v, expected %v", tc.lines, got, tc.expected)
+		}
+	}
+}
+
+func TestServeHTTPMultipleAcceptEncodingLines(t *testing.T) {
+	enc := new(Encode)
+	enc.MinLength = 1
+	enc.writerPools = map[string]*sync.Pool{
+		"br": {New: func() any { return mockEncoder{} }},
+	}
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+	if err := enc.Provision(ctx); err != nil {
+		t.Fatal(err)
+	}
+	r, _ := http.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Add("Accept-Encoding", "identity")
+	r.Header.Add("Accept-Encoding", "br")
+	w := httptest.NewRecorder()
+	w.Header().Set("Content-Type", "text/plain")
+	next := caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+		w.WriteHeader(http.StatusOK)
+		_, err := w.Write([]byte("hello world"))
+		return err
+	})
+	if err := enc.ServeHTTP(w, r, next); err != nil {
+		t.Fatal(err)
+	}
+	if ce := w.Header().Get("Content-Encoding"); ce != "br" {
+		t.Errorf("expected Content-Encoding br, got %q", ce)
 	}
 }
