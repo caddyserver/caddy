@@ -552,6 +552,7 @@ func (MatchPath) matchPatternWithEscapeSequence(escapedPath, matchPath string) b
 	// of the path, then switching to the escaped parts where
 	// the pattern hints to us wherever % is present.
 	var sb strings.Builder
+	sb.Grow(len(escapedPath))
 
 	// iterate the pattern and escaped path in lock-step;
 	// increment iPattern every time we consume a char from the pattern,
