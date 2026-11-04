@@ -25,13 +25,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/google/cel-go/cel"
-	"github.com/google/cel-go/common"
-	"github.com/google/cel-go/common/ast"
-	"github.com/google/cel-go/common/operators"
-	"github.com/google/cel-go/common/types"
-	"github.com/google/cel-go/common/types/ref"
-	"github.com/google/cel-go/parser"
+	"cel.dev/cel-go/cel"
+	"cel.dev/cel-go/common"
+	"cel.dev/cel-go/common/ast"
+	"cel.dev/cel-go/common/operators"
+	"cel.dev/cel-go/common/types"
+	"cel.dev/cel-go/common/types/ref"
+	"cel.dev/cel-go/parser"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
@@ -381,10 +381,12 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 		// clean the path and split, if configured -- we must split before
 		// globbing so that the file system doesn't include the remainder
 		// ("afterSplit") in the filename; be sure to restore trailing slash
-		beforeSplit, afterSplit := m.firstSplit(path.Clean(expandedFile))
-		if strings.HasSuffix(file, "/") {
-			beforeSplit += "/"
+		// so that "/file/" or "/file/./" cannot match a regular file
+		cleanedFile := path.Clean(expandedFile)
+		if strings.HasSuffix(expandedFile, "/") && !strings.HasSuffix(cleanedFile, "/") {
+			cleanedFile += "/"
 		}
+		beforeSplit, afterSplit := m.firstSplit(cleanedFile)
 
 		// create the full path to the file by prepending the site root
 		fullPattern := caddyhttp.SanitizedPathJoin(root, beforeSplit)
@@ -414,6 +416,31 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 		}
 
 		return candidates
+	}
+
+	// makeLiteralCandidate builds a candidate from file as a literal path,
+	// without expanding globs or checking that the file exists. It is used only
+	// for the final entry of first_exist_fallback, which matches unconditionally
+	// even when globbing found nothing because the file is absent.
+	makeLiteralCandidate := func(file string) matchCandidate {
+		// placeholders are not glob-escaped here, since nothing is globbed;
+		// errors were already logged by makeCandidates for the same pattern
+		expandedFile, err := repl.ReplaceFunc(file, func(_ string, val any) (any, error) {
+			return val, nil
+		})
+		if err != nil {
+			expandedFile = file
+		}
+		beforeSplit, afterSplit := m.firstSplit(path.Clean(expandedFile))
+		if strings.HasSuffix(file, "/") {
+			beforeSplit += "/"
+		}
+		fullPath := caddyhttp.SanitizedPathJoin(root, beforeSplit)
+		return matchCandidate{
+			fullpath:       fullPath,
+			relative:       strings.TrimPrefix(fullPath, root),
+			splitRemainder: afterSplit,
+		}
 	}
 
 	// setPlaceholders creates the placeholders for the matched file
@@ -446,6 +473,10 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 			}
 
 			candidates := makeCandidates(pattern)
+			// globbing finds only files that exist, but the fallback entry matches anyway
+			if i == maxI && len(candidates) == 0 {
+				candidates = []matchCandidate{makeLiteralCandidate(pattern)}
+			}
 			for _, c := range candidates {
 				// Skip the IO if using fallback policy and it's the latest item
 				if i == maxI {
@@ -469,7 +500,7 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 			candidates := makeCandidates(pattern)
 			for _, c := range candidates {
 				info, err := fs.Stat(fileSystem, c.fullpath)
-				if err == nil && info.Size() > largestSize {
+				if err == nil && (largestInfo == nil || info.Size() > largestSize) {
 					largestSize = info.Size()
 					largest = c
 					largestInfo = info
@@ -490,7 +521,7 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 			candidates := makeCandidates(pattern)
 			for _, c := range candidates {
 				info, err := fs.Stat(fileSystem, c.fullpath)
-				if err == nil && (smallestSize == 0 || info.Size() < smallestSize) {
+				if err == nil && (smallestInfo == nil || info.Size() < smallestSize) {
 					smallestSize = info.Size()
 					smallest = c
 					smallestInfo = info
@@ -622,7 +653,7 @@ func isCELTryFilesLiteral(e ast.Expr) bool {
 					return false
 				}
 			case "try_policy", "root":
-				if !(isCELStringExpr(mapVal)) {
+				if !isCELStringExpr(mapVal) {
 					return false
 				}
 			default:

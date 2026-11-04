@@ -279,9 +279,11 @@ func validateTestPrerequisites(tc *Tester) error {
 			return err
 		}
 		tc.t.Cleanup(func() {
+			_ = f.Close()
 			os.Remove(f.Name()) //nolint:gosec // false positive, filename comes from std lib, no path traversal
 		})
 		if _, err := fmt.Fprintf(f, initConfig, tc.config.AdminPort); err != nil {
+			_ = f.Close()
 			return err
 		}
 
@@ -338,7 +340,6 @@ func CreateTestingTransport() *http.Transport {
 	dialer := net.Dialer{
 		Timeout:   5 * time.Second,
 		KeepAlive: 5 * time.Second,
-		DualStack: true,
 	}
 
 	dialContext := func(ctx context.Context, network, addr string) (net.Conn, error) {

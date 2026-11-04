@@ -44,6 +44,10 @@ func (i *importGraph) addNodes(names []string) {
 
 func (i *importGraph) removeNode(name string) {
 	delete(i.nodes, name)
+	delete(i.edges, name)
+	for k, targets := range i.edges {
+		i.edges[k] = slices.DeleteFunc(targets, func(t string) bool { return t == name })
+	}
 }
 
 func (i *importGraph) removeNodes(names []string) {
@@ -96,6 +100,9 @@ func (i *importGraph) areConnected(from, to string) bool {
 }
 
 func (i *importGraph) willCycle(from, to string) bool {
+	if from == to {
+		return true
+	}
 	collector := make(map[string]bool)
 
 	var visit func(string)

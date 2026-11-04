@@ -1,6 +1,11 @@
 package fastcgi
 
 import (
+	"context"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -8,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
 func TestProvisionSplitPath(t *testing.T) {
@@ -306,10 +312,11 @@ func TestSplitPosUnicodeSecurityRegression(t *testing.T) {
 
 // TestHeaderNameReplacer asserts the CGI header-to-env normalization rule:
 // hyphens are mapped to underscores while every other character (including
-// spaces) is passed through. Spaces are not RFC 7230 tokens, so they cannot
-// reach this function from the wire; the only header names that survive
-// untouched at the server layer are sanitized by the underscore filter in
-// caddyhttp.Server.serveHTTP (see GHSA-f59h-q822-g45g).
+// spaces and dots) is passed through. Spaces are not RFC 7230 tokens, so they
+// cannot reach this function from the wire; the only header names that
+// survive untouched at the server layer are sanitized by the underscore/dot
+// filter in caddyhttp.Server.serveHTTP (see GHSA-f59h-q822-g45g,
+// GHSA-49wc-4hcv-v58q).
 func TestHeaderNameReplacer(t *testing.T) {
 	tests := []struct {
 		in, want string
@@ -319,6 +326,9 @@ func TestHeaderNameReplacer(t *testing.T) {
 		// Underscores are preserved (the server has already dropped any
 		// underscore-named headers when the filter is on).
 		{"Remote_User", "Remote_User"},
+		// Dots are preserved by this replacer too; the server-layer filter is
+		// what prevents a dotted alias (e.g. Remote.User) from reaching here.
+		{"Remote.User", "Remote.User"},
 		// Spaces are not rewritten because Go's HTTP parser rejects whitespace in
 		// header field names.
 		{"Foo Bar", "Foo Bar"},
@@ -353,5 +363,214 @@ func TestSplitPosSecurityRegressionUnicodeBypass(t *testing.T) {
 
 	for _, p := range payloads {
 		assert.Equalf(t, -1, tr.splitPos(p), "payload %q must not be detected as .php", p)
+	}
+}
+
+func TestBuildEnvServerAddr(t *testing.T) {
+	testCases := []struct {
+		name         string
+		localAddr    net.Addr
+		envVars      map[string]string
+		expectedAddr string
+		expectExists bool
+	}{
+		{
+			name:         "IPv4 TCP listener",
+			localAddr:    &net.TCPAddr{IP: net.ParseIP("10.0.0.12"), Port: 80},
+			expectedAddr: "10.0.0.12",
+			expectExists: true,
+		},
+		{
+			name:         "IPv6 TCP listener",
+			localAddr:    &net.TCPAddr{IP: net.ParseIP("2001:db8::1"), Port: 443},
+			expectedAddr: "2001:db8::1",
+			expectExists: true,
+		},
+		{
+			name:         "Missing local address context",
+			localAddr:    nil,
+			expectExists: false,
+		},
+		{
+			name:         "Unix listener",
+			localAddr:    &net.UnixAddr{Name: "/var/run/caddy.sock", Net: "unix"},
+			expectExists: false,
+		},
+		{
+			name:         "Explicitly configured SERVER_ADDR override",
+			localAddr:    &net.TCPAddr{IP: net.ParseIP("10.0.0.12"), Port: 80},
+			envVars:      map[string]string{"SERVER_ADDR": "192.168.1.100"},
+			expectedAddr: "192.168.1.100",
+			expectExists: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tr := Transport{
+				Root:    "/var/www",
+				EnvVars: tc.envVars,
+			}
+			err := tr.Provision(caddy.Context{})
+			require.NoError(t, err)
+
+			req, err := http.NewRequest(http.MethodGet, "http://localhost/index.php", nil)
+			require.NoError(t, err)
+
+			req = req.WithContext(context.WithValue(req.Context(), caddyhttp.OriginalRequestCtxKey, *req))
+			repl := caddy.NewReplacer()
+			req = req.WithContext(context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl))
+
+			if tc.localAddr != nil {
+				req = req.WithContext(context.WithValue(req.Context(), http.LocalAddrContextKey, tc.localAddr))
+			}
+
+			env, err := tr.buildEnv(req)
+			require.NoError(t, err)
+
+			val, exists := env["SERVER_ADDR"]
+			assert.Equal(t, tc.expectExists, exists)
+			if tc.expectExists {
+				assert.Equal(t, tc.expectedAddr, val)
+			}
+		})
+	}
+}
+
+// TestBuildEnvDropsProxyHeader guards against the HTTPoxy vulnerability
+// (CVE-2016-5385): a client-supplied `Proxy` request header must never be
+// translated into the HTTP_PROXY environment variable, since many HTTP client
+// libraries used by FastCGI backends honor HTTP_PROXY for outbound requests,
+// which would let an attacker hijack the backend's traffic.
+// See https://httpoxy.org.
+func TestBuildEnvDropsProxyHeader(t *testing.T) {
+	t.Parallel()
+
+	newRequest := func(headers http.Header) *http.Request {
+		r := httptest.NewRequest(http.MethodGet, "http://example.com/index.php", nil)
+		// Set the header map directly so non-canonical casing is preserved,
+		// mimicking a header that reaches buildEnv unmodified.
+		r.Header = headers
+		ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer())
+		ctx = context.WithValue(ctx, caddyhttp.VarsCtxKey, map[string]any{})
+		ctx = context.WithValue(ctx, caddyhttp.OriginalRequestCtxKey, *r)
+		return r.WithContext(ctx)
+	}
+
+	for _, casing := range []string{"Proxy", "proxy", "pRoXy", "PROXY"} {
+		t.Run("casing "+casing, func(t *testing.T) {
+			r := newRequest(http.Header{
+				casing:       []string{"http://attacker.example:8080"},
+				"X-Safe-Hdr": []string{"kept"},
+			})
+
+			env, err := Transport{}.buildEnv(r)
+			require.NoError(t, err)
+
+			assert.NotContains(t, env, "HTTP_PROXY", "HTTP_PROXY must never be set from a client header")
+			// Sanity check that unrelated headers are still forwarded, i.e. the
+			// filter is narrow and doesn't break normal header passthrough.
+			assert.Equal(t, "kept", env["HTTP_X_SAFE_HDR"])
+		})
+	}
+
+	t.Run("configured HTTP_PROXY is preserved", func(t *testing.T) {
+		// The filter must only drop the *client* header; an explicitly
+		// configured env var is trusted and must survive.
+		r := newRequest(http.Header{"Proxy": []string{"http://attacker.example:8080"}})
+
+		tr := Transport{EnvVars: map[string]string{"HTTP_PROXY": "http://trusted.example:3128"}}
+		env, err := tr.buildEnv(r)
+		require.NoError(t, err)
+
+		assert.Equal(t, "http://trusted.example:3128", env["HTTP_PROXY"])
+	})
+}
+
+// A request path containing dot segments must not let the client select a
+// different script than the one every path matcher in the chain evaluated.
+// Matchers judge the cleaned path (see caddyhttp.MatchPath), so the transport
+// must derive SCRIPT_NAME/SCRIPT_FILENAME/PATH_INFO from the cleaned path too.
+// Before this was fixed, /admin.php/../../other.php was matched as /other.php
+// but executed <root>/admin.php.
+func TestBuildEnvDotSegmentsCannotSelectAnotherScript(t *testing.T) {
+	t.Parallel()
+
+	newRequest := func(target string) *http.Request {
+		r := httptest.NewRequest(http.MethodGet, target, nil)
+		ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer())
+		ctx = context.WithValue(ctx, caddyhttp.VarsCtxKey, map[string]any{})
+		ctx = context.WithValue(ctx, caddyhttp.OriginalRequestCtxKey, *r)
+		return r.WithContext(ctx)
+	}
+
+	for _, tc := range []struct {
+		name               string
+		target             string
+		expectedScriptName string
+		expectedPathInfo   string
+	}{
+		{
+			name:               "literal dot segments",
+			target:             "/admin.php/../../other.php",
+			expectedScriptName: "/other.php",
+			expectedPathInfo:   "",
+		},
+		{
+			name:               "single dot segment",
+			target:             "/admin.php/../other.php",
+			expectedScriptName: "/other.php",
+			expectedPathInfo:   "",
+		},
+		{
+			name:               "percent-encoded separators",
+			target:             "/admin.php/..%2f..%2fother.php",
+			expectedScriptName: "/other.php",
+			expectedPathInfo:   "",
+		},
+		{
+			name:               "percent-encoded dots",
+			target:             "/admin.php/%2e%2e/other.php",
+			expectedScriptName: "/other.php",
+			expectedPathInfo:   "",
+		},
+		{
+			name:               "dot segments before legitimate path info",
+			target:             "/admin.php/../other.php/extra/path",
+			expectedScriptName: "/other.php",
+			expectedPathInfo:   "/extra/path",
+		},
+		{
+			name:               "no dot segments is unaffected",
+			target:             "/other.php/extra/path",
+			expectedScriptName: "/other.php",
+			expectedPathInfo:   "/extra/path",
+		},
+		{
+			// path.Clean("") is ".", which must not become the script name;
+			// an absolute-form request-target can leave URL.Path empty.
+			name:               "empty path stays empty",
+			target:             "http://example.com",
+			expectedScriptName: "",
+			expectedPathInfo:   "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			tr := Transport{Root: root, SplitPath: []string{".php"}}
+			env, err := tr.buildEnv(newRequest(tc.target))
+			require.NoError(t, err)
+
+			assert.Equal(t, tc.expectedScriptName, env["SCRIPT_NAME"],
+				"SCRIPT_NAME must come from the cleaned path")
+			assert.Equal(t, tc.expectedPathInfo, env["PATH_INFO"],
+				"PATH_INFO must come from the cleaned path")
+			if tc.expectedScriptName != "" {
+				assert.Equal(t, filepath.Join(root, filepath.FromSlash(tc.expectedScriptName)), env["SCRIPT_FILENAME"],
+					"SCRIPT_FILENAME must name the script the matchers evaluated")
+			}
+			assert.NotContains(t, env["SCRIPT_FILENAME"], "admin.php",
+				"a pre-clean path component must never become the executed script")
+		})
 	}
 }

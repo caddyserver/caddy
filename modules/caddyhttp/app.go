@@ -20,9 +20,11 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -47,9 +49,9 @@ func init() {
 // defined by adding a good, default TLS connection policy.
 //
 // Similar to how other popular web servers work, incoming request header fields
-// with underscores are ignored/dropped implicitly to mitigate security risks.
-// Specific headers to allow can be explicitly configured using
-// `expected_underscore_headers`.
+// with underscores or dots are ignored/dropped implicitly to mitigate security
+// risks. Specific headers to allow can be explicitly configured using
+// `expected_underscore_headers` and `expected_dot_headers`.
 //
 // ### Placeholders
 //
@@ -57,8 +59,8 @@ func init() {
 //
 // Placeholder | Description
 // ------------|---------------
-// `{http.request.body}` | The request body (⚠️ inefficient; use only for debugging)
-// `{http.request.body_base64}` | The request body, base64-encoded (⚠️ for debugging)
+// `{http.request.body}` | The request body (⚠️ inefficient; use only for debugging); if reading it exceeds a `request_body` `max_size` limit, templates and the `vars` and `vars_regexp` matchers fail the request with HTTP 413 instead of silently returning a truncated body
+// `{http.request.body_base64}` | The request body, base64-encoded (⚠️ for debugging); same 413 behavior on `max_size` limits as `{http.request.body}` in templates and the `vars` matchers
 // `{http.request.cookie.*}` | HTTP request cookie
 // `{http.request.duration}` | Time up to now spent handling the request (after decoding headers from client)
 // `{http.request.duration_ms}` | Same as 'duration', but in milliseconds.
@@ -74,6 +76,7 @@ func init() {
 // `{http.request.orig_uri.path.*}` | Parts of the original path, split by `/` (0-based from left)
 // `{http.request.orig_uri.path.dir}` | The request's original directory
 // `{http.request.orig_uri.path.file}` | The request's original filename
+// `{http.request.orig_uri.path.file_escaped}` | The request's original filename, percent-encoded as in the request's escaped path
 // `{http.request.orig_uri.query}` | The request's original query string (without `?`)
 // `{http.request.orig_uri.prefixed_query}` | The request's original query string with a `?` prefix, if non-empty
 // `{http.request.port}` | The port part of the request's Host header
@@ -240,6 +243,7 @@ func (app *App) Provision(ctx caddy.Context) error {
 
 		// only enable access logs if configured
 		if srv.Logs != nil {
+			srv.Logs.normalizeLoggerNames()
 			srv.accessLogger = app.logger.Named("log.access")
 			if srv.Logs.Trace {
 				srv.traceLogger = app.logger.Named("log.trace")
@@ -300,8 +304,11 @@ func (app *App) Provision(ctx caddy.Context) error {
 			srv.ClientIPHeaders = []string{"X-Forwarded-For"}
 		}
 
-		// precompute underscore header allowlist rules
+		// precompute underscore and dot header allowlist rules
 		if err := srv.provisionUnderscoreHeaders(); err != nil {
+			return fmt.Errorf("server %s: %v", srvName, err)
+		}
+		if err := srv.provisionDotHeaders(); err != nil {
 			return fmt.Errorf("server %s: %v", srvName, err)
 		}
 
@@ -402,6 +409,15 @@ func (app *App) Provision(ctx caddy.Context) error {
 		if srv.ReadHeaderTimeout == 0 {
 			srv.ReadHeaderTimeout = defaultReadHeaderTimeout // see #6663
 		}
+		if srv.ReadIdleTimeout == 0 {
+			srv.ReadIdleTimeout = defaultReadIdleTimeout
+		}
+		if srv.WriteIdleTimeout == 0 {
+			srv.WriteIdleTimeout = defaultWriteIdleTimeout
+		}
+		if srv.MaxWriteChunk == 0 {
+			srv.MaxWriteChunk = DefaultMaxWriteChunk
+		}
 	}
 	ctx.Context = oldContext
 	return nil
@@ -463,11 +479,9 @@ func removeTLSALPN(srv *Server, target string) {
 // Start runs the app. It finishes automatic HTTPS if enabled,
 // including management of certificates.
 func (app *App) Start() error {
-	// get a logger compatible with http.Server
-	serverLogger, err := zap.NewStdLogAt(app.logger.Named("stdlib"), zap.DebugLevel)
-	if err != nil {
-		return fmt.Errorf("failed to set up server logger: %v", err)
-	}
+	// get a logger compatible with http.Server; recovered handler panics are
+	// routed to ERROR so they remain visible at the default log level (#7923)
+	serverLogger := serverErrorLogger(app.logger.Named("stdlib"))
 
 	for srvName, srv := range app.Servers {
 		srv.server = &http.Server{
@@ -515,9 +529,9 @@ func (app *App) Start() error {
 			// when h2c is enabled but h2 disabled, we already removed h2 from NextProtos
 			// the handshake will never succeed with h2
 			// http2.ConfigureServer will enable the server to handle both h2 and h2c
-			h2server := new(http2.Server)
-			//nolint:errcheck
-			http2.ConfigureServer(srv.server, h2server)
+			// TODO: Migrate to http.Server.Protocols once listener-wrapper behaviour is covered.
+			//nolint:errcheck,staticcheck
+			http2.ConfigureServer(srv.server, new(http2.Server))
 		}
 
 		// this TLS config is used by the std lib to choose the actual TLS config for connections
@@ -662,7 +676,7 @@ func (app *App) Start() error {
 
 	// finish automatic HTTPS by finally beginning
 	// certificate management
-	err = app.automaticHTTPSPhase2()
+	err := app.automaticHTTPSPhase2()
 	if err != nil {
 		return fmt.Errorf("finalizing automatic HTTPS: %v", err)
 	}
@@ -670,8 +684,44 @@ func (app *App) Start() error {
 	return nil
 }
 
+// stdlibLogPrefixPanic is the prefix Go's net/http server uses when it writes a
+// recovered handler panic (and its stack trace) to http.Server.ErrorLog.
+// See the deferred recover in net/http.(*conn).serve.
+const stdlibLogPrefixPanic = "http: panic serving"
+
+// serverErrorLogger returns a *log.Logger suitable for http.Server.ErrorLog
+// that forwards the standard library's server messages to Caddy's structured
+// logger. Most of these messages are low-signal and logged at DEBUG, but
+// recovered handler panics indicate a real server-side error, so they are
+// logged at ERROR to stay visible at the default log level.
+func serverErrorLogger(logger *zap.Logger) *log.Logger {
+	return log.New(stdlibLogRouter{logger: logger}, "", 0)
+}
+
+// stdlibLogRouter is an io.Writer that routes standard library http.Server
+// error-log messages to the appropriate level on the wrapped structured logger.
+type stdlibLogRouter struct {
+	logger *zap.Logger
+}
+
+func (w stdlibLogRouter) Write(p []byte) (int, error) {
+	// log.Logger always appends a trailing newline; trim it so the structured
+	// message doesn't carry a dangling blank line.
+	msg := strings.TrimSuffix(string(p), "\n")
+	if strings.HasPrefix(msg, stdlibLogPrefixPanic) {
+		w.logger.Error(msg)
+	} else {
+		w.logger.Debug(msg)
+	}
+	return len(p), nil
+}
+
 // Stop gracefully shuts down the HTTP server.
 func (app *App) Stop() error {
+	return app.stop(caddy.Exiting())
+}
+
+func (app *App) stop(exiting bool) error {
 	ctx := context.Background()
 
 	// see if any listeners in our config will be closing or if they are continuing
@@ -703,11 +753,18 @@ func (app *App) Stop() error {
 	}
 
 	// enforce grace period if configured
+	var finishedShutdown sync.WaitGroup
 	if app.GracePeriod > 0 {
 		var cancel context.CancelFunc
 		timeout := time.Duration(app.GracePeriod)
 		ctx, cancel = context.WithTimeoutCause(ctx, timeout, fmt.Errorf("server graceful shutdown %ds timeout", int(timeout.Seconds())))
-		defer cancel()
+		defer func() {
+			// A reload must leave the grace period alive while its requests finish.
+			go func() {
+				finishedShutdown.Wait()
+				cancel()
+			}()
+		}()
 		app.logger.Info("servers shutting down; grace period initiated", zap.Duration("duration", timeout))
 	} else {
 		app.logger.Info("servers shutting down with eternal grace period")
@@ -721,7 +778,7 @@ func (app *App) Stop() error {
 	// old servers are no longer accepting new connections
 	// (* the scheduler might still pause them right before
 	// calling Shutdown(), but it's unlikely)
-	var startedShutdown, finishedShutdown sync.WaitGroup
+	var startedShutdown sync.WaitGroup
 
 	// these will run in goroutines
 	stopServer := func(server *Server) {
@@ -759,11 +816,35 @@ func (app *App) Stop() error {
 			}
 		}
 
+		// ServeQUICConn connections are not in the HTTP/3 server's set, so
+		// Shutdown does not wait for them and, with none tracked, it closes
+		// the server immediately. webtransport.Server.Close would do that
+		// too. waitWebTransportConns keeps the sockets up until the accept
+		// loops finish. GracePeriod 0 is eternal: the wait ends when the
+		// peer leaves, and the session is not force-closed. A finite grace
+		// period closes sessions at the deadline, while the sockets are
+		// still up, so the close capsule can reach the client.
+		// The close below is for a session whose loop already returned.
+		// Fallback HTTP/3 servers are drained at the same time so an
+		// active request on a reused non-WebTransport listener gets this
+		// grace period instead of dying when the packet conn closes.
+		fbErr := make(chan error, 1)
+		go func() {
+			fbErr <- server.shutdownFallbackHTTP3(ctx)
+		}()
+		server.waitWebTransportConns(ctx)
+		server.closeWebTransportSessions()
+
 		if err := server.h3server.Shutdown(ctx); err != nil {
 			if cause := context.Cause(ctx); cause != nil && errors.Is(err, context.DeadlineExceeded) {
 				err = cause
 			}
 			app.logger.Error("HTTP/3 server shutdown",
+				zap.Error(err),
+				zap.Strings("addresses", server.Listen))
+		}
+		if err := <-fbErr; err != nil {
+			app.logger.Error("HTTP/3 fallback shutdown",
 				zap.Error(err),
 				zap.Strings("addresses", server.Listen))
 		}
@@ -785,6 +866,14 @@ func (app *App) Stop() error {
 		go stopH3Server(server)
 	}
 
+	shutdownDone := make(chan struct{})
+	pendingServerShutdowns.Store(shutdownDone, struct{}{})
+	go func() {
+		finishedShutdown.Wait()
+		close(shutdownDone)
+		pendingServerShutdowns.Delete(shutdownDone)
+	}()
+
 	// block until all the goroutines have been run by the scheduler;
 	// this means that they have likely called Shutdown() by now
 	startedShutdown.Wait()
@@ -796,8 +885,19 @@ func (app *App) Stop() error {
 	// if the process isn't exiting (but note that frequent config
 	// reloads with long grace periods for a sustained length of time
 	// may deplete resources)
-	if caddy.Exiting() {
+	if exiting {
 		finishedShutdown.Wait()
+
+		// Responses from earlier configurations must finish before the process exits.
+		pendingServerShutdowns.Range(func(done, _ any) bool {
+			select {
+			case <-done.(chan struct{}):
+				return true
+			case <-ctx.Done():
+				app.logger.Error("waiting for previous server shutdowns", zap.Error(context.Cause(ctx)))
+				return false
+			}
+		})
 	}
 
 	// run stop callbacks now that the server shutdowns are complete
@@ -856,7 +956,18 @@ const (
 	// long time even on legitimately slow connections or
 	// busy servers to read it.
 	defaultReadHeaderTimeout = caddy.Duration(time.Minute)
+
+	// defaultReadIdleTimeout and defaultWriteIdleTimeout mitigate
+	// slowloris-style attacks on the request body and response write.
+	// Unlike a hard deadline, these are safe defaults even for large
+	// payloads because the deadline is reset on every successful
+	// read/write; only a stalled connection is affected.
+	defaultReadIdleTimeout  = caddy.Duration(time.Minute)
+	defaultWriteIdleTimeout = caddy.Duration(time.Minute)
 )
+
+// Reloads outlive their app, so termination must track shutdowns across configurations.
+var pendingServerShutdowns sync.Map
 
 // Interface guards
 var (

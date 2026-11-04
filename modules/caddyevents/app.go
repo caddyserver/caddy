@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 )
@@ -198,6 +199,17 @@ func (app *App) On(eventName string, handler Handler) error {
 	})
 }
 
+// ShouldEmit reports whether emitting the named event could be observed by
+// anything: a handler subscribed to it by name or to all events, or the debug
+// log that Emit writes for every event. Emitters that assemble event data
+// before calling Emit can use it to skip that work; it is the same question
+// Emit answers internally, exported so callers do not have to guess.
+func (app *App) ShouldEmit(eventName string) bool {
+	return app.subscriptions[eventName] != nil ||
+		app.subscriptions[""] != nil ||
+		app.logger.Core().Enabled(zapcore.DebugLevel)
+}
+
 // Emit creates and dispatches an event named eventName to all relevant handlers with
 // the metadata data. Events are emitted and propagated synchronously. The returned Event
 // value will have any additional information from the invoked handlers.
@@ -205,12 +217,21 @@ func (app *App) On(eventName string, handler Handler) error {
 // Note that the data map is not copied, for efficiency. After Emit() is called, the
 // data passed in should not be changed in other goroutines.
 func (app *App) Emit(ctx caddy.Context, eventName string, data map[string]any) caddy.Event {
-	logger := app.logger.With(zap.String("name", eventName))
-
 	e, err := caddy.NewEvent(ctx, eventName, data)
 	if err != nil {
-		logger.Error("failed to create event", zap.Error(err))
+		app.logger.Error("failed to create event",
+			zap.String("name", eventName), zap.Error(err))
 	}
+
+	// bail out before deriving loggers and registering replacer values if
+	// nothing can observe this event: some events, such as
+	// tls_get_certificate, are emitted on every TLS handshake, where that
+	// work is significant and always wasted
+	if !app.ShouldEmit(eventName) {
+		return e
+	}
+
+	logger := app.logger.With(zap.String("name", eventName))
 
 	var originModule caddy.ModuleInfo
 	var originModuleID caddy.ModuleID

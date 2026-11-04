@@ -23,6 +23,7 @@ import (
 	"cmp"
 	"fmt"
 	"io"
+	"iter"
 	"math"
 	"net/http"
 	"slices"
@@ -30,9 +31,13 @@ import (
 	"strings"
 	"sync"
 
+	"golang.org/x/net/http/httpguts"
+
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
+
+const sseMediaType = "text/event-stream"
 
 func init() {
 	caddy.RegisterModule(Encode{})
@@ -155,36 +160,44 @@ func (enc *Encode) Validate() error {
 	return nil
 }
 
-func isEncodeAllowed(h http.Header) bool {
-	return !strings.Contains(h.Get("Cache-Control"), "no-transform")
+func hasNonEmptyValue(h http.Header, key string) bool {
+	for _, v := range h[key] {
+		if v != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func (enc *Encode) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	if isEncodeAllowed(r.Header) {
-		for _, encName := range AcceptedEncodings(r, enc.Prefer) {
-			if _, ok := enc.writerPools[encName]; !ok {
-				continue // encoding not offered
-			}
-			w = enc.openResponseWriter(encName, w, r.Method == http.MethodConnect)
-			defer w.(*responseWriter).Close()
-
-			// to comply with RFC 9110 section 8.8.3(.3), we modify the Etag when encoding
-			// by appending a hyphen and the encoder name; the problem is, the client will
-			// send back that Etag in an If-None-Match header, but upstream handlers that set
-			// the Etag in the first place don't know that we appended to their Etag! so here
-			// we have to strip our addition so the upstream handlers can still honor client
-			// caches without knowing about our changes...
-			if etag := r.Header.Get("If-None-Match"); etag != "" && !strings.HasPrefix(etag, "W/") {
-				ourSuffix := "-" + encName + `"`
-				if before, ok := strings.CutSuffix(etag, ourSuffix); ok {
-					etag = before + `"`
-					r.Header.Set("If-None-Match", etag)
-				}
-			}
-
-			break
+	var encodingName string
+	for _, encName := range AcceptedEncodings(r, enc.Prefer) {
+		if _, ok := enc.writerPools[encName]; !ok {
+			continue // encoding not offered
 		}
+		encodingName = encName
+
+		// to comply with RFC 9110 section 8.8.3(.3), we modify the Etag when encoding
+		// by appending a hyphen and the encoder name; the problem is, the client will
+		// send back that Etag in an If-None-Match header, but upstream handlers that set
+		// the Etag in the first place don't know that we appended to their Etag! so here
+		// we have to strip our addition so the upstream handlers can still honor client
+		// caches without knowing about our changes...
+		if etags := r.Header["If-None-Match"]; len(etags) > 0 {
+			etag := strings.Join(etags, ", ")
+			stripped := strings.ReplaceAll(etag, "-"+encName+`"`, `"`)
+			if stripped != etag || len(etags) > 1 {
+				r.Header["If-None-Match"] = []string{stripped}
+			}
+		}
+
+		break
 	}
+
+	// wrap even when no encoding was negotiated so eligible identity responses
+	// still carry Vary: Accept-Encoding for shared caches
+	w = enc.openResponseWriter(encodingName, w, r.Method == http.MethodConnect)
+	defer w.(*responseWriter).Close()
 
 	err := next.ServeHTTP(w, r)
 	// If there was an error, disable encoding completely
@@ -245,11 +258,13 @@ func (enc *Encode) initResponseWriter(rw *responseWriter, encodingName string, w
 // configured by config.
 type responseWriter struct {
 	http.ResponseWriter
-	encodingName string
+	encodingName string // empty when the client accepts no offered encoding
 	w            Encoder
 	config       *Encode
 	statusCode   int
 	wroteHeader  bool
+	wroteBody    bool
+	incremental  bool
 	isConnect    bool
 	disabled     bool // disable encoding for this response
 }
@@ -262,12 +277,18 @@ func (rw *responseWriter) WriteHeader(status int) {
 		rw.disabled = true // partial representations must not be dynamically re-encoded
 	}
 
+	h := rw.Header()
+	finalStatus := status < 100 || status > 199
+	if !rw.wroteHeader && finalStatus {
+		rw.incremental = caddyhttp.IsIncremental(h)
+	}
+
 	// See #5849 and RFC 9110 section 15.4.5 (https://www.rfc-editor.org/rfc/rfc9110.html#section-15.4.5) - 304
 	// Not Modified must have certain headers set as if it was a 200 response, and according to the issue
 	// we would miss the Vary header in this case when compression was also enabled; note that we set this
 	// header in the responseWriter.init() method but that is only called if we are writing a response body
-	if status == http.StatusNotModified && !hasVaryValue(rw.Header(), "Accept-Encoding") {
-		rw.Header().Add("Vary", "Accept-Encoding")
+	if status == http.StatusNotModified && !httpguts.HeaderValuesContainsToken(h["Vary"], "Accept-Encoding") {
+		h["Vary"] = append(h["Vary"], "Accept-Encoding")
 	}
 
 	// write status immediately if status is 2xx and the request is CONNECT
@@ -283,6 +304,36 @@ func (rw *responseWriter) WriteHeader(status int) {
 	if 100 <= status && status <= 199 {
 		rw.ResponseWriter.WriteHeader(status)
 	}
+
+	// write header immediately for server-sent events responses and for
+	// responses that ask for incremental forwarding (RFC 10036), since the
+	// body may not be written for a while and the client needs the headers
+	// to establish the stream; see #6293
+	if !rw.wroteHeader && finalStatus &&
+		(rw.incremental || isSSE(firstValue(h["Content-Type"]))) {
+		rw.init()
+		rw.ResponseWriter.WriteHeader(status)
+		rw.wroteHeader = true
+	}
+	if rw.incremental && rw.wroteHeader {
+		// WriteHeader alone may remain buffered by net/http. Incremental
+		// forwarding requires the header section to be sent downstream now.
+		_ = http.NewResponseController(rw.ResponseWriter).Flush()
+	}
+}
+
+func isSSE(contentType string) bool {
+	if len(contentType) < len(sseMediaType) || !strings.EqualFold(contentType[:len(sseMediaType)], sseMediaType) {
+		return false
+	}
+
+	// After the media type, allow only optional whitespace followed by the
+	// end of the value or a parameter separator, so a longer type such as
+	// "text/event-streamfoo" or garbage like "text/event-stream nonsense"
+	// does not match. TrimLeft on the tail does not allocate.
+	rest := strings.TrimLeft(contentType[len(sseMediaType):], " \t")
+
+	return rest == "" || rest[0] == ';'
 }
 
 // Match determines, if encoding should be done based on the ResponseMatcher.
@@ -293,6 +344,10 @@ func (enc *Encode) Match(rw *responseWriter) bool {
 // FlushError is an alternative Flush returning an error. It delays the actual Flush of the underlying
 // ResponseWriterWrapper until headers were written.
 func (rw *responseWriter) FlushError() error {
+	if !rw.wroteHeader && rw.statusCode == 0 && caddyhttp.IsIncremental(rw.Header()) {
+		rw.WriteHeader(http.StatusOK)
+	}
+
 	// WriteHeader wasn't called and is a CONNECT request, treat it as a success.
 	// otherwise, wait until header is written.
 	if rw.isConnect && !rw.wroteHeader && rw.statusCode == 0 {
@@ -332,19 +387,25 @@ func (rw *responseWriter) Write(p []byte) (int, error) {
 	if rw.isConnect && !rw.wroteHeader && rw.statusCode == 0 {
 		rw.WriteHeader(http.StatusOK)
 	}
+	if !rw.wroteHeader && rw.statusCode == 0 && caddyhttp.IsIncremental(rw.Header()) {
+		if hdr := rw.Header(); firstValue(hdr["Content-Type"]) == "" {
+			hdr["Content-Type"] = []string{http.DetectContentType(p)}
+		}
+		rw.WriteHeader(http.StatusOK)
+	}
 
 	// sniff content-type and determine content-length
 	if !rw.wroteHeader && rw.config.MinLength > 0 {
 		var gtMinLength bool
 		if len(p) > rw.config.MinLength {
 			gtMinLength = true
-		} else if cl, err := strconv.Atoi(rw.Header().Get("Content-Length")); err == nil && cl > rw.config.MinLength {
+		} else if cl, err := strconv.Atoi(firstValue(rw.Header()["Content-Length"])); err == nil && cl > rw.config.MinLength {
 			gtMinLength = true
 		}
 
 		if gtMinLength {
-			if rw.Header().Get("Content-Type") == "" {
-				rw.Header().Set("Content-Type", http.DetectContentType(p))
+			if hdr := rw.Header(); firstValue(hdr["Content-Type"]) == "" {
+				hdr["Content-Type"] = []string{http.DetectContentType(p)}
 			}
 			rw.init()
 		}
@@ -363,11 +424,20 @@ func (rw *responseWriter) Write(p []byte) (int, error) {
 		rw.wroteHeader = true
 	}
 
+	var n int
+	var err error
 	if rw.w != nil {
-		return rw.w.Write(p)
+		n, err = rw.w.Write(p)
 	} else {
-		return rw.ResponseWriter.Write(p)
+		n, err = rw.ResponseWriter.Write(p)
 	}
+	if n > 0 {
+		rw.wroteBody = true
+	}
+	if err != nil || !rw.incremental {
+		return n, err
+	}
+	return n, rw.FlushError()
 }
 
 // used to mask ReadFrom method
@@ -383,6 +453,10 @@ const sniffLen = 512
 // It's based on the standard library HTTP/1.1 response writer implementation.
 // https://github.com/golang/go/blob/f4e3ec3dbe3b8e04a058d266adf8e048bab563f2/src/net/http/server.go#L586
 func (rw *responseWriter) ReadFrom(r io.Reader) (int64, error) {
+	if rw.incremental || !rw.wroteHeader && caddyhttp.IsIncremental(rw.Header()) {
+		return io.Copy(writerOnly{rw}, r)
+	}
+
 	rf, ok := rw.ResponseWriter.(io.ReaderFrom)
 	// sendfile can't be used anyway
 	if !ok {
@@ -407,9 +481,15 @@ func (rw *responseWriter) ReadFrom(r io.Reader) (int64, error) {
 	// the response will be compressed, no sendfile support
 	if rw.w != nil {
 		nr, err := io.Copy(rw.w, r)
+		if nr > 0 {
+			rw.wroteBody = true
+		}
 		return nr + ns, err
 	}
 	nr, err := rf.ReadFrom(r)
+	if nr > 0 {
+		rw.wroteBody = true
+	}
 	return nr + ns, err
 }
 
@@ -418,7 +498,7 @@ func (rw *responseWriter) ReadFrom(r io.Reader) (int64, error) {
 func (rw *responseWriter) Close() error {
 	// didn't write, probably head request
 	if !rw.wroteHeader {
-		cl, err := strconv.Atoi(rw.Header().Get("Content-Length"))
+		cl, err := strconv.Atoi(firstValue(rw.Header()["Content-Length"]))
 		if err == nil && cl > rw.config.MinLength {
 			rw.init()
 		}
@@ -432,7 +512,10 @@ func (rw *responseWriter) Close() error {
 
 	var err error
 	if rw.w != nil {
-		err = rw.w.Close()
+		// don't write an empty encoded stream when there was no body
+		if rw.wroteBody {
+			err = rw.w.Close()
+		}
 		rw.w.Reset(nil)
 		rw.config.writerPools[rw.encodingName].Put(rw.w)
 		rw.w = nil
@@ -454,16 +537,21 @@ func (rw *responseWriter) init() {
 
 	hdr := rw.Header()
 
-	if hdr.Get("Content-Encoding") == "" && isEncodeAllowed(hdr) &&
+	// Only the response no-transform binds us; the request one addresses intermediaries.
+	if !hasNonEmptyValue(hdr, "Content-Encoding") &&
+		!httpguts.HeaderValuesContainsToken(hdr["Cache-Control"], "no-transform") &&
 		rw.config.Match(rw) {
+		if !httpguts.HeaderValuesContainsToken(hdr["Vary"], "Accept-Encoding") {
+			hdr["Vary"] = append(hdr["Vary"], "Accept-Encoding")
+		}
+		if rw.encodingName == "" {
+			return
+		}
 		rw.w = rw.config.writerPools[rw.encodingName].Get().(Encoder)
 		rw.w.Reset(rw.ResponseWriter)
-		hdr.Del("Content-Length") // https://github.com/golang/go/issues/14975
-		hdr.Set("Content-Encoding", rw.encodingName)
-		if !hasVaryValue(hdr, "Accept-Encoding") {
-			hdr.Add("Vary", "Accept-Encoding")
-		}
-		hdr.Del("Accept-Ranges") // we don't know ranges for dynamically-encoded content
+		delete(hdr, "Content-Length") // https://github.com/golang/go/issues/14975
+		hdr["Content-Encoding"] = []string{rw.encodingName}
+		delete(hdr, "Accept-Ranges") // we don't know ranges for dynamically-encoded content
 
 		// strong ETags need to be distinct depending on the encoding ("selected representation")
 		// see RFC 9110 section 8.8.3.3:
@@ -472,22 +560,20 @@ func (rw *responseWriter) init() {
 		// (We have to strip the value we append from If-None-Match headers before
 		// sending subsequent requests back upstream, however, since upstream handlers
 		// don't know about our appending to their Etag since they've already done their work)
-		if etag := hdr.Get("Etag"); etag != "" && !strings.HasPrefix(etag, "W/") {
-			etag = fmt.Sprintf(`%s-%s"`, strings.TrimSuffix(etag, `"`), rw.encodingName)
-			hdr.Set("Etag", etag)
+		if etag := firstValue(hdr["Etag"]); etag != "" && !strings.HasPrefix(etag, "W/") {
+			etag = strings.TrimSuffix(etag, `"`) + "-" + rw.encodingName + `"`
+			hdr["Etag"] = []string{etag}
 		}
 	}
 }
 
-func hasVaryValue(hdr http.Header, target string) bool {
-	for _, vary := range hdr.Values("Vary") {
-		for val := range strings.SplitSeq(vary, ",") {
-			if strings.EqualFold(strings.TrimSpace(val), target) {
-				return true
-			}
-		}
+// firstValue is http.Header.Get without key normalization, for callers that
+// index the header with a canonical key.
+func firstValue(values []string) string {
+	if len(values) > 0 {
+		return values[0]
 	}
-	return false
+	return ""
 }
 
 // AcceptedEncodings returns the list of encodings that the
@@ -498,23 +584,28 @@ func hasVaryValue(hdr http.Header, target string) bool {
 // encodings are not considered. See
 // http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html.
 func AcceptedEncodings(r *http.Request, preferredOrder []string) []string {
-	acceptEncHeader := r.Header.Get("Accept-Encoding")
-	websocketKey := r.Header.Get("Sec-WebSocket-Key")
-	if acceptEncHeader == "" {
+	values := r.Header["Accept-Encoding"]
+	if len(values) == 0 {
 		return []string{}
 	}
+	websocketKey := firstValue(r.Header["Sec-Websocket-Key"])
 
-	prefs := []encodingPreference{}
+	// sized for typical headers so the slice stays on the stack
+	prefs := make([]encodingPreference, 0, 8)
 
-	for accepted := range strings.SplitSeq(acceptEncHeader, ",") {
-		parts := strings.Split(accepted, ";")
-		encName := strings.ToLower(strings.TrimSpace(parts[0]))
+	for accepted := range listItems(values) {
+		encName, params, found := strings.Cut(accepted, ";")
+		encName = strings.ToLower(strings.TrimSpace(encName))
+		if encName == "" {
+			continue
+		}
 
 		// determine q-factor
 		qFactor := 1.0
-		if len(parts) > 1 {
-			qFactorStr := strings.ToLower(strings.TrimSpace(parts[1]))
-			if strings.HasPrefix(qFactorStr, "q=") {
+		if found {
+			qFactorStr, _, _ := strings.Cut(params, ";")
+			qFactorStr = strings.TrimSpace(qFactorStr)
+			if len(qFactorStr) >= 2 && strings.EqualFold(qFactorStr[:2], "q=") {
 				if qFactorFloat, err := strconv.ParseFloat(qFactorStr[2:], 32); err == nil {
 					if qFactorFloat >= 0 && qFactorFloat <= 1 {
 						qFactor = qFactorFloat
@@ -561,6 +652,20 @@ func AcceptedEncodings(r *http.Request, preferredOrder []string) []string {
 	}
 
 	return prefEncNames
+}
+
+// listItems yields the items of a list-based field, which RFC 9110 section 5.3
+// allows to be split across several field lines.
+func listItems(lines []string) iter.Seq[string] {
+	return func(yield func(string) bool) {
+		for _, line := range lines {
+			for item := range strings.SplitSeq(line, ",") {
+				if !yield(item) {
+					return
+				}
+			}
+		}
+	}
 }
 
 // encodingPreference pairs an encoding with its q-factor.

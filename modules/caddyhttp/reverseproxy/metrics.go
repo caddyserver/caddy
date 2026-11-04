@@ -16,6 +16,10 @@ import (
 var reverseProxyMetrics = struct {
 	once             sync.Once
 	upstreamsHealthy *prometheus.GaugeVec
+	streamsActive    *prometheus.GaugeVec
+	streamsTotal     *prometheus.CounterVec
+	streamDuration   *prometheus.HistogramVec
+	streamBytes      *prometheus.CounterVec
 	logger           *zap.Logger
 }{}
 
@@ -23,6 +27,8 @@ func initReverseProxyMetrics(handler *Handler, registry *prometheus.Registry) {
 	const ns, sub = "caddy", "reverse_proxy"
 
 	upstreamsLabels := []string{"upstream"}
+	streamResultLabels := []string{"upstream", "result"}
+	streamBytesLabels := []string{"upstream", "direction"}
 	reverseProxyMetrics.once.Do(func() {
 		reverseProxyMetrics.upstreamsHealthy = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: ns,
@@ -30,6 +36,31 @@ func initReverseProxyMetrics(handler *Handler, registry *prometheus.Registry) {
 			Name:      "upstreams_healthy",
 			Help:      "Health status of reverse proxy upstreams.",
 		}, upstreamsLabels)
+		reverseProxyMetrics.streamsActive = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: ns,
+			Subsystem: sub,
+			Name:      "streams_active",
+			Help:      "Number of currently active upgraded reverse proxy streams.",
+		}, upstreamsLabels)
+		reverseProxyMetrics.streamsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: ns,
+			Subsystem: sub,
+			Name:      "streams_total",
+			Help:      "Total number of upgraded reverse proxy streams by close result.",
+		}, streamResultLabels)
+		reverseProxyMetrics.streamDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace: ns,
+			Subsystem: sub,
+			Name:      "stream_duration_seconds",
+			Help:      "Duration of upgraded reverse proxy streams by close result.",
+			Buckets:   prometheus.DefBuckets,
+		}, streamResultLabels)
+		reverseProxyMetrics.streamBytes = prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: ns,
+			Subsystem: sub,
+			Name:      "stream_bytes_total",
+			Help:      "Total bytes proxied across upgraded reverse proxy streams.",
+		}, streamBytesLabels)
 	})
 
 	// duplicate registration could happen if multiple sites with reverse proxy are configured; so ignore the error because
@@ -42,8 +73,56 @@ func initReverseProxyMetrics(handler *Handler, registry *prometheus.Registry) {
 		}) {
 		panic(err)
 	}
+	if err := registry.Register(reverseProxyMetrics.streamsActive); err != nil &&
+		!errors.Is(err, prometheus.AlreadyRegisteredError{
+			ExistingCollector: reverseProxyMetrics.streamsActive,
+			NewCollector:      reverseProxyMetrics.streamsActive,
+		}) {
+		panic(err)
+	}
+	if err := registry.Register(reverseProxyMetrics.streamsTotal); err != nil &&
+		!errors.Is(err, prometheus.AlreadyRegisteredError{
+			ExistingCollector: reverseProxyMetrics.streamsTotal,
+			NewCollector:      reverseProxyMetrics.streamsTotal,
+		}) {
+		panic(err)
+	}
+	if err := registry.Register(reverseProxyMetrics.streamDuration); err != nil &&
+		!errors.Is(err, prometheus.AlreadyRegisteredError{
+			ExistingCollector: reverseProxyMetrics.streamDuration,
+			NewCollector:      reverseProxyMetrics.streamDuration,
+		}) {
+		panic(err)
+	}
+	if err := registry.Register(reverseProxyMetrics.streamBytes); err != nil &&
+		!errors.Is(err, prometheus.AlreadyRegisteredError{
+			ExistingCollector: reverseProxyMetrics.streamBytes,
+			NewCollector:      reverseProxyMetrics.streamBytes,
+		}) {
+		panic(err)
+	}
 
 	reverseProxyMetrics.logger = handler.logger.Named("reverse_proxy.metrics")
+}
+
+func trackActiveStream(upstream string) func(result string, duration time.Duration, toBackend, fromBackend int64) {
+	labels := prometheus.Labels{"upstream": upstream}
+	reverseProxyMetrics.streamsActive.With(labels).Inc()
+
+	var once sync.Once
+	return func(result string, duration time.Duration, toBackend, fromBackend int64) {
+		once.Do(func() {
+			reverseProxyMetrics.streamsActive.With(labels).Dec()
+			reverseProxyMetrics.streamsTotal.WithLabelValues(upstream, result).Inc()
+			reverseProxyMetrics.streamDuration.WithLabelValues(upstream, result).Observe(duration.Seconds())
+			if toBackend > 0 {
+				reverseProxyMetrics.streamBytes.WithLabelValues(upstream, "to_upstream").Add(float64(toBackend))
+			}
+			if fromBackend > 0 {
+				reverseProxyMetrics.streamBytes.WithLabelValues(upstream, "from_upstream").Add(float64(fromBackend))
+			}
+		})
+	}
 }
 
 type metricsUpstreamsHealthyUpdater struct {

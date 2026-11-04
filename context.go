@@ -207,6 +207,8 @@ func (ctx Context) LoadModule(structPointer any, fieldName string) (any, error) 
 
 	var result any
 
+	// Unsupported field kinds return an error.
+	//exhaustive:ignore
 	switch val.Kind() {
 	case reflect.Slice:
 		if isJSONRawMessage(typ) {
@@ -676,6 +678,7 @@ func (ctx *Context) WithValue(key, value any) Context {
 		ancestry:        ctx.ancestry,
 		cleanupFuncs:    ctx.cleanupFuncs,
 		exitFuncs:       ctx.exitFuncs,
+		metricsRegistry: ctx.metricsRegistry,
 	}
 }
 

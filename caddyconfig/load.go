@@ -24,6 +24,8 @@ import (
 	"strings"
 	"sync"
 
+	"golang.org/x/net/http/httpguts"
+
 	"github.com/caddyserver/caddy/v2"
 )
 
@@ -91,33 +93,30 @@ func (adminLoad) handleLoad(w http.ResponseWriter, r *http.Request) error {
 	}
 	body := buf.Bytes()
 
+	var warnings []Warning
 	// if the config is formatted other than Caddy's native
 	// JSON, we need to adapt it before loading it
 	if ctHeader := r.Header.Get("Content-Type"); ctHeader != "" {
-		result, warnings, err := adaptByContentType(ctHeader, body)
+		result, wns, err := adaptByContentType(ctHeader, body)
 		if err != nil {
 			return caddy.APIError{
 				HTTPStatus: http.StatusBadRequest,
 				Err:        err,
+				Warnings:   wns,
 			}
 		}
-		if len(warnings) > 0 {
-			respBody, err := json.Marshal(warnings)
-			if err != nil {
-				caddy.Log().Named("admin.api.load").Error(err.Error())
-			}
-			_, _ = w.Write(respBody) //nolint:gosec // false positive: no XSS here
-		}
+		warnings = wns
 		body = result
 	}
 
-	forceReload := r.Header.Get("Cache-Control") == "must-revalidate"
+	forceReload := httpguts.HeaderValuesContainsToken(r.Header["Cache-Control"], "must-revalidate")
 
 	err = caddy.Load(body, forceReload)
 	if err != nil {
 		return caddy.APIError{
 			HTTPStatus: http.StatusBadRequest,
 			Err:        fmt.Errorf("loading config: %v", err),
+			Warnings:   warnings,
 		}
 	}
 
@@ -129,6 +128,16 @@ func (adminLoad) handleLoad(w http.ResponseWriter, r *http.Request) error {
 		r.Header.Get("Caddy-Config-Source-Adapter"))
 
 	caddy.Log().Named("admin.api").Info("load complete")
+
+	// Send any warnings back even if there were no errors
+	if len(warnings) > 0 {
+		out := struct {
+			Warnings []Warning `json:"warnings"`
+		}{
+			Warnings: warnings,
+		}
+		return json.NewEncoder(w).Encode(out)
+	}
 
 	return nil
 }

@@ -168,6 +168,36 @@ func TestDispenser_NextBlock(t *testing.T) {
 	assertNextBlock(false, 8, 0) // empty block is as if it didn't exist
 }
 
+func TestDispenser_QuotedBracesAreArguments(t *testing.T) {
+	// quoted braces are literal argument text, not structural tokens
+	d := NewTestDispenser(`dir1 "{" "}" foo
+			  dir2 "}" {
+				sub1 "{"
+			  }`)
+
+	d.Next() // dir1
+	if d.NextBlock(0) {
+		t.Errorf("NextBlock(): quoted '{' must not open a block (val: '%s')", d.Val())
+	}
+	if args := d.RemainingArgs(); !reflect.DeepEqual(args, []string{"{", "}", "foo"}) {
+		t.Errorf(`RemainingArgs(): quoted braces should be visible as arguments, got %v`, args)
+	}
+
+	d.Next() // dir2
+	if args := d.RemainingArgs(); !reflect.DeepEqual(args, []string{"}"}) {
+		t.Errorf(`RemainingArgs(): quoted '}' should be an argument, got %v`, args)
+	}
+	if !d.NextBlock(0) || d.Val() != "sub1" {
+		t.Fatalf("NextBlock(): unquoted '{' should still open a block (val: '%s')", d.Val())
+	}
+	if args := d.RemainingArgs(); !reflect.DeepEqual(args, []string{"{"}) {
+		t.Errorf(`RemainingArgs(): quoted '{' inside block should be an argument, got %v`, args)
+	}
+	if d.NextBlock(0) || d.Nesting() != 0 {
+		t.Errorf("NextBlock(): block should have closed (nesting %d)", d.Nesting())
+	}
+}
+
 func TestDispenser_Args(t *testing.T) {
 	var s1, s2, s3 string
 	input := `dir1 arg1 arg2 arg3

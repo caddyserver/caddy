@@ -4,24 +4,50 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
+	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/caddyserver/caddy/v2"
+	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/http3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
+
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
 
 type writeFunc func(p []byte) (int, error)
 
 type nopSyncer writeFunc
+
+func (s *syncBuffer) Write(p []byte) (n int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.String()
+}
 
 func (n nopSyncer) Write(p []byte) (int, error) {
 	return n(p)
@@ -64,7 +90,7 @@ func TestServer_LogRequest(t *testing.T) {
 
 	buf := bytes.Buffer{}
 	accLog := testLogger(buf.Write)
-	s.logRequest(accLog, req, wrec, &duration, repl, bodyReader, shouldLogCredentials)
+	s.logRequest(accLog, req, wrec, &duration, nil, repl, bodyReader, shouldLogCredentials)
 
 	assert.JSONEq(t, `{
 		"msg":"handled request", "level":"info", "bytes_read":0,
@@ -92,7 +118,7 @@ func TestServer_LogRequest_WithTrace(t *testing.T) {
 
 	buf := bytes.Buffer{}
 	accLog := testLogger(buf.Write)
-	s.logRequest(accLog, req, wrec, &duration, repl, bodyReader, shouldLogCredentials)
+	s.logRequest(accLog, req, wrec, &duration, nil, repl, bodyReader, shouldLogCredentials)
 
 	assert.JSONEq(t, `{
 		"msg":"handled request", "level":"info", "bytes_read":0,
@@ -121,7 +147,7 @@ func BenchmarkServer_LogRequest(b *testing.B) {
 	accLog := testLogger(buf.Write)
 
 	for b.Loop() {
-		s.logRequest(accLog, req, wrec, &duration, repl, bodyReader, false)
+		s.logRequest(accLog, req, wrec, &duration, nil, repl, bodyReader, false)
 	}
 }
 
@@ -142,7 +168,7 @@ func BenchmarkServer_LogRequest_NopLogger(b *testing.B) {
 	accLog := zap.NewNop()
 
 	for b.Loop() {
-		s.logRequest(accLog, req, wrec, &duration, repl, bodyReader, false)
+		s.logRequest(accLog, req, wrec, &duration, nil, repl, bodyReader, false)
 	}
 }
 
@@ -166,7 +192,7 @@ func BenchmarkServer_LogRequest_WithTrace(b *testing.B) {
 	accLog := testLogger(buf.Write)
 
 	for b.Loop() {
-		s.logRequest(accLog, req, wrec, &duration, repl, bodyReader, false)
+		s.logRequest(accLog, req, wrec, &duration, nil, repl, bodyReader, false)
 	}
 }
 
@@ -482,6 +508,59 @@ func TestServer_DetermineTrustedProxy_MatchRightMostUntrustedSkippingTrusted(t *
 	assert.Equal(t, clientIP, "45.54.45.54")
 }
 
+func TestServer_serveHTTP_RejectsPathLikeHost(t *testing.T) {
+	for _, tc := range []struct {
+		host   string
+		reject bool
+	}{
+		{host: ".", reject: true},
+		{host: "..", reject: true},
+		{host: "..:443", reject: true},
+		{host: "[..]:443", reject: true},
+		{host: "../../..", reject: true},
+		{host: "a/b", reject: true},
+		{host: `a\b`, reject: true},
+		{host: `..\..`, reject: true},
+		{host: "a\x00b", reject: true},
+		{host: "...", reject: true},
+		{host: "....:443", reject: true},
+		{host: ".. ", reject: true},
+		{host: "a b", reject: true},
+		{host: "example.com", reject: false},
+		{host: "example.com:8443", reject: false},
+		{host: "example.com.", reject: false},
+		{host: "..example.com", reject: false},
+		{host: "127.0.0.1:80", reject: false},
+		{host: "[::1]:443", reject: false},
+		{host: "[::1]", reject: false},
+	} {
+		t.Run(tc.host, func(t *testing.T) {
+			called := false
+			s := &Server{
+				logger: zap.NewNop(),
+				primaryHandlerChain: HandlerFunc(func(http.ResponseWriter, *http.Request) error {
+					called = true
+					return nil
+				}),
+			}
+
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.Host = tc.host
+
+			err := s.serveHTTP(httptest.NewRecorder(), req)
+			if !tc.reject {
+				require.NoError(t, err)
+				assert.True(t, called)
+				return
+			}
+			var handlerErr HandlerError
+			require.ErrorAs(t, err, &handlerErr)
+			assert.Equal(t, http.StatusBadRequest, handlerErr.StatusCode)
+			assert.False(t, called)
+		})
+	}
+}
+
 // TestServer_serveHTTP_DropsUnderscoreHeader covers GHSA-f59h-q822-g45g: an
 // underscore-named alias (e.g. `Remote_user`) of a hyphenated header must be
 // dropped before any handler runs.
@@ -525,6 +604,51 @@ func TestServer_serveHTTP_LogsDroppedUnderscoreHeader(t *testing.T) {
 	assert.Contains(t, buf.String(), `"level":"debug"`)
 	assert.Contains(t, buf.String(), `"msg":"dropping header containing underscore"`)
 	assert.Contains(t, buf.String(), `"header":"Remote_user"`)
+}
+
+// TestServer_serveHTTP_DropsDotHeader guards GHSA-49wc-4hcv-v58q: a
+// dot-named alias (e.g. `Remote.user`) of a hyphenated header must be
+// dropped too, since PHP's $_SERVER registration folds `.` to `_` just
+// like CGI/FastCGI folds `-` to `_`.
+func TestServer_serveHTTP_DropsDotHeader(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger: zap.NewNop(),
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["X-Real-Header"] = []string{"ok"}
+	req.Header["Remote.user"] = []string{"attacker"}
+	req.Header["Remote.groups"] = []string{"admin"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.NotContains(t, *got, "Remote.user")
+	assert.NotContains(t, *got, "Remote.groups")
+	assert.Equal(t, "ok", got.Get("X-Real-Header"))
+}
+
+// TestServer_serveHTTP_LogsDroppedDotHeader verifies each dropped dotted
+// header is emitted at debug level, same as the underscore case.
+func TestServer_serveHTTP_LogsDroppedDotHeader(t *testing.T) {
+	var buf bytes.Buffer
+	s := &Server{
+		logger: testLogger(buf.Write),
+		primaryHandlerChain: HandlerFunc(func(http.ResponseWriter, *http.Request) error {
+			return nil
+		}),
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["Remote.user"] = []string{"attacker"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.Contains(t, buf.String(), `"level":"debug"`)
+	assert.Contains(t, buf.String(), `"msg":"dropping header containing dot"`)
+	assert.Contains(t, buf.String(), `"header":"Remote.user"`)
 }
 
 // --- Allowlist: exact match ---
@@ -777,6 +901,277 @@ func TestServer_serveHTTP_LiteralAsteriskInHeader(t *testing.T) {
 	assert.Equal(t, "val", got.Get("Webhook_*"))
 }
 
+// --- Allowlist: dot headers (ExpectedDotHeaders), independent of underscore ---
+
+// TestServer_serveHTTP_DotAllowlistKeepsExactMatch verifies a dot-named
+// header explicitly allowlisted via ExpectedDotHeaders survives, mirroring
+// the underscore allowlist behavior.
+func TestServer_serveHTTP_DotAllowlistKeepsExactMatch(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:             zap.NewNop(),
+		ExpectedDotHeaders: []string{"user.id"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionDotHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["User.id"] = []string{"zeus"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.Equal(t, "zeus", got.Get("User.id"))
+}
+
+// TestServer_serveHTTP_DotAllowlistDropsHyphenatedVariant verifies the
+// hyphenated variant of an allowlisted dot header is dropped, same as for
+// the underscore allowlist.
+func TestServer_serveHTTP_DotAllowlistDropsHyphenatedVariant(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:             zap.NewNop(),
+		ExpectedDotHeaders: []string{"user.id"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionDotHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["User.id"] = []string{"zeus"}
+	req.Header.Set("User-Id", "attacker")
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.Equal(t, "zeus", got.Get("User.id"))
+	assert.NotContains(t, *got, "User-Id")
+}
+
+// TestServer_serveHTTP_DotAllowlistDropsUnderscoreVariant verifies that when
+// only the dot form is allowlisted, an underscore-form header of the same
+// logical name is NOT independently kept: ExpectedDotHeaders does not grant
+// any allowance to underscore-named headers, so it falls through to the
+// default underscore behavior (dropped, since ExpectedUnderscoreHeaders is
+// unset).
+func TestServer_serveHTTP_DotAllowlistDropsUnderscoreVariant(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:             zap.NewNop(),
+		ExpectedDotHeaders: []string{"user.id"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionDotHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["User.id"] = []string{"zeus"}
+	req.Header["User_id"] = []string{"attacker"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.Equal(t, "zeus", got.Get("User.id"))
+	assert.NotContains(t, *got, "User_id")
+}
+
+// TestServer_serveHTTP_DotAllowlistDropsUnlisted verifies an unlisted
+// dot-form header is dropped just like its underscore-form counterpart.
+func TestServer_serveHTTP_DotAllowlistDropsUnlisted(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:             zap.NewNop(),
+		ExpectedDotHeaders: []string{"user.id"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionDotHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["User.id"] = []string{"zeus"}
+	req.Header["Remote.user"] = []string{"attacker"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.Equal(t, "zeus", got.Get("User.id"))
+	assert.NotContains(t, *got, "Remote.user")
+}
+
+// TestServer_serveHTTP_DotPrefixGlobKeepsMatch verifies prefix-glob
+// matching works for dot headers the same way it does for underscore
+// headers.
+func TestServer_serveHTTP_DotPrefixGlobKeepsMatch(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:             zap.NewNop(),
+		ExpectedDotHeaders: []string{"webhook.*"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionDotHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["Webhook.event"] = []string{"push"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.Equal(t, "push", got.Get("Webhook.event"))
+}
+
+// --- Both allowlists configured together ---
+
+// TestServer_serveHTTP_BothAllowlistsCoexistForDifferentNames verifies
+// unrelated underscore and dot allowlist entries can coexist without
+// interfering with each other.
+func TestServer_serveHTTP_BothAllowlistsCoexistForDifferentNames(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:                    zap.NewNop(),
+		ExpectedUnderscoreHeaders: []string{"user_id"},
+		ExpectedDotHeaders:        []string{"webhook.event"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionUnderscoreHeaders())
+	require.NoError(t, s.provisionDotHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["User_id"] = []string{"zeus"}
+	req.Header["Webhook.event"] = []string{"push"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.Equal(t, "zeus", got.Get("User_id"))
+	assert.Equal(t, "push", got.Get("Webhook.event"))
+}
+
+// TestServer_serveHTTP_BothAllowlistsPermitSameLogicalName verifies Caddy
+// does not enforce mutual exclusion between the two allowlists: an
+// operator whose backend doesn't fold '.' and '_' onto the same variable
+// (e.g. a Node.js or Go app behind reverse_proxy, not a CGI/FastCGI/PHP
+// backend) may legitimately want both spellings of the same name kept as
+// distinct headers. It's their responsibility to know whether that's safe
+// for their backend; see the doc comments on ExpectedUnderscoreHeaders and
+// ExpectedDotHeaders.
+func TestServer_serveHTTP_BothAllowlistsPermitSameLogicalName(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:                    zap.NewNop(),
+		ExpectedUnderscoreHeaders: []string{"user_id"},
+		ExpectedDotHeaders:        []string{"user.id"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionUnderscoreHeaders())
+	require.NoError(t, s.provisionDotHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["User_id"] = []string{"alice"}
+	req.Header["User.id"] = []string{"bob"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.Equal(t, "alice", got.Get("User_id"))
+	assert.Equal(t, "bob", got.Get("User.id"))
+}
+
+// --- Headers with both underscore and dot in the same name ---
+
+// TestServer_serveHTTP_DropsMixedUnderscoreDotHeaderByDefault verifies a
+// header spelled with both an underscore and a dot (e.g. "Webhook_user.id")
+// is dropped by default, same as either separator alone.
+func TestServer_serveHTTP_DropsMixedUnderscoreDotHeaderByDefault(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger: zap.NewNop(),
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["Webhook_user.id"] = []string{"attacker"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.NotContains(t, *got, "Webhook_user.id")
+}
+
+// TestServer_serveHTTP_PrefixGlobDoesNotLeakMixedHeader guards against a
+// prefix glob unintentionally admitting a mixed-separator header: an
+// underscore prefix rule like "webhook_*" matches "Webhook_user.id" via
+// plain string prefix, but the embedded dot still collides at a
+// CGI/FastCGI/PHP backend the same way a bare dot-named header would, so
+// it must not slip through just because it also happens to start with an
+// allowlisted underscore prefix.
+func TestServer_serveHTTP_PrefixGlobDoesNotLeakMixedHeader(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:                    zap.NewNop(),
+		ExpectedUnderscoreHeaders: []string{"webhook_*"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionUnderscoreHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["Webhook_user.id"] = []string{"attacker"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.NotContains(t, *got, "Webhook_user.id")
+}
+
+// TestServer_serveHTTP_ExactAllowlistPermitsMixedHeader verifies that an
+// operator who explicitly vetted the exact mixed-separator spelling (not a
+// glob) can still allowlist it.
+func TestServer_serveHTTP_ExactAllowlistPermitsMixedHeader(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:                    zap.NewNop(),
+		ExpectedUnderscoreHeaders: []string{"webhook_user.id"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionUnderscoreHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["Webhook_user.id"] = []string{"ok"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.Equal(t, "ok", got.Get("Webhook_user.id"))
+}
+
+// TestServer_serveHTTP_ExactAllowlistDropsMixedHeaderRepeatedValues verifies
+// the repeated-value guard also applies to an exactly-allowlisted mixed
+// header.
+func TestServer_serveHTTP_ExactAllowlistDropsMixedHeaderRepeatedValues(t *testing.T) {
+	got := &http.Header{}
+	s := &Server{
+		logger:                    zap.NewNop(),
+		ExpectedUnderscoreHeaders: []string{"webhook_user.id"},
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			*got = r.Header.Clone()
+			return nil
+		}),
+	}
+	require.NoError(t, s.provisionUnderscoreHeaders())
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.Header["Webhook_user.id"] = []string{"ok", "injected"}
+
+	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
+	assert.NotContains(t, *got, "Webhook_user.id")
+}
+
 // --- Combined allowlist ---
 
 func TestServer_serveHTTP_ExactAndPrefixCoexist(t *testing.T) {
@@ -895,7 +1290,7 @@ func TestServer_serveHTTP_LogsHyphenatedVariantDrop(t *testing.T) {
 
 	require.NoError(t, s.serveHTTP(httptest.NewRecorder(), req))
 	assert.Contains(t, buf.String(), `"level":"debug"`)
-	assert.Contains(t, buf.String(), `"msg":"dropping hyphenated variant of expected underscore header"`)
+	assert.Contains(t, buf.String(), `"msg":"dropping hyphenated variant of expected underscore/dot header"`)
 	assert.Contains(t, buf.String(), `"header":"User-Id"`)
 }
 
@@ -954,6 +1349,52 @@ func TestServer_provisionUnderscoreHeaders_DeduplicatesSilently(t *testing.T) {
 	assert.Len(t, s.underscoreExactAllow, 1)
 }
 
+func TestServer_provisionDotHeaders_EmptyListIsNoOp(t *testing.T) {
+	s := &Server{ExpectedDotHeaders: []string{}}
+	assert.NoError(t, s.provisionDotHeaders())
+}
+
+func TestServer_provisionDotHeaders_RejectsNoDot(t *testing.T) {
+	s := &Server{ExpectedDotHeaders: []string{"content-type"}}
+	assert.Error(t, s.provisionDotHeaders())
+}
+
+func TestServer_provisionDotHeaders_RejectsBareWildcard(t *testing.T) {
+	s := &Server{ExpectedDotHeaders: []string{"*"}}
+	assert.Error(t, s.provisionDotHeaders())
+}
+
+func TestServer_provisionDotHeaders_RejectsMidGlob(t *testing.T) {
+	s := &Server{ExpectedDotHeaders: []string{"f*oo.bar"}}
+	assert.Error(t, s.provisionDotHeaders())
+}
+
+func TestServer_provisionDotHeaders_RejectsLeadingGlob(t *testing.T) {
+	s := &Server{ExpectedDotHeaders: []string{"*.foo"}}
+	assert.Error(t, s.provisionDotHeaders())
+}
+
+func TestServer_provisionDotHeaders_RejectsNonASCII(t *testing.T) {
+	s := &Server{ExpectedDotHeaders: []string{"uşer.id"}}
+	assert.Error(t, s.provisionDotHeaders())
+}
+
+func TestServer_provisionDotHeaders_ValidExact(t *testing.T) {
+	s := &Server{ExpectedDotHeaders: []string{"user.id"}}
+	assert.NoError(t, s.provisionDotHeaders())
+}
+
+func TestServer_provisionDotHeaders_ValidGlob(t *testing.T) {
+	s := &Server{ExpectedDotHeaders: []string{"webhook.*"}}
+	assert.NoError(t, s.provisionDotHeaders())
+}
+
+func TestServer_provisionDotHeaders_DeduplicatesSilently(t *testing.T) {
+	s := &Server{ExpectedDotHeaders: []string{"user.id", "user.id"}}
+	require.NoError(t, s.provisionDotHeaders())
+	assert.Len(t, s.dotExactAllow, 1)
+}
+
 // TestServer_SpaceInHeaderNameReturnsBadRequest documents why the underscore
 // filter does not also strip space-named headers: Go's HTTP parser rejects a
 // space in a field name with 400 before any handler runs, so such a request
@@ -1002,4 +1443,556 @@ func TestServer_DetermineTrustedProxy_MatchRightMostUntrustedFirst(t *testing.T)
 
 	assert.True(t, trusted)
 	assert.Equal(t, clientIP, "90.100.110.120")
+}
+
+func TestServer_LogRequest_WithWriteError(t *testing.T) {
+	s := &Server{}
+	ctx := context.WithValue(context.Background(), ExtraLogFieldsCtxKey, new(ExtraLogFields))
+	req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+	wrec := NewResponseRecorder(rec, nil, nil)
+	duration := 50 * time.Millisecond
+	repl := NewTestReplacer(req)
+	bodyReader := &lengthReader{Source: req.Body}
+	buf := bytes.Buffer{}
+	accLog := testLogger(buf.Write)
+
+	writeErr := errors.New("write tcp: i/o timeout")
+	s.logRequest(accLog, req, wrec, &duration, &writeErr, repl, bodyReader, false)
+
+	assert.JSONEq(t, `{
+		"msg":"handled request", "level":"info", "bytes_read":0,
+		"duration":"50ms", "resp_headers": {}, "size":0,
+		"status":0, "user_id":"",
+		"write_error":"write tcp: i/o timeout"
+	}`, buf.String())
+}
+
+// newAccessLogTestServer starts a server whose access log is written to the
+// returned buffer. writeTimeout is the write timeout Caddy is configured with,
+// while realWriteTimeout is the deadline net/http actually enforces on the
+// connection (zero means no deadline, so writes always succeed).
+func newAccessLogTestServer(t *testing.T, writeTimeout, realWriteTimeout time.Duration, h HandlerFunc) (*httptest.Server, *syncBuffer) {
+	t.Helper()
+
+	buf := new(syncBuffer)
+	s := &Server{
+		logger:              zap.NewNop(),
+		errorLogger:         zap.NewNop(),
+		accessLogger:        testLogger(buf.Write),
+		Logs:                &ServerLogConfig{},
+		WriteTimeout:        caddy.Duration(writeTimeout),
+		primaryHandlerChain: h,
+	}
+
+	ts := httptest.NewUnstartedServer(http.HandlerFunc(s.ServeHTTP))
+	ts.Config.WriteTimeout = realWriteTimeout
+	ts.Start()
+	t.Cleanup(ts.Close)
+
+	return ts, buf
+}
+
+// eventuallyLogged waits for the access log entry to be written, since it is
+// emitted from a defer that runs after the client has already seen the response.
+func eventuallyLogged(t *testing.T, buf *syncBuffer, contains ...string) {
+	t.Helper()
+
+	assert.Eventually(t, func() bool {
+		logOutput := buf.String()
+		for _, want := range contains {
+			if !strings.Contains(logOutput, want) {
+				return false
+			}
+		}
+		return true
+	}, 1*time.Second, 10*time.Millisecond, "expected log entry containing %q, got %q", contains, buf.String())
+}
+
+func TestServer_ServeHTTP_WriteTimeoutLogsWriteError(t *testing.T) {
+	ts, buf := newAccessLogTestServer(t, 150*time.Millisecond, 150*time.Millisecond,
+		func(w http.ResponseWriter, r *http.Request) error {
+			time.Sleep(300 * time.Millisecond)
+			fmt.Fprint(w, "XX")
+			return nil
+		})
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(ts.URL)
+	if err == nil {
+		resp.Body.Close() // close immediately since we don't need body contents
+	}
+
+	eventuallyLogged(t, buf, `"write_error"`, "i/o timeout", `"status":200`)
+}
+
+// A handler that takes longer than the configured write timeout but whose
+// response is still written successfully must not be reported as a write error.
+func TestServer_ServeHTTP_DelayedSuccessLogsNoWriteError(t *testing.T) {
+	ts, buf := newAccessLogTestServer(t, 10*time.Millisecond, 0,
+		func(w http.ResponseWriter, r *http.Request) error {
+			time.Sleep(50 * time.Millisecond)
+			fmt.Fprint(w, "hello")
+			return nil
+		})
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(ts.URL)
+	require.NoError(t, err)
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	require.NoError(t, err)
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "hello", string(body))
+
+	eventuallyLogged(t, buf, `"status":200`, `"size":5`)
+	assert.NotContains(t, buf.String(), "write_error")
+}
+
+// The flush probe must not commit a response before the handler error has been
+// turned into a response, otherwise the error status is lost (both on the wire
+// and in the access log).
+func TestServer_ServeHTTP_DelayedHandlerErrorWritesErrorStatus(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		handler HandlerFunc
+	}{
+		{
+			name: "error without writing",
+			handler: func(w http.ResponseWriter, r *http.Request) error {
+				time.Sleep(50 * time.Millisecond)
+				return Error(http.StatusTeapot, errors.New("delayed failure"))
+			},
+		},
+		{
+			// 1xx responses are informational and pass straight through to the
+			// client, which puts the recorder in streaming mode; flushing at that
+			// point would commit a 200 before the error status can be written.
+			name: "error after informational response",
+			handler: func(w http.ResponseWriter, r *http.Request) error {
+				w.WriteHeader(http.StatusEarlyHints)
+				time.Sleep(50 * time.Millisecond)
+				return Error(http.StatusTeapot, errors.New("delayed failure"))
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ts, buf := newAccessLogTestServer(t, 10*time.Millisecond, 0, tc.handler)
+
+			client := &http.Client{Timeout: 2 * time.Second}
+			resp, err := client.Get(ts.URL)
+			require.NoError(t, err)
+			resp.Body.Close()
+
+			assert.Equal(t, http.StatusTeapot, resp.StatusCode)
+
+			eventuallyLogged(t, buf, `"status":418`)
+			assert.NotContains(t, buf.String(), "write_error")
+		})
+	}
+}
+
+func TestServer_ServeHTTP_IdleTimeouts(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		timeout caddy.Duration
+		applied bool
+	}{
+		{name: "positive", timeout: caddy.Duration(time.Minute), applied: true},
+		{name: "negative disables", timeout: -1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var reader *IdleTimeoutReader
+			var writer *IdleTimeoutWriter
+			s := &Server{
+				ReadIdleTimeout:  tc.timeout,
+				WriteIdleTimeout: tc.timeout,
+				logger:           zap.NewNop(),
+				errorLogger:      zap.NewNop(),
+				primaryHandlerChain: HandlerFunc(func(_ http.ResponseWriter, r *http.Request) error {
+					reader, writer = IdleTimeoutsFromContext(r.Context())
+					return nil
+				}),
+			}
+			ts := httptest.NewServer(http.HandlerFunc(s.ServeHTTP))
+			t.Cleanup(ts.Close)
+
+			resp, err := ts.Client().Post(ts.URL, "text/plain", strings.NewReader("x"))
+			require.NoError(t, err)
+			resp.Body.Close()
+
+			assert.Equal(t, tc.applied, reader != nil)
+			assert.Equal(t, tc.applied, writer != nil)
+		})
+	}
+}
+
+// TestServer_ServeHTTP_HandlerReadDeadline checks that a read deadline
+// set by a handler through http.ResponseController still applies to a
+// stalled request body, instead of being replaced by the idle reader.
+func TestServer_ServeHTTP_HandlerReadDeadline(t *testing.T) {
+	readErr := make(chan error, 1)
+	s := &Server{
+		ReadIdleTimeout: caddy.Duration(time.Minute),
+		logger:          zap.NewNop(),
+		errorLogger:     zap.NewNop(),
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			if err := http.NewResponseController(w).SetReadDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
+				readErr <- err
+				return nil
+			}
+			_, err := io.ReadAll(r.Body)
+			readErr <- err
+			return nil
+		}),
+	}
+	ts := httptest.NewServer(http.HandlerFunc(s.ServeHTTP))
+	t.Cleanup(ts.Close)
+
+	conn, err := net.Dial("tcp", ts.Listener.Addr().String())
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+
+	// announce a body, send one byte of it and stall
+	_, err = io.WriteString(conn, "POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 10\r\n\r\nx")
+	require.NoError(t, err)
+
+	select {
+	case err := <-readErr:
+		require.ErrorIs(t, err, os.ErrDeadlineExceeded)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the handler's read deadline was replaced by the idle timeout")
+	}
+}
+
+// TestServer_BuildHTTP3ServerEnablesWebTransport asserts that with
+// WebTransport set the http3.Server advertises WebTransport in
+// its SETTINGS and wires the prerequisites webtransport.Server.Upgrade
+// relies on: DATAGRAM support, a non-nil ConnContext hook (used to stash
+// the underlying *quic.Conn for Upgrade to retrieve), and QUIC
+// stream-reset partial delivery.
+func TestServer_BuildHTTP3ServerEnablesWebTransport(t *testing.T) {
+	s := &Server{WebTransport: new(WebTransportConfig)}
+	h3 := s.buildHTTP3Server(&tls.Config{})
+
+	assert.NotNil(t, h3, "expected non-nil http3.Server")
+	assert.True(t, h3.EnableDatagrams, "EnableDatagrams must be true for WebTransport DATAGRAMs")
+	assert.NotEmpty(t, h3.AdditionalSettings, "AdditionalSettings must advertise WebTransport enablement")
+	assert.NotNil(t, h3.ConnContext, "ConnContext must be set so webtransport.Server.Upgrade can retrieve the *quic.Conn")
+	assert.NotNil(t, h3.QUICConfig, "QUICConfig must be set")
+	assert.True(t, h3.QUICConfig.EnableStreamResetPartialDelivery, "EnableStreamResetPartialDelivery is required by webtransport-go")
+}
+
+// TestServer_BuildHTTP3ServerWithoutWebTransport asserts that with
+// WebTransport unset (the default) the http3.Server does NOT
+// advertise WebTransport and does not enable the related QUIC/HTTP/3
+// features. This is the load-bearing regression guard: non-WT HTTP/3
+// deployments must pay zero cost for the WebTransport feature.
+func TestServer_BuildHTTP3ServerWithoutWebTransport(t *testing.T) {
+	s := &Server{}
+	h3 := s.buildHTTP3Server(&tls.Config{})
+
+	assert.NotNil(t, h3)
+	assert.False(t, h3.EnableDatagrams, "EnableDatagrams must be false when WebTransport is disabled")
+	assert.Empty(t, h3.AdditionalSettings, "AdditionalSettings must be empty when WebTransport is disabled")
+	assert.Nil(t, h3.ConnContext, "ConnContext must be nil when WebTransport is disabled")
+	assert.NotNil(t, h3.QUICConfig)
+	assert.False(t, h3.QUICConfig.EnableStreamResetPartialDelivery, "EnableStreamResetPartialDelivery must be false when WebTransport is disabled")
+}
+
+// TestServer_BuildHTTP3ServerAppliesHandlerAndTLS is a smoke test for the
+// non-WebTransport fields of the constructed http3.Server, guarding against a
+// refactor accidentally dropping them.
+func TestServer_BuildHTTP3ServerAppliesHandlerAndTLS(t *testing.T) {
+	s := &Server{MaxHeaderBytes: 4096}
+	tlsCfg := &tls.Config{}
+	h3 := s.buildHTTP3Server(tlsCfg)
+
+	assert.Same(t, s, h3.Handler, "http3.Server.Handler should be the caddyhttp.Server itself")
+	assert.Same(t, tlsCfg, h3.TLSConfig, "http3.Server.TLSConfig should be the config passed in")
+	assert.Equal(t, 4096, h3.MaxHeaderBytes)
+}
+
+// TestServer_WebTransportServerNilUntilH3 asserts the accessor returns nil
+// when HTTP/3 has not been configured.
+func TestServer_WebTransportServerNilUntilH3(t *testing.T) {
+	s := &Server{}
+	assert.Nil(t, s.WebTransportServer(), "expected nil before HTTP/3 setup")
+}
+
+// stubQUICListenerWithoutWT implements http3.QUICListener and reports that
+// WebTransport is not supported. Accept returns immediately with an error so
+// that h3server.ServeListener exits promptly when the fallback path is taken.
+type stubQUICListenerWithoutWT struct{}
+
+func (stubQUICListenerWithoutWT) Accept(context.Context) (*quic.Conn, error) {
+	return nil, errors.New("stub: no connections")
+}
+
+func (stubQUICListenerWithoutWT) Addr() net.Addr {
+	return &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 9443}
+}
+
+func (stubQUICListenerWithoutWT) Close() error { return nil }
+
+func (stubQUICListenerWithoutWT) SupportsWebTransport() bool { return false }
+
+// TestServeH3AcceptLoopFallsBackWhenListenerLacksWebTransport verifies that
+// when WebTransport is enabled but the QUIC listener was created without
+// DATAGRAM support, serveH3AcceptLoop falls back to plain HTTP/3 with a
+// warning instead of calling webtransport.Server.ServeQUICConn. wtServer is
+// intentionally nil so the WebTransport branch cannot be silently taken; the
+// logged warning proves the fallback path was used.
+func TestServeH3AcceptLoopFallsBackWhenListenerLacksWebTransport(t *testing.T) {
+	core, logs := observer.New(zapcore.WarnLevel)
+	s := &Server{
+		WebTransport: new(WebTransportConfig),
+		logger:       zap.New(core),
+		h3server:     &http3.Server{},
+		// wtServer left nil: WebTransport path would nil-panic
+	}
+	// Must not panic: fallback uses a plain ServeListener, not wtServer.
+	s.serveH3AcceptLoop(stubQUICListenerWithoutWT{})
+
+	if logs.FilterMessageSnippet("WebTransport unavailable").Len() != 1 {
+		t.Errorf("expected fallback warning to be logged, got logs: %v", logs.All())
+	}
+}
+
+// TestHTTP3ServerForListenerOmitsWebTransportSettingsWhenListenerLacksSupport
+// is the SETTINGS half of the fallback: the server used for that listener
+// must not advertise WebTransport, even though the parent Server opted in.
+func TestHTTP3ServerForListenerOmitsWebTransportSettingsWhenListenerLacksSupport(t *testing.T) {
+	core, logs := observer.New(zapcore.WarnLevel)
+	tlsCfg := &tls.Config{}
+	s := &Server{
+		WebTransport: new(WebTransportConfig),
+		logger:       zap.New(core),
+	}
+	s.h3server = s.buildHTTP3Server(tlsCfg)
+	assert.True(t, s.h3server.EnableDatagrams)
+	assert.NotEmpty(t, s.h3server.AdditionalSettings)
+
+	plain := s.http3ServerForListener(stubQUICListenerWithoutWT{})
+	if plain == s.h3server {
+		t.Fatal("fallback must not reuse the WebTransport-configured HTTP/3 server")
+	}
+	assert.False(t, plain.EnableDatagrams, "fallback must not enable DATAGRAMs")
+	assert.Empty(t, plain.AdditionalSettings, "fallback must not advertise WebTransport SETTINGS")
+	assert.Nil(t, plain.ConnContext)
+	assert.False(t, plain.QUICConfig.EnableStreamResetPartialDelivery)
+	if logs.FilterMessageSnippet("WebTransport unavailable").Len() != 1 {
+		t.Errorf("expected fallback warning to be logged, got logs: %v", logs.All())
+	}
+}
+
+func TestServerLogLevel(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		level   any
+		status  int
+		minimum zapcore.Level
+		want    zapcore.Level
+		skip    bool
+		count   int
+	}{
+		{"default info", nil, 200, zapcore.DebugLevel, zapcore.InfoLevel, false, 1},
+		{"default error", nil, 500, zapcore.DebugLevel, zapcore.ErrorLevel, false, 1},
+		{"debug", "debug", 200, zapcore.DebugLevel, zapcore.DebugLevel, false, 1},
+		{"warn", "WARN", 200, zapcore.DebugLevel, zapcore.WarnLevel, false, 1},
+		{"error", "ERROR", 200, zapcore.DebugLevel, zapcore.ErrorLevel, false, 1},
+		{"override error", "INFO", 500, zapcore.DebugLevel, zapcore.InfoLevel, false, 1},
+		{"invalid", "invalid", 500, zapcore.DebugLevel, zapcore.ErrorLevel, false, 1},
+		{"unsafe level", "FATAL", 200, zapcore.DebugLevel, zapcore.InfoLevel, false, 1},
+		{"wrong type", 2, 200, zapcore.DebugLevel, zapcore.InfoLevel, false, 1},
+		{"filtered", "INFO", 200, zapcore.WarnLevel, zapcore.InfoLevel, false, 0},
+		{"promoted", "WARN", 200, zapcore.WarnLevel, zapcore.WarnLevel, false, 1},
+		{"skipped", "ERROR", 200, zapcore.DebugLevel, zapcore.ErrorLevel, true, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			core, logs := observer.New(tc.minimum)
+			ctx := context.WithValue(context.Background(), ExtraLogFieldsCtxKey, new(ExtraLogFields))
+			ctx = context.WithValue(ctx, VarsCtxKey, map[string]any{LogLevelVar: tc.level, LogSkipVar: tc.skip})
+			req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
+			rec := NewResponseRecorder(httptest.NewRecorder(), nil, nil)
+			rec.WriteHeader(tc.status)
+			duration := time.Millisecond
+			(&Server{}).logRequest(zap.New(core), req, rec, &duration, nil, NewTestReplacer(req), nil, false)
+			require.Equal(t, tc.count, logs.Len())
+			if tc.count > 0 {
+				assert.Equal(t, tc.want, logs.All()[0].Level)
+			}
+		})
+	}
+}
+
+// TestServer_ClosedRequestBodyDoesNotDesyncHTTP1 verifies that an early
+// response after a handler closes its request body cannot leave the unread
+// body bytes to be parsed as the next request. This models a reverse proxy
+// transport which receives an early upstream response and then closes the
+// downstream request body.
+func TestServer_ClosedRequestBodyDoesNotDesyncHTTP1(t *testing.T) {
+	const firstChunkSize = 1024
+
+	for _, tc := range []struct {
+		name    string
+		chunked bool
+		bodyLen int
+	}{
+		{name: "fixed length above drain limit", bodyLen: 1 << 20},
+		{name: "chunked above drain limit", chunked: true, bodyLen: 1 << 20},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			secondRequest := make(chan struct{}, 1)
+			server := &Server{
+				ReadIdleTimeout: caddy.Duration(time.Minute),
+				logger:          zap.NewNop(),
+				errorLogger:     zap.NewNop(),
+				primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+					switch r.URL.Path {
+					case "/early":
+						buf := make([]byte, firstChunkSize)
+						if _, err := io.ReadFull(r.Body, buf); err != nil {
+							return fmt.Errorf("read first request chunk: %w", err)
+						}
+						if err := r.Body.Close(); err != nil {
+							return fmt.Errorf("close first request body: %w", err)
+						}
+						w.Header().Set("Content-Length", "0")
+						w.WriteHeader(http.StatusLocked)
+					case "/second":
+						secondRequest <- struct{}{}
+						w.Header().Set("Content-Length", "0")
+						w.WriteHeader(http.StatusNoContent)
+					default:
+						return Error(http.StatusNotFound, nil)
+					}
+					return nil
+				}),
+			}
+			ts := httptest.NewServer(http.HandlerFunc(server.ServeHTTP))
+			t.Cleanup(ts.Close)
+
+			conn, err := net.DialTimeout("tcp", ts.Listener.Addr().String(), time.Second)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = conn.Close() })
+			require.NoError(t, conn.SetDeadline(time.Now().Add(5*time.Second)))
+
+			reader := bufio.NewReader(conn)
+			if tc.chunked {
+				_, err = fmt.Fprintf(conn, "PUT /early HTTP/1.1\r\nHost: %s\r\nTransfer-Encoding: chunked\r\n\r\n%x\r\n%s\r\n", ts.Listener.Addr(), firstChunkSize, bytes.Repeat([]byte{'a'}, firstChunkSize))
+			} else {
+				_, err = fmt.Fprintf(conn, "PUT /early HTTP/1.1\r\nHost: %s\r\nContent-Length: %d\r\n\r\n%s", ts.Listener.Addr(), tc.bodyLen, bytes.Repeat([]byte{'a'}, firstChunkSize))
+			}
+			require.NoError(t, err)
+
+			writerDone := make(chan struct{})
+			if tc.chunked {
+				go func() {
+					defer close(writerDone)
+					for sent := firstChunkSize; sent < tc.bodyLen; {
+						n := min(8<<10, tc.bodyLen-sent)
+						if _, err := fmt.Fprintf(conn, "%x\r\n%s\r\n", n, bytes.Repeat([]byte{'b'}, n)); err != nil {
+							return
+						}
+						sent += n
+						time.Sleep(time.Millisecond)
+					}
+					_, _ = io.WriteString(conn, "0\r\n\r\n")
+				}()
+			}
+
+			first, err := http.ReadResponse(reader, &http.Request{Method: http.MethodPut})
+			require.NoError(t, err)
+			require.Equal(t, http.StatusLocked, first.StatusCode)
+			require.NoError(t, first.Body.Close())
+
+			if tc.chunked {
+				<-writerDone
+			} else {
+				_, _ = conn.Write(bytes.Repeat([]byte{'b'}, tc.bodyLen-firstChunkSize))
+			}
+			_, _ = fmt.Fprintf(conn, "GET /second HTTP/1.1\r\nHost: %s\r\nConnection: keep-alive\r\n\r\n", ts.Listener.Addr())
+
+			second, err := http.ReadResponse(reader, &http.Request{Method: http.MethodGet})
+			if err != nil {
+				if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, net.ErrClosed) {
+					return // The server safely closed the connection after the early response.
+				}
+				var netErr net.Error
+				if errors.As(err, &netErr) && !netErr.Timeout() {
+					return // The peer reset the connection after the early response.
+				}
+				t.Fatalf("read second response: %v", err)
+			}
+			defer second.Body.Close()
+			if second.StatusCode != http.StatusNoContent {
+				t.Fatalf("second response status = %d, want %d or a closed connection", second.StatusCode, http.StatusNoContent)
+			}
+			select {
+			case <-secondRequest:
+			case <-time.After(time.Second):
+				t.Fatal("second request response was not produced by the handler")
+			}
+		})
+	}
+}
+
+func TestServer_FullyReadRequestBodyPreservesHTTP1Connection(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		chunked bool
+	}{
+		{name: "fixed length"},
+		{name: "chunked", chunked: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			remoteAddrs := make(chan string, 2)
+			server := &Server{
+				ReadIdleTimeout: caddy.Duration(time.Minute),
+				logger:          zap.NewNop(),
+				errorLogger:     zap.NewNop(),
+				primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+					remoteAddrs <- r.RemoteAddr
+					if r.URL.Path == "/first" {
+						if _, err := io.Copy(io.Discard, r.Body); err != nil {
+							return err
+						}
+					}
+					w.Header().Set("Content-Length", "0")
+					w.WriteHeader(http.StatusNoContent)
+					return nil
+				}),
+			}
+			ts := httptest.NewServer(http.HandlerFunc(server.ServeHTTP))
+			t.Cleanup(ts.Close)
+
+			conn, err := net.DialTimeout("tcp", ts.Listener.Addr().String(), time.Second)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = conn.Close() })
+			require.NoError(t, conn.SetDeadline(time.Now().Add(5*time.Second)))
+
+			if tc.chunked {
+				_, err = fmt.Fprintf(conn, "POST /first HTTP/1.1\r\nHost: %s\r\nTransfer-Encoding: chunked\r\n\r\n4\r\nbody\r\n0\r\n\r\n", ts.Listener.Addr())
+			} else {
+				_, err = fmt.Fprintf(conn, "POST /first HTTP/1.1\r\nHost: %s\r\nContent-Length: 4\r\n\r\nbody", ts.Listener.Addr())
+			}
+			require.NoError(t, err)
+			reader := bufio.NewReader(conn)
+			first, err := http.ReadResponse(reader, &http.Request{Method: http.MethodPost})
+			require.NoError(t, err)
+			require.Equal(t, http.StatusNoContent, first.StatusCode)
+			require.NoError(t, first.Body.Close())
+
+			_, err = fmt.Fprintf(conn, "GET /second HTTP/1.1\r\nHost: %s\r\n\r\n", ts.Listener.Addr())
+			require.NoError(t, err)
+			second, err := http.ReadResponse(reader, &http.Request{Method: http.MethodGet})
+			require.NoError(t, err)
+			require.Equal(t, http.StatusNoContent, second.StatusCode)
+			require.NoError(t, second.Body.Close())
+
+			assert.Equal(t, <-remoteAddrs, <-remoteAddrs)
+		})
+	}
 }
