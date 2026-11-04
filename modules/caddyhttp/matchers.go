@@ -30,9 +30,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/google/cel-go/cel"
-	"github.com/google/cel-go/common/types"
-	"github.com/google/cel-go/common/types/ref"
+	"cel.dev/cel-go/cel"
+	"cel.dev/cel-go/common"
+	"cel.dev/cel-go/common/ast"
+	"cel.dev/cel-go/common/types"
+	"cel.dev/cel-go/common/types/ref"
+	"cel.dev/cel-go/parser"
 	"golang.org/x/net/idna"
 
 	"github.com/caddyserver/caddy/v2"
@@ -92,13 +95,10 @@ type (
 	//
 	// Even though wildcards (`*`) operate in the normalized space, the special
 	// escaped wildcard (`%*`), which is not a valid escape sequence, may be
-	// used in place of a span that should NOT be decoded; that is, `/bands/%*`
-	// will match `/bands/AC%2fDC` whereas `/bands/*` will not.
-	//
-	// Even though path matching is done in normalized space, the special
-	// wildcard `%*` may be used in place of a span that should NOT be decoded;
-	// that is, `/bands/%*/` will match `/bands/AC%2fDC/` whereas `/bands/*/`
-	// will not.
+	// used in place of a span that should NOT be decoded; that is, `/bands/%*/`
+	// will match `/bands/AC%2fDC/` whereas `/bands/*/` will not. Note that a
+	// pattern ending in a bare trailing wildcard, such as `/bands/*`, is a
+	// prefix match in normalized space, so it does match `/bands/AC%2fDC`.
 	//
 	// This matcher is fast, so it does not support regular expressions or
 	// capture groups. For slower but more powerful matching, use the
@@ -406,7 +406,10 @@ func (MatchPath) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-// Provision lower-cases the paths in m to ensure case-insensitive matching.
+// Provision lower-cases the static paths in m to ensure case-insensitive
+// matching. Paths with placeholders are left untouched, since placeholder
+// names can be case-sensitive (e.g. environment variables); they are
+// lower-cased after replacement, at request time.
 func (m MatchPath) Provision(_ caddy.Context) error {
 	for i := range m {
 		if m[i] == "*" && i > 0 {
@@ -414,7 +417,9 @@ func (m MatchPath) Provision(_ caddy.Context) error {
 			m[0] = m[i]
 			break
 		}
-		m[i] = strings.ToLower(m[i])
+		if !strings.Contains(m[i], "{") {
+			m[i] = strings.ToLower(m[i])
+		}
 	}
 	return nil
 }
@@ -433,21 +438,14 @@ func (m MatchPath) MatchWithError(r *http.Request) (bool, error) {
 	// related to differences between operating systems, applications,
 	// etc; if case-sensitive matching is needed, the regex matcher
 	// can be used instead.
-	reqPath := strings.ToLower(r.URL.Path)
-
-	if runtime.GOOS == "windows" { // issue #5613
-		// Windows treats backslashes as path separators and
-		// ignores trailing dots and spaces when accessing files
-		// (sigh), potentially causing a security risk (cry) if
-		// protected files are not matched as intended.
-		reqPath = strings.ReplaceAll(reqPath, `\`, "/")
-		reqPath = strings.TrimRight(reqPath, ". ")
-	}
+	reqPath := normalizeWindowsPath(strings.ToLower(r.URL.Path))
 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	for _, matchPattern := range m {
-		matchPattern = repl.ReplaceAll(matchPattern, "")
+		if strings.Contains(matchPattern, "{") {
+			matchPattern = strings.ToLower(repl.ReplaceAll(matchPattern, ""))
+		}
 
 		// special case: whole path is wildcard; this is unnecessary
 		// as it matches all requests, which is the same as no matcher
@@ -482,6 +480,7 @@ func (m MatchPath) MatchWithError(r *http.Request) (bool, error) {
 			if runtime.GOOS == "windows" {
 				escapedPath = windowsEscapedPathSeparatorRepl.Replace(escapedPath)
 				matchPattern = windowsEscapedPathSeparatorRepl.Replace(matchPattern)
+				escapedPath = normalizeWindowsEscapedPath(escapedPath)
 			}
 			reqPathForPattern := CleanPath(escapedPath, mergeSlashes)
 			if m.matchPatternWithEscapeSequence(reqPathForPattern, matchPattern) {
@@ -641,6 +640,20 @@ func (MatchPath) matchPatternWithEscapeSequence(escapedPath, matchPath string) b
 		iPattern++
 	}
 
+	// if the pattern was fully consumed before the path, the remaining path
+	// bytes still have to be part of the string we match against; otherwise a
+	// pattern with no trailing wildcard (e.g. "/foo%2fbar") would behave like a
+	// prefix match and incorrectly match longer paths (e.g. "/foo%2fbarbaz").
+	// the pattern has no more escape hints here, so compare in normalised space.
+	if iPath < len(escapedPath) {
+		remaining := escapedPath[iPath:]
+		if unescaped, err := url.PathUnescape(remaining); err == nil {
+			sb.WriteString(unescaped)
+		} else {
+			sb.WriteString(remaining)
+		}
+	}
+
 	// we can now treat rawpath globs (%*) as regular globs (*)
 	matchPath = strings.ReplaceAll(matchPath, "%*", "*")
 
@@ -656,6 +669,110 @@ var windowsEscapedPathSeparatorRepl = strings.NewReplacer(
 	"%5c", "%2f",
 	"%5C", "%2f",
 )
+
+// NormalizedPath returns a decoded request path in the form the path matchers
+// evaluate it: rewritten the way the Windows filesystem resolves it (a no-op on
+// other platforms), then cleaned. Consumers that act on a path a matcher has
+// already judged should derive it with this, so the two cannot disagree about
+// which resource a request names. An empty path is returned unchanged.
+func NormalizedPath(p string, mergeSlashes bool) string {
+	if p == "" {
+		return ""
+	}
+	return CleanPath(normalizeWindowsPath(p), mergeSlashes)
+}
+
+// normalizeWindowsPath rewrites a decoded request path the way the Windows
+// filesystem resolves it, so that path matchers (both `path` and `path_regexp`)
+// cannot be bypassed on Windows: backslashes are treated as path separators,
+// and trailing dots and spaces are ignored on EVERY path component (not only at
+// the end of the whole path — e.g. a guard on `/private/` must also cover
+// `/private./secret`). Path navigation segments ("." and "..") are left intact
+// for cleanPath to resolve. It is a no-op on non-Windows systems. See #5613.
+func normalizeWindowsPath(p string) string {
+	if runtime.GOOS != "windows" {
+		return p
+	}
+	p = strings.ReplaceAll(p, `\`, "/")
+	segments := strings.Split(p, "/")
+	for i, s := range segments {
+		if s == "." || s == ".." {
+			continue
+		}
+		segments[i] = strings.TrimRight(s, ". ")
+	}
+	return strings.Join(segments, "/")
+}
+
+// normalizeWindowsEscapedPath applies the same Windows normalization as
+// normalizeWindowsPath, but in raw/escaped space (used when a matcher pattern
+// contains '%'), where path separators may be percent-encoded ("%2f") and a
+// component's trailing dots and spaces may be literal ("." / " ") or
+// percent-encoded ("%2e" / "%20"). Without this, a '%'-containing matcher such
+// as `/private%2f*` is bypassed on Windows by e.g. GET /private.%5csecret.txt,
+// because only backslash separators — not the per-component trailing dots and
+// spaces — were folded. The caller must have already folded backslash
+// separators to "%2f" via windowsEscapedPathSeparatorRepl. Navigation segments
+// ("." and "..") are left intact for CleanPath to resolve. Only the request
+// path is normalized, not the matcher pattern (mirroring normalizeWindowsPath).
+// It is a no-op on non-Windows systems. See #5613.
+func normalizeWindowsEscapedPath(p string) string {
+	if runtime.GOOS != "windows" {
+		return p
+	}
+	var sb strings.Builder
+	sb.Grow(len(p))
+	// walk the path, splitting on separators that are meaningful on Windows:
+	// the literal '/' and the encoded '%2f'/'%2F' (backslashes were already
+	// folded to "%2f" by the caller). Trim each component, preserving the
+	// separators exactly so escaped-space comparison still lines up.
+	start := 0
+	flush := func(end int) {
+		seg := p[start:end]
+		if seg != "." && seg != ".." {
+			seg = trimWindowsEscapedTrailingDotSpace(seg)
+		}
+		sb.WriteString(seg)
+	}
+	for i := 0; i < len(p); {
+		switch {
+		case p[i] == '/':
+			flush(i)
+			sb.WriteByte('/')
+			i++
+			start = i
+		case p[i] == '%' && i+3 <= len(p) && p[i+1] == '2' && (p[i+2] == 'f' || p[i+2] == 'F'):
+			flush(i)
+			sb.WriteString(p[i : i+3])
+			i += 3
+			start = i
+		default:
+			i++
+		}
+	}
+	flush(len(p))
+	return sb.String()
+}
+
+// trimWindowsEscapedTrailingDotSpace strips trailing dots and spaces — whether
+// literal ("." / " ") or percent-encoded ("%2e"/"%2E" / "%20") — from a single
+// escaped-space path component, matching how Windows ignores them.
+func trimWindowsEscapedTrailingDotSpace(s string) string {
+	for len(s) > 0 {
+		if c := s[len(s)-1]; c == '.' || c == ' ' {
+			s = s[:len(s)-1]
+			continue
+		}
+		if len(s) >= 3 {
+			if tail := s[len(s)-3:]; strings.EqualFold(tail, "%2e") || tail == "%20" {
+				s = s[:len(s)-3]
+				continue
+			}
+		}
+		return s
+	}
+	return s
+}
 
 // CELLibrary produces options that expose this matcher for use in CEL
 // expression matchers.
@@ -717,8 +834,10 @@ func (m MatchPathRE) MatchWithError(r *http.Request) (bool, error) {
 
 	// Clean the path, merges doubled slashes, etc.
 	// This ensures maliciously crafted requests can't bypass
-	// the path matcher. See #4407
-	cleanedPath := cleanPath(r.URL.Path)
+	// the path matcher. See #4407 (path cleaning) and #5613
+	// (Windows backslash / trailing dot-and-space normalization,
+	// shared with the path matcher).
+	cleanedPath := cleanPath(normalizeWindowsPath(r.URL.Path))
 
 	return m.MatchRegexp.Match(cleanedPath, repl), nil
 }
@@ -729,6 +848,13 @@ func (m MatchPathRE) MatchWithError(r *http.Request) (bool, error) {
 // Example:
 //
 //	expression path_regexp('^/bar')
+//
+// The pattern is a CEL string literal, so CEL's own escape sequences
+// (e.g. \b, \n, \t) are interpreted before the result reaches the regexp
+// engine. A pattern that needs a literal backslash escape meant for the
+// regexp engine, such as \b for a word boundary, should be written as a
+// CEL raw string (prefixed with r) so CEL passes the backslash through
+// unchanged: expression path_regexp(r'^/bar\b').
 func (MatchPathRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 	unnamedPattern, err := CELMatcherImpl(
 		"path_regexp",
@@ -1195,6 +1321,15 @@ func (m MatchHeaderRE) Validate() error {
 // Example:
 //
 //	expression header_regexp('foo', 'Field', 'fo+')
+//
+// The pattern is a CEL string literal, so CEL's own escape sequences
+// (e.g. \b, \n, \t) are interpreted before the result reaches the regexp
+// engine. A pattern that needs a literal backslash escape meant for the
+// regexp engine, such as \b for a word boundary, should be written as a
+// CEL raw string (prefixed with r) so CEL passes the backslash through
+// unchanged: expression header_regexp('foo', 'User-Agent', r'bot\b').
+// Without the r prefix, \b is interpreted by CEL as a backspace
+// character before the regexp engine ever sees the pattern.
 func (MatchHeaderRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 	unnamedPattern, err := CELMatcherImpl(
 		"header_regexp",
@@ -1269,7 +1404,7 @@ func (m MatchProtocol) Match(r *http.Request) bool {
 func (m MatchProtocol) MatchWithError(r *http.Request) (bool, error) {
 	switch string(m) {
 	case "grpc":
-		return strings.HasPrefix(r.Header.Get("content-type"), "application/grpc"), nil
+		return strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc"), nil
 	case "https":
 		return r.TLS != nil, nil
 	case "http":
@@ -1381,6 +1516,60 @@ func (m *MatchTLS) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		}
 	}
 	return nil
+}
+
+// CELLibrary produces options that expose this matcher for use in CEL
+// expression matchers. It mirrors the three states the Caddyfile `tls`
+// matcher itself supports: bare `tls` (any TLS connection, regardless of
+// handshake completion), `tls early_data` (handshake not yet complete), and
+// the otherwise-implicit "handshake complete" case. `tls()` is sugar for
+// `tls('any')`; both spellings are equivalent and supported.
+//
+// Example:
+//
+//	expression tls() && !tls('early_data')
+func (MatchTLS) CELLibrary(ctx caddy.Context) (cel.Library, error) {
+	const funcName = "tls_request_string"
+	factory := func(data ref.Val) (RequestMatcherWithError, error) {
+		str, ok := data.(types.String)
+		if !ok {
+			return nil, errors.New("tls argument was not a string")
+		}
+		switch string(str) {
+		case "any":
+			// Also reachable directly as tls('any'), not just via the
+			// zero-arg tls() macro below -- both are valid and equivalent.
+			return MatchTLS{}, nil
+		case "complete":
+			complete := true
+			return MatchTLS{HandshakeComplete: &complete}, nil
+		case "early_data":
+			complete := false
+			return MatchTLS{HandshakeComplete: &complete}, nil
+		default:
+			return nil, fmt.Errorf("tls argument must be 'any', 'complete', or 'early_data', got %q", str)
+		}
+	}
+
+	// tls() is sugar for tls('any'): it expands to the same 2-arg call the
+	// one-argument form produces, just with the argument injected by the
+	// macro itself instead of typed out by the caller.
+	zeroArgMacro := parser.NewGlobalMacro("tls", 0,
+		func(eh cel.MacroExprFactory, target ast.Expr, args []ast.Expr) (ast.Expr, *common.Error) {
+			return eh.NewCall(funcName, eh.NewIdent(CELRequestVarName), eh.NewLiteral(types.String("any"))), nil
+		})
+	oneArgMacro := parser.NewGlobalMacro("tls", 1, celMatcherStringMacroExpander(funcName))
+
+	envOptions := []cel.EnvOption{
+		cel.Macros(zeroArgMacro, oneArgMacro),
+		cel.Function(funcName,
+			cel.Overload(funcName, []*cel.Type{cel.ObjectType("http.Request"), cel.StringType}, cel.BoolType),
+			cel.SingletonBinaryBinding(CELMatcherRuntimeFunction(funcName, factory))),
+	}
+	programOptions := []cel.ProgramOption{
+		cel.CustomDecorator(CELMatcherDecorator(funcName, factory)),
+	}
+	return NewMatcherCELLibrary(envOptions, programOptions), nil
 }
 
 // CaddyModule returns the Caddy module information.
@@ -1688,6 +1877,7 @@ var (
 	_ CELLibraryProducer = (*MatchHeader)(nil)
 	_ CELLibraryProducer = (*MatchHeaderRE)(nil)
 	_ CELLibraryProducer = (*MatchProtocol)(nil)
+	_ CELLibraryProducer = (*MatchTLS)(nil)
 	_ CELLibraryProducer = (*VarsMatcher)(nil)
 	_ CELLibraryProducer = (*MatchVarsRE)(nil)
 

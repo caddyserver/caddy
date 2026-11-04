@@ -17,48 +17,101 @@ package notify
 import (
 	"log"
 	"strings"
+	"sync"
 
 	"golang.org/x/sys/windows/svc"
 )
 
-// globalStatus store windows service status, it can be
-// use to notify caddy status.
-var globalStatus chan<- svc.Status
+// statusMu guards the service status below. It is held while sending
+// to globalStatus so that every update reaches the SCM in order. The
+// receiver is the dispatcher loop in golang.org/x/sys/windows/svc,
+// which always accepts status updates and never takes this lock.
+var statusMu sync.Mutex
+
+var (
+	// globalStatus store windows service status, it can be
+	// use to notify caddy status.
+	globalStatus chan<- svc.Status
+
+	// currentStatus is the authoritative service status. It is kept
+	// while no channel is attached, so a status reported before the
+	// service handler starts is not lost.
+	currentStatus = svc.Status{State: svc.StartPending}
+
+	// stopping is set once shutdown begins; after that, only stop
+	// states are accepted.
+	stopping bool
+)
 
 // SetGlobalStatus assigns the channel through which status updates
-// will be sent to the SCM. This is typically provided by the service
-// handler when the service starts.
+// will be sent to the SCM and publishes the current status to it.
+// Passing nil detaches the channel and resets the status, which the
+// service handler does before it returns.
 func SetGlobalStatus(status chan<- svc.Status) {
+	statusMu.Lock()
+	defer statusMu.Unlock()
 	globalStatus = status
+	if status == nil {
+		currentStatus = svc.Status{State: svc.StartPending}
+		stopping = false
+		return
+	}
+	status <- currentStatus
+}
+
+// Interrogate republishes the current status, in response to the
+// SCM's Interrogate control request.
+func Interrogate() {
+	statusMu.Lock()
+	defer statusMu.Unlock()
+	if globalStatus != nil {
+		globalStatus <- currentStatus
+	}
+}
+
+// setStatus makes s the current status and publishes it if a channel
+// is attached. Once shutdown has begun, statuses other than StopPending
+// and Stopped are ignored, so a late Ready cannot undo it.
+func setStatus(s svc.Status) {
+	statusMu.Lock()
+	defer statusMu.Unlock()
+	setStatusLocked(s)
+}
+
+func setStatusLocked(s svc.Status) {
+	if stopping && s.State != svc.StopPending && s.State != svc.Stopped {
+		return
+	}
+	currentStatus = s
+	if globalStatus != nil {
+		globalStatus <- s
+	}
 }
 
 // Ready notifies the SCM that the service is fully running and ready
 // to accept stop or shutdown control requests.
 func Ready() error {
-	if globalStatus != nil {
-		globalStatus <- svc.Status{
-			State:   svc.Running,
-			Accepts: svc.AcceptStop | svc.AcceptShutdown,
-		}
-	}
+	setStatus(svc.Status{
+		State:   svc.Running,
+		Accepts: svc.AcceptStop | svc.AcceptShutdown,
+	})
 	return nil
 }
 
 // Reloading notifies the SCM that the service is entering a transitional
 // state.
 func Reloading() error {
-	if globalStatus != nil {
-		globalStatus <- svc.Status{State: svc.StartPending}
-	}
+	setStatus(svc.Status{State: svc.StartPending})
 	return nil
 }
 
 // Stopping notifies the SCM that the service is in the process of stopping.
 // This allows Windows to track the shutdown transition properly.
 func Stopping() error {
-	if globalStatus != nil {
-		globalStatus <- svc.Status{State: svc.StopPending}
-	}
+	statusMu.Lock()
+	defer statusMu.Unlock()
+	stopping = true
+	setStatusLocked(svc.Status{State: svc.StopPending})
 	return nil
 }
 
@@ -66,10 +119,6 @@ func Stopping() error {
 // identifier of [svc.State].
 // The unknown states will be logged.
 func Status(name string) error {
-	if globalStatus == nil {
-		return nil
-	}
-
 	var state svc.State
 	var accepts svc.Accepted
 	accepts = 0
@@ -96,19 +145,16 @@ func Status(name string) error {
 		return nil
 	}
 
-	globalStatus <- svc.Status{State: state, Accepts: accepts}
+	setStatus(svc.Status{State: state, Accepts: accepts})
 	return nil
 }
 
 // Error notifies the SCM that the service is stopping due to a failure,
 // including a service-specific exit code.
 func Error(err error, code int) error {
-	if globalStatus != nil {
-		globalStatus <- svc.Status{
-			State:                   svc.StopPending,
-			ServiceSpecificExitCode: uint32(code),
-		}
-	}
-
+	setStatus(svc.Status{
+		State:                   svc.StopPending,
+		ServiceSpecificExitCode: uint32(code),
+	})
 	return nil
 }

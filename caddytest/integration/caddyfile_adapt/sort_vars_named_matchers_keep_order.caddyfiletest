@@ -1,0 +1,63 @@
+:80
+
+@first header X-Test a
+@second header X-Test a
+@third header X-Other b
+
+vars @first value first
+vars @second value second
+vars @third value third
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"match": [
+								{
+									"header": {
+										"X-Test": [
+											"a"
+										]
+									}
+								}
+							],
+							"handle": [
+								{
+									"handler": "vars",
+									"value": "first"
+								},
+								{
+									"handler": "vars",
+									"value": "second"
+								}
+							]
+						},
+						{
+							"match": [
+								{
+									"header": {
+										"X-Other": [
+											"b"
+										]
+									}
+								}
+							],
+							"handle": [
+								{
+									"handler": "vars",
+									"value": "third"
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}

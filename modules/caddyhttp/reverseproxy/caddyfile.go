@@ -99,7 +99,16 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //	    stream_buffer_size <size>
 //	    stream_timeout     <duration>
 //	    stream_close_delay <duration>
+//	    stream_detached
+//	    stream_logs {
+//	        level <debug|info|warn|error>
+//	        logger_name <name|access>
+//	        skip_handshake
+//	    }
 //	    verbose_logs
+//
+//	    # reporting
+//	    proxy_status_name <name>
 //
 //	    # request manipulation
 //	    trusted_proxies [private_ranges] <ranges...>
@@ -675,6 +684,15 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				h.StreamBufferSize = int(size)
 			}
 
+		case "proxy_status_name":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			h.ProxyStatusName = d.Val()
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+
 		case "stream_timeout":
 			if !d.NextArg() {
 				return d.ArgErr()
@@ -701,6 +719,49 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Errf("bad duration value '%s': %v", d.Val(), err)
 				}
 				h.StreamCloseDelay = caddy.Duration(dur)
+			}
+
+		case "stream_detached":
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+			h.StreamDetached = true
+
+		case "stream_logs":
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+			if h.StreamLogs == nil {
+				h.StreamLogs = new(StreamLogs)
+			}
+
+			nesting := d.Nesting()
+			for d.NextBlock(nesting) {
+				switch d.Val() {
+				case "level":
+					if !d.NextArg() {
+						return d.ArgErr()
+					}
+					h.StreamLogs.Level = d.Val()
+					if d.NextArg() {
+						return d.ArgErr()
+					}
+				case "logger_name":
+					if !d.NextArg() {
+						return d.ArgErr()
+					}
+					h.StreamLogs.LoggerName = d.Val()
+					if d.NextArg() {
+						return d.ArgErr()
+					}
+				case "skip_handshake":
+					if d.NextArg() {
+						return d.ArgErr()
+					}
+					h.StreamLogs.SkipHandshake = true
+				default:
+					return d.Errf("unrecognized stream_logs option: %s", d.Val())
+				}
 			}
 
 		case "trusted_proxies":
@@ -923,13 +984,8 @@ func (h *Handler) FinalizeUnmarshalCaddyfile(helper httpcaddyfile.Helper) error 
 		d.Next()
 		args := d.RemainingArgs()
 
-		// TODO: Remove this check at some point in the future
-		if len(args) == 2 {
-			return d.Errf("configuring 'handle_response' for status code replacement is no longer supported. Use 'replace_status' instead.")
-		}
-
 		if len(args) > 1 {
-			return d.Errf("too many arguments for 'handle_response': %s", args)
+			return d.Errf("too many arguments for 'handle_response': only a single response matcher name is allowed, but got: %s", args)
 		}
 
 		var matcher *caddyhttp.ResponseMatcher

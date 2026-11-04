@@ -170,28 +170,6 @@ bar.localhost {
 															{
 																"handle": [
 																	{
-																		"body": "404 or 410 error",
-																		"handler": "static_response"
-																	}
-																]
-															}
-														]
-													}
-												],
-												"match": [
-													{
-														"expression": "{http.error.status_code} in [410]"
-													}
-												]
-											},
-											{
-												"handle": [
-													{
-														"handler": "subroute",
-														"routes": [
-															{
-																"handle": [
-																	{
 																		"body": "Error In range [500 .. 599]",
 																		"handler": "static_response"
 																	}
@@ -203,6 +181,28 @@ bar.localhost {
 												"match": [
 													{
 														"expression": "{http.error.status_code} \u003e= 500 \u0026\u0026 {http.error.status_code} \u003c= 599"
+													}
+												]
+											},
+											{
+												"handle": [
+													{
+														"handler": "subroute",
+														"routes": [
+															{
+																"handle": [
+																	{
+																		"body": "404 or 410 error",
+																		"handler": "static_response"
+																	}
+																]
+															}
+														]
+													}
+												],
+												"match": [
+													{
+														"expression": "{http.error.status_code} in [410]"
 													}
 												]
 											}
@@ -231,28 +231,6 @@ bar.localhost {
 															{
 																"handle": [
 																	{
-																		"body": "404 or 410 error from second site",
-																		"handler": "static_response"
-																	}
-																]
-															}
-														]
-													}
-												],
-												"match": [
-													{
-														"expression": "{http.error.status_code} in [410]"
-													}
-												]
-											},
-											{
-												"handle": [
-													{
-														"handler": "subroute",
-														"routes": [
-															{
-																"handle": [
-																	{
 																		"body": "Error In range [500 .. 599] from second site",
 																		"handler": "static_response"
 																	}
@@ -264,6 +242,28 @@ bar.localhost {
 												"match": [
 													{
 														"expression": "{http.error.status_code} \u003e= 500 \u0026\u0026 {http.error.status_code} \u003c= 599"
+													}
+												]
+											},
+											{
+												"handle": [
+													{
+														"handler": "subroute",
+														"routes": [
+															{
+																"handle": [
+																	{
+																		"body": "404 or 410 error from second site",
+																		"handler": "static_response"
+																	}
+																]
+															}
+														]
+													}
+												],
+												"match": [
+													{
+														"expression": "{http.error.status_code} in [410]"
 													}
 												]
 											}

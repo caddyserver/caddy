@@ -692,21 +692,19 @@ type ConfigLoader interface {
 // stop the others. Stop should only be called
 // if not replacing with a new config.
 func Stop() error {
-	currentCtxMu.RLock()
-	ctx := currentCtx
-	currentCtxMu.RUnlock()
-
 	rawCfgMu.Lock()
-	unsyncedStop(ctx)
+	defer rawCfgMu.Unlock()
 
 	currentCtxMu.Lock()
+	ctx := currentCtx
 	currentCtx = Context{}
 	currentCtxMu.Unlock()
+
+	unsyncedStop(ctx)
 
 	rawCfgJSON = nil
 	rawCfgIndex = nil
 	rawCfg[rawConfigKey] = nil
-	rawCfgMu.Unlock()
 
 	return nil
 }

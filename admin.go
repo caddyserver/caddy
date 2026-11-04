@@ -45,7 +45,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"golang.org/x/net/http/httpguts"
 
+	"github.com/caddyserver/caddy/v2/caddyconfig/warning"
 	"github.com/caddyserver/caddy/v2/internal"
 )
 
@@ -554,6 +556,18 @@ func replaceRemoteAdminServer(ctx Context, cfg *Config) error {
 			accessControl.publicKeys = append(accessControl.publicKeys, cert.PublicKey)
 			clientCertPool.AddCert(cert)
 		}
+		for j, perm := range accessControl.Permissions {
+			for _, permPath := range perm.Paths {
+				if permPath == "" || permPath == "/" {
+					continue
+				}
+				cleanPath := path.Clean(permPath)
+				hasCanonicalTrailingSlash := cleanPath != "/" && strings.TrimSuffix(permPath, "/") == cleanPath
+				if cleanPath != permPath && !hasCanonicalTrailingSlash {
+					return fmt.Errorf("access control %d permission %d: path %q is not canonical (did you mean %q?)", i, j, permPath, cleanPath)
+				}
+			}
+		}
 	}
 
 	// create TLS config that will enforce mutual authentication
@@ -666,6 +680,10 @@ func (ctx Context) IdentityCredentials(logger *zap.Logger) ([]tls.Certificate, e
 // trust, and then looks for a matching, authorized public key that is allowed to access
 // the defined path(s) using the defined method(s).
 func (remote RemoteAdmin) enforceAccessControls(r *http.Request) error {
+	// the same public key may appear in more than one access control entry;
+	// the request is allowed if any entry containing the key permits it
+	var keyRecognized, pathAllowedSomewhere bool
+
 	for _, chain := range r.TLS.VerifiedChains {
 		for _, peerCert := range chain {
 			for _, adminAccess := range remote.AccessControl {
@@ -678,18 +696,15 @@ func (remote RemoteAdmin) enforceAccessControls(r *http.Request) error {
 					if !ok || !comparer.Equal(allowedKey) {
 						continue
 					}
+					keyRecognized = true
 
 					// key recognized; make sure its HTTP request is permitted
+					// by at least one of the permission entries (if none are
+					// configured, all permissions are granted)
+					if len(adminAccess.Permissions) == 0 {
+						return nil
+					}
 					for _, accessPerm := range adminAccess.Permissions {
-						// verify method
-						methodFound := accessPerm.Methods == nil || slices.Contains(accessPerm.Methods, r.Method)
-						if !methodFound {
-							return APIError{
-								HTTPStatus: http.StatusForbidden,
-								Message:    "not authorized to use this method",
-							}
-						}
-
 						// verify path
 						pathFound := accessPerm.Paths == nil
 						for _, allowedPath := range accessPerm.Paths {
@@ -699,17 +714,37 @@ func (remote RemoteAdmin) enforceAccessControls(r *http.Request) error {
 							}
 						}
 						if !pathFound {
-							return APIError{
-								HTTPStatus: http.StatusForbidden,
-								Message:    "not authorized to access this path",
-							}
+							continue
+						}
+						pathAllowedSomewhere = true
+
+						// verify method
+						if accessPerm.Methods == nil || slices.Contains(accessPerm.Methods, r.Method) {
+							// public key authorized, method and path allowed
+							return nil
 						}
 					}
 
-					// public key authorized, method and path allowed
-					return nil
+					// this entry does not permit the request; other entries
+					// containing the same key may
+					break
 				}
 			}
+		}
+	}
+
+	if keyRecognized {
+		// no entry allows this request; if the path is allowed by
+		// some entry, the method is what's missing
+		if pathAllowedSomewhere {
+			return APIError{
+				HTTPStatus: http.StatusForbidden,
+				Message:    "not authorized to use this method",
+			}
+		}
+		return APIError{
+			HTTPStatus: http.StatusForbidden,
+			Message:    "not authorized to access this path",
 		}
 	}
 
@@ -723,14 +758,18 @@ func (remote RemoteAdmin) enforceAccessControls(r *http.Request) error {
 }
 
 func adminPathAllowed(reqPath, allowedPath string) bool {
-	if allowedPath == "" || allowedPath == "/" {
-		return strings.HasPrefix(reqPath, allowedPath)
-	}
-	if reqPath == allowedPath {
+	reqPathHadTrailingSlash := strings.HasSuffix(reqPath, "/")
+	reqPath = path.Clean(reqPath)
+	if allowedPath == "" {
 		return true
 	}
-	if strings.HasSuffix(allowedPath, "/") {
-		return strings.HasPrefix(reqPath, allowedPath)
+	allowedPathHadTrailingSlash := allowedPath != "/" && strings.HasSuffix(allowedPath, "/")
+	allowedPath = path.Clean(allowedPath)
+	if allowedPath == "/" {
+		return true
+	}
+	if reqPath == allowedPath {
+		return !allowedPathHadTrailingSlash || reqPathHadTrailingSlash
 	}
 	return strings.HasPrefix(reqPath, allowedPath+"/")
 }
@@ -924,7 +963,9 @@ func (h adminHandler) handleError(w http.ResponseWriter, r *http.Request, err er
 // rebinding attacks.
 func (h adminHandler) checkHost(r *http.Request) error {
 	allowed := slices.ContainsFunc(h.allowedOrigins, func(u *url.URL) bool {
-		return r.Host == u.Host
+		// Host comparison is case-insensitive per RFC 3986 §3.2.2, same as
+		// the Origin check below; url.Parse does not normalize host case.
+		return strings.EqualFold(r.Host, u.Host)
 	})
 	if !allowed {
 		return APIError{
@@ -978,7 +1019,9 @@ func (h adminHandler) originAllowed(origin *url.URL) bool {
 		if allowedOrigin.Scheme != "" && origin.Scheme != allowedOrigin.Scheme {
 			continue
 		}
-		if origin.Host == allowedOrigin.Host {
+		// Host comparison is case-insensitive per RFC 3986 §3.2.2; url.Parse
+		// does not normalize host case, so fold it here.
+		if strings.EqualFold(origin.Host, allowedOrigin.Host) {
 			return true
 		}
 	}
@@ -1064,7 +1107,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 			body = buf.Bytes()
 		}
 
-		forceReload := r.Header.Get("Cache-Control") == "must-revalidate"
+		forceReload := httpguts.HeaderValuesContainsToken(r.Header["Cache-Control"], "must-revalidate")
 
 		err := changeConfig(r.Method, r.URL.Path, body, r.Header.Get("If-Match"), forceReload)
 		if err != nil && !errors.Is(err, errSameConfig) {
@@ -1374,9 +1417,10 @@ func (f AdminHandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) erro
 // and client responses. If Message is unset, then
 // Err.Error() will be serialized in its place.
 type APIError struct {
-	HTTPStatus int    `json:"-"`
-	Err        error  `json:"-"`
-	Message    string `json:"error"`
+	HTTPStatus int               `json:"-"`
+	Err        error             `json:"-"`
+	Message    string            `json:"error"`
+	Warnings   []warning.Warning `json:"warnings,omitempty"`
 }
 
 func (e APIError) Error() string {
