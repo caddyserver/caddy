@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -322,6 +323,21 @@ func (t Transport) buildEnv(r *http.Request) (envVars, error) {
 		return nil, caddyhttp.Error(http.StatusBadRequest, errors.New("illegal script path"))
 	}
 
+	// Path matchers whose pattern contains "%" clean the escaped path, where "%2f"
+	// and "%2e%2e" are neither separators nor dot segments, so both forms must
+	// select the same script. On Windows, they read a backslash, escaped even
+	// without RawPath, as "%2f".
+	backslash := runtime.GOOS == "windows" && strings.Contains(r.URL.Path, `\`)
+	if r.URL.RawPath != "" || backslash {
+		escaped, err := url.PathUnescape(caddyhttp.NormalizedPath(r.URL.EscapedPath(), true))
+		if backslash {
+			escaped = strings.ReplaceAll(escaped, `\`, "/")
+		}
+		if err != nil || t.scriptPart(escaped) != docURI {
+			return nil, caddyhttp.Error(http.StatusBadRequest, errors.New("escaped and decoded paths select different scripts"))
+		}
+	}
+
 	// Try to grab the path remainder from a file matcher
 	// if we didn't get a split result here.
 	// See https://github.com/caddyserver/caddy/issues/3718
@@ -524,6 +540,14 @@ func (t Transport) splitPos(path string) int {
 	}
 
 	return -1
+}
+
+// scriptPart returns the part of path naming the script.
+func (t Transport) scriptPart(path string) string {
+	if pos := t.splitPos(path); pos > -1 {
+		return path[:pos]
+	}
+	return path
 }
 
 type envVars map[string]string
