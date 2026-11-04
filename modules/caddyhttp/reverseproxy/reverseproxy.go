@@ -1245,8 +1245,8 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	// Upgraded HTTP/1 responses hide the upstream socket behind their body,
 	// so remember it for the tunnel's graceful close; see handleUpgradeResponse.
 	if upgradeType(req.Header) != "" {
-		upstreamConn := new(upstreamConnHolder)
-		trace.GotConn = func(info httptrace.GotConnInfo) { upstreamConn.set(info.Conn) }
+		upstreamConn := new(atomic.Pointer[net.Conn])
+		trace.GotConn = func(info httptrace.GotConnInfo) { upstreamConn.Store(&info.Conn) }
 		ctx = context.WithValue(ctx, upstreamConnCtxKey{}, upstreamConn)
 	}
 	req = req.WithContext(httptrace.WithClientTrace(ctx, trace))

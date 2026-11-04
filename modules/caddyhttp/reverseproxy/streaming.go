@@ -29,6 +29,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -66,46 +67,28 @@ func (rwc extendedConnectReadWriteCloser) SetWriteDeadline(deadline time.Time) e
 	return http.NewResponseController(rwc.ResponseWriter).SetWriteDeadline(deadline)
 }
 
-// upstreamConnHolder remembers the connection a round trip used, so an
+// upstreamConnCtxKey is the context key for the *atomic.Pointer[net.Conn]
+// that records the connection an upgrade request's round trip used, so an
 // upgraded HTTP/1 response can reach the socket hidden behind its body.
-type upstreamConnHolder struct {
-	mu   sync.Mutex
-	conn net.Conn
-}
-
-func (h *upstreamConnHolder) set(conn net.Conn) {
-	h.mu.Lock()
-	h.conn = conn
-	h.mu.Unlock()
-}
-
-func (h *upstreamConnHolder) get() net.Conn {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.conn
-}
-
-// upstreamConnCtxKey is the context key for the *upstreamConnHolder of an
-// upgrade request.
 type upstreamConnCtxKey struct{}
 
-// upstreamCloseWriter returns where to write the close message to the
+// upstreamWriteCloser returns where to write the close message to the
 // upstream. It must be bounded by a write deadline, but for HTTP/1 upgrades
 // net/http hands the upstream socket back inside a body type that hides its
 // deadline methods and writes straight through to the socket. So the close
 // message goes to the socket recorded during the round trip instead. An
 // HTTP/1 connection is dedicated to this request; HTTP/2 and HTTP/3 share
 // theirs between streams, so their bodies are used as they are.
-func upstreamCloseWriter(req *http.Request, res *http.Response, backConn io.ReadWriteCloser) io.Writer {
+func upstreamWriteCloser(req *http.Request, res *http.Response, backConn io.ReadWriteCloser) io.ReadWriteCloser {
 	if res.ProtoMajor != 1 {
 		return backConn
 	}
-	holder, ok := req.Context().Value(upstreamConnCtxKey{}).(*upstreamConnHolder)
+	recorded, ok := req.Context().Value(upstreamConnCtxKey{}).(*atomic.Pointer[net.Conn])
 	if !ok {
 		return backConn
 	}
-	if uc := holder.get(); uc != nil {
-		return uc
+	if uc := recorded.Load(); uc != nil {
+		return *uc
 	}
 	return backConn
 }
@@ -259,7 +242,7 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 	// need to know whether the connection is considered the server or the
 	// client side of the proxy. Note that gracefulClose must not capture h,
 	// since the tunnel may outlive the handler instance.
-	gracefulClose := func(conn io.Writer, isClient bool) func(time.Time) error {
+	gracefulClose := func(conn io.ReadWriteCloser, isClient bool) func(time.Time) error {
 		if isWebsocket(req) {
 			return func(deadline time.Time) error {
 				return writeCloseControl(conn, isClient, deadline)
@@ -268,7 +251,7 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 		return nil
 	}
 	deleteFrontConn := tunnel.registerConnection(conn, gracefulClose(conn, false), detached, upstreamAddr)
-	deleteBackConn := tunnel.registerConnection(backConn, gracefulClose(upstreamCloseWriter(req, res, backConn), true), detached, upstreamAddr)
+	deleteBackConn := tunnel.registerConnection(backConn, gracefulClose(upstreamWriteCloser(req, res, backConn), true), detached, upstreamAddr)
 	if h.streamLogsSkipHandshake() {
 		caddyhttp.SetVar(req.Context(), caddyhttp.LogSkipVar, true)
 	}

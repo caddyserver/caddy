@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -850,7 +851,7 @@ func TestHandlerUpgradeBoundsUpstreamCloseMessage(t *testing.T) {
 	}
 }
 
-func TestUpstreamCloseWriter(t *testing.T) {
+func TestUpstreamWriteCloser(t *testing.T) {
 	// The HTTP/1 path, including the recorded socket, is covered end to end
 	// by TestHandlerUpgradeBoundsUpstreamCloseMessage. HTTP/2 and HTTP/3 share
 	// their connection between streams, so the close message must never go
@@ -861,7 +862,7 @@ func TestUpstreamCloseWriter(t *testing.T) {
 		name       string
 		protoMajor int
 		recorded   net.Conn
-		want       io.Writer
+		want       io.ReadWriteCloser
 	}{
 		{name: "http/1 with recorded socket", protoMajor: 1, recorded: socket, want: socket},
 		{name: "http/1 without recorded socket", protoMajor: 1, want: body},
@@ -869,13 +870,15 @@ func TestUpstreamCloseWriter(t *testing.T) {
 		{name: "http/3", protoMajor: 3, recorded: socket, want: body},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			holder := new(upstreamConnHolder)
-			holder.set(tc.recorded)
+			recorded := new(atomic.Pointer[net.Conn])
+			if tc.recorded != nil {
+				recorded.Store(&tc.recorded)
+			}
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
-			req = req.WithContext(context.WithValue(req.Context(), upstreamConnCtxKey{}, holder))
+			req = req.WithContext(context.WithValue(req.Context(), upstreamConnCtxKey{}, recorded))
 			res := &http.Response{ProtoMajor: tc.protoMajor}
-			if got := upstreamCloseWriter(req, res, body); got != tc.want {
-				t.Errorf("upstreamCloseWriter() = %v, want %v", got, tc.want)
+			if got := upstreamWriteCloser(req, res, body); got != tc.want {
+				t.Errorf("upstreamWriteCloser() = %v, want %v", got, tc.want)
 			}
 		})
 	}
