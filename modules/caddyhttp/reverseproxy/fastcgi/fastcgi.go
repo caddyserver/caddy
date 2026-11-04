@@ -437,10 +437,15 @@ func (t Transport) buildEnv(r *http.Request) (envVars, error) {
 
 	// Add all HTTP headers to env variables
 	for field, val := range r.Header {
+		switch http.CanonicalHeaderKey(field) {
+		// HTTP_HOST comes from r.Host, the host the request was routed on:
+		// over HTTP/2, net/http keeps a "host" field distinct from :authority.
+		case "Host":
+			continue
 		// HTTPoxy mitigation: client-supplied Proxy header must not
 		// be trusted for setting the HTTP_PROXY environment variable.
 		// See https://httpoxy.org for details.
-		if http.CanonicalHeaderKey(field) == "Proxy" {
+		case "Proxy":
 			continue
 		}
 
