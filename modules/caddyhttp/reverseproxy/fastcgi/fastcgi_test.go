@@ -487,6 +487,28 @@ func TestBuildEnvDropsProxyHeader(t *testing.T) {
 	})
 }
 
+// Over HTTP/2, net/http keeps a "host" field sent next to :authority in
+// r.Header; it must not replace HTTP_HOST, which comes from the routed r.Host.
+func TestBuildEnvIgnoresHostHeaderField(t *testing.T) {
+	t.Parallel()
+
+	for _, casing := range []string{"Host", "host"} {
+		t.Run("casing "+casing, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "http://example.com/index.php", nil)
+			r.Header = http.Header{casing: []string{"admin.example.com"}}
+			ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer())
+			ctx = context.WithValue(ctx, caddyhttp.VarsCtxKey, map[string]any{})
+			ctx = context.WithValue(ctx, caddyhttp.OriginalRequestCtxKey, *r)
+
+			env, err := Transport{}.buildEnv(r.WithContext(ctx))
+			require.NoError(t, err)
+
+			assert.Equal(t, "example.com", env["HTTP_HOST"])
+			assert.Equal(t, "example.com", env["SERVER_NAME"])
+		})
+	}
+}
+
 // A request path containing dot segments must not let the client select a
 // different script than the one every path matcher in the chain evaluated.
 // Matchers judge the cleaned path (see caddyhttp.MatchPath), so the transport
