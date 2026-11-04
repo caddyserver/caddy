@@ -72,3 +72,40 @@ func TestBuildEnvWindowsSeparatorsCannotSelectAnotherScript(t *testing.T) {
 		})
 	}
 }
+
+// An 8.3 alias ("/UPLOAD~1.PHP" for "uploadedpayload.phpx") or an alternate
+// data stream ("a.txt:b.php") reaches a non-PHP file with a script-looking path.
+func TestBuildEnvWindowsScriptAliases(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		target  string
+		wantErr bool
+	}{
+		{"/UPLOAD~1.PHP", true},
+		{"/PROTEC~1/index.php", true},
+		{"/a.txt:b.php", true},
+		{"/a.txt%3Ab.php", true},
+		{"/index.php/urn:isbn:0451450523", false},
+		{"/index.php/PROTEC~1", false},
+		{"/index.php", false},
+	} {
+		t.Run(tc.target, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, tc.target, nil)
+			ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer())
+			ctx = context.WithValue(ctx, caddyhttp.VarsCtxKey, map[string]any{})
+			ctx = context.WithValue(ctx, caddyhttp.OriginalRequestCtxKey, *r)
+
+			tr := Transport{Root: `C:\srv`, SplitPath: []string{".php"}}
+			_, err := tr.buildEnv(r.WithContext(ctx))
+			if !tc.wantErr {
+				require.NoError(t, err)
+				return
+			}
+
+			var herr caddyhttp.HandlerError
+			require.ErrorAs(t, err, &herr)
+			assert.Equal(t, http.StatusBadRequest, herr.StatusCode)
+		})
+	}
+}
