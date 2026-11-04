@@ -779,11 +779,11 @@ func calculateEtag(d os.FileInfo) string {
 	if !usefulModTime(mtime) {
 		return ""
 	}
-	// A quoted etag of two base-36 int64 values is 30 bytes, thus fitting
-	// comfortably in 32 bytes, on the stack to prevent allocations
+	// Two base-36 int64 values, a separator and quotes need at most 31 bytes.
 	var buf [32]byte
 	b := append(buf[:0], '"')
 	b = strconv.AppendInt(b, mtime.UnixNano(), 36)
+	b = append(b, '-')
 	b = strconv.AppendInt(b, d.Size(), 36)
 	b = append(b, '"')
 	return string(b)
