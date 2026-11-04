@@ -21,6 +21,7 @@ import (
 	"net"
 	"net/http"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -178,7 +179,7 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 
 	env, err := t.buildEnv(r)
 	if err != nil {
-		return nil, fmt.Errorf("building environment: %v", err)
+		return nil, fmt.Errorf("building environment: %w", err)
 	}
 
 	ctx := r.Context()
@@ -313,6 +314,12 @@ func (t Transport) buildEnv(r *http.Request) (envVars, error) {
 
 		// Strip PATH_INFO from SCRIPT_NAME
 		scriptName = strings.TrimSuffix(scriptName, pathInfo)
+	}
+
+	// On Windows, an 8.3 alias or an alternate data stream can name a non-PHP file
+	// with a script-looking path, and path matchers cannot see through either.
+	if runtime.GOOS == "windows" && (strings.Contains(scriptName, ":") || caddyhttp.HasWindowsShortName(scriptName)) {
+		return nil, caddyhttp.Error(http.StatusBadRequest, errors.New("illegal script path"))
 	}
 
 	// Try to grab the path remainder from a file matcher
