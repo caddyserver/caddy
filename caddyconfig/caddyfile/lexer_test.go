@@ -814,3 +814,36 @@ func BenchmarkLexerLongHeredoc(b *testing.B) {
 		}
 	}
 }
+
+// TestIsHeredocMarker covers the marker check shared by the lexer and the
+// formatter, including a long marker like the one that made the formatter time
+// out under libFuzzer when the check was a regexp.
+func TestIsHeredocMarker(t *testing.T) {
+	long := strings.Repeat("a", 500000)
+	for i, tc := range []struct {
+		marker string
+		want   bool
+	}{
+		{marker: "END", want: true},
+		{marker: "a-b_C9", want: true},
+		{marker: "09AZaz", want: true},
+		{marker: long, want: true},
+		{marker: "", want: false},
+		{marker: "EN D", want: false},
+		{marker: "END\n", want: false},
+		{marker: "<END", want: false},
+		{marker: "/", want: false},
+		{marker: ":", want: false},
+		{marker: "@", want: false},
+		{marker: "[", want: false},
+		{marker: "`", want: false},
+		{marker: "{", want: false},
+		{marker: "ÉND", want: false},
+		{marker: "END\xff", want: false},
+		{marker: long + "<<<<", want: false},
+	} {
+		if got := isHeredocMarker(tc.marker); got != tc.want {
+			t.Errorf("Test %d: isHeredocMarker(%.20q) = %v, want %v", i, tc.marker, got, tc.want)
+		}
+	}
+}

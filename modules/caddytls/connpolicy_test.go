@@ -418,3 +418,50 @@ func TestParseCaddyfileNestedMatcherSet(t *testing.T) {
 		}
 	}
 }
+
+func TestConnectionPolicyRejectsUnknownNames(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		policy ConnectionPolicy
+	}{
+		{"unknown curve", ConnectionPolicy{Curves: []string{"X25519"}}},
+		{"unknown protocol_min", ConnectionPolicy{ProtocolMin: "TLS1.3"}},
+		{"unknown protocol_max", ConnectionPolicy{ProtocolMax: "tls13"}},
+		{"protocol_min greater than protocol_max", ConnectionPolicy{ProtocolMin: "tls1.3", ProtocolMax: "tls1.2"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, err := caddy.ProvisionContext(&caddy.Config{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := (ConnectionPolicies{&tc.policy}).Provision(ctx); err == nil {
+				t.Fatal("expected an error, got nil")
+			}
+		})
+	}
+}
+
+func TestConnectionPolicyProtocolDefaults(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		policy   ConnectionPolicy
+		min, max uint16
+	}{
+		{"both empty", ConnectionPolicy{}, tls.VersionTLS12, tls.VersionTLS13},
+		{"min only", ConnectionPolicy{ProtocolMin: "tls1.3"}, tls.VersionTLS13, tls.VersionTLS13},
+		{"max only", ConnectionPolicy{ProtocolMax: "tls1.2"}, tls.VersionTLS12, tls.VersionTLS12},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, err := caddy.ProvisionContext(&caddy.Config{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := (ConnectionPolicies{&tc.policy}).Provision(ctx); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got := tc.policy.TLSConfig; got.MinVersion != tc.min || got.MaxVersion != tc.max {
+				t.Fatalf("got min=%x max=%x, want min=%x max=%x", got.MinVersion, got.MaxVersion, tc.min, tc.max)
+			}
+		})
+	}
+}

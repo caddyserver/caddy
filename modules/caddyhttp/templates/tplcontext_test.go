@@ -606,6 +606,17 @@ yeah`,
 			body:   "\n### Test\n...\nyeah",
 		},
 		{
+			// yaml closed with dots, with a '---' rule later in the body
+			input: `---
+title: Welcome
+...
+### Test
+---
+yeah`,
+			expect: `Welcome`,
+			body:   "\n### Test\n---\nyeah",
+		},
+		{
 			// toml
 			input: `+++
 title = "Welcome"
