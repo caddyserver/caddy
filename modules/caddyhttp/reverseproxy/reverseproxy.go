@@ -557,9 +557,14 @@ func notifyDetachedTunnelTrackersOfUpstreamRemoval(upstream string, self *tunnel
 
 	// Connection deletion unregisters empty trackers. Do not hold the
 	// registry lock while acquiring tracker locks or closing connections.
+	//
+	// One absolute deadline for every tracker: each close loop is serial and
+	// holds its lock, so a deadline per tracker would add up across stalled
+	// peers the same way a deadline per connection would.
+	deadline := time.Now().Add(self.closeWriteTimeout)
 	var err error
 	for _, tunnel := range trackers {
-		if closeErr := tunnel.closeConnectionsForUpstream(upstream); closeErr != nil && tunnel == self && err == nil {
+		if closeErr := tunnel.closeConnectionsForUpstream(upstream, deadline); closeErr != nil && tunnel == self && err == nil {
 			err = closeErr
 		}
 	}

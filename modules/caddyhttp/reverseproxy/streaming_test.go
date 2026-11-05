@@ -707,6 +707,38 @@ func TestHandlerCleanupUsesOneDeadlinePerBatch(t *testing.T) {
 	}
 }
 
+func TestUpstreamRemovalUsesOneDeadlineAcrossTrackers(t *testing.T) {
+	// Removing an upstream notifies every stopped tracker in turn, and each
+	// close loop holds its own lock, so a deadline per tracker would let
+	// every tracker with a stalled peer add another full timeout.
+	const upstream = "upstream-removal-one-deadline"
+	var deadlines []time.Time
+	var trackers []*tunnelTracker
+	for range 2 {
+		ts := newTunnelTracker(caddy.Log(), 0)
+		ts.closeWriteTimeout = 10 * time.Millisecond
+		registerDetachedTunnelTrackers(ts)
+		t.Cleanup(func() { unregisterDetachedTunnelTrackers(ts) })
+		conn := newStalledWebsocketPeer(t)
+		ts.registerConnection(conn, func(deadline time.Time) error {
+			deadlines = append(deadlines, deadline)
+			return writeCloseControl(conn, false, deadline)
+		}, true, upstream)
+		if err := ts.cleanupAttachedConnections(); err != nil {
+			t.Fatal(err)
+		}
+		trackers = append(trackers, ts)
+	}
+
+	_ = notifyDetachedTunnelTrackersOfUpstreamRemoval(upstream, trackers[0])
+	if len(deadlines) != 2 {
+		t.Fatalf("got %d graceful closes, want 2", len(deadlines))
+	}
+	if !deadlines[0].Equal(deadlines[1]) {
+		t.Errorf("trackers got deadlines %v and %v, want one shared deadline", deadlines[0], deadlines[1])
+	}
+}
+
 func TestWriteCloseControlSkipsConnectionsWithoutWriteDeadline(t *testing.T) {
 	// A write that cannot be bounded could block forever behind a stalled
 	// peer, so the best-effort close message is skipped instead.

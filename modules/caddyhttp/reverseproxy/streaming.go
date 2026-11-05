@@ -830,15 +830,15 @@ func isWebsocket(r *http.Request) bool {
 
 // closeConnectionsForUpstream closes detached connections to the given
 // upstream on stopped trackers. Attached connections keep their close delay.
-func (ts *tunnelTracker) closeConnectionsForUpstream(addr string) error {
+// Graceful closes share the given deadline so that one upstream removal is
+// bounded across every tracker it notifies.
+func (ts *tunnelTracker) closeConnectionsForUpstream(addr string, deadline time.Time) error {
 	var err error
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	if !ts.stopped {
 		return nil
 	}
-	// One absolute deadline for the whole batch; see closeAttachedConnections.
-	deadline := time.Now().Add(ts.closeWriteTimeout)
 	for _, oc := range ts.connections {
 		if !oc.detached || oc.upstream != addr {
 			continue
