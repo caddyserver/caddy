@@ -26,7 +26,6 @@ import (
 	"context"
 	"net"
 	"strconv"
-	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -49,6 +48,9 @@ type SRVLookupFunc func(ctx context.Context, service, proto, name string) (cname
 
 // SRV resolves the given SRV record into targets, caching the result for
 // refresh. lookup is the resolver to use (typically (*net.Resolver).LookupSRV).
+// resolverKey identifies that resolver, so results looked up with different
+// resolvers for the same record are cached separately; pass "" for the default
+// resolver.
 //
 // If the lookup fails but returns some records (e.g. a few invalid names were
 // filtered out), those records are still used. If it fails with no records and
@@ -56,104 +58,64 @@ type SRVLookupFunc func(ctx context.Context, service, proto, name string) (cname
 // past its refresh instead of returning an error. With no cached result, grace
 // also suppresses the error and returns no targets, preserving the reverse
 // proxy's existing behavior.
-func SRV(ctx context.Context, lookup SRVLookupFunc, service, proto, name string, refresh, grace time.Duration, logger *zap.Logger) ([]Target, error) {
-	key := srvKey(service, proto, name)
+//
+// Concurrent calls for the same record share one lookup, and no lock is held
+// while it runs, so a slow lookup does not delay calls for other records. The
+// shared lookup is detached from ctx (and bounded by its own timeout), so the
+// caller that started it can go away without failing it for the others; ctx
+// still bounds how long this call waits for the result.
+func SRV(ctx context.Context, lookup SRVLookupFunc, resolverKey, service, proto, name string, refresh, grace time.Duration, logger *zap.Logger) ([]Target, error) {
+	key := srvKey(resolverKey, service, proto, name)
+	return srvCache.get(ctx, key, refresh, grace, logger, func(ctx context.Context) ([]Target, error) {
+		if c := logger.Check(zapcore.DebugLevel, "refreshing SRV upstreams"); c != nil {
+			c.Write(zap.String("service", service), zap.String("proto", proto), zap.String("name", name))
+		}
 
-	// fast path: a fresh cached result under a read lock
-	srvMu.RLock()
-	cached := srvCache[key]
-	srvMu.RUnlock()
-	if cached.isFresh() {
-		return cached.targets, nil
-	}
-
-	srvMu.Lock()
-	defer srvMu.Unlock()
-
-	// re-check under the write lock in case another goroutine refreshed it
-	cached = srvCache[key]
-	if cached.isFresh() {
-		return cached.targets, nil
-	}
-
-	if c := logger.Check(zapcore.DebugLevel, "refreshing SRV upstreams"); c != nil {
-		c.Write(zap.String("service", service), zap.String("proto", proto), zap.String("name", name))
-	}
-
-	_, records, err := lookup(ctx, service, proto, name)
-	if err != nil {
-		// From LookupSRV docs: invalid names are filtered out and an error is
-		// returned alongside any remaining results; only treat it as fatal when
-		// nothing usable came back.
-		if len(records) == 0 {
-			if grace > 0 {
-				if c := logger.Check(zapcore.ErrorLevel, "SRV lookup failed; using previously cached"); c != nil {
-					c.Write(zap.Error(err))
-				}
-				cached.freshness = time.Now().Add(grace - refresh)
-				srvCache[key] = cached
-				return cached.targets, nil
+		_, records, err := lookup(ctx, service, proto, name)
+		if err != nil {
+			// From LookupSRV docs: invalid names are filtered out and an error is
+			// returned alongside any remaining results; only treat it as fatal when
+			// nothing usable came back.
+			if len(records) == 0 {
+				return nil, err
 			}
-			return nil, err
+			if c := logger.Check(zapcore.WarnLevel, "SRV records filtered"); c != nil {
+				c.Write(zap.Error(err))
+			}
 		}
-		if c := logger.Check(zapcore.WarnLevel, "SRV records filtered"); c != nil {
-			c.Write(zap.Error(err))
-		}
-	}
 
-	targets := make([]Target, len(records))
-	for i, rec := range records {
-		if c := logger.Check(zapcore.DebugLevel, "discovered SRV record"); c != nil {
-			c.Write(zap.String("target", rec.Target), zap.Uint16("port", rec.Port),
-				zap.Uint16("priority", rec.Priority), zap.Uint16("weight", rec.Weight))
+		targets := make([]Target, len(records))
+		for i, rec := range records {
+			if c := logger.Check(zapcore.DebugLevel, "discovered SRV record"); c != nil {
+				c.Write(zap.String("target", rec.Target), zap.Uint16("port", rec.Port),
+					zap.Uint16("priority", rec.Priority), zap.Uint16("weight", rec.Weight))
+			}
+			targets[i] = Target{
+				Host:     rec.Target,
+				Port:     strconv.Itoa(int(rec.Port)),
+				Priority: rec.Priority,
+				Weight:   rec.Weight,
+			}
 		}
-		targets[i] = Target{
-			Host:     rec.Target,
-			Port:     strconv.Itoa(int(rec.Port)),
-			Priority: rec.Priority,
-			Weight:   rec.Weight,
-		}
-	}
-
-	// when inserting a brand-new entry (not replacing a stale one), bound the cache
-	if cached.freshness.IsZero() && len(srvCache) >= maxCacheEntries {
-		for k := range srvCache {
-			delete(srvCache, k)
-			break
-		}
-	}
-	srvCache[key] = cacheEntry{refresh: refresh, freshness: time.Now(), targets: targets}
-	return targets, nil
+		return targets, nil
+	})
 }
 
-// ResetSRV removes the cached result for a single SRV record.
-func ResetSRV(service, proto, name string) {
-	srvMu.Lock()
-	delete(srvCache, srvKey(service, proto, name))
-	srvMu.Unlock()
+// ResetSRV removes the cached result for a single SRV record resolved with the
+// given resolver (see [SRV] for resolverKey). A lookup for it that is already
+// in flight will not write its result back.
+func ResetSRV(resolverKey, service, proto, name string) {
+	srvCache.reset(srvKey(resolverKey, service, proto, name))
 }
 
-// ResetAllSRV clears the entire SRV cache.
+// ResetAllSRV clears the entire SRV cache. Lookups already in flight will not
+// write their results back.
 func ResetAllSRV() {
-	srvMu.Lock()
-	srvCache = make(map[string]cacheEntry)
-	srvMu.Unlock()
+	srvCache.resetAll()
 }
 
-func srvKey(service, proto, name string) string {
-	return service + "\x00" + proto + "\x00" + name
-}
-
-const maxCacheEntries = 100
-
-type cacheEntry struct {
-	refresh   time.Duration
-	freshness time.Time
-	targets   []Target
-}
-
-func (e cacheEntry) isFresh() bool {
-	return !e.freshness.IsZero() && time.Since(e.freshness) < e.refresh
+func srvKey(resolverKey, service, proto, name string) string {
+	return resolverKey + "\x00" + service + "\x00" + proto + "\x00" + name
 }
 
 // IPLookupFunc resolves a host's IP addresses. It matches the signature of
@@ -164,56 +126,52 @@ type IPLookupFunc func(ctx context.Context, network, host string) ([]net.IP, err
 // A resolves name's A/AAAA records into targets (one per address, all using the
 // given port), caching the result for refresh. network selects the IP versions
 // ("ip", "ip4" or "ip6"). lookup is the resolver to use (typically
-// (*net.Resolver).LookupIP).
-func A(ctx context.Context, lookup IPLookupFunc, network, name, port string, refresh time.Duration, logger *zap.Logger) ([]Target, error) {
-	key := name + "\x00" + port + "\x00" + network
-
-	aMu.RLock()
-	cached := aCache[key]
-	aMu.RUnlock()
-	if cached.isFresh() {
-		return cached.targets, nil
-	}
-
-	aMu.Lock()
-	defer aMu.Unlock()
-
-	cached = aCache[key]
-	if cached.isFresh() {
-		return cached.targets, nil
-	}
-
-	if c := logger.Check(zapcore.DebugLevel, "refreshing A upstreams"); c != nil {
-		c.Write(zap.String("version", network), zap.String("name", name), zap.String("port", port))
-	}
-
-	ips, err := lookup(ctx, network, name)
-	if err != nil {
-		return nil, err
-	}
-
-	targets := make([]Target, len(ips))
-	for i, ip := range ips {
-		if c := logger.Check(zapcore.DebugLevel, "discovered A record"); c != nil {
-			c.Write(zap.String("ip", ip.String()))
+// (*net.Resolver).LookupIP). resolverKey identifies that resolver, so results
+// looked up with different resolvers for the same name are cached separately;
+// pass "" for the default resolver.
+//
+// Concurrency and cancellation behave as described for [SRV].
+func A(ctx context.Context, lookup IPLookupFunc, resolverKey, network, name, port string, refresh time.Duration, logger *zap.Logger) ([]Target, error) {
+	key := aKey(resolverKey, network, name, port)
+	return aCache.get(ctx, key, refresh, 0, logger, func(ctx context.Context) ([]Target, error) {
+		if c := logger.Check(zapcore.DebugLevel, "refreshing A upstreams"); c != nil {
+			c.Write(zap.String("version", network), zap.String("name", name), zap.String("port", port))
 		}
-		targets[i] = Target{Host: ip.String(), Port: port}
-	}
 
-	if cached.freshness.IsZero() && len(aCache) >= maxCacheEntries {
-		for k := range aCache {
-			delete(aCache, k)
-			break
+		ips, err := lookup(ctx, network, name)
+		if err != nil {
+			return nil, err
 		}
-	}
-	aCache[key] = cacheEntry{refresh: refresh, freshness: time.Now(), targets: targets}
-	return targets, nil
+
+		targets := make([]Target, len(ips))
+		for i, ip := range ips {
+			if c := logger.Check(zapcore.DebugLevel, "discovered A record"); c != nil {
+				c.Write(zap.String("ip", ip.String()))
+			}
+			targets[i] = Target{Host: ip.String(), Port: port}
+		}
+		return targets, nil
+	})
+}
+
+// ResetA removes the cached result for a single A/AAAA lookup (see [A] for the
+// parameters). A lookup for it that is already in flight will not write its
+// result back.
+func ResetA(resolverKey, network, name, port string) {
+	aCache.reset(aKey(resolverKey, network, name, port))
+}
+
+// ResetAllA clears the entire A/AAAA cache. Lookups already in flight will not
+// write their results back.
+func ResetAllA() {
+	aCache.resetAll()
+}
+
+func aKey(resolverKey, network, name, port string) string {
+	return resolverKey + "\x00" + name + "\x00" + port + "\x00" + network
 }
 
 var (
-	srvMu    sync.RWMutex
-	srvCache = make(map[string]cacheEntry)
-
-	aMu    sync.RWMutex
-	aCache = make(map[string]cacheEntry)
+	srvCache = newCache("SRV")
+	aCache   = newCache("A")
 )
