@@ -804,7 +804,12 @@ func (st *ServerType) serversFromPairings(
 			if cpVals, ok := sblock.pile["tls.connection_policy"]; ok {
 				// tls connection policies
 				for _, cpVal := range cpVals {
-					cp := cpVal.Value.(*caddytls.ConnectionPolicy)
+					// Policies are parsed once per original server block. Each listener
+					// rewrites and consolidates them independently.
+					cp, err := cloneConnectionPolicy(cpVal.Value.(*caddytls.ConnectionPolicy))
+					if err != nil {
+						return nil, fmt.Errorf("cloning TLS connection policy: %v", err)
+					}
 
 					// make sure the policy covers all hostnames from the block
 					for _, h := range hosts {
@@ -946,10 +951,7 @@ func (st *ServerType) serversFromPairings(
 				}
 				sort.SliceStable(errorSubrouteVals, func(i, j int) bool {
 					sri, srj := errorSubrouteVals[i].Value.(*caddyhttp.Subroute), errorSubrouteVals[j].Value.(*caddyhttp.Subroute)
-					if len(sri.Routes[0].MatcherSetsRaw) == 0 && len(srj.Routes[0].MatcherSetsRaw) != 0 {
-						return false
-					}
-					return true
+					return len(sri.Routes[0].MatcherSetsRaw) != 0 && len(srj.Routes[0].MatcherSetsRaw) == 0
 				})
 				errorsSubroute := &caddyhttp.Subroute{}
 				for _, val := range errorSubrouteVals {
@@ -1129,6 +1131,19 @@ func (st *ServerType) serversFromPairings(
 	return servers, nil
 }
 
+func cloneConnectionPolicy(cp *caddytls.ConnectionPolicy) (*caddytls.ConnectionPolicy, error) {
+	encoded, err := json.Marshal(cp)
+	if err != nil {
+		return nil, err
+	}
+
+	cloned := new(caddytls.ConnectionPolicy)
+	if err := json.Unmarshal(encoded, cloned); err != nil {
+		return nil, err
+	}
+	return cloned, nil
+}
+
 // sniNames returns the server names a connection policy's sni matcher matches.
 // The bool is false when the policy has no sni matcher, or when it does not
 // decode - the latter is unexpected enough to warn about rather than silently
@@ -1273,8 +1288,7 @@ func consolidateConnPolicies(cps caddytls.ConnectionPolicies) (caddytls.Connecti
 					return nil, fmt.Errorf("two policies with same match criteria have conflicting cipher suites: %v vs. %v",
 						cps[i].CipherSuites, cps[j].CipherSuites)
 				}
-				if cps[i].ClientAuthentication == nil &&
-					cps[j].ClientAuthentication != nil &&
+				if cps[i].ClientAuthentication != nil && cps[j].ClientAuthentication != nil &&
 					!reflect.DeepEqual(cps[i].ClientAuthentication, cps[j].ClientAuthentication) {
 					return nil, fmt.Errorf("two policies with same match criteria have conflicting client auth configuration: %+v vs. %+v",
 						cps[i].ClientAuthentication, cps[j].ClientAuthentication)

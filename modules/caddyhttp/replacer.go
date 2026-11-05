@@ -88,6 +88,7 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 						return cookie.Value, true
 					}
 				}
+				return "", true
 			}
 
 			// http.request.tls.*
@@ -261,6 +262,13 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 			case "http.request.orig_uri.path.file":
 				or, _ := req.Context().Value(OriginalRequestCtxKey).(http.Request)
 				_, file := path.Split(or.URL.Path)
+				return file, true
+			case "http.request.orig_uri.path.file_escaped":
+				// split the escaped path rather than escaping the decoded
+				// file name, since an encoded slash (%2F) in the request
+				// is part of the last segment, not a separator
+				or, _ := req.Context().Value(OriginalRequestCtxKey).(http.Request)
+				_, file := path.Split(or.URL.EscapedPath())
 				return file, true
 			case "http.request.orig_uri.path.dir":
 				or, _ := req.Context().Value(OriginalRequestCtxKey).(http.Request)
@@ -471,10 +479,23 @@ func readRequestBodyForPlaceholder(req *http.Request) ([]byte, error) {
 }
 
 func getReqTLSReplacement(req *http.Request, key string) (any, bool) {
-	if req == nil || req.TLS == nil {
+	if req == nil {
 		return nil, false
 	}
+	state := req.TLS
+	if state == nil {
+		state = new(tls.ConnectionState)
+	}
+	value, known := getTLSReplacement(state, key)
+	if req.TLS == nil {
+		// Use the same field parser to recognise valid placeholders but
+		// do not substitute values from the empty state for a plain HTTP request.
+		return nil, known
+	}
+	return value, known
+}
 
+func getTLSReplacement(state *tls.ConnectionState, key string) (any, bool) {
 	if len(key) < len(reqTLSReplPrefix) {
 		return nil, false
 	}
@@ -482,7 +503,7 @@ func getReqTLSReplacement(req *http.Request, key string) (any, bool) {
 	field := strings.ToLower(key[len(reqTLSReplPrefix):])
 
 	if strings.HasPrefix(field, "client.") {
-		cert := getTLSPeerCert(req.TLS)
+		cert := getTLSPeerCert(state)
 		if cert == nil {
 			// Instead of returning (nil, false) here, we set it to a dummy
 			// value to fix #7530. This way, even if there is no client cert,
@@ -587,20 +608,20 @@ func getReqTLSReplacement(req *http.Request, key string) (any, bool) {
 
 	switch field {
 	case "version":
-		return caddytls.ProtocolName(req.TLS.Version), true
+		return caddytls.ProtocolName(state.Version), true
 	case "cipher_suite":
-		return tls.CipherSuiteName(req.TLS.CipherSuite), true
+		return tls.CipherSuiteName(state.CipherSuite), true
 	case "resumed":
-		return req.TLS.DidResume, true
+		return state.DidResume, true
 	case "proto":
-		return req.TLS.NegotiatedProtocol, true
+		return state.NegotiatedProtocol, true
 	case "proto_mutual":
 		// req.TLS.NegotiatedProtocolIsMutual is deprecated - it's always true.
 		return true, true
 	case "server_name":
-		return req.TLS.ServerName, true
+		return state.ServerName, true
 	case "ech":
-		return req.TLS.ECHAccepted, true
+		return state.ECHAccepted, true
 	}
 	return nil, false
 }

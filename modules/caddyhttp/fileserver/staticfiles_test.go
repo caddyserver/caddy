@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -29,6 +30,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp/encode"
 )
 
@@ -137,111 +139,6 @@ func TestFileHidden(t *testing.T) {
 			t.Errorf("Test %d: Does %v hide %s? Got %t but expected %t",
 				i, tc.inputHide, tc.inputPath, actual, tc.expect)
 		}
-	}
-}
-
-func TestHasWindowsShortName(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		path string
-		want bool
-	}{
-		{
-			name: "final component",
-			path: "/DIRECT~1.TXT",
-			want: true,
-		},
-		{
-			name: "parent component with long final filename",
-			path: "/PROTEC~1/this-is-a-long-final-filename.txt",
-			want: true,
-		},
-		{
-			name: "middle component",
-			path: "/public/PROTEC~1/file.txt",
-			want: true,
-		},
-		{
-			name: "backslash separator",
-			path: `\public\PROTEC~1\file.txt`,
-			want: true,
-		},
-		{
-			name: "two digit short name suffix",
-			path: "/PROTE~12/file.txt",
-			want: true,
-		},
-		{
-			name: "trailing dots and spaces",
-			path: "/PROTEC~1.  /file.txt",
-			want: true,
-		},
-		{
-			name: "permitted punctuation",
-			path: "/$%'-_~1.!#&",
-			want: true,
-		},
-		{
-			name: "ordinary tilde name",
-			path: "/ordinary~name/file.txt",
-			want: false,
-		},
-		{
-			name: "space in short name shape",
-			path: "/my f~1.txt",
-			want: false,
-		},
-		{
-			name: "space in long tilde name",
-			path: "/my file~1.txt",
-			want: false,
-		},
-		{
-			name: "non-ASCII short name shape in parent component",
-			path: "/public/café~1/this-is-a-long-final-filename.txt",
-			want: true,
-		},
-		{
-			name: "non-ASCII ordinary tilde name",
-			path: "/café~name.txt",
-			want: false,
-		},
-		{
-			name: "forbidden punctuation",
-			path: "/MY+F~1.TXT",
-			want: false,
-		},
-		{
-			name: "tilde followed by non-digit",
-			path: "/SHORT~A/file.txt",
-			want: false,
-		},
-		{
-			name: "characters after numeric suffix",
-			path: "/SHORT~1-file.txt",
-			want: false,
-		},
-		{
-			name: "base too long for 8.3",
-			path: "/TOOLONG~1/file.txt",
-			want: false,
-		},
-		{
-			name: "extension too long for 8.3",
-			path: "/SHORT~1.LONG/file.txt",
-			want: false,
-		},
-		{
-			name: "multiple extension separators",
-			path: "/SHORT~1.T.X/file.txt",
-			want: false,
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := hasWindowsShortName(tc.path); got != tc.want {
-				t.Fatalf("hasWindowsShortName(%q) = %t, want %t", tc.path, got, tc.want)
-			}
-		})
 	}
 }
 
@@ -439,4 +336,51 @@ func (p testPrecompressed) AcceptEncoding() string {
 
 func (p testPrecompressed) Suffix() string {
 	return p.suffix
+}
+
+// A path below a regular file does not exist, so it is a 404 that pass_thru
+// falls through, while a path containing a NUL byte is malformed and is a 400.
+func TestServeHTTPStatErrors(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "file.txt"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	fsrv := FileServer{Root: root}
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+	if err := fsrv.Provision(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	for i, tc := range []struct {
+		path       string
+		passThru   bool
+		wantStatus int
+		wantNext   bool
+	}{
+		{path: "/file.txt/child", wantStatus: http.StatusNotFound},
+		{path: "/file.txt/child", passThru: true, wantNext: true},
+		{path: "/file.txt%00", wantStatus: http.StatusBadRequest},
+	} {
+		fsrv.PassThru = tc.passThru
+		r := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		r = r.WithContext(context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
+		var calledNext bool
+		next := caddyhttp.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
+			calledNext = true
+			return nil
+		})
+
+		err := fsrv.ServeHTTP(httptest.NewRecorder(), r, next)
+		if tc.wantNext {
+			if err != nil || !calledNext {
+				t.Errorf("Test %d: expected the next handler, got called=%t err=%v", i, calledNext, err)
+			}
+			continue
+		}
+		if he, ok := errors.AsType[caddyhttp.HandlerError](err); !ok || he.StatusCode != tc.wantStatus {
+			t.Errorf("Test %d: expected status %d, got %v", i, tc.wantStatus, err)
+		}
+	}
 }

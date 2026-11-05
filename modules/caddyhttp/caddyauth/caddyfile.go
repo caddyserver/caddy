@@ -33,6 +33,8 @@ func init() {
 //	    ...
 //	}
 //
+// The hash algorithm is the name of any installed module in the
+// http.authentication.hashes namespace, such as bcrypt or argon2id.
 // If no hash algorithm is supplied, bcrypt will be assumed.
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
 	h.Next() // consume directive name
@@ -45,7 +47,6 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	var ba HTTPBasicAuth
 	ba.HashCache = new(Cache)
 
-	var cmp Comparer
 	args := h.RemainingArgs()
 
 	var hashName string
@@ -61,13 +62,13 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 		return nil, h.ArgErr()
 	}
 
-	switch hashName {
-	case bcryptName:
-		cmp = BcryptHash{}
-	case argon2idName:
-		cmp = Argon2idHash{}
-	default:
-		return nil, h.Errf("unrecognized hash algorithm: %s", hashName)
+	modInfo, err := hashModuleInfo(hashName)
+	if err != nil {
+		return nil, h.WrapErr(err)
+	}
+	cmp, ok := modInfo.New().(Comparer)
+	if !ok {
+		return nil, h.Errf("hash module %s is not a password comparer", modInfo.ID)
 	}
 
 	ba.HashRaw = caddyconfig.JSONModuleObject(cmp, "algorithm", hashName, nil)

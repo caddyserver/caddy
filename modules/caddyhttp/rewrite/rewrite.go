@@ -355,6 +355,15 @@ func escapePathPlaceholders(path string, r *http.Request, repl *caddy.Replacer) 
 		}
 	}
 
+	fileMatchRemainderPlaceholder := "{http.matchers.file.remainder}"
+	if strings.Contains(path, fileMatchRemainderPlaceholder) {
+		if val, ok := repl.Get("http.matchers.file.remainder"); ok {
+			if remainder, ok := val.(string); ok {
+				path = strings.ReplaceAll(path, fileMatchRemainderPlaceholder, escapePathPreservingSlashes(remainder))
+			}
+		}
+	}
+
 	return path
 }
 
@@ -368,6 +377,7 @@ func escapePathPreservingSlashes(path string) string {
 // duplicate keys rather than replaces.
 func buildQueryString(qs string, repl *caddy.Replacer) string {
 	var sb strings.Builder
+	sb.Grow(len(qs))
 
 	// first component must be key, which is the same
 	// as if we just wrote a value in previous iteration
@@ -494,21 +504,15 @@ type pathPatternToken struct {
 func pathPatternTokens(pattern string) []pathPatternToken {
 	var tokens []pathPatternToken
 	for len(pattern) > 0 {
-		if pattern[0] == '%' {
-			length := 1
-			if len(pattern) >= 3 {
-				if decoded, err := url.PathUnescape(pattern[:3]); err == nil && len(decoded) == 1 {
-					length = 3
-				}
-			}
-			tokens = append(tokens, pathPatternToken{value: pattern[:length], escaped: true})
-			pattern = pattern[length:]
+		if hasValidPercentEncoding(pattern, 0) {
+			tokens = append(tokens, pathPatternToken{value: pattern[:3], escaped: true})
+			pattern = pattern[3:]
 			continue
 		}
 
-		end := strings.IndexByte(pattern, '%')
-		if end < 0 {
-			end = len(pattern)
+		end := 1
+		for end < len(pattern) && !hasValidPercentEncoding(pattern, end) {
+			end++
 		}
 		tokens = append(tokens, pathPatternToken{value: pattern[:end]})
 		pattern = pattern[end:]
@@ -651,6 +655,14 @@ func asciiEqualFold(a, b byte) bool {
 		b += 'a' - 'A'
 	}
 	return a == b
+}
+
+func hasValidPercentEncoding(s string, i int) bool {
+	if i < 0 || i+3 > len(s) || s[i] != '%' {
+		return false
+	}
+	_, err := url.PathUnescape(s[i : i+3])
+	return err == nil
 }
 
 // substrReplacer describes either a simple and fast substring replacement.
