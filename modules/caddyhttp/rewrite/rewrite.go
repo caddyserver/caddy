@@ -352,6 +352,15 @@ func escapePathPlaceholders(path string, r *http.Request, repl *caddy.Replacer) 
 		}
 	}
 
+	fileMatchRemainderPlaceholder := "{http.matchers.file.remainder}"
+	if strings.Contains(path, fileMatchRemainderPlaceholder) {
+		if val, ok := repl.Get("http.matchers.file.remainder"); ok {
+			if remainder, ok := val.(string); ok {
+				path = strings.ReplaceAll(path, fileMatchRemainderPlaceholder, escapePathPreservingSlashes(remainder))
+			}
+		}
+	}
+
 	return path
 }
 
@@ -365,6 +374,7 @@ func escapePathPreservingSlashes(path string) string {
 // duplicate keys rather than replaces.
 func buildQueryString(qs string, repl *caddy.Replacer) string {
 	var sb strings.Builder
+	sb.Grow(len(qs))
 
 	// first component must be key, which is the same
 	// as if we just wrote a value in previous iteration
@@ -447,7 +457,7 @@ func trimPathPrefix(escapedPath, prefix string) string {
 		prefixCh := prefix[iPrefix]
 		ch := string(escapedPath[iPath])
 
-		if ch == "%" && prefixCh != '%' && len(escapedPath) >= iPath+3 {
+		if ch == "%" && !hasValidPercentEncoding(prefix, iPrefix) && len(escapedPath) >= iPath+3 {
 			var err error
 			ch, err = url.PathUnescape(escapedPath[iPath : iPath+3])
 			if err != nil {
@@ -498,9 +508,13 @@ func trimPathSuffix(escapedPath, suffix string) string {
 
 		// if escapedPath uses a percent-encoding that ends at this position but
 		// the suffix pattern does not encode this position, decode escapedPath's
-		// escape so the comparison happens in normalized/unescaped space
+		// escape so the comparison happens in normalized/unescaped space.
+		// Walking right-to-left, the suffix is inside one of its own escapes
+		// either when an escape ends here (a '%' two bytes back) or when the
+		// cursor has reached that escape's introducing '%' itself.
 		pathHasEscape := iPath >= 3 && escapedPath[iPath-3] == '%'
-		suffixHasEscape := iSuffix >= 3 && suffix[iSuffix-3] == '%'
+		suffixHasEscape := hasValidPercentEncoding(suffix, iSuffix-3) ||
+			hasValidPercentEncoding(suffix, iSuffix-1)
 		if pathHasEscape && !suffixHasEscape {
 			decoded, err := url.PathUnescape(escapedPath[iPath-3 : iPath])
 			if err != nil {
@@ -528,6 +542,14 @@ func trimPathSuffix(escapedPath, suffix string) string {
 
 	// otherwise we did not find the suffix
 	return escapedPath
+}
+
+func hasValidPercentEncoding(s string, i int) bool {
+	if i < 0 || i+3 > len(s) || s[i] != '%' {
+		return false
+	}
+	_, err := url.PathUnescape(s[i : i+3])
+	return err == nil
 }
 
 // substrReplacer describes either a simple and fast substring replacement.

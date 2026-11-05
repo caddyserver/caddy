@@ -346,9 +346,17 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 					},
 				}),
 			}
+			// The matcher above judges the cleaned request path, so the
+			// Location must not echo the raw original path: a request for
+			// /%2Fevil.com%2F..%2Fsub matches <root>/sub/index.php but would
+			// redirect to //evil.com/../sub/, which browsers resolve to
+			// another host. A reference relative to the last path segment
+			// resolves against the URL the client actually requested, so it
+			// can only ever land on the same origin; the leading ./ keeps a
+			// segment containing ':' from being read as a scheme.
 			redirHandler := caddyhttp.StaticResponse{
 				StatusCode: caddyhttp.WeakString(strconv.Itoa(http.StatusPermanentRedirect)),
-				Headers:    http.Header{"Location": []string{"{http.request.orig_uri.path}/{http.request.orig_uri.prefixed_query}"}},
+				Headers:    http.Header{"Location": []string{"./{http.request.orig_uri.path.file_escaped}/{http.request.orig_uri.prefixed_query}"}},
 			}
 			redirRoute := caddyhttp.Route{
 				MatcherSetsRaw: []caddy.ModuleMap{redirMatcherSet},

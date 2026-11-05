@@ -1,0 +1,179 @@
+// Copyright 2015 Matthew Holt and The Caddy Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Package headercheck verifies that every http.Header key written directly
+// into the map uses net/http's canonical form.
+//
+// Hot paths index http.Header directly to skip the canonicalization that
+// Get/Set/Add/Del perform on every call. That trades a linted call for an
+// unlinted map operation: the canonicalheader linter only inspects method
+// calls, and staticcheck's SA1008 stops descending as soon as an assignment
+// writes to a header, so neither covers a direct write or a delete. A key
+// that is not canonical there is a silent lookup miss, not a compile error.
+//
+// This covers four shapes the enabled linters miss:
+//
+//	h["x-key"] = []string{"v"}          // direct write
+//	http.Header{"x-key": {"v"}}         // composite literal
+//	delete(h, "x-key")                  // delete builtin
+//	h["x-key"] = append(h["x-key"], "v) // read-modify-write
+package headercheck
+
+import (
+	"go/ast"
+	"go/constant"
+	"go/token"
+	"go/types"
+	"net/http"
+	"strings"
+	"testing"
+
+	"golang.org/x/tools/go/packages"
+)
+
+// headerType is the type whose map operations must use canonical keys.
+const headerType = "net/http.Header"
+
+// nolintDirective marks a deliberate non-canonical key on its line, such as
+// the RFC 6455 spellings written for case-sensitive upstreams.
+const nolintDirective = "//nolint:canonicalheader"
+
+// TODO: delete this package once golangci-lint ships https://github.com/lasiar/canonicalheader/pull/90;
+// the linter honors the same //nolint:canonicalheader directives.
+func TestHeaderKeysAreCanonical(t *testing.T) {
+	cfg := &packages.Config{
+		Mode: packages.NeedName | packages.NeedSyntax | packages.NeedTypes |
+			packages.NeedTypesInfo | packages.NeedDeps | packages.NeedImports,
+		Dir:   "../..",
+		Tests: false,
+	}
+
+	pkgs, err := packages.Load(cfg, "./...")
+	if err != nil {
+		t.Fatalf("loading packages: %v", err)
+	}
+	if packages.PrintErrors(pkgs) > 0 {
+		t.Fatal("packages failed to load; see errors above")
+	}
+
+	var checked int
+	for _, pkg := range pkgs {
+		for _, file := range pkg.Syntax {
+			checked += checkFile(t, pkg, file)
+		}
+	}
+
+	// Guard against the walk silently covering nothing, e.g. if package
+	// loading is reconfigured and stops yielding type information.
+	if checked == 0 {
+		t.Fatal("no http.Header map operations found; the check is not running")
+	}
+	t.Logf("checked %d direct http.Header map operations", checked)
+}
+
+// checkFile reports the number of direct http.Header map operations examined.
+func checkFile(t *testing.T, pkg *packages.Package, file *ast.File) int {
+	var checked int
+
+	exempt := make(map[int]bool)
+	for _, group := range file.Comments {
+		for _, c := range group.List {
+			if strings.HasPrefix(c.Text, nolintDirective) {
+				exempt[pkg.Fset.Position(c.Slash).Line] = true
+			}
+		}
+	}
+
+	report := func(pos token.Pos, key, form string) {
+		canonical := http.CanonicalHeaderKey(key)
+		if key == canonical || exempt[pkg.Fset.Position(pos).Line] {
+			return
+		}
+		t.Errorf("%s: %s uses non-canonical key %q; want %q",
+			pkg.Fset.Position(pos), form, key, canonical)
+	}
+
+	// keyOf returns the constant string value of an index or argument
+	// expression, so both literals and named constants are covered.
+	keyOf := func(expr ast.Expr) (string, bool) {
+		tv, ok := pkg.TypesInfo.Types[expr]
+		if !ok || tv.Value == nil || tv.Value.Kind() != constant.String {
+			return "", false
+		}
+		return constant.StringVal(tv.Value), true
+	}
+
+	isHeader := func(expr ast.Expr) bool {
+		tv, ok := pkg.TypesInfo.Types[expr]
+		if !ok || tv.Type == nil {
+			return false
+		}
+		named, ok := types.Unalias(tv.Type).(*types.Named)
+		if !ok {
+			return false
+		}
+		obj := named.Obj()
+		return obj != nil && obj.Pkg() != nil &&
+			obj.Pkg().Path()+"."+obj.Name() == headerType
+	}
+
+	ast.Inspect(file, func(n ast.Node) bool {
+		switch node := n.(type) {
+		// h["Key"], including the assignment form h["Key"] = ...
+		// that SA1008 skips.
+		case *ast.IndexExpr:
+			if !isHeader(node.X) {
+				return true
+			}
+			key, ok := keyOf(node.Index)
+			if !ok {
+				return true
+			}
+			checked++
+			report(node.Index.Pos(), key, "http.Header index")
+
+		// http.Header{"Key": ...}, which stores the key verbatim.
+		case *ast.CompositeLit:
+			if !isHeader(node) {
+				return true
+			}
+			for _, elt := range node.Elts {
+				kv, ok := elt.(*ast.KeyValueExpr)
+				if !ok {
+					continue
+				}
+				key, ok := keyOf(kv.Key)
+				if !ok {
+					continue
+				}
+				checked++
+				report(kv.Key.Pos(), key, "http.Header literal")
+			}
+
+		// delete(h, "Key"), which no enabled linter inspects.
+		case *ast.CallExpr:
+			if ident, ok := node.Fun.(*ast.Ident); ok && ident.Name == "delete" && len(node.Args) == 2 {
+				if _, ok := pkg.TypesInfo.Uses[ident].(*types.Builtin); ok && isHeader(node.Args[0]) {
+					if key, ok := keyOf(node.Args[1]); ok {
+						checked++
+						report(node.Args[1].Pos(), key, "delete on http.Header")
+					}
+				}
+			}
+		}
+		return true
+	})
+
+	return checked
+}

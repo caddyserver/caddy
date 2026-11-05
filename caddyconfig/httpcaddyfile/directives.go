@@ -228,6 +228,14 @@ func (h Helper) Option(name string) any {
 	return h.options[name]
 }
 
+// IsNamedRoute returns true if the directive is in a named route.
+// Named routes are adapted before the site blocks, with their own
+// State, so values a directive keeps in State aren't shared with
+// the site blocks.
+func (h Helper) IsNamedRoute() bool {
+	return h.parentBlock.IsNamedRoute
+}
+
 // Caddyfiles returns the list of config files from
 // which tokens in the current server block were loaded.
 func (h Helper) Caddyfiles() []string {

@@ -381,9 +381,17 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 		// clean the path and split, if configured -- we must split before
 		// globbing so that the file system doesn't include the remainder
 		// ("afterSplit") in the filename; be sure to restore trailing slash
-		beforeSplit, afterSplit := m.firstSplit(path.Clean(expandedFile))
-		if strings.HasSuffix(file, "/") {
-			beforeSplit += "/"
+		// so that "/file/" or "/file/./" cannot match a regular file
+		cleanedFile := path.Clean(expandedFile)
+		if strings.HasSuffix(expandedFile, "/") && !strings.HasSuffix(cleanedFile, "/") {
+			cleanedFile += "/"
+		}
+		beforeSplit, afterSplit := m.firstSplit(cleanedFile)
+
+		// only a pattern ending in "/" matches a directory, so with "{path}" a
+		// request for "/dir/" falls through to the next entry (e.g. "{path}/index.php")
+		if beforeSplit != "/" && strings.HasSuffix(beforeSplit, "/") && !strings.HasSuffix(file, "/") {
+			return nil
 		}
 
 		// create the full path to the file by prepending the site root
@@ -498,7 +506,7 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 			candidates := makeCandidates(pattern)
 			for _, c := range candidates {
 				info, err := fs.Stat(fileSystem, c.fullpath)
-				if err == nil && info.Size() > largestSize {
+				if err == nil && (largestInfo == nil || info.Size() > largestSize) {
 					largestSize = info.Size()
 					largest = c
 					largestInfo = info
@@ -519,7 +527,7 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 			candidates := makeCandidates(pattern)
 			for _, c := range candidates {
 				info, err := fs.Stat(fileSystem, c.fullpath)
-				if err == nil && (smallestSize == 0 || info.Size() < smallestSize) {
+				if err == nil && (smallestInfo == nil || info.Size() < smallestSize) {
 					smallestSize = info.Size()
 					smallest = c
 					smallestInfo = info
