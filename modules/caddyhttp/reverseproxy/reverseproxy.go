@@ -557,11 +557,8 @@ func notifyDetachedTunnelTrackersOfUpstreamRemoval(upstream string, self *tunnel
 
 	// Connection deletion unregisters empty trackers. Do not hold the
 	// registry lock while acquiring tracker locks or closing connections.
-	//
-	// One absolute deadline for every tracker: each close loop is serial and
-	// holds its lock, so a deadline per tracker would add up across stalled
-	// peers the same way a deadline per connection would.
-	deadline := time.Now().Add(self.closeWriteTimeout)
+	// One deadline for every tracker; see closeConnectionsLocked.
+	deadline := time.Now().Add(closeControlWriteTimeout)
 	var err error
 	for _, tunnel := range trackers {
 		if closeErr := tunnel.closeConnectionsForUpstream(upstream, deadline); closeErr != nil && tunnel == self && err == nil {
@@ -1247,12 +1244,15 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	// http.Transport reads a newer value to dial a new connection when that new
 	// value is updated by another reverse proxy handler, typically forward_auth.
 	ctx := context.WithValue(req.Context(), dialInfoCtxKey, di)
-	// Upgraded HTTP/1 responses hide the upstream socket behind their body,
-	// so remember it for the tunnel's graceful close; see handleUpgradeResponse.
-	if upgradeType(req.Header) != "" {
+	// Record the upstream socket for the websocket close message, since an
+	// upgraded HTTP/1 body hides it; see upstreamWriteCloser.
+	if isWebsocket(req) {
 		upstreamConn := new(atomic.Pointer[net.Conn])
-		trace.GotConn = func(info httptrace.GotConnInfo) { upstreamConn.Store(&info.Conn) }
-		ctx = context.WithValue(ctx, upstreamConnCtxKey{}, upstreamConn)
+		trace.GotConn = func(info httptrace.GotConnInfo) {
+			conn := info.Conn
+			upstreamConn.Store(&conn)
+		}
+		ctx = context.WithValue(ctx, upstreamConnCtxKey, upstreamConn)
 	}
 	req = req.WithContext(httptrace.WithClientTrace(ctx, trace))
 

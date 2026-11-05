@@ -443,86 +443,93 @@ func TestHandlerUpgradedStreamHalfClose(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			srvc := make(chan *net.TCPConn, 1)
-
-			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				conn, _, err := http.NewResponseController(w).Hijack()
-				if err != nil {
-					t.Errorf("backend hijack failed: %v", err)
-					return
-				}
-				tcp, ok := conn.(*net.TCPConn)
-				if !ok {
-					conn.Close()
-					t.Errorf("backend conn is %T, want *net.TCPConn", conn)
-					return
-				}
-				if _, err := io.WriteString(tcp, "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n"); err != nil {
-					tcp.Close()
-					t.Errorf("backend upgrade write failed: %v", err)
-					return
-				}
-				srvc <- tcp
-			}))
-			defer backend.Close()
-
-			h := minimalHandler(0, &Upstream{
-				Host: new(Host),
-				Dial: backend.Listener.Addr().String(),
-			})
-			h.tunnelTracker = newTunnelTracker(caddy.Log(), 0)
-			initReverseProxyMetrics(h, prometheus.NewRegistry())
-
-			frontend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// Isolate half-close propagation from request cancellation which has
-				// its own backend-close path.
-				r = r.WithContext(context.WithoutCancel(r.Context()))
-				_ = h.ServeHTTP(w, prepareTestRequest(r), caddyhttp.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
-					return nil
-				}))
-			}))
-			defer frontend.Close()
-
-			frontendURL, err := url.Parse(frontend.URL)
-			if err != nil {
-				t.Fatalf("failed to parse frontend URL: %v", err)
-			}
-			addr, err := net.ResolveTCPAddr("tcp", frontendURL.Host)
-			if err != nil {
-				t.Fatalf("failed to resolve TCP address: %v", err)
-			}
-			cli, err := net.DialTCP("tcp", nil, addr)
-			if err != nil {
-				t.Fatalf("failed to dial frontend: %v", err)
-			}
-			defer cli.Close()
-
-			req, _ := http.NewRequest(http.MethodGet, frontend.URL, nil)
-			req.Header.Set("Connection", "Upgrade")
-			req.Header.Set("Upgrade", "websocket")
-			if err := req.Write(cli); err != nil {
-				t.Fatalf("failed to write upgrade request: %v", err)
-			}
-
-			resp, err := http.ReadResponse(bufio.NewReader(cli), &http.Request{Method: http.MethodGet})
-			if err != nil {
-				t.Fatalf("failed to read upgrade response: %v", err)
-			}
-			if resp.StatusCode != http.StatusSwitchingProtocols {
-				t.Fatalf("status = %d, want 101", resp.StatusCode)
-			}
-
-			var srv *net.TCPConn
-			select {
-			case srv = <-srvc:
-			case <-time.After(5 * time.Second):
-				t.Fatal("timed out waiting for the backend connection")
-			}
-			defer srv.Close()
-
+			_, cli, srv := newUpgradedTunnel(t)
 			test(t, cli, srv)
 		})
 	}
+}
+
+// newUpgradedTunnel proxies a websocket upgrade from a raw client connection
+// through a Handler to a hijacking backend and returns both ends of the
+// tunnel. The Handler's tunnel tracker holds the proxied connections.
+func newUpgradedTunnel(t *testing.T) (h *Handler, cli, srv *net.TCPConn) {
+	t.Helper()
+	srvc := make(chan *net.TCPConn, 1)
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, _, err := http.NewResponseController(w).Hijack()
+		if err != nil {
+			t.Errorf("backend hijack failed: %v", err)
+			return
+		}
+		tcp, ok := conn.(*net.TCPConn)
+		if !ok {
+			conn.Close()
+			t.Errorf("backend conn is %T, want *net.TCPConn", conn)
+			return
+		}
+		if _, err := io.WriteString(tcp, "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n"); err != nil {
+			tcp.Close()
+			t.Errorf("backend upgrade write failed: %v", err)
+			return
+		}
+		srvc <- tcp
+	}))
+	t.Cleanup(backend.Close)
+
+	h = minimalHandler(0, &Upstream{
+		Host: new(Host),
+		Dial: backend.Listener.Addr().String(),
+	})
+	h.tunnelTracker = newTunnelTracker(caddy.Log(), 0)
+	initReverseProxyMetrics(h, prometheus.NewRegistry())
+
+	frontend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Isolate the tunnel from request cancellation, which has its own
+		// backend-close path.
+		r = r.WithContext(context.WithoutCancel(r.Context()))
+		_ = h.ServeHTTP(w, prepareTestRequest(r), caddyhttp.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
+			return nil
+		}))
+	}))
+	t.Cleanup(frontend.Close)
+
+	frontendURL, err := url.Parse(frontend.URL)
+	if err != nil {
+		t.Fatalf("failed to parse frontend URL: %v", err)
+	}
+	addr, err := net.ResolveTCPAddr("tcp", frontendURL.Host)
+	if err != nil {
+		t.Fatalf("failed to resolve TCP address: %v", err)
+	}
+	cli, err = net.DialTCP("tcp", nil, addr)
+	if err != nil {
+		t.Fatalf("failed to dial frontend: %v", err)
+	}
+	t.Cleanup(func() { cli.Close() })
+
+	req, _ := http.NewRequest(http.MethodGet, frontend.URL, nil)
+	req.Header.Set("Connection", "Upgrade")
+	req.Header.Set("Upgrade", "websocket")
+	if err := req.Write(cli); err != nil {
+		t.Fatalf("failed to write upgrade request: %v", err)
+	}
+
+	resp, err := http.ReadResponse(bufio.NewReader(cli), &http.Request{Method: http.MethodGet})
+	if err != nil {
+		t.Fatalf("failed to read upgrade response: %v", err)
+	}
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("status = %d, want 101", resp.StatusCode)
+	}
+
+	select {
+	case srv = <-srvc:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for the backend connection")
+	}
+	t.Cleanup(func() { srv.Close() })
+	return h, cli, srv
 }
 
 // A response carrying the Incremental header field (RFC 10036) must be
@@ -662,11 +669,20 @@ func newStalledWebsocketPeer(t *testing.T) net.Conn {
 	return conn
 }
 
+// shortenCloseControlWriteTimeout makes a stalled peer time out quickly for
+// the rest of the test.
+func shortenCloseControlWriteTimeout(t *testing.T) {
+	t.Helper()
+	saved := closeControlWriteTimeout
+	closeControlWriteTimeout = 10 * time.Millisecond
+	t.Cleanup(func() { closeControlWriteTimeout = saved })
+}
+
 func TestHandlerCleanupDoesNotBlockOnStalledWebsocketPeer(t *testing.T) {
 	conn := newStalledWebsocketPeer(t)
 
 	ts := newTunnelTracker(caddy.Log(), 0)
-	ts.closeWriteTimeout = 10 * time.Millisecond
+	shortenCloseControlWriteTimeout(t)
 	ts.registerConnection(conn, func(deadline time.Time) error {
 		return writeCloseControl(conn, false, deadline)
 	}, false, "upstream")
@@ -688,7 +704,7 @@ func TestHandlerCleanupUsesOneDeadlinePerBatch(t *testing.T) {
 	// The close loop is serial and holds the tracker lock, so a deadline per
 	// connection would let every stalled peer add another full timeout.
 	ts := newTunnelTracker(caddy.Log(), 0)
-	ts.closeWriteTimeout = 10 * time.Millisecond
+	shortenCloseControlWriteTimeout(t)
 	var deadlines []time.Time
 	for range 2 {
 		conn := newStalledWebsocketPeer(t)
@@ -712,11 +728,11 @@ func TestUpstreamRemovalUsesOneDeadlineAcrossTrackers(t *testing.T) {
 	// close loop holds its own lock, so a deadline per tracker would let
 	// every tracker with a stalled peer add another full timeout.
 	const upstream = "upstream-removal-one-deadline"
+	shortenCloseControlWriteTimeout(t)
 	var deadlines []time.Time
 	var trackers []*tunnelTracker
 	for range 2 {
 		ts := newTunnelTracker(caddy.Log(), 0)
-		ts.closeWriteTimeout = 10 * time.Millisecond
 		registerDetachedTunnelTrackers(ts)
 		t.Cleanup(func() { unregisterDetachedTunnelTrackers(ts) })
 		conn := newStalledWebsocketPeer(t)
@@ -789,67 +805,10 @@ func TestHandlerUpgradeBoundsUpstreamCloseMessage(t *testing.T) {
 	// net/http hands upgraded HTTP/1 bodies back inside a type that hides the
 	// socket's deadline methods, so without the connection recorded during
 	// the round trip the close message to the upstream would be skipped.
-	srvc := make(chan net.Conn, 1)
-	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, _, err := http.NewResponseController(w).Hijack()
-		if err != nil {
-			t.Errorf("backend hijack failed: %v", err)
-			return
-		}
-		if _, err := io.WriteString(conn, "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n"); err != nil {
-			conn.Close()
-			t.Errorf("backend upgrade write failed: %v", err)
-			return
-		}
-		srvc <- conn
-	}))
-	defer backend.Close()
-
-	h := minimalHandler(0, &Upstream{
-		Host: new(Host),
-		Dial: backend.Listener.Addr().String(),
-	})
-	h.tunnelTracker = newTunnelTracker(caddy.Log(), 0)
-	initReverseProxyMetrics(h, prometheus.NewRegistry())
-
-	frontend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r = r.WithContext(context.WithoutCancel(r.Context()))
-		_ = h.ServeHTTP(w, prepareTestRequest(r), caddyhttp.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
-			return nil
-		}))
-	}))
-	defer frontend.Close()
-
-	cli, err := net.Dial("tcp", frontend.Listener.Addr().String())
-	if err != nil {
-		t.Fatalf("failed to dial frontend: %v", err)
-	}
-	defer cli.Close()
+	h, cli, srv := newUpgradedTunnel(t)
 	if err := cli.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
 		t.Fatal(err)
 	}
-
-	req, _ := http.NewRequest(http.MethodGet, frontend.URL, nil)
-	req.Header.Set("Connection", "Upgrade")
-	req.Header.Set("Upgrade", "websocket")
-	if err := req.Write(cli); err != nil {
-		t.Fatalf("failed to write upgrade request: %v", err)
-	}
-	resp, err := http.ReadResponse(bufio.NewReader(cli), &http.Request{Method: http.MethodGet})
-	if err != nil {
-		t.Fatalf("failed to read upgrade response: %v", err)
-	}
-	if resp.StatusCode != http.StatusSwitchingProtocols {
-		t.Fatalf("status = %d, want 101", resp.StatusCode)
-	}
-
-	var srv net.Conn
-	select {
-	case srv = <-srvc:
-	case <-time.After(10 * time.Second):
-		t.Fatal("timed out waiting for the backend connection")
-	}
-	defer srv.Close()
 	if err := srv.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
 		t.Fatal(err)
 	}
@@ -907,7 +866,7 @@ func TestUpstreamWriteCloser(t *testing.T) {
 				recorded.Store(&tc.recorded)
 			}
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
-			req = req.WithContext(context.WithValue(req.Context(), upstreamConnCtxKey{}, recorded))
+			req = req.WithContext(context.WithValue(req.Context(), upstreamConnCtxKey, recorded))
 			res := &http.Response{ProtoMajor: tc.protoMajor}
 			if got := upstreamWriteCloser(req, res, body); got != tc.want {
 				t.Errorf("upstreamWriteCloser() = %v, want %v", got, tc.want)
