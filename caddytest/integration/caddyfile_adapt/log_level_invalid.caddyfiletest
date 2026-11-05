@@ -1,0 +1,5 @@
+:80
+
+log_level INVALID
+----------
+invalid log level "INVALID": expected DEBUG, INFO, WARN, or ERROR

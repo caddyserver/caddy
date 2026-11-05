@@ -65,6 +65,30 @@ func fakeRequest() *http.Request {
 	return r
 }
 
+func TestStaticResponseHeadersWithAbsentRequestData(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req = req.WithContext(context.WithValue(req.Context(), VarsCtxKey, map[string]any{}))
+	NewTestReplacer(req)
+	response := StaticResponse{Headers: http.Header{
+		"Location":  []string{"/login?session={http.request.cookie.session}"},
+		"X-Tls":     []string{"before-{http.request.tls.server_name}-after"},
+		"X-Unknown": []string{"before-{unknown}-after"},
+	}}
+	w := httptest.NewRecorder()
+	if err := response.ServeHTTP(w, req, nil); err != nil {
+		t.Fatal(err)
+	}
+	for field, want := range map[string]string{
+		"Location":  "/login?session=",
+		"X-Tls":     "before--after",
+		"X-Unknown": "before-{unknown}-after",
+	} {
+		if got := w.Header().Get(field); got != want {
+			t.Errorf("%s = %q, want %q", field, got, want)
+		}
+	}
+}
+
 func TestStaticResponseHeadersKeepUnknownPlaceholders(t *testing.T) {
 	r := fakeRequest()
 	w := httptest.NewRecorder()

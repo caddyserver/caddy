@@ -1,0 +1,27 @@
+{
+	servers {
+		timeouts {
+			read_body_idle -1s
+			write_idle -1s
+		}
+	}
+}
+
+:80 {
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"read_idle_timeout": -1000000000,
+					"write_idle_timeout": -1000000000
+				}
+			}
+		}
+	}
+}

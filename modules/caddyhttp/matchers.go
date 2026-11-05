@@ -29,10 +29,14 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
-	"github.com/google/cel-go/cel"
-	"github.com/google/cel-go/common/types"
-	"github.com/google/cel-go/common/types/ref"
+	"cel.dev/cel-go/cel"
+	"cel.dev/cel-go/common"
+	"cel.dev/cel-go/common/ast"
+	"cel.dev/cel-go/common/types"
+	"cel.dev/cel-go/common/types/ref"
+	"cel.dev/cel-go/parser"
 	"golang.org/x/net/idna"
 
 	"github.com/caddyserver/caddy/v2"
@@ -92,13 +96,10 @@ type (
 	//
 	// Even though wildcards (`*`) operate in the normalized space, the special
 	// escaped wildcard (`%*`), which is not a valid escape sequence, may be
-	// used in place of a span that should NOT be decoded; that is, `/bands/%*`
-	// will match `/bands/AC%2fDC` whereas `/bands/*` will not.
-	//
-	// Even though path matching is done in normalized space, the special
-	// wildcard `%*` may be used in place of a span that should NOT be decoded;
-	// that is, `/bands/%*/` will match `/bands/AC%2fDC/` whereas `/bands/*/`
-	// will not.
+	// used in place of a span that should NOT be decoded; that is, `/bands/%*/`
+	// will match `/bands/AC%2fDC/` whereas `/bands/*/` will not. Note that a
+	// pattern ending in a bare trailing wildcard, such as `/bands/*`, is a
+	// prefix match in normalized space, so it does match `/bands/AC%2fDC`.
 	//
 	// This matcher is fast, so it does not support regular expressions or
 	// capture groups. For slower but more powerful matching, use the
@@ -406,7 +407,10 @@ func (MatchPath) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-// Provision lower-cases the paths in m to ensure case-insensitive matching.
+// Provision lower-cases the static paths in m to ensure case-insensitive
+// matching. Paths with placeholders are left untouched, since placeholder
+// names can be case-sensitive (e.g. environment variables); they are
+// lower-cased after replacement, at request time.
 func (m MatchPath) Provision(_ caddy.Context) error {
 	for i := range m {
 		if m[i] == "*" && i > 0 {
@@ -414,7 +418,9 @@ func (m MatchPath) Provision(_ caddy.Context) error {
 			m[0] = m[i]
 			break
 		}
-		m[i] = strings.ToLower(m[i])
+		if !strings.Contains(m[i], "{") {
+			m[i] = strings.ToLower(m[i])
+		}
 	}
 	return nil
 }
@@ -438,7 +444,9 @@ func (m MatchPath) MatchWithError(r *http.Request) (bool, error) {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	for _, matchPattern := range m {
-		matchPattern = repl.ReplaceAll(matchPattern, "")
+		if strings.Contains(matchPattern, "{") {
+			matchPattern = strings.ToLower(repl.ReplaceAll(matchPattern, ""))
+		}
 
 		// special case: whole path is wildcard; this is unnecessary
 		// as it matches all requests, which is the same as no matcher
@@ -544,6 +552,7 @@ func (MatchPath) matchPatternWithEscapeSequence(escapedPath, matchPath string) b
 	// of the path, then switching to the escaped parts where
 	// the pattern hints to us wherever % is present.
 	var sb strings.Builder
+	sb.Grow(len(escapedPath))
 
 	// iterate the pattern and escaped path in lock-step;
 	// increment iPattern every time we consume a char from the pattern,
@@ -662,6 +671,18 @@ var windowsEscapedPathSeparatorRepl = strings.NewReplacer(
 	"%5C", "%2f",
 )
 
+// NormalizedPath returns a decoded request path in the form the path matchers
+// evaluate it: rewritten the way the Windows filesystem resolves it (a no-op on
+// other platforms), then cleaned. Consumers that act on a path a matcher has
+// already judged should derive it with this, so the two cannot disagree about
+// which resource a request names. An empty path is returned unchanged.
+func NormalizedPath(p string, mergeSlashes bool) string {
+	if p == "" {
+		return ""
+	}
+	return CleanPath(normalizeWindowsPath(p), mergeSlashes)
+}
+
 // normalizeWindowsPath rewrites a decoded request path the way the Windows
 // filesystem resolves it, so that path matchers (both `path` and `path_regexp`)
 // cannot be bypassed on Windows: backslashes are treated as path separators,
@@ -682,6 +703,57 @@ func normalizeWindowsPath(p string) string {
 		segments[i] = strings.TrimRight(s, ". ")
 	}
 	return strings.Join(segments, "/")
+}
+
+const windowsShortNamePunctuation = "$%'-_@~`!(){}^#&"
+
+// possibleWindowsShortNamePart reports whether s could be part of an 8.3
+// alias. Extended characters are allowed when Windows' allowextchar behavior
+// is enabled, so non-ASCII characters must be accepted here to fail closed.
+func possibleWindowsShortNamePart(s string) bool {
+	for _, c := range s {
+		if c >= utf8.RuneSelf ||
+			(c >= 'a' && c <= 'z') ||
+			(c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9') ||
+			strings.ContainsRune(windowsShortNamePunctuation, c) {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+// HasWindowsShortName reports whether any component of p has the syntax of an
+// NTFS 8.3 short name. Both slash types separate components on Windows, which
+// also ignores trailing dots and spaces in each component.
+func HasWindowsShortName(p string) bool {
+	for _, component := range strings.FieldsFunc(p, func(r rune) bool {
+		return r == '/' || r == '\\'
+	}) {
+		component = strings.TrimRight(component, ". ")
+		base, extension, hasExtension := strings.Cut(component, ".")
+		if utf8.RuneCountInString(base) > 8 || !possibleWindowsShortNamePart(base) ||
+			(hasExtension && (utf8.RuneCountInString(extension) > 3 || !possibleWindowsShortNamePart(extension))) {
+			continue
+		}
+
+		tilde := strings.LastIndexByte(base, '~')
+		if tilde <= 0 || tilde == len(base)-1 {
+			continue
+		}
+		shortNameNumber := base[tilde+1:]
+		for _, c := range shortNameNumber {
+			if c < '0' || c > '9' {
+				shortNameNumber = ""
+				break
+			}
+		}
+		if shortNameNumber != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // normalizeWindowsEscapedPath applies the same Windows normalization as
@@ -828,6 +900,13 @@ func (m MatchPathRE) MatchWithError(r *http.Request) (bool, error) {
 // Example:
 //
 //	expression path_regexp('^/bar')
+//
+// The pattern is a CEL string literal, so CEL's own escape sequences
+// (e.g. \b, \n, \t) are interpreted before the result reaches the regexp
+// engine. A pattern that needs a literal backslash escape meant for the
+// regexp engine, such as \b for a word boundary, should be written as a
+// CEL raw string (prefixed with r) so CEL passes the backslash through
+// unchanged: expression path_regexp(r'^/bar\b').
 func (MatchPathRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 	unnamedPattern, err := CELMatcherImpl(
 		"path_regexp",
@@ -1294,6 +1373,15 @@ func (m MatchHeaderRE) Validate() error {
 // Example:
 //
 //	expression header_regexp('foo', 'Field', 'fo+')
+//
+// The pattern is a CEL string literal, so CEL's own escape sequences
+// (e.g. \b, \n, \t) are interpreted before the result reaches the regexp
+// engine. A pattern that needs a literal backslash escape meant for the
+// regexp engine, such as \b for a word boundary, should be written as a
+// CEL raw string (prefixed with r) so CEL passes the backslash through
+// unchanged: expression header_regexp('foo', 'User-Agent', r'bot\b').
+// Without the r prefix, \b is interpreted by CEL as a backspace
+// character before the regexp engine ever sees the pattern.
 func (MatchHeaderRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 	unnamedPattern, err := CELMatcherImpl(
 		"header_regexp",
@@ -1480,6 +1568,60 @@ func (m *MatchTLS) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		}
 	}
 	return nil
+}
+
+// CELLibrary produces options that expose this matcher for use in CEL
+// expression matchers. It mirrors the three states the Caddyfile `tls`
+// matcher itself supports: bare `tls` (any TLS connection, regardless of
+// handshake completion), `tls early_data` (handshake not yet complete), and
+// the otherwise-implicit "handshake complete" case. `tls()` is sugar for
+// `tls('any')`; both spellings are equivalent and supported.
+//
+// Example:
+//
+//	expression tls() && !tls('early_data')
+func (MatchTLS) CELLibrary(ctx caddy.Context) (cel.Library, error) {
+	const funcName = "tls_request_string"
+	factory := func(data ref.Val) (RequestMatcherWithError, error) {
+		str, ok := data.(types.String)
+		if !ok {
+			return nil, errors.New("tls argument was not a string")
+		}
+		switch string(str) {
+		case "any":
+			// Also reachable directly as tls('any'), not just via the
+			// zero-arg tls() macro below -- both are valid and equivalent.
+			return MatchTLS{}, nil
+		case "complete":
+			complete := true
+			return MatchTLS{HandshakeComplete: &complete}, nil
+		case "early_data":
+			complete := false
+			return MatchTLS{HandshakeComplete: &complete}, nil
+		default:
+			return nil, fmt.Errorf("tls argument must be 'any', 'complete', or 'early_data', got %q", str)
+		}
+	}
+
+	// tls() is sugar for tls('any'): it expands to the same 2-arg call the
+	// one-argument form produces, just with the argument injected by the
+	// macro itself instead of typed out by the caller.
+	zeroArgMacro := parser.NewGlobalMacro("tls", 0,
+		func(eh cel.MacroExprFactory, target ast.Expr, args []ast.Expr) (ast.Expr, *common.Error) {
+			return eh.NewCall(funcName, eh.NewIdent(CELRequestVarName), eh.NewLiteral(types.String("any"))), nil
+		})
+	oneArgMacro := parser.NewGlobalMacro("tls", 1, celMatcherStringMacroExpander(funcName))
+
+	envOptions := []cel.EnvOption{
+		cel.Macros(zeroArgMacro, oneArgMacro),
+		cel.Function(funcName,
+			cel.Overload(funcName, []*cel.Type{cel.ObjectType("http.Request"), cel.StringType}, cel.BoolType),
+			cel.SingletonBinaryBinding(CELMatcherRuntimeFunction(funcName, factory))),
+	}
+	programOptions := []cel.ProgramOption{
+		cel.CustomDecorator(CELMatcherDecorator(funcName, factory)),
+	}
+	return NewMatcherCELLibrary(envOptions, programOptions), nil
 }
 
 // CaddyModule returns the Caddy module information.
@@ -1787,6 +1929,7 @@ var (
 	_ CELLibraryProducer = (*MatchHeader)(nil)
 	_ CELLibraryProducer = (*MatchHeaderRE)(nil)
 	_ CELLibraryProducer = (*MatchProtocol)(nil)
+	_ CELLibraryProducer = (*MatchTLS)(nil)
 	_ CELLibraryProducer = (*VarsMatcher)(nil)
 	_ CELLibraryProducer = (*MatchVarsRE)(nil)
 

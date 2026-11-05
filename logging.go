@@ -550,7 +550,12 @@ func (cl *CustomLog) loggerAllowed(name string, isModule bool) bool {
 		for _, namespace := range cl.Include {
 			var hasPrefix bool
 			if isModule {
-				hasPrefix = strings.HasPrefix(namespace+".", name)
+				// the namespace is the module or one of its
+				// sub-loggers (e.g. "http.log.access" for "http")
+				hasPrefix = strings.HasPrefix(namespace+".", name) ||
+					// the namespace is a parent of the module (e.g.
+					// "http.handlers" for "http.handlers.file_server")
+					strings.HasPrefix(name, namespace+".")
 			} else {
 				hasPrefix = strings.HasPrefix(name, namespace+".")
 			}
@@ -795,6 +800,19 @@ func BufferedLog() (*zap.Logger, *zap.Logger, *internal.LogBufferCore) {
 	bufferCore := internal.NewLogBufferCore(zap.InfoLevel)
 	defaultLogger.logger = zap.New(bufferCore)
 	return defaultLogger.logger, origLogger, bufferCore
+}
+
+// UnbufferDefaultLogger restores the default logger's underlying zap.Logger to orig
+// if the default logger is still pointing to a buffer core, flushing any remaining buffered logs.
+func UnbufferDefaultLogger(orig *zap.Logger) {
+	defaultLoggerMu.Lock()
+	defer defaultLoggerMu.Unlock()
+	if defaultLogger != nil && defaultLogger.logger != nil {
+		if bufferCore, ok := defaultLogger.logger.Core().(*internal.LogBufferCore); ok {
+			bufferCore.FlushTo(orig)
+			defaultLogger.logger = orig
+		}
+	}
 }
 
 var (

@@ -131,6 +131,41 @@ func TestWeightedRoundRobinPolicy(t *testing.T) {
 	}
 }
 
+func TestWeightedRoundRobinPolicyFewerWeightsThanUpstreams(t *testing.T) {
+	pool := testPool()
+	wrrPolicy := WeightedRoundRobinSelection{
+		Weights:     []int{1, 1},
+		totalWeight: 2,
+	}
+	req, _ := http.NewRequest("GET", "/", nil)
+
+	pool[0].setHealthy(false)
+	for i := 0; i < 4; i++ {
+		h := wrrPolicy.Select(pool, req, nil)
+		if h != pool[1] {
+			t.Fatalf("Selection %d: got %v, want the only available weighted host %v", i+1, h, pool[1])
+		}
+	}
+}
+
+func TestWeightedRoundRobinPolicySingleWeight(t *testing.T) {
+	pool := testPool()
+	wrrPolicy := WeightedRoundRobinSelection{
+		Weights:     []int{1},
+		totalWeight: 1,
+	}
+	req, _ := http.NewRequest("GET", "/", nil)
+
+	if h := wrrPolicy.Select(pool, req, nil); h != pool[0] {
+		t.Errorf("got %v, want the only weighted host %v", h, pool[0])
+	}
+
+	pool[0].setHealthy(false)
+	if h := wrrPolicy.Select(pool, req, nil); h != nil {
+		t.Errorf("got %v, want nil when the only weighted host is unavailable", h)
+	}
+}
+
 func TestWeightedRoundRobinSelection_Validate(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -696,6 +731,19 @@ func TestLeastRequests(t *testing.T) {
 
 	if result != pool[0] {
 		t.Error("Least request should return pool[0]")
+	}
+}
+
+func TestLeastRequestsAllBusy(t *testing.T) {
+	pool := testPool()
+	pool[0].countRequest(30)
+	pool[1].countRequest(1)
+	pool[2].countRequest(20)
+
+	for i := 0; i < 100; i++ {
+		if result := leastRequests(pool); result != pool[1] {
+			t.Fatalf("iteration %d: got %v, want the least loaded host %v", i, result, pool[1])
+		}
 	}
 }
 

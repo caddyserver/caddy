@@ -111,6 +111,36 @@ func init() {
 		return caddyhttp.StaticError{StatusCode: "500"}, nil
 	})
 	RegisterDirectiveOrder("test_ordered_plugin", Before, "respond")
+
+	RegisterHandlerDirective("test_named_route", func(h Helper) (caddyhttp.MiddlewareHandler, error) {
+		h.Next()
+		body := "site"
+		if h.IsNamedRoute() {
+			body = "named"
+		}
+		return caddyhttp.StaticResponse{Body: body}, nil
+	})
+	RegisterDirectiveOrder("test_named_route", Before, "respond")
+}
+
+func TestHelperIsNamedRoute(t *testing.T) {
+	adapted := adaptCaddyfile(t, `&(shared) {
+	handle /nested {
+		test_named_route
+	}
+}
+
+:8080 {
+	test_named_route
+	invoke shared
+}
+`)
+
+	for _, body := range []string{`"body":"named"`, `"body":"site"`} {
+		if !strings.Contains(adapted, body) {
+			t.Errorf("expected %s in the adapted config: %s", body, adapted)
+		}
+	}
 }
 
 // caddyfiles shared by the directive order tests below. the handle block in

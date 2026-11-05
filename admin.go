@@ -45,7 +45,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"golang.org/x/net/http/httpguts"
 
+	"github.com/caddyserver/caddy/v2/caddyconfig/warning"
 	"github.com/caddyserver/caddy/v2/internal"
 )
 
@@ -678,6 +680,10 @@ func (ctx Context) IdentityCredentials(logger *zap.Logger) ([]tls.Certificate, e
 // trust, and then looks for a matching, authorized public key that is allowed to access
 // the defined path(s) using the defined method(s).
 func (remote RemoteAdmin) enforceAccessControls(r *http.Request) error {
+	// the same public key may appear in more than one access control entry;
+	// the request is allowed if any entry containing the key permits it
+	var keyRecognized, pathAllowedSomewhere bool
+
 	for _, chain := range r.TLS.VerifiedChains {
 		for _, peerCert := range chain {
 			for _, adminAccess := range remote.AccessControl {
@@ -690,18 +696,15 @@ func (remote RemoteAdmin) enforceAccessControls(r *http.Request) error {
 					if !ok || !comparer.Equal(allowedKey) {
 						continue
 					}
+					keyRecognized = true
 
 					// key recognized; make sure its HTTP request is permitted
+					// by at least one of the permission entries (if none are
+					// configured, all permissions are granted)
+					if len(adminAccess.Permissions) == 0 {
+						return nil
+					}
 					for _, accessPerm := range adminAccess.Permissions {
-						// verify method
-						methodFound := accessPerm.Methods == nil || slices.Contains(accessPerm.Methods, r.Method)
-						if !methodFound {
-							return APIError{
-								HTTPStatus: http.StatusForbidden,
-								Message:    "not authorized to use this method",
-							}
-						}
-
 						// verify path
 						pathFound := accessPerm.Paths == nil
 						for _, allowedPath := range accessPerm.Paths {
@@ -711,17 +714,37 @@ func (remote RemoteAdmin) enforceAccessControls(r *http.Request) error {
 							}
 						}
 						if !pathFound {
-							return APIError{
-								HTTPStatus: http.StatusForbidden,
-								Message:    "not authorized to access this path",
-							}
+							continue
+						}
+						pathAllowedSomewhere = true
+
+						// verify method
+						if accessPerm.Methods == nil || slices.Contains(accessPerm.Methods, r.Method) {
+							// public key authorized, method and path allowed
+							return nil
 						}
 					}
 
-					// public key authorized, method and path allowed
-					return nil
+					// this entry does not permit the request; other entries
+					// containing the same key may
+					break
 				}
 			}
+		}
+	}
+
+	if keyRecognized {
+		// no entry allows this request; if the path is allowed by
+		// some entry, the method is what's missing
+		if pathAllowedSomewhere {
+			return APIError{
+				HTTPStatus: http.StatusForbidden,
+				Message:    "not authorized to use this method",
+			}
+		}
+		return APIError{
+			HTTPStatus: http.StatusForbidden,
+			Message:    "not authorized to access this path",
 		}
 	}
 
@@ -1084,7 +1107,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) error {
 			body = buf.Bytes()
 		}
 
-		forceReload := r.Header.Get("Cache-Control") == "must-revalidate"
+		forceReload := httpguts.HeaderValuesContainsToken(r.Header["Cache-Control"], "must-revalidate")
 
 		err := changeConfig(r.Method, r.URL.Path, body, r.Header.Get("If-Match"), forceReload)
 		if err != nil && !errors.Is(err, errSameConfig) {
@@ -1394,9 +1417,10 @@ func (f AdminHandlerFunc) ServeHTTP(w http.ResponseWriter, r *http.Request) erro
 // and client responses. If Message is unset, then
 // Err.Error() will be serialized in its place.
 type APIError struct {
-	HTTPStatus int    `json:"-"`
-	Err        error  `json:"-"`
-	Message    string `json:"error"`
+	HTTPStatus int               `json:"-"`
+	Err        error             `json:"-"`
+	Message    string            `json:"error"`
+	Warnings   []warning.Warning `json:"warnings,omitempty"`
 }
 
 func (e APIError) Error() string {
