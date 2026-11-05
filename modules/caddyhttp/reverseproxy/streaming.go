@@ -147,12 +147,12 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 		brw = bufio.NewReadWriter(bufio.NewReaderSize(conn, 1), bufio.NewWriterSize(conn, 1))
 	} else {
 		if h.StreamDetached {
-			detached = caddyhttp.DetachResponseWriterAfterHijack(rw, true)
+			detached = caddyhttp.DetachResponseWriterAfterHijack(rw, req, true)
 			if !detached {
 				// Some outer writers may have accepted detachment before an
 				// inner writer refused it. Restore attached byte accounting
 				// and keep the handler running for the lifetime of the tunnel.
-				caddyhttp.DetachResponseWriterAfterHijack(rw, false)
+				caddyhttp.DetachResponseWriterAfterHijack(rw, req, false)
 				if c := logger.Check(zap.DebugLevel, "detaching connection failed; keeping stream attached"); c != nil {
 					c.Write(zap.String("tip", "check if your response writers have an Unwrap method or if already hijacked"))
 				}

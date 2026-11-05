@@ -389,6 +389,18 @@ func TestPHPFileMatcher(t *testing.T) {
 			matched:      true,
 		},
 		{
+			path:         "/foo.php.php/",
+			expectedPath: "/foo.php.php/index.php",
+			expectedType: "file",
+			matched:      true,
+		},
+		{
+			path:         "/foo.php.php/./",
+			expectedPath: "/foo.php.php/index.php",
+			expectedType: "file",
+			matched:      true,
+		},
+		{
 			// See https://github.com/caddyserver/caddy/issues/3623
 			path:         "/%E2%C3",
 			expectedPath: "/%E2%C3",

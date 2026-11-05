@@ -1,6 +1,7 @@
 package reverseproxy
 
 import (
+	"encoding/base64"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp/headers"
 )
 
 type extendedConnectCapture struct {
@@ -142,5 +144,161 @@ func TestServeHTTPRewritesExtendedConnectWebsocketRequest(t *testing.T) {
 				t.Fatalf("extended_connect_websocket_body = %q, want %q", string(captured.extendedConnectBody), payload)
 			}
 		})
+	}
+}
+
+func TestServeHTTPRewritesExtendedConnectWebsocketSecWebSocketKeyMatrix(t *testing.T) {
+	const clientKey = "dGhlIHNhbXBsZSBub25jZQ=="
+
+	protoCases := []struct {
+		protoName  string
+		protoMajor int
+		proto      string
+		headers    map[string]string
+	}{
+		{
+			protoName:  "h2",
+			protoMajor: 2,
+			proto:      "HTTP/2.0",
+			headers: map[string]string{
+				":protocol": "websocket",
+			},
+		},
+		{
+			protoName:  "h3",
+			protoMajor: 3,
+			proto:      "websocket",
+			headers:    map[string]string{},
+		},
+	}
+
+	headerOpCases := []struct {
+		opName       string
+		userOps      *headers.HeaderOps
+		transportOps *headers.HeaderOps
+	}{
+		{
+			opName: "no header ops",
+		},
+		{
+			opName: "user ops",
+			userOps: &headers.HeaderOps{
+				Set: http.Header{"X-User-Op": []string{"yes"}},
+			},
+		},
+		{
+			opName: "transport ops",
+			transportOps: &headers.HeaderOps{
+				Set: http.Header{"X-Transport-Op": []string{"yes"}},
+			},
+		},
+		{
+			opName: "both user and transport ops",
+			userOps: &headers.HeaderOps{
+				Set: http.Header{"X-User-Op": []string{"yes"}},
+			},
+			transportOps: &headers.HeaderOps{
+				Set: http.Header{"X-Transport-Op": []string{"yes"}},
+			},
+		},
+	}
+
+	clientKeyCases := []struct {
+		clientKeyName string
+		sendClientKey bool
+	}{
+		{
+			clientKeyName: "client sent key",
+			sendClientKey: true,
+		},
+		{
+			clientKeyName: "client without key",
+			sendClientKey: false,
+		},
+	}
+
+	for _, pc := range protoCases {
+		for _, hoc := range headerOpCases {
+			for _, ckc := range clientKeyCases {
+				testName := pc.protoName + "/" + hoc.opName + "/" + ckc.clientKeyName
+				t.Run(testName, func(t *testing.T) {
+					transport := new(extendedConnectCaptureTransport)
+					h := &Handler{
+						logger:    zap.NewNop(),
+						Transport: transport,
+						Upstreams: UpstreamPool{
+							&Upstream{Host: new(Host), Dial: "127.0.0.1:8443"},
+						},
+						LoadBalancing: &LoadBalancing{
+							SelectionPolicy: &RoundRobinSelection{},
+						},
+						transportHeaderOps: hoc.transportOps,
+					}
+					if hoc.userOps != nil {
+						h.Headers = &headers.Handler{
+							Request: hoc.userOps,
+						}
+					}
+
+					req := httptest.NewRequest(http.MethodConnect, "http://example.test/upgrade", strings.NewReader("ws-data"))
+					req.ProtoMajor = pc.protoMajor
+					req.Proto = pc.proto
+					for k, v := range pc.headers {
+						req.Header.Set(k, v)
+					}
+					if ckc.sendClientKey {
+						req.Header.Set("Sec-WebSocket-Key", clientKey)
+					}
+					req = prepareTestRequest(req)
+
+					rr := httptest.NewRecorder()
+					err := h.ServeHTTP(rr, req, caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+						return nil
+					}))
+					if err != nil {
+						t.Fatalf("ServeHTTP() error = %v", err)
+					}
+
+					captured := transport.Snapshot()
+
+					// Collect all Sec-WebSocket-Key values across canonical and non-canonical headers
+					var keyValues []string
+					for k, v := range captured.headers {
+						if strings.EqualFold(k, "Sec-WebSocket-Key") {
+							keyValues = append(keyValues, v...)
+						}
+					}
+
+					if len(keyValues) != 1 {
+						t.Fatalf("expected exactly 1 Sec-WebSocket-Key value, got %d: %v (headers: %#v)",
+							len(keyValues), keyValues, captured.headers)
+					}
+
+					upstreamKey := keyValues[0]
+					if ckc.sendClientKey && upstreamKey == clientKey {
+						t.Fatalf("upstream Sec-WebSocket-Key was not replaced by generated key; still got client key %q", clientKey)
+					}
+
+					decoded, err := base64.StdEncoding.DecodeString(upstreamKey)
+					if err != nil {
+						t.Fatalf("upstream Sec-WebSocket-Key %q is not valid base64: %v", upstreamKey, err)
+					}
+					if len(decoded) != 16 {
+						t.Fatalf("upstream Sec-WebSocket-Key decoded length = %d, want 16 bytes", len(decoded))
+					}
+
+					if hoc.userOps != nil {
+						if got := captured.headers.Get("X-User-Op"); got != "yes" {
+							t.Fatalf("X-User-Op header = %q, want 'yes'", got)
+						}
+					}
+					if hoc.transportOps != nil {
+						if got := captured.headers.Get("X-Transport-Op"); got != "yes" {
+							t.Fatalf("X-Transport-Op header = %q, want 'yes'", got)
+						}
+					}
+				})
+			}
+		}
 	}
 }

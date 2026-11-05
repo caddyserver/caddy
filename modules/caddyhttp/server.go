@@ -1806,6 +1806,9 @@ func PrepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter
 func prepareRequest(r *http.Request, repl *caddy.Replacer, w http.ResponseWriter, s *Server, idle idleTimeouts) *http.Request {
 	// set up the context for the request
 	ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl)
+	if w != nil {
+		ctx = context.WithValue(ctx, responseWriterBoundaryCtxKey, w)
+	}
 	if idle.reader != nil || idle.writer != nil {
 		ctx = context.WithValue(ctx, idleTimeoutsCtxKey, idle)
 	}
