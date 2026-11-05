@@ -2,15 +2,19 @@ package reverseproxy
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -848,5 +852,123 @@ func TestSubrouteErrorFallbackWithBody(t *testing.T) {
 	expectedBody := "hello world"
 	if rec.Body.String() != expectedBody {
 		t.Errorf("body: got %q, want %q", rec.Body.String(), expectedBody)
+	}
+}
+
+// TestTryAgainDialErrorBehindForwardProxy verifies that tryAgain recognizes
+// a DialError even when it is wrapped. When a forward proxy is configured,
+// net/http wraps dial errors in a *net.OpError with Op "proxyconnect", and
+// the DialError produced by our dialer ends up inside it. Errors that do not
+// contain a DialError must still not be retried for non-GET requests, since
+// the request may have reached the proxy or the upstream.
+func TestTryAgainDialErrorBehindForwardProxy(t *testing.T) {
+	dialErr := DialError{errors.New("dial tcp 127.0.0.1:3128: connect: connection refused")}
+
+	for i, tc := range []struct {
+		name   string
+		err    error
+		method string
+		want   bool
+	}{
+		{
+			name:   "unwrapped dial error",
+			err:    dialErr,
+			method: http.MethodPost,
+			want:   true,
+		},
+		{
+			name:   "dial error wrapped by forward proxy",
+			err:    &net.OpError{Op: "proxyconnect", Net: "tcp", Err: dialErr},
+			method: http.MethodPost,
+			want:   true,
+		},
+		{
+			name:   "dial error wrapped with fmt.Errorf",
+			err:    fmt.Errorf("round trip: %w", dialErr),
+			method: http.MethodPost,
+			want:   true,
+		},
+		{
+			name:   "proxyconnect error without a dial error",
+			err:    &net.OpError{Op: "proxyconnect", Net: "tcp", Err: errors.New("Bad Gateway")},
+			method: http.MethodPost,
+			want:   false,
+		},
+		{
+			name:   "non-dial error",
+			err:    errors.New("read: connection reset by peer"),
+			method: http.MethodPost,
+			want:   false,
+		},
+		{
+			name:   "non-dial error on GET",
+			err:    errors.New("read: connection reset by peer"),
+			method: http.MethodGet,
+			want:   true,
+		},
+	} {
+		lb := LoadBalancing{Retries: 1}
+		req := httptest.NewRequest(tc.method, "http://example.com/", nil)
+
+		got := lb.tryAgain(caddy.Context{}, time.Now(), 0, tc.err, req, zap.NewNop())
+		if got != tc.want {
+			t.Errorf("Test %d (%s): expected tryAgain=%t, got %t", i, tc.name, tc.want, got)
+		}
+	}
+}
+
+// TestForwardProxyDialErrorRetried verifies end-to-end that when the
+// configured forward proxy cannot be reached, a non-GET request is retried
+// just like a GET request, because no connection was ever established.
+// It uses a real HTTPTransport so that the error is wrapped exactly as
+// net/http does in production.
+func TestForwardProxyDialErrorRetried(t *testing.T) {
+	deadProxy := deadUpstreamAddr(t)
+
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		t.Run(method, func(t *testing.T) {
+			ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+			defer cancel()
+
+			ht := &HTTPTransport{
+				NetworkProxyRaw: json.RawMessage(fmt.Sprintf(`{"from": "url", "url": "http://%s"}`, deadProxy)),
+			}
+			if err := ht.Provision(ctx); err != nil {
+				t.Fatalf("provisioning transport: %v", err)
+			}
+
+			// each round trip consults the proxy function exactly once,
+			// so counting calls counts the attempts made by the handler
+			var attempts atomic.Int32
+			proxyFunc := ht.Transport.Proxy
+			ht.Transport.Proxy = func(r *http.Request) (*url.URL, error) {
+				attempts.Add(1)
+				return proxyFunc(r)
+			}
+
+			h := minimalHandler(1,
+				&Upstream{Host: new(Host), Dial: "upstream-a.example.com:80"},
+				&Upstream{Host: new(Host), Dial: "upstream-b.example.com:80"},
+			)
+			h.Transport = ht
+
+			var body io.Reader
+			if method == http.MethodPost {
+				body = strings.NewReader("payload")
+			}
+			req := prepareTestRequest(httptest.NewRequest(method, "http://example.com/", body))
+
+			err := h.ServeHTTP(httptest.NewRecorder(), req, caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+				return nil
+			}))
+
+			var herr caddyhttp.HandlerError
+			if !errors.As(err, &herr) || herr.StatusCode != http.StatusBadGateway {
+				t.Fatalf("expected a 502 handler error, got %v", err)
+			}
+			if got := attempts.Load(); got != 2 {
+				t.Errorf("expected 2 attempts (1 try + 1 retry), got %d", got)
+			}
+		})
 	}
 }

@@ -98,6 +98,8 @@ func UnwrapResponseWriterAs[T any](w http.ResponseWriter) (T, bool) {
 
 func responseWriterPointer(w http.ResponseWriter) uintptr {
 	v := reflect.ValueOf(w)
+	// Only pointer-like kinds have stable identity.
+	//exhaustive:ignore
 	switch v.Kind() {
 	case reflect.Pointer, reflect.Map, reflect.Chan, reflect.Func, reflect.Slice, reflect.UnsafePointer:
 		if v.IsNil() {
@@ -408,31 +410,52 @@ func (hc *hijackedConn) ReadFrom(r io.Reader) (int64, error) {
 }
 
 // DetachResponseWriterAfterHijack configures w and its wrapped response
-// writers to detach when hijacked. It returns true if at least one writer
-// supports detachment and all such writers accept it. When detached,
-// bytes read or written stats will not be recorded for the hijacked
-// connection, and it's safe to use the connection after HTTP middleware returns.
-func DetachResponseWriterAfterHijack(w http.ResponseWriter, detached bool) bool {
-	found := false
-	for w != nil {
+// writers to detach when hijacked. It succeeds only if every detaching writer
+// accepts and the unwrap chain reaches the server-owned writer recorded on r.
+// When detached, bytes read or written stats will not be recorded for the
+// hijacked connection, and it's safe to use the connection after HTTP
+// middleware returns.
+func DetachResponseWriterAfterHijack(w http.ResponseWriter, r *http.Request, detached bool) bool {
+	if r == nil {
+		return false
+	}
+	boundaryWriter, _ := r.Context().Value(responseWriterBoundaryCtxKey).(http.ResponseWriter)
+	boundary := responseWriterPointer(boundaryWriter)
+	if boundary == 0 {
+		return false
+	}
+	seen := make(map[uintptr]struct{})
+	for range 64 {
+		if w == nil {
+			return false
+		}
+		pointer := responseWriterPointer(w)
+		if pointer != 0 {
+			if _, duplicate := seen[pointer]; duplicate {
+				return false
+			}
+			seen[pointer] = struct{}{}
+		}
 		if detacher, ok := w.(interface{ DetachAfterHijack(bool) bool }); ok {
 			if !detacher.DetachAfterHijack(detached) {
 				return false
 			}
-			found = true
+		}
+		if pointer == boundary {
+			return true
 		}
 		unwrapper, ok := w.(interface{ Unwrap() http.ResponseWriter })
 		if !ok {
-			return found
+			return false
 		}
-		next := unwrapper.Unwrap()
-		if next == w {
-			return found
-		}
-		w = next
+		w = unwrapper.Unwrap()
 	}
-	return found
+	return false
 }
+
+type responseWriterBoundaryCtxKeyType struct{}
+
+var responseWriterBoundaryCtxKey = responseWriterBoundaryCtxKeyType{}
 
 // ResponseRecorder is a http.ResponseWriter that records
 // responses instead of writing them to the client. See
