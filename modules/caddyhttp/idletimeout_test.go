@@ -1202,6 +1202,7 @@ func TestIdleTimeoutReaderOverrideSuspendsMinRate(t *testing.T) {
 // when it fires, even with no read in flight. The client isn't stalled:
 // it's held back by flow control while the handler isn't reading.
 func TestIdleTimeoutReaderPausedHandlerHTTP2(t *testing.T) {
+	const startupIdle = 5 * time.Second
 	const idle = 100 * time.Millisecond
 	const pause = 300 * time.Millisecond
 	const size = 4 << 20 // more than the HTTP/2 flow control window
@@ -1210,7 +1211,7 @@ func TestIdleTimeoutReaderPausedHandlerHTTP2(t *testing.T) {
 		reader := &IdleTimeoutReader{
 			ReadCloser:        r.Body,
 			Ctrl:              http.NewResponseController(w),
-			Deadline:          IdleDeadline{Start: time.Now(), Timeout: idle},
+			Deadline:          IdleDeadline{Start: time.Now(), Timeout: startupIdle},
 			Logger:            zap.NewNop(),
 			ClearBetweenReads: r.ProtoMajor == 2,
 		}
@@ -1220,6 +1221,9 @@ func TestIdleTimeoutReaderPausedHandlerHTTP2(t *testing.T) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		// Override re-arms the short deadline if the first read failed to release it.
+		restore := reader.Override(idle, 0)
+		defer restore()
 		time.Sleep(pause)
 		n, err := io.Copy(io.Discard, reader)
 		if err != nil {
