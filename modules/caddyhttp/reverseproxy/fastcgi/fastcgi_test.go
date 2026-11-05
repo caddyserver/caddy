@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -484,4 +485,165 @@ func TestBuildEnvDropsProxyHeader(t *testing.T) {
 
 		assert.Equal(t, "http://trusted.example:3128", env["HTTP_PROXY"])
 	})
+}
+
+// Over HTTP/2, net/http keeps a "host" field sent next to :authority in
+// r.Header; it must not replace HTTP_HOST, which comes from the routed r.Host.
+func TestBuildEnvIgnoresHostHeaderField(t *testing.T) {
+	t.Parallel()
+
+	for _, casing := range []string{"Host", "host"} {
+		t.Run("casing "+casing, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "http://example.com/index.php", nil)
+			r.Header = http.Header{casing: []string{"admin.example.com"}}
+			ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer())
+			ctx = context.WithValue(ctx, caddyhttp.VarsCtxKey, map[string]any{})
+			ctx = context.WithValue(ctx, caddyhttp.OriginalRequestCtxKey, *r)
+
+			env, err := Transport{}.buildEnv(r.WithContext(ctx))
+			require.NoError(t, err)
+
+			assert.Equal(t, "example.com", env["HTTP_HOST"])
+			assert.Equal(t, "example.com", env["SERVER_NAME"])
+		})
+	}
+}
+
+// A client header must not override an HTTP_* variable set with the env subdirective.
+func TestBuildEnvConfiguredVarsOverrideHeaders(t *testing.T) {
+	t.Parallel()
+
+	r := httptest.NewRequest(http.MethodGet, "http://example.com/index.php", nil)
+	r.Header.Set("X-Forwarded-Proto", "http")
+	r.Header.Set("X-Auth-User", "admin")
+	repl := caddy.NewReplacer()
+	repl.Set("http.auth.user.id", "alice")
+	ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl)
+	ctx = context.WithValue(ctx, caddyhttp.VarsCtxKey, map[string]any{})
+	ctx = context.WithValue(ctx, caddyhttp.OriginalRequestCtxKey, *r)
+
+	tr := Transport{EnvVars: map[string]string{
+		"HTTP_X_FORWARDED_PROTO": "https",
+		"HTTP_X_AUTH_USER":       "{http.auth.user.id}",
+	}}
+	env, err := tr.buildEnv(r.WithContext(ctx))
+	require.NoError(t, err)
+
+	assert.Equal(t, "https", env["HTTP_X_FORWARDED_PROTO"])
+	assert.Equal(t, "alice", env["HTTP_X_AUTH_USER"])
+}
+
+// A request path containing dot segments must not let the client select a
+// different script than the one every path matcher in the chain evaluated.
+// Matchers judge the cleaned path (see caddyhttp.MatchPath), so the transport
+// must derive SCRIPT_NAME/SCRIPT_FILENAME/PATH_INFO from the cleaned path too.
+// Before this was fixed, /admin.php/../../other.php was matched as /other.php
+// but executed <root>/admin.php.
+func TestBuildEnvDotSegmentsCannotSelectAnotherScript(t *testing.T) {
+	t.Parallel()
+
+	newRequest := func(target string) *http.Request {
+		r := httptest.NewRequest(http.MethodGet, target, nil)
+		ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer())
+		ctx = context.WithValue(ctx, caddyhttp.VarsCtxKey, map[string]any{})
+		ctx = context.WithValue(ctx, caddyhttp.OriginalRequestCtxKey, *r)
+		return r.WithContext(ctx)
+	}
+
+	for _, tc := range []struct {
+		name               string
+		target             string
+		expectedScriptName string
+		expectedPathInfo   string
+	}{
+		{
+			name:               "literal dot segments",
+			target:             "/admin.php/../../other.php",
+			expectedScriptName: "/other.php",
+			expectedPathInfo:   "",
+		},
+		{
+			name:               "single dot segment",
+			target:             "/admin.php/../other.php",
+			expectedScriptName: "/other.php",
+			expectedPathInfo:   "",
+		},
+		{
+			name:               "dot segments before legitimate path info",
+			target:             "/admin.php/../other.php/extra/path",
+			expectedScriptName: "/other.php",
+			expectedPathInfo:   "/extra/path",
+		},
+		{
+			name:               "no dot segments is unaffected",
+			target:             "/other.php/extra/path",
+			expectedScriptName: "/other.php",
+			expectedPathInfo:   "/extra/path",
+		},
+		{
+			// path.Clean("") is ".", which must not become the script name;
+			// an absolute-form request-target can leave URL.Path empty.
+			name:               "empty path stays empty",
+			target:             "http://example.com",
+			expectedScriptName: "",
+			expectedPathInfo:   "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			tr := Transport{Root: root, SplitPath: []string{".php"}}
+			env, err := tr.buildEnv(newRequest(tc.target))
+			require.NoError(t, err)
+
+			assert.Equal(t, tc.expectedScriptName, env["SCRIPT_NAME"],
+				"SCRIPT_NAME must come from the cleaned path")
+			assert.Equal(t, tc.expectedPathInfo, env["PATH_INFO"],
+				"PATH_INFO must come from the cleaned path")
+			if tc.expectedScriptName != "" {
+				assert.Equal(t, filepath.Join(root, filepath.FromSlash(tc.expectedScriptName)), env["SCRIPT_FILENAME"],
+					"SCRIPT_FILENAME must name the script the matchers evaluated")
+			}
+			assert.NotContains(t, env["SCRIPT_FILENAME"], "admin.php",
+				"a pre-clean path component must never become the executed script")
+		})
+	}
+}
+
+// Path matchers whose pattern contains "%" clean the escaped path, so
+// "/public/tool.php%2f..%2f..%2fadmin%2ftool.php" matches "path /public/%*"
+// while the decoded path selects admin/tool.php.
+func TestBuildEnvEscapedPathCannotSelectAnotherScript(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		target             string
+		wantErr            bool
+		expectedScriptName string
+	}{
+		{target: "/public/tool.php%2f..%2f..%2fadmin%2ftool.php", wantErr: true},
+		{target: "/admin.php/..%2f..%2fother.php", wantErr: true},
+		{target: "/admin.php/%2e%2e/other.php", wantErr: true},
+		{target: "/dir%2fscript.php/a", expectedScriptName: "/dir/script.php"},
+		{target: "/index.php/a%2f..%2fb", expectedScriptName: "/index.php"},
+		{target: "/index.php/a%2Fb", expectedScriptName: "/index.php"},
+	} {
+		t.Run(tc.target, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, tc.target, nil)
+			ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer())
+			ctx = context.WithValue(ctx, caddyhttp.VarsCtxKey, map[string]any{})
+			ctx = context.WithValue(ctx, caddyhttp.OriginalRequestCtxKey, *r)
+
+			tr := Transport{Root: t.TempDir(), SplitPath: []string{".php"}}
+			env, err := tr.buildEnv(r.WithContext(ctx))
+			if !tc.wantErr {
+				require.NoError(t, err)
+				assert.Equal(t, tc.expectedScriptName, env["SCRIPT_NAME"])
+				return
+			}
+
+			var herr caddyhttp.HandlerError
+			require.ErrorAs(t, err, &herr)
+			assert.Equal(t, http.StatusBadRequest, herr.StatusCode)
+		})
+	}
 }

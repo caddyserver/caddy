@@ -109,8 +109,9 @@ type ACMEIssuer struct {
 	// Forward proxy module
 	NetworkProxyRaw json.RawMessage `json:"network_proxy,omitempty" caddy:"namespace=caddy.network_proxy inline_key=from"`
 
-	rootPool *x509.CertPool
-	logger   *zap.Logger
+	rootPool  *x509.CertPool
+	logger    *zap.Logger
+	httpProxy func(*http.Request) (*url.URL, error)
 
 	template certmagic.ACMEIssuer  // set at Provision
 	magic    *certmagic.Config     // set at PreCheck
@@ -265,17 +266,20 @@ func (iss *ACMEIssuer) makeIssuerTemplate(ctx caddy.Context) (certmagic.ACMEIssu
 		Logger:            iss.logger,
 	}
 
+	// LoadModule clears NetworkProxyRaw, so keep the proxy for when the
+	// issuer is provisioned again (e.g. by the HTTP app's auto-HTTPS)
 	if len(iss.NetworkProxyRaw) != 0 {
 		proxyMod, err := ctx.LoadModule(iss, "NetworkProxyRaw")
 		if err != nil {
 			return template, fmt.Errorf("failed to load network_proxy module: %v", err)
 		}
 		if m, ok := proxyMod.(caddy.ProxyFuncProducer); ok {
-			template.HTTPProxy = m.ProxyFunc()
+			iss.httpProxy = m.ProxyFunc()
 		} else {
 			return template, fmt.Errorf("network_proxy module is not `(func(*http.Request) (*url.URL, error))``")
 		}
 	}
+	template.HTTPProxy = iss.httpProxy
 
 	if iss.Challenges != nil {
 		if iss.Challenges.HTTP != nil {

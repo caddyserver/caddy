@@ -17,6 +17,7 @@
 package internal
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"runtime"
@@ -27,9 +28,15 @@ import (
 )
 
 // WithBindCapability calls listen, which should bind to address on
-// network, raising CAP_NET_BIND_SERVICE for the duration of the call
-// if address is a privileged TCP or UDP port and the capability is in
-// the permitted set but not the effective set.
+// network. If that fails with EACCES for a TCP or UDP port, and
+// CAP_NET_BIND_SERVICE is in the permitted set but not the effective
+// set, it raises the capability and calls listen again, lowering the
+// capability afterwards.
+//
+// Retrying on EACCES, instead of checking the port up front, means the
+// capability is only raised when the kernel actually requires it, which
+// depends on net.ipv4.ip_unprivileged_port_start (often 0 in containers,
+// and possibly above 1024).
 //
 // This allows the caddy binary to be granted the capability with
 // `setcap cap_net_bind_service=+p` instead of `=+ep`. With the effective
@@ -39,11 +46,12 @@ import (
 // even if Caddy never binds a privileged port. See "Safety checking for
 // capability-dumb binaries" in capabilities(7).
 func WithBindCapability(network, address string, listen func() (any, error)) (any, error) {
-	if !isPrivilegedPort(network, address) {
-		return listen()
+	ln, err := listen()
+	if !errors.Is(err, unix.EACCES) || !isPortBind(network, address) {
+		return ln, err
 	}
-	if raise, err := shouldRaiseBindCapability(); err != nil || !raise {
-		return listen()
+	if raise, capErr := shouldRaiseBindCapability(); capErr != nil || !raise {
+		return ln, err
 	}
 
 	// capabilities are per-thread, so raise it on a locked OS thread
@@ -58,8 +66,8 @@ func WithBindCapability(network, address string, listen func() (any, error)) (an
 	ch := make(chan result, 1)
 	go func() {
 		runtime.LockOSThread()
-		if err := setBindCapability(true); err != nil {
-			ch <- result{err: fmt.Errorf("raising CAP_NET_BIND_SERVICE: %v", err)}
+		if capErr := setBindCapability(true); capErr != nil {
+			ch <- result{err: fmt.Errorf("%w (raising CAP_NET_BIND_SERVICE: %v)", err, capErr)}
 			return
 		}
 		ln, err := listen()
@@ -70,9 +78,9 @@ func WithBindCapability(network, address string, listen func() (any, error)) (an
 	return r.ln, r.err
 }
 
-// isPrivilegedPort reports whether address is a TCP or UDP
-// address with a port below 1024 (other than 0).
-func isPrivilegedPort(network, address string) bool {
+// isPortBind reports whether address is a TCP or UDP
+// address with a nonzero port.
+func isPortBind(network, address string) bool {
 	if !strings.HasPrefix(network, "tcp") && !strings.HasPrefix(network, "udp") {
 		return false
 	}
@@ -81,7 +89,7 @@ func isPrivilegedPort(network, address string) bool {
 		return false
 	}
 	port, err := strconv.ParseUint(portStr, 10, 16)
-	return err == nil && port > 0 && port < 1024
+	return err == nil && port > 0
 }
 
 const bindCapabilityMask = 1 << unix.CAP_NET_BIND_SERVICE

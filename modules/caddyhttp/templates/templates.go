@@ -467,7 +467,16 @@ func (t *Templates) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 		return err
 	}
 
-	rec.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
+	// responses without a body (HEAD, 1xx, 204, 304) can't tell us the
+	// length of the rendered template, so drop the header rather than
+	// advertising the length of the empty buffer, and a 2xx response to
+	// CONNECT must not have one at all (RFC 9110 §8.6)
+	connectSuccess := r.Method == http.MethodConnect && rec.Status() >= 200 && rec.Status() <= 299
+	if r.Method == http.MethodHead || connectSuccess || !bodyAllowedForStatus(rec.Status()) {
+		rec.Header().Del("Content-Length")
+	} else {
+		rec.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
+	}
 	rec.Header().Del("Accept-Ranges") // we don't know ranges for dynamically-created content
 	rec.Header().Del("Last-Modified") // useless for dynamic content since it's always changing
 
@@ -477,6 +486,20 @@ func (t *Templates) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddy
 	rec.Header().Del("Etag")
 
 	return rec.WriteResponse()
+}
+
+// bodyAllowedForStatus reports whether a response with the given
+// status may include a body, per RFC 9110 §6.4.1.
+func bodyAllowedForStatus(status int) bool {
+	switch {
+	case status >= 100 && status <= 199:
+		return false
+	case status == http.StatusNoContent:
+		return false
+	case status == http.StatusNotModified:
+		return false
+	}
+	return true
 }
 
 // executeTemplate executes the template contained in wb.buf and replaces it with the results.

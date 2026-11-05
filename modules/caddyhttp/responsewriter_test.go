@@ -3,9 +3,11 @@ package caddyhttp
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -249,7 +251,8 @@ func TestResponseRecorderSwitchingProtocolsIsHijackAware(t *testing.T) {
 	if rr.DetachAfterHijack(true) {
 		t.Fatal("response recorder should report hijacked state by returning false")
 	}
-	if DetachResponseWriterAfterHijack(rr, true) {
+	req := requestWithResponseWriterBoundary(w)
+	if DetachResponseWriterAfterHijack(rr, req, true) {
 		t.Fatal("DetachResponseWriterAfterHijack() should report false after hijack")
 	}
 	if err := rr.WriteResponse(); err != nil {
@@ -274,7 +277,8 @@ func TestResponseRecorderNestedDetach(t *testing.T) {
 			// Include an intervening middleware wrapper in the recorder chain.
 			outer := NewResponseRecorder(&ResponseWriterWrapper{ResponseWriter: inner}, nil, nil)
 			outer.WriteHeader(http.StatusSwitchingProtocols)
-			if !DetachResponseWriterAfterHijack(outer, detached) {
+			req := requestWithResponseWriterBoundary(inner)
+			if !DetachResponseWriterAfterHijack(outer, req, detached) {
 				t.Fatal("detach configuration failed")
 			}
 			conn, brw, err := http.NewResponseController(outer).Hijack()
@@ -301,9 +305,201 @@ func TestResponseRecorderNestedDetach(t *testing.T) {
 					t.Errorf("%s recorder size = %d, want %d", name, rr.Size(), want)
 				}
 			}
-			if DetachResponseWriterAfterHijack(outer, true) {
+			if DetachResponseWriterAfterHijack(outer, req, true) {
 				t.Error("detach should fail after hijack")
 			}
 		})
+	}
+}
+
+func TestDetachResponseWriterAfterHijackRejectsOpaqueInnerWriter(t *testing.T) {
+	raw := newHijackRespWriter()
+	opaque := struct{ http.ResponseWriter }{raw}
+	recorder := NewResponseRecorder(opaque, nil, nil)
+	req := requestWithResponseWriterBoundary(raw)
+
+	if DetachResponseWriterAfterHijack(recorder, req, true) {
+		t.Fatal("detach succeeded through a writer without Unwrap")
+	}
+}
+
+func TestDetachResponseWriterAfterHijackAtBoundary(t *testing.T) {
+	w := newHijackRespWriter()
+	req := requestWithResponseWriterBoundary(w)
+	if !DetachResponseWriterAfterHijack(w, req, true) {
+		t.Fatal("detach failed at the server-owned writer")
+	}
+	if DetachResponseWriterAfterHijack(w, nil, true) {
+		t.Fatal("detach succeeded without a request")
+	}
+}
+
+func TestDetachResponseWriterAfterHijackRejectsCycles(t *testing.T) {
+	raw := newHijackRespWriter()
+	req := requestWithResponseWriterBoundary(raw)
+	a := &cycleWriter{}
+	b := &cycleWriter{next: a}
+	a.next = b
+
+	for name, w := range map[string]http.ResponseWriter{
+		"uncomparable self-reference": uncomparableWriter{},
+		"indirect cycle":              a,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if DetachResponseWriterAfterHijack(w, req, true) {
+				t.Fatal("detach succeeded without reaching the server-owned writer")
+			}
+		})
+	}
+}
+
+func requestWithResponseWriterBoundary(w http.ResponseWriter) *http.Request {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	ctx := context.WithValue(req.Context(), responseWriterBoundaryCtxKey, w)
+	return req.WithContext(ctx)
+}
+
+// targetIface is an interface that only the innermost writer in the tests
+// below implements; it's used to assert UnwrapResponseWriterAs walks past
+// outer wrappers to find it.
+type targetIface interface {
+	http.ResponseWriter
+	magic() string
+}
+
+type targetWriter struct {
+	baseRespWriter
+}
+
+func (*targetWriter) magic() string { return "ok" }
+
+// plainWrapper wraps an http.ResponseWriter and forwards only the mandatory
+// methods. It implements Unwrap() so the helper can traverse it.
+type plainWrapper struct{ inner http.ResponseWriter }
+
+func (p *plainWrapper) Header() http.Header         { return p.inner.Header() }
+func (p *plainWrapper) Write(b []byte) (int, error) { return p.inner.Write(b) }
+func (p *plainWrapper) WriteHeader(statusCode int)  { p.inner.WriteHeader(statusCode) }
+func (p *plainWrapper) Unwrap() http.ResponseWriter { return p.inner }
+
+func TestUnwrapResponseWriterAs(t *testing.T) {
+	inner := &targetWriter{}
+	for _, tc := range []struct {
+		name string
+		w    http.ResponseWriter
+		ok   bool
+	}{
+		{"direct", inner, true},
+		{"single wrapper", &ResponseWriterWrapper{ResponseWriter: inner}, true},
+		{"multiple wrappers", &plainWrapper{inner: &ResponseWriterWrapper{ResponseWriter: &plainWrapper{inner: inner}}}, true},
+		{"not found", &ResponseWriterWrapper{ResponseWriter: &baseRespWriter{}}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := UnwrapResponseWriterAs[targetIface](tc.w)
+			if ok != tc.ok {
+				t.Fatalf("ok = %v, want %v", ok, tc.ok)
+			}
+			if ok && got.magic() != "ok" {
+				t.Errorf("unexpected writer returned: %v", got)
+			}
+		})
+	}
+}
+
+type selfUnwrapWriter struct{ baseRespWriter }
+
+func (s *selfUnwrapWriter) Unwrap() http.ResponseWriter { return s }
+
+func TestUnwrapResponseWriterAs_StopsOnSelfReference(t *testing.T) {
+	// A wrapper whose Unwrap returns itself must not loop forever.
+	loop := &selfUnwrapWriter{}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = UnwrapResponseWriterAs[targetIface](loop)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("UnwrapResponseWriterAs hung on self-referential Unwrap")
+	}
+}
+
+// uncomparableWriter contains a slice so the concrete type is not comparable.
+// The previous `next == w` guard panics on this shape. Methods use value
+// receivers so the wrapper is stored as a non-pointer in the interface.
+type uncomparableWriter struct {
+	hdr http.Header
+	_   []byte
+}
+
+func (u uncomparableWriter) Header() http.Header         { return u.hdr }
+func (u uncomparableWriter) Write(b []byte) (int, error) { return len(b), nil }
+func (u uncomparableWriter) WriteHeader(int)             {}
+func (u uncomparableWriter) Unwrap() http.ResponseWriter { return u }
+
+func TestUnwrapResponseWriterAs_UncomparableWriter(t *testing.T) {
+	w := uncomparableWriter{}
+	done := make(chan struct{})
+	var panicked any
+	go func() {
+		defer close(done)
+		defer func() { panicked = recover() }()
+		_, _ = UnwrapResponseWriterAs[targetIface](w)
+	}()
+	select {
+	case <-done:
+		if panicked != nil {
+			t.Fatalf("panicked on uncomparable writer: %v", panicked)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("UnwrapResponseWriterAs hung on uncomparable self-unwrap")
+	}
+}
+
+type cycleWriter struct {
+	baseRespWriter
+	next http.ResponseWriter
+}
+
+func (c *cycleWriter) Unwrap() http.ResponseWriter { return c.next }
+
+func TestUnwrapResponseWriterAs_StopsOnIndirectCycle(t *testing.T) {
+	a := &cycleWriter{}
+	b := &cycleWriter{next: a}
+	a.next = b
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = UnwrapResponseWriterAs[targetIface](a)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("UnwrapResponseWriterAs hung on A→B→A unwrap cycle")
+	}
+}
+
+type headerSpy struct {
+	baseRespWriter
+	status int
+}
+
+func (h *headerSpy) WriteHeader(code int) { h.status = code }
+
+func TestRecordHijackedStatus(t *testing.T) {
+	inner := &headerSpy{}
+	rec := NewResponseRecorder(inner, new(bytes.Buffer), nil)
+	wrapped := &ResponseWriterWrapper{ResponseWriter: rec}
+
+	if rec.Status() != 0 {
+		t.Fatalf("status = %d, want 0 before hijack", rec.Status())
+	}
+	RecordHijackedStatus(wrapped, http.StatusOK)
+	if rec.Status() != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Status())
+	}
+	if inner.status != 0 {
+		t.Errorf("WriteHeader(%d) called on inner writer; hijack must not write again", inner.status)
 	}
 }

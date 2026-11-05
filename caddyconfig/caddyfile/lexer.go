@@ -19,7 +19,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"regexp"
 	"strings"
 	"unicode"
 )
@@ -175,6 +174,8 @@ func (l *lexer) next() (bool, error) {
 	var val []rune
 	var comment, quoted, btQuoted, inHeredoc, heredocEscaped, escaped, continueLine bool
 	var heredocMarker string
+	var heredocPrefix []int
+	var heredocMatched int
 	var tokenStartSet bool // whether l.tokenStart has been set for the current token
 
 	// format-mode separator tracking: record how this token was separated from
@@ -253,8 +254,22 @@ func (l *lexer) next() (bool, error) {
 				}
 
 				heredocMarker = string(val[2:])
-				if !heredocMarkerRegexp.Match([]byte(heredocMarker)) {
+				if !isHeredocMarker(heredocMarker) {
 					return false, fmt.Errorf("heredoc marker on line #%d must contain only alphanumeric characters, dashes and underscores; got '%s'", l.line, heredocMarker)
+				}
+
+				// Build a prefix table for incremental marker matching (KMP).
+				// Comparing the whole suffix after every rune costs O(body * marker)
+				// and repeatedly converts large rune slices to strings.
+				heredocPrefix = make([]int, len(heredocMarker))
+				for i, matched := 1, 0; i < len(heredocMarker); i++ {
+					for matched > 0 && heredocMarker[i] != heredocMarker[matched] {
+						matched = heredocPrefix[matched-1]
+					}
+					if heredocMarker[i] == heredocMarker[matched] {
+						matched++
+					}
+					heredocPrefix[i] = matched
 				}
 
 				inHeredoc = true
@@ -274,8 +289,16 @@ func (l *lexer) next() (bool, error) {
 				l.skippedLines++
 			}
 
-			// check if we're done, i.e. that the last few characters are the marker
-			if len(val) >= len(heredocMarker) && heredocMarker == string(val[len(val)-len(heredocMarker):]) {
+			// Markers contain only ASCII, so compare each rune directly with
+			// the next marker byte. Prefix fallback also handles overlapping
+			// partial matches without rescanning the body.
+			for heredocMatched > 0 && ch != rune(heredocMarker[heredocMatched]) {
+				heredocMatched = heredocPrefix[heredocMatched-1]
+			}
+			if ch == rune(heredocMarker[heredocMatched]) {
+				heredocMatched++
+			}
+			if heredocMatched == len(heredocMarker) {
 				// set the final value
 				val, err = l.finalizeHeredoc(val, heredocMarker)
 				if err != nil {
@@ -588,7 +611,23 @@ func (t Token) Clone() Token {
 	}
 }
 
-var heredocMarkerRegexp = regexp.MustCompile("^[A-Za-z0-9_-]+$")
+// isHeredocMarker reports whether marker is a valid heredoc marker, made of
+// one or more ASCII letters, digits, dashes and underscores. It scans bytes
+// instead of matching a regexp because regexp matching of a long string is
+// quadratic under libFuzzer instrumentation.
+func isHeredocMarker(marker string) bool {
+	if len(marker) == 0 {
+		return false
+	}
+	for i := range len(marker) {
+		c := marker[i]
+		isAlnum := 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9'
+		if !isAlnum && c != '_' && c != '-' {
+			return false
+		}
+	}
+	return true
+}
 
 // isNextOnNewLine tests whether t2 is on a different line from t1
 func isNextOnNewLine(t1, t2 Token) bool {

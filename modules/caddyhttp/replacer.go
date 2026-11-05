@@ -263,6 +263,13 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 				or, _ := req.Context().Value(OriginalRequestCtxKey).(http.Request)
 				_, file := path.Split(or.URL.Path)
 				return file, true
+			case "http.request.orig_uri.path.file_escaped":
+				// split the escaped path rather than escaping the decoded
+				// file name, since an encoded slash (%2F) in the request
+				// is part of the last segment, not a separator
+				or, _ := req.Context().Value(OriginalRequestCtxKey).(http.Request)
+				_, file := path.Split(or.URL.EscapedPath())
+				return file, true
 			case "http.request.orig_uri.path.dir":
 				or, _ := req.Context().Value(OriginalRequestCtxKey).(http.Request)
 				dir, _ := path.Split(or.URL.Path)

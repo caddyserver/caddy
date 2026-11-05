@@ -16,6 +16,7 @@ package caddyfile
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -760,5 +761,89 @@ func TestLexEqualsTokenizeWithZeroOptions(t *testing.T) {
 	}
 	if !reflect.DeepEqual(a, b) {
 		t.Errorf("Lex(zero opts) != Tokenize\n a=%+v\n b=%+v", a, b)
+	}
+}
+
+// TestLexerLongHeredoc exercises long and overlapping marker prefixes. Checking
+// the entire marker after every rune made these inputs take seconds to tokenize.
+func TestLexerLongHeredoc(t *testing.T) {
+	for _, tc := range []struct {
+		name, marker, body string
+		incomplete         bool
+	}{
+		{name: "long marker", marker: strings.Repeat("a", 8000) + "b", body: strings.Repeat("a", 500000)},
+		{name: "overlapping prefixes", marker: "ababaca", body: "ababababac"},
+		{name: "unicode body", marker: "END", body: "你好\xffEN"},
+		{name: "incomplete", marker: strings.Repeat("a", 8000) + "b", body: strings.Repeat("a", 500000), incomplete: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := "<<" + tc.marker + "\n" + tc.body
+			if !tc.incomplete {
+				input += "\n" + tc.marker
+			}
+			for _, opts := range []LexOptions{{}, {Comments: true, Raw: true}} {
+				tokens, err := Lex([]byte(input), "Caddyfile", opts)
+				if tc.incomplete {
+					if err == nil {
+						t.Fatal("expected incomplete heredoc error")
+					}
+					continue
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(tokens) != 1 || tokens[0].Text != string([]rune(tc.body)) {
+					t.Fatalf("unexpected heredoc contents: %v", tokens)
+				}
+				if opts.Raw && tokens[0].Raw() != input {
+					t.Fatal("heredoc raw source changed")
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkLexerLongHeredoc(b *testing.B) {
+	marker := strings.Repeat("a", 8000) + "b"
+	input := []byte("<<" + marker + "\n" + strings.Repeat("a", 500000) + "\n" + marker)
+	b.SetBytes(int64(len(input)))
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := Tokenize(input, "Caddyfile"); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// TestIsHeredocMarker covers the marker check shared by the lexer and the
+// formatter, including a long marker like the one that made the formatter time
+// out under libFuzzer when the check was a regexp.
+func TestIsHeredocMarker(t *testing.T) {
+	long := strings.Repeat("a", 500000)
+	for i, tc := range []struct {
+		marker string
+		want   bool
+	}{
+		{marker: "END", want: true},
+		{marker: "a-b_C9", want: true},
+		{marker: "09AZaz", want: true},
+		{marker: long, want: true},
+		{marker: "", want: false},
+		{marker: "EN D", want: false},
+		{marker: "END\n", want: false},
+		{marker: "<END", want: false},
+		{marker: "/", want: false},
+		{marker: ":", want: false},
+		{marker: "@", want: false},
+		{marker: "[", want: false},
+		{marker: "`", want: false},
+		{marker: "{", want: false},
+		{marker: "ÉND", want: false},
+		{marker: "END\xff", want: false},
+		{marker: long + "<<<<", want: false},
+	} {
+		if got := isHeredocMarker(tc.marker); got != tc.want {
+			t.Errorf("Test %d: isHeredocMarker(%.20q) = %v, want %v", i, tc.marker, got, tc.want)
+		}
 	}
 }

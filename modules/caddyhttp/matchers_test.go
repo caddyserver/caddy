@@ -170,9 +170,12 @@ func TestHostMatcher(t *testing.T) {
 }
 
 func TestPathMatcher(t *testing.T) {
+	t.Setenv("CADDY_TEST_PATH_PREFIX", "admin")
+
 	for i, tc := range []struct {
-		match        MatchPath // not URI-encoded because not parsing from a URI
-		input        string    // should be valid URI encoding (escaped) since it will become part of a request
+		match        MatchPath   // not URI-encoded because not parsing from a URI
+		input        string      // should be valid URI encoding (escaped) since it will become part of a request
+		headers      http.Header // request headers, for header placeholders in the match
 		expect       bool
 		provisionErr bool
 	}{
@@ -398,6 +401,23 @@ func TestPathMatcher(t *testing.T) {
 			expect: true,
 		},
 		{
+			// a lone trailing wildcard is a fast prefix match in normalized
+			// space, so it does match an encoded separator
+			match:  MatchPath{"/bands/*"},
+			input:  "/bands/AC%2FDC",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/bands/%*/"},
+			input:  "/bands/AC%2FDC/",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/bands/*/"},
+			input:  "/bands/AC%2FDC/",
+			expect: false, // because * operates in normalized space
+		},
+		{
 			match:  MatchPath{"/foo%2fbar/baz"},
 			input:  "/foo%2Fbar/baz",
 			expect: true,
@@ -437,6 +457,34 @@ func TestPathMatcher(t *testing.T) {
 			input:  "/admin%2fpanelX",
 			expect: false,
 		},
+		{
+			match:  MatchPath{"/{env.CADDY_TEST_PATH_PREFIX}/*"},
+			input:  "/admin/panel",
+			expect: true,
+		},
+		{
+			match:  MatchPath{"/{env.CADDY_TEST_PATH_PREFIX}/*"},
+			input:  "/other/panel",
+			expect: false,
+		},
+		{
+			match:   MatchPath{"/{http.request.header.X-Prefix}/*"},
+			input:   "/admin/panel",
+			headers: http.Header{"X-Prefix": []string{"Admin"}},
+			expect:  true,
+		},
+		{
+			match:   MatchPath{"/{http.request.header.X-Prefix}/*"},
+			input:   "/ADMIN/panel",
+			headers: http.Header{"X-Prefix": []string{"Admin"}},
+			expect:  true,
+		},
+		{
+			match:   MatchPath{"/{http.request.header.X-Prefix}%2f*"},
+			input:   "/admin%2fpanel",
+			headers: http.Header{"X-Prefix": []string{"Admin"}},
+			expect:  true,
+		},
 	} {
 		err := tc.match.Provision(caddy.Context{})
 		if err == nil && tc.provisionErr {
@@ -453,10 +501,11 @@ func TestPathMatcher(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Test %d (%v): Invalid request URI (should be rejected by Go's HTTP server): %v", i, tc.input, err)
 		}
-		req := &http.Request{URL: u}
+		req := &http.Request{URL: u, Header: tc.headers}
 		repl := caddy.NewReplacer()
 		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
 		req = req.WithContext(ctx)
+		addHTTPVarsToReplacer(repl, req, httptest.NewRecorder())
 
 		actual, err := tc.match.MatchWithError(req)
 		if err != nil {
@@ -1440,5 +1489,110 @@ func BenchmarkHostMatcherWithPlaceholder(b *testing.B) {
 
 	for b.Loop() {
 		match.MatchWithError(req)
+	}
+}
+
+func TestHasWindowsShortName(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		path string
+		want bool
+	}{
+		{
+			name: "final component",
+			path: "/DIRECT~1.TXT",
+			want: true,
+		},
+		{
+			name: "parent component with long final filename",
+			path: "/PROTEC~1/this-is-a-long-final-filename.txt",
+			want: true,
+		},
+		{
+			name: "middle component",
+			path: "/public/PROTEC~1/file.txt",
+			want: true,
+		},
+		{
+			name: "backslash separator",
+			path: `\public\PROTEC~1\file.txt`,
+			want: true,
+		},
+		{
+			name: "two digit short name suffix",
+			path: "/PROTE~12/file.txt",
+			want: true,
+		},
+		{
+			name: "trailing dots and spaces",
+			path: "/PROTEC~1.  /file.txt",
+			want: true,
+		},
+		{
+			name: "permitted punctuation",
+			path: "/$%'-_~1.!#&",
+			want: true,
+		},
+		{
+			name: "ordinary tilde name",
+			path: "/ordinary~name/file.txt",
+			want: false,
+		},
+		{
+			name: "space in short name shape",
+			path: "/my f~1.txt",
+			want: false,
+		},
+		{
+			name: "space in long tilde name",
+			path: "/my file~1.txt",
+			want: false,
+		},
+		{
+			name: "non-ASCII short name shape in parent component",
+			path: "/public/café~1/this-is-a-long-final-filename.txt",
+			want: true,
+		},
+		{
+			name: "non-ASCII ordinary tilde name",
+			path: "/café~name.txt",
+			want: false,
+		},
+		{
+			name: "forbidden punctuation",
+			path: "/MY+F~1.TXT",
+			want: false,
+		},
+		{
+			name: "tilde followed by non-digit",
+			path: "/SHORT~A/file.txt",
+			want: false,
+		},
+		{
+			name: "characters after numeric suffix",
+			path: "/SHORT~1-file.txt",
+			want: false,
+		},
+		{
+			name: "base too long for 8.3",
+			path: "/TOOLONG~1/file.txt",
+			want: false,
+		},
+		{
+			name: "extension too long for 8.3",
+			path: "/SHORT~1.LONG/file.txt",
+			want: false,
+		},
+		{
+			name: "multiple extension separators",
+			path: "/SHORT~1.T.X/file.txt",
+			want: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := HasWindowsShortName(tc.path); got != tc.want {
+				t.Fatalf("HasWindowsShortName(%q) = %t, want %t", tc.path, got, tc.want)
+			}
+		})
 	}
 }

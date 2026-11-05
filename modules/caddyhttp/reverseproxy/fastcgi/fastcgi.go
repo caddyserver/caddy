@@ -20,7 +20,9 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -178,7 +180,7 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 
 	env, err := t.buildEnv(r)
 	if err != nil {
-		return nil, fmt.Errorf("building environment: %v", err)
+		return nil, fmt.Errorf("building environment: %w", err)
 	}
 
 	ctx := r.Context()
@@ -293,7 +295,15 @@ func (t Transport) buildEnv(r *http.Request) (envVars, error) {
 		}
 	}
 
-	fpath := r.URL.Path
+	// Derive the script from the same path model the matchers judged: Windows
+	// separators and per-component trailing dots/spaces normalized, then cleaned
+	// (mirroring MatchPath and MatchURLPattern). Caddy does not rewrite
+	// r.URL.Path itself, and the rewrite route php_fastcgi relies on to normalize
+	// it can fail to match, so the transport must establish this invariant rather
+	// than inherit it. Without this, /admin.php/../../other.php (or, on Windows,
+	// /admin.php\..\other.php) is judged by every path matcher as /other.php
+	// while SCRIPT_FILENAME resolves to /admin.php.
+	fpath := caddyhttp.NormalizedPath(r.URL.Path, true)
 	scriptName := fpath
 
 	docURI := fpath
@@ -305,6 +315,27 @@ func (t Transport) buildEnv(r *http.Request) (envVars, error) {
 
 		// Strip PATH_INFO from SCRIPT_NAME
 		scriptName = strings.TrimSuffix(scriptName, pathInfo)
+	}
+
+	// On Windows, an 8.3 alias or an alternate data stream can name a non-PHP file
+	// with a script-looking path, and path matchers cannot see through either.
+	if runtime.GOOS == "windows" && (strings.Contains(scriptName, ":") || caddyhttp.HasWindowsShortName(scriptName)) {
+		return nil, caddyhttp.Error(http.StatusBadRequest, errors.New("illegal script path"))
+	}
+
+	// Path matchers whose pattern contains "%" clean the escaped path, where "%2f"
+	// and "%2e%2e" are neither separators nor dot segments, so both forms must
+	// select the same script. On Windows, they read a backslash, escaped even
+	// without RawPath, as "%2f".
+	backslash := runtime.GOOS == "windows" && strings.Contains(r.URL.Path, `\`)
+	if r.URL.RawPath != "" || backslash {
+		escaped, err := url.PathUnescape(caddyhttp.NormalizedPath(r.URL.EscapedPath(), true))
+		if backslash {
+			escaped = strings.ReplaceAll(escaped, `\`, "/")
+		}
+		if err != nil || t.scriptPart(escaped) != docURI {
+			return nil, caddyhttp.Error(http.StatusBadRequest, errors.New("escaped and decoded paths select different scripts"))
+		}
 	}
 
 	// Try to grab the path remainder from a file matcher
@@ -422,17 +453,17 @@ func (t Transport) buildEnv(r *http.Request) (envVars, error) {
 		}
 	}
 
-	// Add env variables from config (with support for placeholders in values)
-	for key, value := range t.EnvVars {
-		env[key] = repl.ReplaceAll(value, "")
-	}
-
 	// Add all HTTP headers to env variables
 	for field, val := range r.Header {
+		switch http.CanonicalHeaderKey(field) {
+		// HTTP_HOST comes from r.Host, the host the request was routed on:
+		// over HTTP/2, net/http keeps a "host" field distinct from :authority.
+		case "Host":
+			continue
 		// HTTPoxy mitigation: client-supplied Proxy header must not
 		// be trusted for setting the HTTP_PROXY environment variable.
 		// See https://httpoxy.org for details.
-		if http.CanonicalHeaderKey(field) == "Proxy" {
+		case "Proxy":
 			continue
 		}
 
@@ -440,6 +471,13 @@ func (t Transport) buildEnv(r *http.Request) (envVars, error) {
 		header = headerNameReplacer.Replace(header)
 		env["HTTP_"+header] = strings.Join(val, ", ")
 	}
+
+	// Add env variables from config (with support for placeholders in values)
+	// last, so a client header cannot override an HTTP_* variable set by the operator
+	for key, value := range t.EnvVars {
+		env[key] = repl.ReplaceAll(value, "")
+	}
+
 	return env, nil
 }
 
@@ -502,6 +540,14 @@ func (t Transport) splitPos(path string) int {
 	}
 
 	return -1
+}
+
+// scriptPart returns the part of path naming the script.
+func (t Transport) scriptPart(path string) string {
+	if pos := t.splitPos(path); pos > -1 {
+		return path[:pos]
+	}
+	return path
 }
 
 type envVars map[string]string

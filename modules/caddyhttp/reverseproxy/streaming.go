@@ -60,6 +60,19 @@ func (rwc extendedConnectReadWriteCloser) Write(p []byte) (n int, err error) {
 }
 
 func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWriter, req *http.Request, res *http.Response, upstreamAddr string) {
+	// Until the tunnel takes ownership, every setup failure must close the
+	// backend body and any hijacked client connection. net/http no longer
+	// owns the client socket after a successful hijack.
+	var conn io.ReadWriteCloser
+	tunnelOwnsConnections := false
+	defer func() {
+		if !tunnelOwnsConnections {
+			res.Body.Close()
+			if conn != nil {
+				conn.Close()
+			}
+		}
+	}()
 	reqUpType := upgradeType(req.Header)
 	resUpType := upgradeType(res.Header)
 
@@ -90,7 +103,6 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 	// write header first, response headers should not be counted in size
 	// like the rest of handler chain.
 	copyHeader(rw.Header(), res.Header)
-	normalizeWebsocketHeaders(rw.Header())
 
 	// Capture all h fields needed by the tunnel now, so that the Handler (h)
 	// is not referenced after this function returns (for HTTP/1.1 hijacked
@@ -100,7 +112,6 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 	streamTimeout := time.Duration(h.StreamTimeout)
 
 	var (
-		conn     io.ReadWriteCloser
 		brw      *bufio.ReadWriter
 		detached bool
 	)
@@ -115,7 +126,7 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 		req.Body = body
 		rw.Header().Del("Upgrade")
 		rw.Header().Del("Connection")
-		delete(rw.Header(), "Sec-WebSocket-Accept")
+		rw.Header().Del("Sec-WebSocket-Accept")
 		rw.WriteHeader(http.StatusOK)
 
 		if c := logger.Check(zap.DebugLevel, "upgrading connection"); c != nil {
@@ -134,13 +145,14 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 		// bufio is not needed, use minimal buffer
 		brw = bufio.NewReadWriter(bufio.NewReaderSize(conn, 1), bufio.NewWriterSize(conn, 1))
 	} else {
+		normalizeWebsocketHeaders(rw.Header())
 		if h.StreamDetached {
-			detached = caddyhttp.DetachResponseWriterAfterHijack(rw, true)
+			detached = caddyhttp.DetachResponseWriterAfterHijack(rw, req, true)
 			if !detached {
 				// Some outer writers may have accepted detachment before an
 				// inner writer refused it. Restore attached byte accounting
 				// and keep the handler running for the lifetime of the tunnel.
-				caddyhttp.DetachResponseWriterAfterHijack(rw, false)
+				caddyhttp.DetachResponseWriterAfterHijack(rw, req, false)
 				if c := logger.Check(zap.DebugLevel, "detaching connection failed; keeping stream attached"); c != nil {
 					c.Write(zap.String("tip", "check if your response writers have an Unwrap method or if already hijacked"))
 				}
@@ -219,6 +231,7 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 
 	start := time.Now()
 
+	tunnelOwnsConnections = true
 	if !detached {
 		handleUpgradeTunnel(
 			streamLogger,

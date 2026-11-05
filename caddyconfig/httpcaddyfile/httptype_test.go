@@ -2,6 +2,8 @@ package httpcaddyfile
 
 import (
 	"encoding/json"
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -321,5 +323,143 @@ func TestDefaultSNIWithoutHTTPS(t *testing.T) {
 
 	if !found {
 		t.Errorf("Expected default_sni 'my-sni.com' in TLS connection policies, but it was missing. Generated JSON: %s", string(result))
+	}
+}
+
+func TestTLSConnectionPoliciesAreIsolatedAcrossListeners(t *testing.T) {
+	caddyfileStr := `(mtls) {
+		tls {
+			client_auth {
+				mode require_and_verify
+				trust_pool file /tmp/root.crt
+			}
+		}
+	}
+
+	abc.domain.com, abc.domain.com:2000 {
+		import mtls
+		respond "first"
+	}
+
+	domain.domain.com {
+		import mtls
+		respond "second"
+	}
+
+	ghi.domain.com, ghi.domain.com:2000 {
+		import mtls
+		respond "third"
+	}`
+
+	adapter := caddyfile.Adapter{ServerType: ServerType{}}
+	result, _, err := adapter.Adapt([]byte(caddyfileStr), nil)
+	if err != nil {
+		t.Fatalf("Failed to adapt Caddyfile: %v", err)
+	}
+
+	var config struct {
+		Apps struct {
+			HTTP struct {
+				Servers map[string]*caddyhttp.Server `json:"servers"`
+			} `json:"http"`
+		} `json:"apps"`
+	}
+	if err := json.Unmarshal(result, &config); err != nil {
+		t.Fatalf("Failed to unmarshal JSON config: %v", err)
+	}
+
+	for listener, expectedNames := range map[string][]string{
+		":2000": {"abc.domain.com", "ghi.domain.com"},
+		":443":  {"abc.domain.com", "domain.domain.com", "ghi.domain.com"},
+	} {
+		var server *caddyhttp.Server
+		for _, candidate := range config.Apps.HTTP.Servers {
+			if slices.Contains(candidate.Listen, listener) {
+				server = candidate
+				break
+			}
+		}
+		if server == nil {
+			t.Fatalf("Expected a server listening on %s", listener)
+		}
+
+		var names []string
+		for _, policy := range server.TLSConnPolicies {
+			if policy.ClientAuthentication == nil {
+				continue
+			}
+			if policy.ClientAuthentication.Mode != "require_and_verify" {
+				t.Fatalf("Expected %s client authentication on %s, got %s", "require_and_verify", listener, policy.ClientAuthentication.Mode)
+			}
+			var policyNames []string
+			if err := json.Unmarshal(policy.MatchersRaw["sni"], &policyNames); err != nil {
+				t.Fatalf("Failed to unmarshal SNI matcher for %s: %v", listener, err)
+			}
+			names = append(names, policyNames...)
+		}
+
+		slices.Sort(names)
+		if !slices.Equal(names, expectedNames) {
+			t.Errorf("Expected client authentication for %v on %s, got %v", expectedNames, listener, names)
+		}
+	}
+}
+
+func TestClientAuthConsolidation(t *testing.T) {
+	const requestAuth = `client_auth {
+				mode request
+			}`
+	const verifyAuth = `client_auth {
+				mode require_and_verify
+				trust_pool file /tmp/root.crt
+			}`
+
+	tlsBlock := func(auth string) string {
+		if auth == "" {
+			return ""
+		}
+		return fmt.Sprintf("tls {\n\t\t\t%s\n\t\t}", auth)
+	}
+
+	for _, tc := range []struct {
+		name       string
+		firstAuth  string
+		secondAuth string
+		wantErr    bool
+	}{
+		{"conflicting, laxer policy first", requestAuth, verifyAuth, true},
+		{"conflicting, stricter policy first", verifyAuth, requestAuth, true},
+		{"only first sets client auth", verifyAuth, "", false},
+		{"only second sets client auth", "", verifyAuth, false},
+		{"identical client auth", verifyAuth, verifyAuth, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			caddyfileStr := fmt.Sprintf(`example.com {
+		%s
+		handle /public/* {
+			respond "public"
+		}
+	}
+
+	example.com:443 {
+		%s
+		handle /admin* {
+			respond "admin"
+		}
+	}`, tlsBlock(tc.firstAuth), tlsBlock(tc.secondAuth))
+
+			adapter := caddyfile.Adapter{ServerType: ServerType{}}
+			result, _, err := adapter.Adapt([]byte(caddyfileStr), nil)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected conflicting client auth to be rejected, got: %s", result)
+				}
+				if !strings.Contains(err.Error(), "conflicting client auth configuration") {
+					t.Fatalf("expected conflicting client auth error, got: %v", err)
+				}
+			} else if err != nil {
+				t.Fatalf("expected adapt to succeed, got: %v", err)
+			}
+		})
 	}
 }

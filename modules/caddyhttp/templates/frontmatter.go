@@ -49,15 +49,14 @@ func extractFrontMatter(input string) (map[string]any, string, error) {
 		return nil, input, nil
 	}
 
-	// find end of front matter
+	// find end of front matter: the closing fence that comes first
 	var fmEndFence string
 	fmEndFenceStart := -1
 	for _, fence := range closingFence {
 		index := strings.Index(input[firstLineEnd:], "\n"+fence)
-		if index >= 0 {
+		if index >= 0 && (fmEndFenceStart < 0 || index < fmEndFenceStart) {
 			fmEndFenceStart = index
 			fmEndFence = fence
-			break
 		}
 	}
 	if fmEndFenceStart < 0 {

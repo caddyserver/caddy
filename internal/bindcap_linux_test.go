@@ -16,10 +16,14 @@ package internal
 
 import (
 	"errors"
+	"net"
+	"os"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
-func TestIsPrivilegedPort(t *testing.T) {
+func TestIsPortBind(t *testing.T) {
 	for _, tc := range []struct {
 		network, address string
 		want             bool
@@ -28,15 +32,17 @@ func TestIsPrivilegedPort(t *testing.T) {
 		{"tcp4", "127.0.0.1:443", true},
 		{"udp6", "[::1]:443", true},
 		{"tcp", ":1023", true},
-		{"tcp", ":1024", false},
-		{"tcp", ":8080", false},
+		{"tcp", ":1024", true},
+		{"tcp", ":8080", true},
+		{"tcp", ":65535", true},
+		{"tcp", ":65536", false},
 		{"tcp", ":0", false},
 		{"unix", "/run/caddy.sock", false},
 		{"fd", "3", false},
 		{"ip4:icmp", "127.0.0.1", false},
 	} {
-		if got := isPrivilegedPort(tc.network, tc.address); got != tc.want {
-			t.Errorf("isPrivilegedPort(%q, %q) = %v, want %v", tc.network, tc.address, got, tc.want)
+		if got := isPortBind(tc.network, tc.address); got != tc.want {
+			t.Errorf("isPortBind(%q, %q) = %v, want %v", tc.network, tc.address, got, tc.want)
 		}
 	}
 }
@@ -47,17 +53,37 @@ func TestWithBindCapabilityPassthrough(t *testing.T) {
 		t.Fatalf("reading capabilities: %v", err)
 	}
 
+	// a privileged-port EACCES is retried only if the capability can be raised
+	retryCalls := 1
+	if before {
+		retryCalls = 2
+	}
+
+	// shaped like the error net.ListenConfig.Listen returns
+	eacces := &net.OpError{Op: "listen", Net: "tcp", Err: os.NewSyscallError("bind", unix.EACCES)}
 	sentinel := errors.New("sentinel")
-	for _, tc := range []struct{ network, address string }{
-		{"tcp", "localhost:80"},
-		{"udp", ":8080"},
-		{"unix", "/tmp/caddy.sock"},
+	for _, tc := range []struct {
+		network, address string
+		err              error
+		wantCalls        int
+	}{
+		{"tcp", "localhost:80", nil, 1},
+		{"tcp", "localhost:80", sentinel, 1},
+		{"udp", ":8080", sentinel, 1},
+		{"unix", "/tmp/caddy.sock", eacces, 1},
+		{"tcp", ":0", eacces, 1},
+		{"tcp", "localhost:80", eacces, retryCalls},
 	} {
+		calls := 0
 		ln, err := WithBindCapability(tc.network, tc.address, func() (any, error) {
-			return "listener", sentinel
+			calls++
+			return "listener", tc.err
 		})
-		if ln != "listener" || !errors.Is(err, sentinel) {
-			t.Errorf("%s/%s: got (%v, %v), want listen's return values", tc.network, tc.address, ln, err)
+		if calls != tc.wantCalls {
+			t.Errorf("%s/%s/%v: listen called %d times, want %d", tc.network, tc.address, tc.err, calls, tc.wantCalls)
+		}
+		if ln != "listener" || !errors.Is(err, tc.err) {
+			t.Errorf("%s/%s/%v: got (%v, %v), want listen's return values", tc.network, tc.address, tc.err, ln, err)
 		}
 	}
 

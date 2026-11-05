@@ -52,7 +52,6 @@ linters:
       # Match net/http's canonical MIME map keys to avoid re-canonicalisation.
       exclusions:
         - Etag
-        - Sec-Websocket-Key
         - Te
         - Www-Authenticate
     staticcheck:
@@ -62,8 +61,6 @@ linters:
         - fmt.*
         - (go.uber.org/zap/zapcore.ObjectEncoder).AddObject
         - (go.uber.org/zap/zapcore.ObjectEncoder).AddArray
-    exhaustive:
-      ignore-enum-types: reflect.Kind|svc.Cmd
   exclusions:
     generated: lax
     presets:
