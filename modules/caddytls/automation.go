@@ -615,3 +615,60 @@ type DNSChallengeConfig struct {
 type ConfigSetter interface {
 	SetConfig(cfg *certmagic.Config)
 }
+
+// CompareAutomationPolicies compares the specificity of two automation policies.
+// It returns -1 if a is strictly more specific than b, 1 if b is strictly more
+// specific than a, 0 if they are disjoint or equally specific, and an error if
+// their overlapping subjects have conflicting specificity.
+func CompareAutomationPolicies(a, b *AutomationPolicy) (int, error) {
+	aSubjects := policySubjects(a)
+	bSubjects := policySubjects(b)
+
+	// A policy without subjects acts as a catch-all/default policy and matches
+	// any subject. A policy with subjects is strictly more specific than a catch-all.
+	if len(aSubjects) == 0 && len(bSubjects) == 0 {
+		return 0, nil
+	}
+	if len(aSubjects) > 0 && len(bSubjects) == 0 {
+		return -1, nil
+	}
+	if len(aSubjects) == 0 && len(bSubjects) > 0 {
+		return 1, nil
+	}
+
+	var needABeforeB, needBBeforeA bool
+	for _, aSubj := range aSubjects {
+		for _, bSubj := range bSubjects {
+			if strings.EqualFold(aSubj, bSubj) {
+				continue
+			}
+			if certmagic.MatchWildcard(aSubj, bSubj) {
+				needABeforeB = true
+			}
+			if certmagic.MatchWildcard(bSubj, aSubj) {
+				needBBeforeA = true
+			}
+		}
+	}
+
+	if needABeforeB && needBBeforeA {
+		return 0, fmt.Errorf("ambiguous automation policies: overlapping subjects require conflicting ordering")
+	}
+	if needABeforeB {
+		return -1, nil
+	}
+	if needBBeforeA {
+		return 1, nil
+	}
+	return 0, nil
+}
+
+func policySubjects(ap *AutomationPolicy) []string {
+	if ap == nil {
+		return nil
+	}
+	if len(ap.subjects) > 0 {
+		return ap.subjects
+	}
+	return ap.SubjectsRaw
+}
