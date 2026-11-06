@@ -413,29 +413,7 @@ func (h Handler) flushInterval(req *http.Request, res *http.Response, incrementa
 		return -1
 	}
 
-	// for h2 and h2c upstream streaming data to client (issues #3556 and #3606)
-	if h.isBidirectionalStream(req, res) {
-		return -1
-	}
-
 	return time.Duration(h.FlushInterval)
-}
-
-// isBidirectionalStream returns whether we should work in bi-directional stream mode.
-//
-// See https://github.com/caddyserver/caddy/pull/3620 for discussion of nuances.
-func (h Handler) isBidirectionalStream(req *http.Request, res *http.Response) bool {
-	// We have to check the encoding here; only flush headers with identity encoding.
-	// Non-identity encoding might combine with "encode" directive, and in that case,
-	// if body size larger than enc.MinLength, upper level encode handle might have
-	// Content-Encoding header to write.
-	// (see https://github.com/caddyserver/caddy/issues/3606 for use case)
-	ae := req.Header.Get("Accept-Encoding")
-
-	return req.ProtoMajor == 2 &&
-		res.ProtoMajor == 2 &&
-		res.ContentLength == -1 &&
-		(ae == "identity" || ae == "")
 }
 
 func (h Handler) copyResponse(dst http.ResponseWriter, src io.Reader, flushInterval time.Duration, logger *zap.Logger) error {
