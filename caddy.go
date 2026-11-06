@@ -816,6 +816,9 @@ func exitProcess(ctx context.Context, logger *zap.Logger) {
 			} else {
 				logger.Error("unclean shutdown")
 			}
+			if logger != nil {
+				_ = logger.Sync()
+			}
 			os.Exit(exitCode)
 		}()
 

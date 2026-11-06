@@ -69,7 +69,16 @@ func Main() {
 		os.Exit(caddy.ExitCodeFailedStartup)
 	}
 
+	defer func() {
+		if l := caddy.Log(); l != nil {
+			_ = l.Sync()
+		}
+	}()
+
 	if err := defaultFactory.Build().Execute(); err != nil {
+		if l := caddy.Log(); l != nil {
+			_ = l.Sync()
+		}
 		if exitErr, ok := errors.AsType[*exitError](err); ok {
 			os.Exit(exitErr.ExitCode)
 		}

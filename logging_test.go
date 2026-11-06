@@ -192,4 +192,20 @@ func TestUnbufferDefaultLogger(t *testing.T) {
 	if _, ok := Log().Core().(*internal.LogBufferCore); ok {
 		t.Fatal("unexpected buffer core after second unbuffer call")
 	}
+
+	// 6. Calling UnbufferDefaultLogger with nil orig should safely do nothing without panicking
+	UnbufferDefaultLogger(nil)
+}
+
+func TestSetDefaultLogger(t *testing.T) {
+	orig := Log()
+	dummy := zap.NewNop()
+	restore := SetDefaultLogger(dummy)
+	if Log() != dummy {
+		t.Fatal("expected Log() to return dummy logger after SetDefaultLogger")
+	}
+	restore()
+	if Log() != orig {
+		t.Fatal("expected Log() to return original logger after restore")
+	}
 }
