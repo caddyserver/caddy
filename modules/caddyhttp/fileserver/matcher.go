@@ -425,9 +425,8 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 	}
 
 	// makeLiteralCandidate builds a candidate from file as a literal path,
-	// without expanding globs or checking that the file exists. It is used only
-	// for the final entry of first_exist_fallback, which matches unconditionally
-	// even when globbing found nothing because the file is absent.
+	// without expanding globs. It is used only for the final entry of
+	// first_exist_fallback, whose literal name may contain glob metacharacters.
 	makeLiteralCandidate := func(file string) matchCandidate {
 		// placeholders are not glob-escaped here, since nothing is globbed;
 		// errors were already logged by makeCandidates for the same pattern
@@ -479,10 +478,6 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 			}
 
 			candidates := makeCandidates(pattern)
-			// globbing finds only files that exist, but the fallback entry matches anyway
-			if i == maxI && len(candidates) == 0 {
-				candidates = []matchCandidate{makeLiteralCandidate(pattern)}
-			}
 			for _, c := range candidates {
 				// Skip the IO if using fallback policy and it's the latest item
 				if i == maxI {
@@ -491,6 +486,16 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 					return true, nil
 				}
 
+				if info, exists := m.strictFileExists(fileSystem, c.fullpath); exists {
+					setPlaceholders(c, info.IsDir())
+					return true, nil
+				}
+			}
+
+			// an absent fallback must not match, or php_fastcgi would send
+			// every request of a site without index.php to PHP
+			if i == maxI && len(candidates) == 0 {
+				c := makeLiteralCandidate(pattern)
 				if info, exists := m.strictFileExists(fileSystem, c.fullpath); exists {
 					setPlaceholders(c, info.IsDir())
 					return true, nil
