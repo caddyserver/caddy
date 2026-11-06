@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -265,6 +266,9 @@ func TestServeHTTPRewritesExtendedConnectWebsocketSecWebSocketKeyMatrix(t *testi
 					var keyValues []string
 					for k, v := range captured.headers {
 						if strings.EqualFold(k, "Sec-WebSocket-Key") {
+							if k != "Sec-WebSocket-Key" {
+								t.Fatalf("upstream WebSocket key spelling = %q, want Sec-WebSocket-Key", k)
+							}
 							keyValues = append(keyValues, v...)
 						}
 					}
@@ -302,3 +306,60 @@ func TestServeHTTPRewritesExtendedConnectWebsocketSecWebSocketKeyMatrix(t *testi
 		}
 	}
 }
+
+func TestUpgradeResponseWebsocketHeaders(t *testing.T) {
+	for _, proto := range []int{1, 2, 3} {
+		t.Run("h"+strconv.Itoa(proto), func(t *testing.T) {
+			h := &Handler{logger: zap.NewNop()}
+			req := prepareTestRequest(httptest.NewRequest(http.MethodGet, "http://example.test/upgrade", nil))
+			req.ProtoMajor = proto
+			req.Header.Set("Connection", "Upgrade")
+			req.Header.Set("Upgrade", "websocket")
+			wantStatus := http.StatusSwitchingProtocols
+			if proto > 1 {
+				caddyhttp.SetVar(req.Context(), "extended_connect_websocket_body", http.NoBody)
+				wantStatus = http.StatusOK
+			}
+			res := &http.Response{
+				StatusCode: http.StatusSwitchingProtocols,
+				Header:     req.Header.Clone(),
+				Body:       fakeRWC{strings.NewReader("")},
+			}
+			res.Header.Set("Sec-WebSocket-Accept", "backend-accept")
+			res.Header.Set("Sec-WebSocket-Protocol", "chat")
+			rw := upgradeHeaderRecorder{httptest.NewRecorder()}
+			h.handleUpgradeResponse(h.logger, rw, req, res, "test-upstream")
+			response := rw.Result()
+			defer response.Body.Close()
+			if response.StatusCode != wantStatus {
+				t.Fatalf("status = %d, want %d", response.StatusCode, wantStatus)
+			}
+			var accept, protocol string
+			for key, values := range response.Header {
+				if strings.EqualFold(key, "Sec-WebSocket-Accept") {
+					if proto > 1 {
+						t.Fatalf("extended CONNECT response contains %s", key)
+					}
+					if key != "Sec-WebSocket-Accept" {
+						t.Fatalf("WebSocket accept spelling = %q, want Sec-WebSocket-Accept", key)
+					}
+					accept = strings.Join(values, ",")
+				}
+				if strings.EqualFold(key, "Sec-WebSocket-Protocol") {
+					protocol = strings.Join(values, ",")
+				}
+			}
+			if proto == 1 && accept != "backend-accept" {
+				t.Fatalf("accept = %q, want backend-accept", accept)
+			}
+			if protocol != "chat" {
+				t.Fatalf("subprotocol = %q, want chat", protocol)
+			}
+		})
+	}
+}
+
+type upgradeHeaderRecorder struct{ *httptest.ResponseRecorder }
+
+// Stop after the headers are committed, before the tunnel starts.
+func (upgradeHeaderRecorder) FlushError() error { return io.ErrClosedPipe }

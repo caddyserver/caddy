@@ -103,7 +103,6 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 	// write header first, response headers should not be counted in size
 	// like the rest of handler chain.
 	copyHeader(rw.Header(), res.Header)
-	normalizeWebsocketHeaders(rw.Header())
 
 	// Capture all h fields needed by the tunnel now, so that the Handler (h)
 	// is not referenced after this function returns (for HTTP/1.1 hijacked
@@ -127,7 +126,7 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 		req.Body = body
 		rw.Header().Del("Upgrade")
 		rw.Header().Del("Connection")
-		delete(rw.Header(), "Sec-WebSocket-Accept") //nolint:canonicalheader // set by normalizeWebsocketHeaders above
+		rw.Header().Del("Sec-WebSocket-Accept")
 		rw.WriteHeader(http.StatusOK)
 
 		if c := logger.Check(zap.DebugLevel, "upgrading connection"); c != nil {
@@ -146,6 +145,7 @@ func (h *Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrit
 		// bufio is not needed, use minimal buffer
 		brw = bufio.NewReadWriter(bufio.NewReaderSize(conn, 1), bufio.NewWriterSize(conn, 1))
 	} else {
+		normalizeWebsocketHeaders(rw.Header())
 		if h.StreamDetached {
 			detached = caddyhttp.DetachResponseWriterAfterHijack(rw, req, true)
 			if !detached {
