@@ -60,6 +60,77 @@ func TestConnectionPolicyIDNSNIMatcherFastPath(t *testing.T) {
 	}
 }
 
+func TestConnectionPolicySNIFastPathKeepsFirstMatch(t *testing.T) {
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+
+	anyIP := MatchRemoteIP{Ranges: []string{"0.0.0.0/0", "::/0"}}
+	if err := anyIP.Provision(ctx); err != nil {
+		t.Fatalf("provisioning remote_ip matcher: %v", err)
+	}
+
+	wildcardTLSConfig := &tls.Config{ClientAuth: tls.RequireAndVerifyClientCert}
+	siteTLSConfig := &tls.Config{}
+	catchAllTLSConfig := &tls.Config{}
+
+	// each case puts a policy that matches "site.localhost" by something other
+	// than an exact SNI name ahead of the exact-SNI policy for that host; with
+	// more than 30 policies the SNI fast-path index must still reach the earlier
+	// policy first
+	for i, tc := range []struct {
+		first      *ConnectionPolicy
+		expect     *tls.Config
+		expectDrop bool
+	}{
+		{
+			// catch-all drop ahead of the exact-SNI policy
+			first:      &ConnectionPolicy{matchers: []ConnectionMatcher{anyIP}, Drop: true},
+			expectDrop: true,
+		},
+		{
+			// wildcard-SNI policy ahead of the exact-SNI policy
+			first:  &ConnectionPolicy{matchers: []ConnectionMatcher{MatchServerName{"*.localhost"}}, TLSConfig: wildcardTLSConfig},
+			expect: wildcardTLSConfig,
+		},
+		{
+			// placeholder-SNI policy ahead of the exact-SNI policy
+			first:  &ConnectionPolicy{matchers: []ConnectionMatcher{MatchServerName{"{env.CADDY_TEST_UNSET}site.localhost"}}, TLSConfig: wildcardTLSConfig},
+			expect: wildcardTLSConfig,
+		},
+	} {
+		policies := ConnectionPolicies{tc.first}
+		for j := 0; j < 30; j++ {
+			policies = append(policies, &ConnectionPolicy{
+				matchers:  []ConnectionMatcher{MatchServerName{fmt.Sprintf("example-%d.localhost", j)}},
+				TLSConfig: &tls.Config{},
+			})
+		}
+		policies = append(policies,
+			&ConnectionPolicy{matchers: []ConnectionMatcher{MatchServerName{"site.localhost"}}, TLSConfig: siteTLSConfig},
+			&ConnectionPolicy{TLSConfig: catchAllTLSConfig},
+		)
+
+		hello := &tls.ClientHelloInfo{
+			ServerName: "site.localhost",
+			Conn:       testConn{addr: testAddr("198.51.100.1:443")},
+		}
+		got, err := policies.TLSConfig(ctx).GetConfigForClient(hello)
+		if tc.expectDrop {
+			if err == nil {
+				t.Errorf("Test %d: expected the first policy to drop the connection, got a config", i)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("Test %d: unexpected error: %v", i, err)
+			continue
+		}
+		if got != tc.expect {
+			t.Errorf("Test %d: indexed lookup did not return the first matching policy", i)
+		}
+	}
+}
+
 func TestClientAuthenticationUnmarshalCaddyfileWithDirectiveName(t *testing.T) {
 	const test_der_1 = `MIIDSzCCAjOgAwIBAgIUfIRObjWNUA4jxQ/0x8BOCvE2Vw4wDQYJKoZIhvcNAQELBQAwFjEUMBIGA1UEAwwLRWFzeS1SU0EgQ0EwHhcNMTkwODI4MTYyNTU5WhcNMjkwODI1MTYyNTU5WjAWMRQwEgYDVQQDDAtFYXN5LVJTQSBDQTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAK5m5elxhQfMp/3aVJ4JnpN9PUSz6LlP6LePAPFU7gqohVVFVtDkChJAG3FNkNQNlieVTja/bgH9IcC6oKbROwdY1h0MvNV8AHHigvl03WuJD8g2ReVFXXwsnrPmKXCFzQyMI6TYk3m2gYrXsZOU1GLnfMRC3KAMRgE2F45twOs9hqG169YJ6mM2eQjzjCHWI6S2/iUYvYxRkCOlYUbLsMD/AhgAf1plzg6LPqNxtdlwxZnA0ytgkmhK67HtzJu0+ovUCsMv0RwcMhsEo9T8nyFAGt9XLZ63X5WpBCTUApaAUhnG0XnerjmUWb6eUWw4zev54sEfY5F3x002iQaW6cECAwEAAaOBkDCBjTAdBgNVHQ4EFgQU4CBUbZsS2GaNIkGRz/cBsD5ivjswUQYDVR0jBEowSIAU4CBUbZsS2GaNIkGRz/cBsD5ivjuhGqQYMBYxFDASBgNVBAMMC0Vhc3ktUlNBIENBghR8hE5uNY1QDiPFD/THwE4K8TZXDjAMBgNVHRMEBTADAQH/MAsGA1UdDwQEAwIBBjANBgkqhkiG9w0BAQsFAAOCAQEAKB3V4HIzoiO/Ch6WMj9bLJ2FGbpkMrcb/Eq01hT5zcfKD66lVS1MlK+cRL446Z2b2KDP1oFyVs+qmrmtdwrWgD+nfe2sBmmIHo9m9KygMkEOfG3MghGTEcS+0cTKEcoHYWYyOqQh6jnedXY8Cdm4GM1hAc9MiL3/sqV8YCVSLNnkoNysmr06/rZ0MCUZPGUtRmfd0heWhrfzAKw2HLgX+RAmpOE2MZqWcjvqKGyaRiaZks4nJkP6521aC2Lgp0HhCz1j8/uQ5ldoDszCnu/iro0NAsNtudTMD+YoLQxLqdleIh6CW+illc2VdXwj7mn6J04yns9jfE2jRjW/yTLFuQ==`
 	const test_cert_file_1 = "../../caddytest/caddy.ca.cer"
