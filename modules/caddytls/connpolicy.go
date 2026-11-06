@@ -23,6 +23,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"iter"
 	"os"
 	"reflect"
 	"slices"
@@ -99,32 +100,56 @@ func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) *tls.Config {
 	// using ServerName to match policies is extremely common, especially in configs
 	// with lots and lots of different policies; we can fast-track those by indexing
 	// them by SNI, so we don't have to iterate potentially thousands of policies
-	// (TODO: this map does not account for wildcards, see if this is a problem in practice? look for reports of high connection latency with wildcard certs but low latency for non-wildcards in multi-thousand-cert deployments)
-	indexedBySNI := make(map[string]ConnectionPolicies)
+	//
+	// only a policy whose SNI matcher lists exact names can be indexed, since it
+	// can't match any other ServerName; a policy with no SNI matcher, or one whose
+	// SNI matcher uses a wildcard or a placeholder, may match any name, so it has
+	// to stay in the candidate set for every lookup (in its original position) to
+	// preserve first-match order, otherwise an indexed exact-name policy would
+	// shadow an earlier catch-all drop or a remote_ip/wildcard restriction
+	indexedBySNI := make(map[string][]int)
+	var unindexed []int
 	if len(cp) > 30 {
-		for _, p := range cp {
+	indexLoop:
+		for i, p := range cp {
 			for _, m := range p.matchers {
-				if sni, ok := m.(MatchServerName); ok {
-					for _, sniName := range sni {
-						// index for fast lookups during handshakes
-						indexName := asciiServerNameForMatch(sniName)
-						indexedBySNI[indexName] = append(indexedBySNI[indexName], p)
-					}
+				// provisioned matchers are pointers, but a value may be used
+				// when policies are built programmatically, so accept both
+				var sni MatchServerName
+				switch v := m.(type) {
+				case *MatchServerName:
+					sni = *v
+				case MatchServerName:
+					sni = v
+				default:
+					continue
 				}
+				if slices.ContainsFunc(sni, func(name string) bool {
+					return strings.ContainsAny(name, "*{")
+				}) {
+					continue
+				}
+				for _, sniName := range sni {
+					// index for fast lookups during handshakes
+					indexName := asciiServerNameForMatch(sniName)
+					indexedBySNI[indexName] = append(indexedBySNI[indexName], i)
+				}
+				continue indexLoop
 			}
+			unindexed = append(unindexed, i)
 		}
 	}
 
 	getConfigForClient := func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
 		// filter policies by SNI first, if possible, to speed things up
 		// when there may be lots of policies
-		possiblePolicies := cp
-		if indexedPolicies, ok := indexedBySNI[asciiServerNameForMatch(hello.ServerName)]; ok {
-			possiblePolicies = indexedPolicies
+		possiblePolicies := slices.Values(cp)
+		if indexed, ok := indexedBySNI[asciiServerNameForMatch(hello.ServerName)]; ok {
+			possiblePolicies = policiesInOrder(cp, indexed, unindexed)
 		}
 
 	policyLoop:
-		for _, pol := range possiblePolicies {
+		for pol := range possiblePolicies {
 			for _, matcher := range pol.matchers {
 				if !matcher.Match(hello) {
 					continue policyLoop
@@ -188,6 +213,24 @@ func (cp ConnectionPolicies) TLSConfig(ctx caddy.Context) *tls.Config {
 	}
 
 	return tlsCfg
+}
+
+// policiesInOrder yields the policies of cp at the indices in a and b, both of
+// which must be sorted ascending, in the order they appear in cp.
+func policiesInOrder(cp ConnectionPolicies, a, b []int) iter.Seq[*ConnectionPolicy] {
+	return func(yield func(*ConnectionPolicy) bool) {
+		for len(a) > 0 || len(b) > 0 {
+			var i int
+			if len(b) == 0 || (len(a) > 0 && a[0] < b[0]) {
+				i, a = a[0], a[1:]
+			} else {
+				i, b = b[0], b[1:]
+			}
+			if !yield(cp[i]) {
+				return
+			}
+		}
+	}
 }
 
 // ConnectionPolicy specifies the logic for handling a TLS handshake.
