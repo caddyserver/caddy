@@ -52,7 +52,6 @@ linters:
       # Match net/http's canonical MIME map keys to avoid re-canonicalisation.
       exclusions:
         - Etag
-        - Sec-Websocket-Key
         - Te
         - Www-Authenticate
     staticcheck:

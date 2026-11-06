@@ -56,7 +56,12 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 //	    root          <path>
 //	    hide          <files...>
 //	    index         <files...>
-//	    browse        [<template_file>]
+//	    browse        [<template_file>] {
+//	        reveal_symlinks
+//	        sort              <options...>
+//	        file_limit        <limit>
+//	        plain_time_format <layout>
+//	    }
 //	    precompressed <formats...>
 //	    status        <status>
 //	    disable_canonical_uris
@@ -147,6 +152,21 @@ func (fsrv *FileServer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 						return d.Err("file_limit is already enabled")
 					}
 					fsrv.Browse.FileLimit = val
+				case "plain_time_format":
+					plainTimeFormat := d.RemainingArgs()
+					if len(plainTimeFormat) == 0 {
+						return d.Err("plain_time_format is missing a time layout argument")
+					}
+					if len(plainTimeFormat) > 1 {
+						return d.Err("plain_time_format accepts exactly one time layout argument; enclose layouts containing spaces in quotes")
+					}
+					if plainTimeFormat[0] == "" {
+						return d.Err("plain_time_format requires a non-empty time layout argument")
+					}
+					if fsrv.Browse.PlainTimeFormat != "" {
+						return d.Err("plain_time_format is already set")
+					}
+					fsrv.Browse.PlainTimeFormat = plainTimeFormat[0]
 				default:
 					return d.Errf("unknown subdirective '%s'", d.Val())
 				}

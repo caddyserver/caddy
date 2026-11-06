@@ -657,7 +657,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		if randErr != nil {
 			return randErr
 		}
-		clonedReq.Header["Sec-WebSocket-Key"] = []string{base64.StdEncoding.EncodeToString(key)} //nolint:canonicalheader // RFC 6455 casing, see normalizeWebsocketHeaders
+		clonedReq.Header.Set("Sec-WebSocket-Key", base64.StdEncoding.EncodeToString(key))
 	}
 
 	// we will need the original headers and Host value if
