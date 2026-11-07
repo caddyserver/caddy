@@ -384,3 +384,93 @@ func TestServeHTTPStatErrors(t *testing.T) {
 		}
 	}
 }
+
+// A trailing slash denotes a directory, so path matchers don't treat
+// "/secret.env/" as "*.env"; the file server must not serve the file either.
+func TestServeHTTPTrailingSlashOnFile(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "secret.env"), []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "secret.env.gz"), gzipBytes(t, []byte("secret")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(root, "dir"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "dir", "index.html"), []byte("index"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for i, tc := range []struct {
+		path           string
+		canonical      bool
+		acceptEncoding string
+		passThru       bool
+		wantStatus     int
+		wantLocation   string
+		wantNext       bool
+	}{
+		{path: "/secret.env", wantStatus: http.StatusOK},
+		{path: "/secret.env/", wantStatus: http.StatusNotFound},
+		{path: "/secret.env/./", wantStatus: http.StatusNotFound},
+		{path: "/secret.env//", wantStatus: http.StatusNotFound},
+		{path: "/secret.env%2F", wantStatus: http.StatusNotFound},
+		{path: "/secret.env/", acceptEncoding: "gzip", wantStatus: http.StatusNotFound},
+		{path: "/secret.env/", passThru: true, wantNext: true},
+		{path: "/secret.env/", canonical: true, wantStatus: http.StatusPermanentRedirect, wantLocation: "/secret.env"},
+		{path: "/dir/", wantStatus: http.StatusOK},
+		{path: "/dir", wantStatus: http.StatusOK},
+		{path: "/dir/index.html/", wantStatus: http.StatusNotFound},
+	} {
+		fsrv := FileServer{
+			Root:               root,
+			CanonicalURIs:      &tc.canonical,
+			PassThru:           tc.passThru,
+			PrecompressedOrder: []string{"gzip"},
+		}
+		ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+		if err := fsrv.Provision(ctx); err != nil {
+			t.Fatal(err)
+		}
+		fsrv.precompressors = map[string]encode.Precompressed{
+			"gzip": testPrecompressed{encoding: "gzip", suffix: ".gz"},
+		}
+
+		r := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		r.Header.Set("Accept-Encoding", tc.acceptEncoding)
+		reqCtx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer())
+		reqCtx = context.WithValue(reqCtx, caddyhttp.OriginalRequestCtxKey, *r)
+		r = r.WithContext(reqCtx)
+
+		var calledNext bool
+		next := caddyhttp.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
+			calledNext = true
+			return nil
+		})
+
+		w := httptest.NewRecorder()
+		err := fsrv.ServeHTTP(w, r, next)
+		cancel()
+
+		if tc.wantNext {
+			if err != nil || !calledNext {
+				t.Errorf("Test %d (%s): expected the next handler, got called=%t err=%v", i, tc.path, calledNext, err)
+			}
+			continue
+		}
+		status := w.Code
+		if he, ok := errors.AsType[caddyhttp.HandlerError](err); ok {
+			status = he.StatusCode
+		} else if err != nil {
+			t.Errorf("Test %d (%s): unexpected error: %v", i, tc.path, err)
+			continue
+		}
+		if status != tc.wantStatus {
+			t.Errorf("Test %d (%s): expected status %d, got %d", i, tc.path, tc.wantStatus, status)
+		}
+		if got := w.Header().Get("Location"); got != tc.wantLocation {
+			t.Errorf("Test %d (%s): expected Location %q, got %q", i, tc.path, tc.wantLocation, got)
+		}
+	}
+}
