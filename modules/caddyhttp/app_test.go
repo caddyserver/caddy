@@ -16,8 +16,10 @@ package caddyhttp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -96,6 +98,70 @@ func TestStopPreviousConfigurationGracePeriod(t *testing.T) {
 	release()
 	if _, err := io.Copy(io.Discard, response.Body); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestStopClosesListenersBeforeShutdown is a regression test for #8233: a
+// config reload (or process exit) used to leave a window where a listener
+// kept accepting new connections after Stop was called, because
+// http.Server.Shutdown only closes its listeners internally, after already
+// marking itself as shutting down. A connection accepted in that window was
+// then silently dropped rather than ever reaching a handler.
+//
+// Stop (by way of the unexported stop) must now close each server's
+// listeners itself, before calling http.Server.Shutdown, closing that
+// window. This is verified directly and deterministically: a listener that
+// was never handed to http.Server.Serve, so http.Server.Shutdown has no
+// knowledge of it and would never close it on its own, must still be closed
+// by stop() - proving stop() closes server.listeners as its own explicit
+// step, rather than relying on http.Server.Shutdown to do it.
+func TestStopClosesListenersBeforeShutdown(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	server := &http.Server{Handler: http.NewServeMux()}
+	acceptErr := make(chan error, 1)
+	acceptStarted := make(chan struct{})
+	go func() {
+		close(acceptStarted)
+		_, err := ln.Accept()
+		acceptErr <- err
+	}()
+	<-acceptStarted
+	// Give the Accept goroutine a moment to actually reach the blocking
+	// syscall before we stop the app; this is a best-effort nudge for
+	// scheduling, not something the test's correctness depends on.
+	time.Sleep(10 * time.Millisecond)
+
+	app := &App{
+		Servers: map[string]*Server{
+			"test": {
+				server:    server,
+				listeners: []net.Listener{ln},
+			},
+		},
+		logger: zap.NewNop(),
+	}
+
+	// exiting=true makes stop() wait for finishedShutdown, i.e. for
+	// stopServer to fully return for every server - including our new
+	// listener-close loop - rather than only for it to have started, so by
+	// the time stop() returns here the listener is guaranteed to have
+	// already been closed (or not, if the fix regresses) with no timing
+	// slack needed in the assertion below.
+	if err := app.stop(true); err != nil {
+		t.Fatalf("stop returned an error: %v", err)
+	}
+
+	select {
+	case err := <-acceptErr:
+		if !errors.Is(err, net.ErrClosed) {
+			t.Fatalf("expected Accept to fail with net.ErrClosed after stop, got: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("listener was not closed by stop; Accept is still blocked")
 	}
 }
 
