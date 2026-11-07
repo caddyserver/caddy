@@ -37,7 +37,7 @@ import (
 func init() {
 	caddycmd.RegisterCommand(caddycmd.Command{
 		Name:  "reverse-proxy",
-		Usage: `[--from <addr>] [--to <addr>] [--change-host-header] [--insecure] [--internal-certs] [--disable-redirects] [--header-up "Field: value"] [--header-down "Field: value"] [--access-log] [--debug]`,
+		Usage: `[--from <addr>] [--to <addr>] [--transport <name>] [--change-host-header] [--insecure] [--internal-certs] [--disable-redirects] [--header-up "Field: value"] [--header-down "Field: value"] [--access-log] [--debug]`,
 		Short: "A quick and production-ready reverse proxy",
 		Long: `
 A simple but production-ready reverse proxy. Useful for quick deployments,
@@ -54,12 +54,15 @@ If the --from address has a host or IP, Caddy will attempt to serve the
 proxy over HTTPS with a certificate (unless overridden by the HTTP scheme
 or port).
 
-If serving HTTPS: 
+If serving HTTPS:
   --disable-redirects can be used to avoid binding to the HTTP port.
   --internal-certs can be used to force issuance certs using the internal
     CA instead of attempting to issue a public certificate.
 
 For proxying:
+  --transport selects the upstream transport. Supported values are "http"
+    (the default) and "fastcgi". When "fastcgi" is used, --insecure and
+    scheme prefixes on --to addresses are rejected.
   --header-up can be used to set a request header to send to the upstream.
   --header-down can be used to set a response header to send back to the client.
   --change-host-header sets the Host header on the request to the address
@@ -71,6 +74,7 @@ For proxying:
 		CobraFunc: func(cmd *cobra.Command) {
 			cmd.Flags().StringP("from", "f", "localhost", "Address on which to receive traffic")
 			cmd.Flags().StringSliceP("to", "t", []string{}, "Upstream address(es) to which traffic should be sent")
+			cmd.Flags().StringP("transport", "", "http", "Upstream transport: http or fastcgi")
 			cmd.Flags().BoolP("change-host-header", "c", false, "Set upstream Host header to address of upstream")
 			cmd.Flags().BoolP("insecure", "", false, "Disable TLS verification (WARNING: DISABLES SECURITY BY NOT VERIFYING TLS CERTIFICATES!)")
 			cmd.Flags().BoolP("disable-redirects", "r", false, "Disable HTTP->HTTPS redirects")
@@ -94,6 +98,18 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 	internalCerts := fs.Bool("internal-certs")
 	accessLog := fs.Bool("access-log")
 	debug := fs.Bool("debug")
+
+	transport := strings.ToLower(strings.TrimSpace(fs.String("transport")))
+	switch transport {
+	case "", "http":
+		transport = "http"
+	case "fastcgi":
+		if insecure {
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("--insecure is not valid with --transport fastcgi")
+		}
+	default:
+		return caddy.ExitCodeFailedStartup, fmt.Errorf("invalid --transport %q (supported: http, fastcgi)", transport)
+	}
 
 	httpPort := strconv.Itoa(caddyhttp.DefaultHTTPPort)
 	httpsPort := strconv.Itoa(caddyhttp.DefaultHTTPSPort)
@@ -139,6 +155,9 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 		if err != nil {
 			return caddy.ExitCodeFailedStartup, fmt.Errorf("invalid upstream address %s: %v", toLoc, err)
 		}
+		if transport == "fastcgi" && addr.scheme != "" {
+			return caddy.ExitCodeFailedStartup, fmt.Errorf("upstream address %s: scheme %q is not valid with --transport fastcgi (use a host:port or unix socket)", toLoc, addr.scheme)
+		}
 		if addr.scheme != "" && toScheme == "" {
 			toScheme = addr.scheme
 		}
@@ -146,12 +165,18 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 	}
 
 	// proceed to build the handler and server
-	ht := HTTPTransport{}
-	if toScheme == "https" {
-		ht.TLS = new(TLSConfig)
-		if insecure {
-			ht.TLS.InsecureSkipVerify = true
+	var transportRaw json.RawMessage
+	if transport == "fastcgi" {
+		transportRaw = caddyconfig.JSONModuleObject(map[string]any{}, "protocol", "fastcgi", nil)
+	} else {
+		ht := HTTPTransport{}
+		if toScheme == "https" {
+			ht.TLS = new(TLSConfig)
+			if insecure {
+				ht.TLS.InsecureSkipVerify = true
+			}
 		}
+		transportRaw = caddyconfig.JSONModuleObject(ht, "protocol", "http", nil)
 	}
 
 	upstreamPool := UpstreamPool{}
@@ -177,7 +202,7 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 	}
 
 	handler := Handler{
-		TransportRaw: caddyconfig.JSONModuleObject(ht, "protocol", "http", nil),
+		TransportRaw: transportRaw,
 		Upstreams:    upstreamPool,
 	}
 
@@ -311,7 +336,11 @@ func cmdReverseProxy(fs caddycmd.Flags) (int, error) {
 		return caddy.ExitCodeFailedStartup, err
 	}
 
-	caddy.Log().Info("caddy proxying", zap.String("from", fromAddr.String()), zap.Strings("to", toAddresses))
+	caddy.Log().Info("caddy proxying",
+		zap.String("from", fromAddr.String()),
+		zap.Strings("to", toAddresses),
+		zap.String("transport", transport),
+	)
 	if len(toAddresses) > 1 {
 		caddy.Log().Info("using default load balancing policy", zap.String("policy", "random"))
 	}
