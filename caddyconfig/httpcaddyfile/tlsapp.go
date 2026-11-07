@@ -538,7 +538,11 @@ func (st ServerType) buildTLSApp(
 		}
 
 		// consolidate automation policies that are the exact same
-		tlsApp.Automation.Policies = consolidateAutomationPolicies(tlsApp.Automation.Policies)
+		var err error
+		tlsApp.Automation.Policies, err = consolidateAutomationPolicies(tlsApp.Automation.Policies)
+		if err != nil {
+			return nil, warnings, err
+		}
 
 		// ensure automation policies don't overlap subjects (this should be
 		// an error at provision-time as well, but catch it in the adapt phase
@@ -1064,16 +1068,19 @@ func newBaseAutomationPolicy(
 
 // consolidateAutomationPolicies combines automation policies that are the same,
 // for a cleaner overall output.
-func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) []*caddytls.AutomationPolicy {
+func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) ([]*caddytls.AutomationPolicy, error) {
+	for i := 0; i < len(aps); i++ {
+		for j := i + 1; j < len(aps); j++ {
+			if _, err := caddytls.CompareAutomationPolicies(aps[i], aps[j]); err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	// sort from most specific to least specific; we depend on this ordering
 	sort.SliceStable(aps, func(i, j int) bool {
-		if automationPolicyIsSubset(aps[i], aps[j]) {
-			return true
-		}
-		if automationPolicyIsSubset(aps[j], aps[i]) {
-			return false
-		}
-		return len(aps[i].SubjectsRaw) > len(aps[j].SubjectsRaw)
+		cmp, _ := caddytls.CompareAutomationPolicies(aps[i], aps[j])
+		return cmp < 0
 	})
 
 	emptyAPCount := 0
@@ -1111,7 +1118,7 @@ func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) []*caddytls
 	}
 	// If all policies are empty, we can return nil, as there is no need to set any policy
 	if emptyAPCount == origLenAPs {
-		return nil
+		return nil, nil
 	}
 
 	// remove or combine duplicate policies
@@ -1170,7 +1177,7 @@ outer:
 		}
 	}
 
-	return aps
+	return aps, nil
 }
 
 // automationPolicyIsSubset returns true if a's subjects are a subset

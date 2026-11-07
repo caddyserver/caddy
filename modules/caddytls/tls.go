@@ -852,10 +852,11 @@ func (t *TLS) HandleHTTPChallenge(w http.ResponseWriter, r *http.Request) bool {
 }
 
 // AddAutomationPolicy provisions and adds ap to the list of the app's
-// automation policies. If an existing automation policy exists that has
-// fewer hosts in its list than ap does, ap will be inserted before that
-// other policy (this helps ensure that ap will be prioritized/chosen
-// over, say, a catch-all policy).
+// automation policies, ordered by specificity. Overlapping subject pairs
+// are compared so that more specific policies precede broader ones (such
+// as wildcards and catch-all policies). Ambiguous sets with conflicting
+// specificity in both directions are rejected. Disjoint or equally
+// specific policies preserve their insertion order.
 func (t *TLS) AddAutomationPolicy(ap *AutomationPolicy) error {
 	if t.Automation == nil {
 		t.Automation = new(AutomationConfig)
@@ -864,33 +865,32 @@ func (t *TLS) AddAutomationPolicy(ap *AutomationPolicy) error {
 	if err != nil {
 		return err
 	}
-	// sort new automation policies just before any other which is a superset
-	// of this one; if we find an existing policy that covers every subject in
-	// ap but less specifically (e.g. a catch-all policy, or one with wildcards
-	// or with fewer subjects), insert ap just before it, otherwise ap would
-	// never be used because the first matching policy is more general
+
+	minIdx := 0
+	maxIdx := len(t.Automation.Policies)
+
 	for i, existing := range t.Automation.Policies {
-		// first see if existing is superset of ap for all names
-		var otherIsSuperset bool
-	outer:
-		for _, thisSubj := range ap.subjects {
-			for _, otherSubj := range existing.subjects {
-				if certmagic.MatchWildcard(thisSubj, otherSubj) {
-					otherIsSuperset = true
-					break outer
-				}
+		cmp, err := CompareAutomationPolicies(ap, existing)
+		if err != nil {
+			return err
+		}
+		switch {
+		case cmp < 0:
+			if i < maxIdx {
+				maxIdx = i
+			}
+		case cmp > 0:
+			if i+1 > minIdx {
+				minIdx = i + 1
 			}
 		}
-		// if existing AP is a superset or if it contains fewer names (i.e. is
-		// more general), then new AP is more specific, so insert before it
-		if otherIsSuperset || len(existing.SubjectsRaw) < len(ap.SubjectsRaw) {
-			t.Automation.Policies = append(t.Automation.Policies[:i],
-				append([]*AutomationPolicy{ap}, t.Automation.Policies[i:]...)...)
-			return nil
-		}
 	}
-	// otherwise just append the new one
-	t.Automation.Policies = append(t.Automation.Policies, ap)
+
+	if minIdx > maxIdx {
+		return fmt.Errorf("ambiguous automation policies: overlapping subjects require conflicting ordering")
+	}
+
+	t.Automation.Policies = slices.Insert(t.Automation.Policies, maxIdx, ap)
 	return nil
 }
 

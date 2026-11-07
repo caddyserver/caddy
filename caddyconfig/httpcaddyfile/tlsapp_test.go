@@ -72,3 +72,40 @@ https://example.net localhost:8080 {
 		t.Fatalf("adapting Caddyfile: %v", err)
 	}
 }
+
+func TestConsolidateAutomationPoliciesSpecificity(t *testing.T) {
+	t.Run("wildcard before specific sorted by specificity", func(t *testing.T) {
+		pWildcard := &caddytls.AutomationPolicy{
+			SubjectsRaw: []string{"*.example.com", "other.com", "third.com"},
+			KeyType:     "rsa2048",
+		}
+		pSpecific := &caddytls.AutomationPolicy{
+			SubjectsRaw: []string{"foo.example.com", "e.com"},
+			KeyType:     "ed25519",
+		}
+
+		res, err := consolidateAutomationPolicies([]*caddytls.AutomationPolicy{pWildcard, pSpecific})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(res) != 2 {
+			t.Fatalf("expected 2 policies, got %d", len(res))
+		}
+		if res[0] != pSpecific {
+			t.Errorf("expected specific policy at index 0, got %v", res[0].SubjectsRaw)
+		}
+		if res[1] != pWildcard {
+			t.Errorf("expected wildcard policy at index 1, got %v", res[1].SubjectsRaw)
+		}
+	})
+
+	t.Run("bidirectional conflict returns error", func(t *testing.T) {
+		p1 := &caddytls.AutomationPolicy{SubjectsRaw: []string{"foo.example.com", "*.other.com"}}
+		p2 := &caddytls.AutomationPolicy{SubjectsRaw: []string{"*.example.com", "bar.other.com"}}
+
+		_, err := consolidateAutomationPolicies([]*caddytls.AutomationPolicy{p1, p2})
+		if err == nil {
+			t.Fatalf("expected error for conflicting policies, got nil")
+		}
+	})
+}
