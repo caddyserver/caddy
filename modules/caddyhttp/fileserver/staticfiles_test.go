@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -472,5 +473,58 @@ func TestServeHTTPTrailingSlashOnFile(t *testing.T) {
 		if got := w.Header().Get("Location"); got != tc.wantLocation {
 			t.Errorf("Test %d (%s): expected Location %q, got %q", i, tc.path, tc.wantLocation, got)
 		}
+	}
+}
+
+// The trailing separator of a filesystem root such as "/" or `C:\` must be
+// kept, else `C:` resolves to the current directory of the drive.
+func TestServeHTTPFilesystemRoot(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	volume := filepath.VolumeName(wd)
+	// top-level directory leading to wd, listed only if the root is served
+	topDir := strings.Split(strings.TrimPrefix(wd[len(volume):], separator), separator)[0]
+
+	roots := []string{volume + separator}
+	if runtime.GOOS == "windows" {
+		roots = append(roots, separator)
+	}
+	for _, root := range roots {
+		t.Run(root, func(t *testing.T) {
+			fsrv := FileServer{Root: root, Browse: &Browse{}}
+			ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+			defer cancel()
+			if err := fsrv.Provision(ctx); err != nil {
+				t.Fatal(err)
+			}
+
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			reqCtx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer())
+			reqCtx = context.WithValue(reqCtx, caddyhttp.OriginalRequestCtxKey, *r)
+			r = r.WithContext(reqCtx)
+			r.Header.Set("Accept", "application/json")
+			w := httptest.NewRecorder()
+			if err := fsrv.ServeHTTP(w, r, nil); err != nil {
+				t.Fatal(err)
+			}
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+			}
+
+			var items []struct {
+				Name string `json:"name"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &items); err != nil {
+				t.Fatal(err)
+			}
+			for _, item := range items {
+				if strings.TrimSuffix(item.Name, "/") == topDir {
+					return
+				}
+			}
+			t.Errorf("listing of %q doesn't contain %q: %s", root, topDir, w.Body.String())
+		})
 	}
 }

@@ -300,8 +300,12 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	}
 
 	// remove any trailing separator as it breaks fs.ValidPath() in the stdlib,
-	// and Windows rejects it on a regular file
-	filename := strings.TrimSuffix(caddyhttp.SanitizedPathJoin(root, r.URL.Path), separator)
+	// and Windows rejects it on a regular file; keep it on a root such as `/` or
+	// `C:\`, where removing it changes the target
+	filename := caddyhttp.SanitizedPathJoin(root, r.URL.Path)
+	if len(filename) > len(filepath.VolumeName(filename))+1 {
+		filename = strings.TrimSuffix(filename, separator)
+	}
 
 	if c := fsrv.logger.Check(zapcore.DebugLevel, "sanitized path join"); c != nil {
 		c.Write(
