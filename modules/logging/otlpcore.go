@@ -36,12 +36,20 @@ func init() {
 }
 
 // OTLPCore exports log entries as OpenTelemetry log records, in addition
-// to the log's writer. The exporter is configured with the standard
-// OTEL_* environment variables, such as OTEL_EXPORTER_OTLP_ENDPOINT and
-// OTEL_EXPORTER_OTLP_PROTOCOL. Set the log's output to discard to only
-// export the entries. The fields of the filter format apply to exported
-// records too, and access logs are linked to the span of the tracing
-// handler.
+// to the log's writer. Set the log's output to discard to only export
+// the entries.
+//
+// The exporter is configured with the standard OTEL_* environment
+// variables, such as OTEL_EXPORTER_OTLP_ENDPOINT and
+// OTEL_EXPORTER_OTLP_PROTOCOL.
+//
+// The fields of the filter format apply to exported records too, and
+// access logs are linked to the span of the tracing handler.
+//
+// Fields added by the append format are NOT exported. To attach
+// information about the Caddy instance to exported records, set it as
+// resource attributes instead, for example
+// OTEL_RESOURCE_ATTRIBUTES=host.name=web-1,deployment.environment=prod.
 //
 //	log {
 //		output discard
