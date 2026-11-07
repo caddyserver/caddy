@@ -38,8 +38,8 @@ func init() {
 // to the log's writer. The exporter is configured with the standard
 // OTEL_* environment variables, such as OTEL_EXPORTER_OTLP_ENDPOINT and
 // OTEL_EXPORTER_OTLP_PROTOCOL. Set the log's output to discard to only
-// export the entries. Encoder filters, such as those of the filter format,
-// do not apply to exported records.
+// export the entries. The fields of the filter format apply to exported
+// records too.
 //
 //	log {
 //		output discard
@@ -68,12 +68,29 @@ func (c *OTLPCore) Provision(ctx caddy.Context) error {
 	c.provider = provider
 
 	version, _ := caddy.Version()
-	c.Core = otelzap.NewCore("github.com/caddyserver/caddy/v2",
+	c.Core = &otlpCore{Core: otelzap.NewCore("github.com/caddyserver/caddy/v2",
 		otelzap.WithLoggerProvider(provider),
 		otelzap.WithVersion(version),
-	)
+	)}
 
 	return nil
+}
+
+// ConfigureFromLogEncoder picks up the field filters of the log's format.
+func (c *OTLPCore) ConfigureFromLogEncoder(enc zapcore.Encoder) error {
+	for {
+		switch e := enc.(type) {
+		case *FilterEncoder:
+			c.Core.(*otlpCore).filters = e.Fields
+			return nil
+		case *AppendEncoder:
+			enc = e.wrapped
+		case *JournaldEncoder:
+			enc = e.Encoder
+		default:
+			return nil
+		}
+	}
 }
 
 // Cleanup flushes pending records when the last OTLP core is unloaded.
@@ -99,6 +116,50 @@ func (c *OTLPCore) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	}
 
 	return nil
+}
+
+// otlpCore prepares fields before handing them to the OpenTelemetry bridge.
+type otlpCore struct {
+	zapcore.Core
+	filters map[string]LogFieldFilter
+}
+
+func (c *otlpCore) With(fields []zapcore.Field) zapcore.Core {
+	return &otlpCore{Core: c.Core.With(c.prepare(fields)), filters: c.filters}
+}
+
+func (c *otlpCore) Check(ent zapcore.Entry, ce *zapcore.CheckedEntry) *zapcore.CheckedEntry {
+	// the bridge would register itself and skip prepare
+	if c.Enabled(ent.Level) {
+		return ce.AddCore(ent, c)
+	}
+	return ce
+}
+
+func (c *otlpCore) Write(ent zapcore.Entry, fields []zapcore.Field) error {
+	return c.Core.Write(ent, c.prepare(fields))
+}
+
+// prepare applies the field filters the way FilterEncoder does.
+func (c *otlpCore) prepare(fields []zapcore.Field) []zapcore.Field {
+	if len(c.filters) == 0 {
+		return fields
+	}
+
+	prepared := make([]zapcore.Field, 0, len(fields))
+	for _, f := range fields {
+		if filter, ok := c.filters[f.Key]; ok {
+			f = filter.Filter(f)
+		} else if marsh, ok := f.Interface.(zapcore.ObjectMarshaler); ok && f.Type == zapcore.ObjectMarshalerType {
+			f.Interface = logObjectMarshalerWrapper{
+				enc:   FilterEncoder{Fields: c.filters, keyPrefix: f.Key + ">"},
+				marsh: marsh,
+			}
+		}
+		prepared = append(prepared, f)
+	}
+
+	return prepared
 }
 
 var globalLoggerProvider loggerProvider
@@ -163,4 +224,6 @@ var (
 	_ caddy.Provisioner     = (*OTLPCore)(nil)
 	_ caddy.CleanerUpper    = (*OTLPCore)(nil)
 	_ caddyfile.Unmarshaler = (*OTLPCore)(nil)
+
+	_ caddy.ConfiguresFromLogEncoder = (*OTLPCore)(nil)
 )
