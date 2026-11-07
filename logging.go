@@ -455,31 +455,38 @@ func (cl *BaseLog) provisionCommon(ctx Context, logging *Logging) error {
 	if cl.encoder == nil {
 		cl.encoder = newDefaultProductionLogEncoder(cl.writerOpener)
 	}
-	cl.buildCore()
+	var extra zapcore.Core
 	if cl.CoreRaw != nil {
 		mod, err := ctx.LoadModule(cl, "CoreRaw")
 		if err != nil {
 			return fmt.Errorf("loading log core module: %v", err)
 		}
-		core := mod.(zapcore.Core)
-		cl.core = zapcore.NewTee(cl.core, core)
+		extra = mod.(zapcore.Core)
 	}
+	cl.buildCore(extra)
 	return nil
 }
 
-func (cl *BaseLog) buildCore() {
+func (cl *BaseLog) buildCore(extra zapcore.Core) {
+	var cores []zapcore.Core
+	if _, ok := cl.writerOpener.(*DiscardWriter); !ok {
+		cores = append(cores, zapcore.NewCore(
+			cl.encoder,
+			zapcore.AddSync(cl.writer),
+			cl.levelEnabler,
+		))
+	}
+	if extra != nil {
+		cores = append(cores, &levelFilteredCore{Core: extra, level: cl.levelEnabler})
+	}
 	// logs which only discard their output don't need
 	// to perform encoding or any other processing steps
 	// at all, so just shortcut to a nop core instead
-	if _, ok := cl.writerOpener.(*DiscardWriter); ok {
+	if len(cores) == 0 {
 		cl.core = zapcore.NewNopCore()
 		return
 	}
-	c := zapcore.NewCore(
-		cl.encoder,
-		zapcore.AddSync(cl.writer),
-		cl.levelEnabler,
-	)
+	c := zapcore.NewTee(cores...)
 	if cl.Sampling != nil {
 		if cl.Sampling.Interval == 0 {
 			cl.Sampling.Interval = 1 * time.Second
@@ -672,6 +679,27 @@ func (cl *CustomLog) loggerAllowed(name string, isModule bool) bool {
 		(len(cl.Include) == 0 && longestReject == 0)
 }
 
+// levelFilteredCore applies the log's level to a core module, which otherwise receives every entry.
+type levelFilteredCore struct {
+	zapcore.Core
+	level zapcore.LevelEnabler
+}
+
+func (c *levelFilteredCore) Enabled(lvl zapcore.Level) bool {
+	return c.level.Enabled(lvl) && c.Core.Enabled(lvl)
+}
+
+func (c *levelFilteredCore) With(fields []zapcore.Field) zapcore.Core {
+	return &levelFilteredCore{Core: c.Core.With(fields), level: c.level}
+}
+
+func (c *levelFilteredCore) Check(ent zapcore.Entry, ce *zapcore.CheckedEntry) *zapcore.CheckedEntry {
+	if !c.level.Enabled(ent.Level) {
+		return ce
+	}
+	return c.Core.Check(ent, ce)
+}
+
 // filteringCore filters log entries based on logger name,
 // according to the rules of a CustomLog.
 type filteringCore struct {
@@ -799,7 +827,7 @@ func newDefaultProductionLog() (*defaultCustomLog, error) {
 	cl.encoder = newDefaultProductionLogEncoder(cl.writerOpener)
 	cl.levelEnabler = zapcore.InfoLevel
 
-	cl.buildCore()
+	cl.buildCore(nil)
 
 	logger := zap.New(cl.core)
 
