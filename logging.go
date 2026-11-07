@@ -462,6 +462,11 @@ func (cl *BaseLog) provisionCommon(ctx Context, logging *Logging) error {
 			return fmt.Errorf("loading log core module: %v", err)
 		}
 		extra = mod.(zapcore.Core)
+		if c, ok := extra.(ConfiguresFromLogEncoder); ok {
+			if err := c.ConfigureFromLogEncoder(cl.encoder); err != nil {
+				return fmt.Errorf("configuring log core module: %v", err)
+			}
+		}
 	}
 	cl.buildCore(extra)
 	return nil
@@ -936,6 +941,13 @@ var writers = NewUsagePool()
 // in order to determine the correct default.
 type ConfiguresFormatterDefault interface {
 	ConfigureDefaultFormat(WriterOpener) error
+}
+
+// ConfiguresFromLogEncoder is an optional interface that core
+// modules can implement to get the encoder of their log, for
+// instance to apply the same field filters.
+type ConfiguresFromLogEncoder interface {
+	ConfigureFromLogEncoder(zapcore.Encoder) error
 }
 
 const DefaultLoggerName = "default"

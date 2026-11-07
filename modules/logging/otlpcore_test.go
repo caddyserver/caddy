@@ -19,10 +19,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"sync"
 	"testing"
 
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
+	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	logspb "go.opentelemetry.io/proto/otlp/logs/v1"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
@@ -136,5 +138,48 @@ func TestOTLPCoreSharesProviderAcrossReloads(t *testing.T) {
 	}
 	if globalLoggerProvider.provider != nil {
 		t.Error("expected the provider to be shut down with the last core")
+	}
+}
+
+func TestOTLPCoreAppliesFieldFilters(t *testing.T) {
+	collector := newOTLPCollector(t)
+	core := provisionOTLPCore(t)
+	err := core.ConfigureFromLogEncoder(&AppendEncoder{wrapped: &FilterEncoder{Fields: map[string]LogFieldFilter{
+		"user_id":           DeleteFilter{},
+		"request>remote_ip": &ReplaceFilter{Value: "REDACTED"},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	zap.New(core).Info("filtered",
+		zap.Object("request", testObject{"remote_ip": "192.0.2.1", "host": "example.com"}),
+		zap.String("user_id", "kevin"),
+		zap.Int("status", 200),
+	)
+	if err := core.Cleanup(); err != nil {
+		t.Fatal(err)
+	}
+
+	rec, _ := collector.record("filtered")
+	if rec == nil {
+		t.Fatal("expected the record to be exported")
+	}
+	attrs := map[string]*commonpb.AnyValue{}
+	for _, kv := range rec.GetAttributes() {
+		attrs[kv.GetKey()] = kv.GetValue()
+	}
+	if _, ok := attrs["user_id"]; ok {
+		t.Error("expected user_id to be deleted")
+	}
+	if attrs["status"].GetIntValue() != 200 {
+		t.Errorf("expected status to be kept, got %v", attrs["status"])
+	}
+	request := map[string]string{}
+	for _, kv := range attrs["request"].GetKvlistValue().GetValues() {
+		request[kv.GetKey()] = kv.GetValue().GetStringValue()
+	}
+	if !reflect.DeepEqual(request, map[string]string{"remote_ip": "REDACTED", "host": "example.com"}) {
+		t.Errorf("unexpected request attribute %v", request)
 	}
 }
