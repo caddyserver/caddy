@@ -18,9 +18,11 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"time"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/caddyserver/caddy/v2/internal"
 )
@@ -193,3 +195,37 @@ func TestUnbufferDefaultLogger(t *testing.T) {
 		t.Fatal("unexpected buffer core after second unbuffer call")
 	}
 }
+
+func TestBaseLogCoreModuleHonorsLevelAndSampling(t *testing.T) {
+	for _, writer := range []WriterOpener{&DiscardWriter{}, StderrWriter{}} {
+		t.Run(writer.WriterKey(), func(t *testing.T) {
+			observed, logs := observer.New(zapcore.DebugLevel)
+			cl := &BaseLog{
+				writerOpener: writer,
+				writer:       nopWriteCloser{},
+				encoder:      zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()),
+				levelEnabler: zapcore.InfoLevel,
+				Sampling:     &LogSampling{Interval: time.Minute, First: 1, Thereafter: 100},
+			}
+			cl.buildCore(observed)
+
+			logger := zap.New(cl.core)
+			logger.Debug("below level")
+			for range 3 {
+				logger.Info("sampled")
+			}
+
+			if logs.FilterMessage("below level").Len() != 0 {
+				t.Error("expected the core module to drop entries below the log level")
+			}
+			if got := logs.FilterMessage("sampled").Len(); got != 1 {
+				t.Errorf("expected sampling to keep 1 entry, got %d", got)
+			}
+		})
+	}
+}
+
+type nopWriteCloser struct{}
+
+func (nopWriteCloser) Write(p []byte) (int, error) { return len(p), nil }
+func (nopWriteCloser) Close() error                { return nil }
