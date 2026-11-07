@@ -378,19 +378,10 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 			expandedFile = file // "oh well," I guess?
 		}
 
-		// clean the path and split, if configured -- we must split before
-		// globbing so that the file system doesn't include the remainder
-		// ("afterSplit") in the filename; be sure to restore trailing slash
-		// so that "/file/" or "/file/./" cannot match a regular file
-		cleanedFile := path.Clean(expandedFile)
-		if strings.HasSuffix(expandedFile, "/") && !strings.HasSuffix(cleanedFile, "/") {
-			cleanedFile += "/"
-		}
-		beforeSplit, afterSplit := m.firstSplit(cleanedFile)
-
-		// only a pattern ending in "/" matches a directory, so with "{path}" a
-		// request for "/dir/" falls through to the next entry (e.g. "{path}/index.php")
-		if beforeSplit != "/" && strings.HasSuffix(beforeSplit, "/") && !strings.HasSuffix(file, "/") {
+		// we must split before globbing so that the file system
+		// doesn't include the remainder ("afterSplit") in the filename
+		beforeSplit, afterSplit, ok := m.cleanSplit(file, expandedFile)
+		if !ok {
 			return nil
 		}
 
@@ -427,7 +418,7 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 	// makeLiteralCandidate builds a candidate from file as a literal path,
 	// without expanding globs. It is used only for the final entry of
 	// first_exist_fallback, whose literal name may contain glob metacharacters.
-	makeLiteralCandidate := func(file string) matchCandidate {
+	makeLiteralCandidate := func(file string) (matchCandidate, bool) {
 		// placeholders are not glob-escaped here, since nothing is globbed;
 		// errors were already logged by makeCandidates for the same pattern
 		expandedFile, err := repl.ReplaceFunc(file, func(_ string, val any) (any, error) {
@@ -436,16 +427,16 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 		if err != nil {
 			expandedFile = file
 		}
-		beforeSplit, afterSplit := m.firstSplit(path.Clean(expandedFile))
-		if strings.HasSuffix(file, "/") {
-			beforeSplit += "/"
+		beforeSplit, afterSplit, ok := m.cleanSplit(file, expandedFile)
+		if !ok {
+			return matchCandidate{}, false
 		}
 		fullPath := caddyhttp.SanitizedPathJoin(root, beforeSplit)
 		return matchCandidate{
 			fullpath:       fullPath,
 			relative:       strings.TrimPrefix(fullPath, root),
 			splitRemainder: afterSplit,
-		}
+		}, true
 	}
 
 	// setPlaceholders creates the placeholders for the matched file
@@ -495,10 +486,11 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 			// an absent fallback must not match, or php_fastcgi would send
 			// every request of a site without index.php to PHP
 			if i == maxI && len(candidates) == 0 {
-				c := makeLiteralCandidate(pattern)
-				if info, exists := m.strictFileExists(fileSystem, c.fullpath); exists {
-					setPlaceholders(c, info.IsDir())
-					return true, nil
+				if c, ok := makeLiteralCandidate(pattern); ok {
+					if info, exists := m.strictFileExists(fileSystem, c.fullpath); exists {
+						setPlaceholders(c, info.IsDir())
+						return true, nil
+					}
 				}
 			}
 		}
@@ -610,6 +602,24 @@ func (m MatchFile) strictFileExists(fileSystem fs.FS, file string) (os.FileInfo,
 	// by convention, file paths NOT ending
 	// in a path separator must NOT be a directory
 	return info, !info.IsDir()
+}
+
+// cleanSplit cleans expanded, the expansion of pattern, and splits it if
+// configured. It keeps the trailing slash so that "/file/" or "/file/./"
+// cannot match a regular file, and reports false for a path ending in "/"
+// unless pattern does too, since only such patterns match a directory.
+func (m MatchFile) cleanSplit(pattern, expanded string) (beforeSplit, afterSplit string, ok bool) {
+	cleaned := path.Clean(expanded)
+	if strings.HasSuffix(expanded, "/") && !strings.HasSuffix(cleaned, "/") {
+		cleaned += "/"
+	}
+	beforeSplit, afterSplit = m.firstSplit(cleaned)
+
+	// with "{path}", a request for "/dir/" falls through to the next entry (e.g. "{path}/index.php")
+	if beforeSplit != "/" && strings.HasSuffix(beforeSplit, "/") && !strings.HasSuffix(pattern, "/") {
+		return "", "", false
+	}
+	return beforeSplit, afterSplit, true
 }
 
 // firstSplit returns the first result where the path
