@@ -627,6 +627,20 @@ func TestFirstExistFallbackMatchesWhenFinalFileIsAbsent(t *testing.T) {
 			expectedPath: "/no-such-index.php",
 		},
 		{
+			name:     "fallback does not match a regular file with a trailing slash",
+			tryFiles: []string{"{http.request.uri.path}"},
+			policy:   tryPolicyFirstExistFallback,
+			path:     "/foo.txt/",
+			matched:  false,
+		},
+		{
+			name:     "fallback does not match a regular file with a trailing dot segment",
+			tryFiles: []string{"{http.request.uri.path}"},
+			policy:   tryPolicyFirstExistFallback,
+			path:     "/foo.txt/./",
+			matched:  false,
+		},
+		{
 			name:         "fallback still prefers an earlier candidate that exists",
 			tryFiles:     []string{"{http.request.uri.path}", "no-such-index.php"},
 			policy:       tryPolicyFirstExistFallback,
