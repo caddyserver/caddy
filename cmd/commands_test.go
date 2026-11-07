@@ -2,6 +2,7 @@ package caddycmd
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"maps"
 	"os"
@@ -13,6 +14,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -362,5 +365,140 @@ func TestWrapCommandFuncForCobra_RunFailure(t *testing.T) {
 	// Regression test for #8180: caddy.Log() must not remain buffered after WrapCommandFuncForCobra
 	if _, ok := caddy.Log().Core().(internal.LogBufferCoreInterface); ok {
 		t.Error("caddy.Log() was left in a buffered state after WrapCommandFuncForCobra; should be unbuffered")
+	}
+}
+
+type syncTrackerCore struct {
+	zapcore.Core
+	syncCalled bool
+}
+
+func (s *syncTrackerCore) Sync() error {
+	s.syncCalled = true
+	return s.Core.Sync()
+}
+
+func (s *syncTrackerCore) With(fields []zapcore.Field) zapcore.Core {
+	return &syncTrackerCore{
+		Core:       s.Core.With(fields),
+		syncCalled: s.syncCalled,
+	}
+}
+
+func (s *syncTrackerCore) Check(ent zapcore.Entry, ce *zapcore.CheckedEntry) *zapcore.CheckedEntry {
+	if s.Enabled(ent.Level) {
+		return ce.AddCore(ent, s)
+	}
+	return ce
+}
+
+func TestWrapCommandFuncForCobra_SyncOnError(t *testing.T) {
+	buf := new(bytes.Buffer)
+	core := zapcore.NewCore(
+		zapcore.NewConsoleEncoder(zap.NewDevelopmentEncoderConfig()),
+		zapcore.AddSync(buf),
+		zapcore.InfoLevel,
+	)
+	tracker := &syncTrackerCore{Core: core}
+	testLogger := zap.New(tracker)
+
+	restore := caddy.SetDefaultLogger(testLogger)
+	defer restore()
+
+	cmd := &cobra.Command{Use: "test"}
+	expectedErr := errors.New("startup configuration error")
+	runE := WrapCommandFuncForCobra(func(Flags) (int, error) {
+		return 1, expectedErr
+	})
+
+	err := runE(cmd, nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, expectedErr) {
+		t.Errorf("expected error %v, got %v", expectedErr, err)
+	}
+	if !cmd.SilenceErrors {
+		t.Error("expected cmd.SilenceErrors to be true")
+	}
+	if !tracker.syncCalled {
+		t.Error("expected logger.Sync() to be called on error")
+	}
+	if !strings.Contains(buf.String(), "startup configuration error") {
+		t.Fatalf("expected error message to be flushed to buffer, got: %s", buf.String())
+	}
+}
+
+func TestWrapCommandFuncForCobra_CustomExitCode(t *testing.T) {
+	buf := new(bytes.Buffer)
+	core := zapcore.NewCore(
+		zapcore.NewConsoleEncoder(zap.NewDevelopmentEncoderConfig()),
+		zapcore.AddSync(buf),
+		zapcore.InfoLevel,
+	)
+	tracker := &syncTrackerCore{Core: core}
+	testLogger := zap.New(tracker)
+
+	restore := caddy.SetDefaultLogger(testLogger)
+	defer restore()
+
+	cmd := &cobra.Command{Use: "test"}
+	expectedErr := errors.New("custom failure")
+	runE := WrapCommandFuncForCobra(func(Flags) (int, error) {
+		return 2, expectedErr
+	})
+
+	err := runE(cmd, nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	var exitErr *exitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected *exitError, got %T (%v)", err, err)
+	}
+	if exitErr.ExitCode != 2 {
+		t.Errorf("expected exit code 2, got %d", exitErr.ExitCode)
+	}
+	if !errors.Is(exitErr.Err, expectedErr) {
+		t.Errorf("expected wrapped error %v, got %v", expectedErr, exitErr.Err)
+	}
+	if !cmd.SilenceErrors {
+		t.Error("expected cmd.SilenceErrors to be true")
+	}
+	if !tracker.syncCalled {
+		t.Error("expected logger.Sync() to be called on error")
+	}
+}
+
+func TestWrapCommandFuncForCobra_SuccessNoError(t *testing.T) {
+	buf := new(bytes.Buffer)
+	core := zapcore.NewCore(
+		zapcore.NewConsoleEncoder(zap.NewDevelopmentEncoderConfig()),
+		zapcore.AddSync(buf),
+		zapcore.InfoLevel,
+	)
+	tracker := &syncTrackerCore{Core: core}
+	testLogger := zap.New(tracker)
+
+	restore := caddy.SetDefaultLogger(testLogger)
+	defer restore()
+
+	cmd := &cobra.Command{Use: "test"}
+	runE := WrapCommandFuncForCobra(func(Flags) (int, error) {
+		return 0, nil
+	})
+
+	err := runE(cmd, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cmd.SilenceErrors {
+		t.Error("expected cmd.SilenceErrors to remain false on success")
+	}
+	if tracker.syncCalled {
+		t.Error("expected logger.Sync() not to be called in WrapCommandFuncForCobra on success")
+	}
+	if buf.Len() > 0 {
+		t.Fatalf("expected buffer to be empty on success, got: %s", buf.String())
 	}
 }

@@ -809,9 +809,26 @@ func UnbufferDefaultLogger(orig *zap.Logger) {
 	defer defaultLoggerMu.Unlock()
 	if defaultLogger != nil && defaultLogger.logger != nil {
 		if bufferCore, ok := defaultLogger.logger.Core().(*internal.LogBufferCore); ok {
-			bufferCore.FlushTo(orig)
-			defaultLogger.logger = orig
+			if orig != nil {
+				bufferCore.FlushTo(orig)
+				_ = orig.Sync()
+				defaultLogger.logger = orig
+			}
 		}
+	}
+}
+
+// SetDefaultLogger sets the current default logger and returns a function
+// to restore the previous default logger.
+func SetDefaultLogger(l *zap.Logger) func() {
+	defaultLoggerMu.Lock()
+	defer defaultLoggerMu.Unlock()
+	old := defaultLogger.logger
+	defaultLogger.logger = l
+	return func() {
+		defaultLoggerMu.Lock()
+		defer defaultLoggerMu.Unlock()
+		defaultLogger.logger = old
 	}
 }
 

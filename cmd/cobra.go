@@ -153,7 +153,10 @@ func WrapCommandFuncForCobra(f CommandFunc) func(cmd *cobra.Command, _ []string)
 			// Route the error through Caddy's logger so it receives the same
 			// colored, structured formatting as INFO/WARN output, rather than
 			// cobra's plain "Error: ..." line which lacks any highlighting.
-			caddy.Log().Error(err.Error())
+			if l := caddy.Log(); l != nil {
+				l.Error(err.Error())
+				_ = l.Sync()
+			}
 			cmd.SilenceErrors = true
 		}
 		if status > 1 {
