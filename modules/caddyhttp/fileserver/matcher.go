@@ -470,8 +470,9 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 
 			candidates := makeCandidates(pattern)
 			for _, c := range candidates {
-				// Skip the IO if using fallback policy and it's the latest item
-				if i == maxI {
+				// Skip the IO if using fallback policy and it's the latest item,
+				// since globbing found it; Windows doesn't glob, so it stats it
+				if i == maxI && runtime.GOOS != "windows" {
 					setPlaceholders(c, false)
 
 					return true, nil
