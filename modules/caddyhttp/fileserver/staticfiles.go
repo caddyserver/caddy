@@ -31,9 +31,13 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/unicode/norm"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -128,10 +132,10 @@ type FileServer struct {
 	// comparisons are made. For maximum clarity and explicitness, use complete,
 	// absolute paths; or, for greater portability, use relative paths instead.
 	//
-	// Note that hide comparisons are case-sensitive. On case-insensitive
-	// filesystems, requests with different path casing may still resolve to the
-	// same file or directory on disk, so hide should not be treated as a
-	// security boundary for sensitive paths.
+	// Comparisons ignore letter case and Unicode normalization on every
+	// platform, because case-insensitive filesystems resolve differently
+	// spelled request paths to the same file. On case-sensitive filesystems,
+	// this also hides files whose names differ from a hidden one only by case.
 	Hide []string `json:"hide,omitempty"`
 
 	// The names of files to try as index files if a folder is requested.
@@ -706,40 +710,64 @@ func fileHidden(filename string, hide []string) bool {
 		filename = filenameAbs
 	}
 
-	var components []string
-
+	folded := foldPath(filename)
 	for _, h := range hide {
-		if !strings.Contains(h, separator) {
-			// if there is no separator in h, then we assume the user
-			// wants to hide any files or folders that match that
-			// name; thus we have to compare against each component
-			// of the filename, e.g. hiding "bar" would hide "/bar"
-			// as well as "/foo/bar/baz" but not "/barstool".
-			if len(components) == 0 {
-				components = strings.Split(filename, separator)
-			}
-			for _, c := range components {
-				if hidden, _ := filepath.Match(h, c); hidden {
-					return true
-				}
-			}
-		} else if after, ok := strings.CutPrefix(filename, h); ok {
-			// if there is a separator in h, and filename is exactly
-			// prefixed with h, then we can do a prefix match so that
-			// "/foo" matches "/foo/bar" but not "/foobar".
-			withoutPrefix := after
-			if strings.HasPrefix(withoutPrefix, separator) {
-				return true
-			}
+		if hideMatch(h, filename) {
+			return true
 		}
-
-		// in the general case, a glob match will suffice
-		if hidden, _ := filepath.Match(h, filename); hidden {
+		// case- and normalization-insensitive file systems open the same file
+		// under other spellings, so compare the folded forms too
+		if fh := foldPath(h); (fh != h || folded != filename) && hideMatch(fh, folded) {
 			return true
 		}
 	}
 
 	return false
+}
+
+// hideMatch reports whether filename is hidden by the hide list entry h.
+func hideMatch(h, filename string) bool {
+	if !strings.Contains(h, separator) {
+		// if there is no separator in h, then we assume the user
+		// wants to hide any files or folders that match that
+		// name; thus we have to compare against each component
+		// of the filename, e.g. hiding "bar" would hide "/bar"
+		// as well as "/foo/bar/baz" but not "/barstool".
+		for c := range strings.SplitSeq(filename, separator) {
+			if hidden, _ := filepath.Match(h, c); hidden {
+				return true
+			}
+		}
+	} else if after, ok := strings.CutPrefix(filename, h); ok && strings.HasPrefix(after, separator) {
+		// if there is a separator in h, and filename is exactly
+		// prefixed with h, then we can do a prefix match so that
+		// "/foo" matches "/foo/bar" but not "/foobar".
+		return true
+	}
+
+	// in the general case, a glob match will suffice
+	hidden, _ := filepath.Match(h, filename)
+	return hidden
+}
+
+// foldPath maps every spelling that a case-insensitive file system (APFS,
+// NTFS, FAT, SMB, ext4 casefold) may resolve to the same name onto one string.
+func foldPath(s string) string {
+	ascii := true
+	for i := 0; i < len(s); i++ {
+		if s[i] >= utf8.RuneSelf {
+			ascii = false
+			break
+		}
+	}
+	if ascii {
+		return strings.ToLower(s)
+	}
+
+	// NTFS compares simple uppercase forms (ı is I), APFS uses full case
+	// folding (ß is ss) and ignores normalization (é is e + U+0301)
+	s = strings.Map(unicode.ToUpper, s)
+	return norm.NFC.String(cases.Fold().String(norm.NFC.String(s)))
 }
 
 // notFound returns a 404 error or, if pass-thru is enabled,
