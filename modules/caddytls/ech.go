@@ -519,7 +519,14 @@ func (t *TLS) publishECHConfigs(ctx context.Context, logger *zap.Logger) error {
 					zap.Uint8s("config_ids", configIDs))
 
 				for _, cfg := range echCfgList {
+					var needsSync bool
+					// When range over a slice, each value is a copy of the original struct, any changes made on the struct
+					// won't reflect on the original one, but changes to the map itself will persist.
+					// Publications map is only read and written in this function, no need to use mutex to synchronize access.
+					// Needed because caddy will republish the ech records every hour even if all records are successfully published,
+					// as the publication histories are successfully saved to storage but not inside caddy memory.
 					if cfg.meta.Publications == nil {
+						needsSync = true
 						cfg.meta.Publications = make(publicationHistory)
 					}
 					if _, ok := cfg.meta.Publications[publisherKey]; !ok {
@@ -534,6 +541,20 @@ func (t *TLS) publishECHConfigs(ctx context.Context, logger *zap.Logger) error {
 					}
 					if err := t.ctx.Storage().Store(t.ctx, echMetaKey(cfg.ConfigID), metaBytes); err != nil {
 						return fmt.Errorf("storing updated ECH config metadata: %v", err)
+					}
+					// sync the changes to the ech configs
+					if needsSync {
+						t.EncryptedClientHello.configsMu.Lock()
+					outer:
+						for _, cfgList := range t.EncryptedClientHello.configs {
+							for i := range cfgList {
+								if cfgList[i].ConfigID == cfg.ConfigID {
+									cfgList[i].meta.Publications = cfg.meta.Publications
+									break outer
+								}
+							}
+						}
+						t.EncryptedClientHello.configsMu.Unlock()
 					}
 				}
 			} else {
