@@ -16,6 +16,7 @@ package logging
 
 import (
 	"context"
+	"encoding/hex"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -181,5 +182,28 @@ func TestOTLPCoreAppliesFieldFilters(t *testing.T) {
 	}
 	if !reflect.DeepEqual(request, map[string]string{"remote_ip": "REDACTED", "host": "example.com"}) {
 		t.Errorf("unexpected request attribute %v", request)
+	}
+}
+
+func TestOTLPCoreLinksRecordsToSpans(t *testing.T) {
+	collector := newOTLPCollector(t)
+	core := provisionOTLPCore(t)
+
+	logger := zap.New(core)
+	logger.Info("traced", zap.String("traceID", "4bf92f3577b34da6a3ce929d0e0e4736"), zap.String("spanID", "00f067aa0ba902b7"))
+	logger.Info("untraced", zap.String("traceID", "not-hex"), zap.String("spanID", "00f067aa0ba902b7"))
+	if err := core.Cleanup(); err != nil {
+		t.Fatal(err)
+	}
+
+	traced, _ := collector.record("traced")
+	if got := hex.EncodeToString(traced.GetTraceId()); got != "4bf92f3577b34da6a3ce929d0e0e4736" {
+		t.Errorf("unexpected trace ID %q", got)
+	}
+	if got := hex.EncodeToString(traced.GetSpanId()); got != "00f067aa0ba902b7" {
+		t.Errorf("unexpected span ID %q", got)
+	}
+	if untraced, _ := collector.record("untraced"); len(untraced.GetTraceId()) != 0 {
+		t.Errorf("expected no trace ID for invalid IDs, got %x", untraced.GetTraceId())
 	}
 }

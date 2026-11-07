@@ -24,6 +24,7 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
@@ -39,7 +40,8 @@ func init() {
 // OTEL_* environment variables, such as OTEL_EXPORTER_OTLP_ENDPOINT and
 // OTEL_EXPORTER_OTLP_PROTOCOL. Set the log's output to discard to only
 // export the entries. The fields of the filter format apply to exported
-// records too.
+// records too, and access logs are linked to the span of the tracing
+// handler.
 //
 //	log {
 //		output discard
@@ -140,23 +142,41 @@ func (c *otlpCore) Write(ent zapcore.Entry, fields []zapcore.Field) error {
 	return c.Core.Write(ent, c.prepare(fields))
 }
 
-// prepare applies the field filters the way FilterEncoder does.
+// prepare applies the field filters the way FilterEncoder does, and
+// links the record to the span whose IDs the tracing handler logged.
 func (c *otlpCore) prepare(fields []zapcore.Field) []zapcore.Field {
-	if len(c.filters) == 0 {
-		return fields
-	}
-
-	prepared := make([]zapcore.Field, 0, len(fields))
+	var traceID trace.TraceID
+	var spanID trace.SpanID
+	prepared := make([]zapcore.Field, 0, len(fields)+1)
 	for _, f := range fields {
 		if filter, ok := c.filters[f.Key]; ok {
 			f = filter.Filter(f)
-		} else if marsh, ok := f.Interface.(zapcore.ObjectMarshaler); ok && f.Type == zapcore.ObjectMarshalerType {
+		} else if marsh, ok := f.Interface.(zapcore.ObjectMarshaler); ok && f.Type == zapcore.ObjectMarshalerType && len(c.filters) > 0 {
 			f.Interface = logObjectMarshalerWrapper{
 				enc:   FilterEncoder{Fields: c.filters, keyPrefix: f.Key + ">"},
 				marsh: marsh,
 			}
 		}
+
+		if f.Type == zapcore.StringType {
+			switch f.Key {
+			case "traceID":
+				traceID, _ = trace.TraceIDFromHex(f.String)
+			case "spanID":
+				spanID, _ = trace.SpanIDFromHex(f.String)
+			}
+		}
+
 		prepared = append(prepared, f)
+	}
+
+	if traceID.IsValid() && spanID.IsValid() {
+		spanCtx := trace.NewSpanContext(trace.SpanContextConfig{TraceID: traceID, SpanID: spanID})
+		// the bridge takes the record's span from a context field, which encoders skip
+		prepared = append(prepared, zapcore.Field{
+			Type:      zapcore.SkipType,
+			Interface: trace.ContextWithSpanContext(context.Background(), spanCtx),
+		})
 	}
 
 	return prepared
