@@ -53,7 +53,7 @@ func init() {
 //
 //	log {
 //		output discard
-//		core otlp
+//		otlp
 //	}
 type OTLPCore struct {
 	zapcore.Core `json:"-"`
@@ -116,7 +116,7 @@ func (c *OTLPCore) Cleanup() error {
 
 // UnmarshalCaddyfile sets up the module from Caddyfile tokens. Syntax:
 //
-//	core otlp
+//	otlp
 func (c *OTLPCore) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	d.Next() // consume core name
 	if d.NextArg() {
