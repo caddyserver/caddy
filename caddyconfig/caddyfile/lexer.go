@@ -176,7 +176,8 @@ func (l *lexer) next() (bool, error) {
 	var heredocMarker string
 	var heredocPrefix []int
 	var heredocMatched int
-	var tokenStartSet bool // whether l.tokenStart has been set for the current token
+	var heredocLineStart int // index into val where the current heredoc line begins
+	var tokenStartSet bool   // whether l.tokenStart has been set for the current token
 
 	// format-mode separator tracking: record how this token was separated from
 	// the previous one. Only maintained when opts.Comments || opts.Raw.
@@ -275,6 +276,7 @@ func (l *lexer) next() (bool, error) {
 				inHeredoc = true
 				l.skippedLines++
 				val = nil
+				heredocLineStart = 0
 				continue
 			}
 			val = append(val, ch)
@@ -287,6 +289,7 @@ func (l *lexer) next() (bool, error) {
 
 			if ch == '\n' {
 				l.skippedLines++
+				heredocLineStart = len(val)
 			}
 
 			// Markers contain only ASCII, so compare each rune directly with
@@ -299,6 +302,34 @@ func (l *lexer) next() (bool, error) {
 				heredocMatched++
 			}
 			if heredocMatched == len(heredocMarker) {
+				// A complete marker only closes the heredoc when everything
+				// before it on the line is indentation and it is followed by
+				// whitespace, a newline, or EOF (see #8314). Otherwise the
+				// match is part of the body; fall back within the marker scan
+				// and keep reading the heredoc.
+				matchStart := len(val) - len(heredocMarker)
+				precededByIndent := true
+				for _, r := range val[heredocLineStart:matchStart] {
+					if r != ' ' && r != '\t' {
+						precededByIndent = false
+						break
+					}
+				}
+				nextCh, nextErr := l.readRune()
+				if nextErr != nil && nextErr != io.EOF {
+					return false, nextErr
+				}
+				followedByBoundary := nextErr == io.EOF || unicode.IsSpace(nextCh)
+				if nextErr == nil {
+					if err := l.unreadRune(); err != nil {
+						return false, err
+					}
+				}
+				if !precededByIndent || !followedByBoundary {
+					heredocMatched = heredocPrefix[heredocMatched-1]
+					continue
+				}
+
 				// set the final value
 				val, err = l.finalizeHeredoc(val, heredocMarker)
 				if err != nil {

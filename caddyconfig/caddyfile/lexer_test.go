@@ -501,6 +501,48 @@ EOF`),
 			expectErr:    true,
 			errorMessage: "mismatched leading whitespace in heredoc <<EOF on line #3 [\t], expected whitespace [\t\t] to match the closing marker",
 		},
+		{
+			input: []byte(`heredoc <<EOF
+line one
+prefix EOF suffix
+line three
+EOF
+	`),
+			expected: []Token{
+				{Line: 1, Text: `heredoc`},
+				{Line: 1, Text: "line one\nprefix EOF suffix\nline three"},
+			},
+		},
+		{
+			input: []byte(`heredoc <<EOF
+EOFsuffix stays content
+EOF
+	`),
+			expected: []Token{
+				{Line: 1, Text: `heredoc`},
+				{Line: 1, Text: "EOFsuffix stays content"},
+			},
+		},
+		{
+			input: []byte(`heredoc <<EOF
+overlap EOF EOF more
+EOF
+	`),
+			expected: []Token{
+				{Line: 1, Text: `heredoc`},
+				{Line: 1, Text: "overlap EOF EOF more"},
+			},
+		},
+		{
+			input: []byte(`heredoc <<EOF
+foo EOF
+EOF
+	`),
+			expected: []Token{
+				{Line: 1, Text: `heredoc`},
+				{Line: 1, Text: "foo EOF"},
+			},
+		},
 	}
 
 	for i, testCase := range testCases {
