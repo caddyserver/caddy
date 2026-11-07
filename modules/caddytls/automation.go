@@ -335,7 +335,9 @@ func (ap *AutomationPolicy) makeCertMagicConfig(tlsApp *TLS, issuers []certmagic
 				}
 
 				// ask the permission module if this cert is allowed
-				if err := tlsApp.Automation.OnDemand.permission.CertificateAllowed(ctx, name); err != nil {
+				err := tlsApp.Automation.OnDemand.permission.CertificateAllowed(ctx, name)
+				observeOnDemandAsk(err)
+				if err != nil {
 					// distinguish true errors from denials, because it's important to elevate actual errors
 					if errors.Is(err, ErrPermissionDenied) {
 						if c := tlsApp.logger.Check(zapcore.DebugLevel, "on-demand certificate issuance denied"); c != nil {
@@ -366,7 +368,7 @@ func (ap *AutomationPolicy) makeCertMagicConfig(tlsApp *TLS, issuers []certmagic
 		RenewalWindowRatio: ap.RenewalWindowRatio,
 		KeySource:          keySource,
 		OnEvent:            tlsApp.onEvent,
-		ShouldEmitFunc:     tlsApp.events.ShouldEmit,
+		ShouldEmitFunc:     tlsApp.shouldEmit,
 		OnDemand:           ond,
 		ReusePrivateKeys:   ap.ReusePrivateKeys,
 		OCSP: certmagic.OCSPConfig{

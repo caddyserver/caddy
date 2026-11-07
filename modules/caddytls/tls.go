@@ -171,6 +171,9 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 	t.events = eventsAppIface.(*caddyevents.App)
 	t.ctx = ctx
 	t.logger = ctx.Logger()
+	if err := initTLSMetrics(ctx.GetMetricsRegistry()); err != nil {
+		return fmt.Errorf("registering TLS metrics: %v", err)
+	}
 	repl := caddy.NewReplacer()
 	t.managing, t.loaded = make(map[string]string), make(map[string]string)
 	t.serverNames = make(map[string]serverNameRegistration)
@@ -258,7 +261,7 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		Storage:        ctx.Storage(),
 		Logger:         t.logger,
 		OnEvent:        t.onEvent,
-		ShouldEmitFunc: t.events.ShouldEmit,
+		ShouldEmitFunc: t.shouldEmit,
 		OCSP: certmagic.OCSPConfig{
 			DisableStapling: t.DisableOCSPStapling,
 		},
@@ -1085,8 +1088,15 @@ func (t *TLS) caddyContext(ctx context.Context) caddy.Context {
 
 // onEvent translates CertMagic events into Caddy events then dispatches them.
 func (t *TLS) onEvent(ctx context.Context, eventName string, data map[string]any) error {
+	observeCertEvent(eventName, data)
 	evt := t.events.Emit(t.ctx, eventName, data)
 	return evt.Aborted
+}
+
+// shouldEmit reports whether CertMagic should emit the named event to onEvent:
+// when something could observe it, or when it feeds the TLS metrics.
+func (t *TLS) shouldEmit(eventName string) bool {
+	return certMetricEvents[eventName] || t.events.ShouldEmit(eventName)
 }
 
 // CertificateLoader is a type that can load certificates.
