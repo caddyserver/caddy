@@ -124,15 +124,15 @@ func (logging *Logging) openLogs(ctx Context) error {
 			return fmt.Errorf("setting up custom log '%s': %v", name, err)
 		}
 
-		// Any other logs that use the discard writer can be deleted
-		// entirely. This avoids encoding and processing of each
-		// log entry that would just be thrown away anyway. Notably,
-		// we do not reach this point for the default log, which MUST
-		// exist, otherwise core log emissions would panic because
-		// they use the Log() function directly which expects a non-nil
-		// logger. Even if we keep logs with a discard writer, they
-		// have a nop core, and keeping them at all seems unnecessary.
-		if _, ok := l.writerOpener.(*DiscardWriter); ok {
+		// Any other logs that use the discard writer and no core
+		// module can be deleted entirely. This avoids encoding and
+		// processing of each log entry that would just be thrown
+		// away anyway. Notably, we do not reach this point for the
+		// default log, which MUST exist, otherwise core log emissions
+		// would panic because they use the Log() function directly
+		// which expects a non-nil logger. Even if we keep such logs,
+		// they have a nop core, and keeping them at all seems unnecessary.
+		if l.core == zapcore.NewNopCore() {
 			delete(logging.Logs, name)
 			continue
 		}
