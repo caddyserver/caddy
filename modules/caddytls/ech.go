@@ -518,7 +518,7 @@ func (t *TLS) publishECHConfigs(ctx context.Context, logger *zap.Logger) error {
 					zap.Strings("domains", successNames),
 					zap.Uint8s("config_ids", configIDs))
 
-				for _, cfg := range echCfgList {
+				for i, cfg := range echCfgList {
 					var needsSync bool
 					// When range over a slice, each value is a copy of the original struct, any changes made on the struct
 					// won't reflect on the original one, but changes to the map itself will persist.
@@ -544,6 +544,7 @@ func (t *TLS) publishECHConfigs(ctx context.Context, logger *zap.Logger) error {
 					}
 					// sync the changes to the ech configs
 					if needsSync {
+						echCfgList[i].meta.Publications = cfg.meta.Publications
 						t.EncryptedClientHello.configsMu.Lock()
 					outer:
 						for _, cfgList := range t.EncryptedClientHello.configs {
