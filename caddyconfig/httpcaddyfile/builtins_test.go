@@ -66,6 +66,35 @@ func TestLogDirectiveSyntax(t *testing.T) {
 		{
 			input: `:8080 {
 				log {
+					otlp
+				}
+			}
+			`,
+			output:      `{"logging":{"logs":{"default":{"exclude":["http.log.access.log0"]},"log0":{"core":{"module":"otlp"},"include":["http.log.access.log0"]}}},"apps":{"http":{"servers":{"srv0":{"listen":[":8080"],"logs":{"default_logger_name":"log0"}}}}}}`,
+			expectError: false,
+		},
+		{
+			input: `:8080 {
+				log {
+					otlp
+					core mock
+				}
+			}
+			`,
+			expectError: true,
+		},
+		{
+			input: `:8080 {
+				log {
+					otlp foo
+				}
+			}
+			`,
+			expectError: true,
+		},
+		{
+			input: `:8080 {
+				log {
 					sampling {
 						interval 2s
 						first 3
