@@ -331,8 +331,8 @@ func (ech *ECH) updateKeyList() {
 
 // addPublicationHistoryToEchConfigList is needed to initialize the publication history
 // because without it, caddy won't remember successfully published ech records in memory.
- // Ranging over the config slice copies each struct, so initializing a map on
- // a copy would not update the original config. Initialize it before copying instead.
+// Ranging over the config slice copies each struct, so initializing a map on
+// a copy would not update the original config. Initialize it before copying instead.
 func addPublicationHistoryToEchConfigList(echCfgList echConfigList) {
 	for i := range echCfgList {
 		if echCfgList[i].meta.Publications == nil {
