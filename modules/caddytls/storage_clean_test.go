@@ -461,9 +461,6 @@ func TestTLSECHPublishBlockingPublisherStopSynchronization(t *testing.T) {
 							AEADID: hpke.AEAD_AES128GCM,
 						},
 					},
-					meta: echConfigMeta{
-						Publications: make(publicationHistory),
-					},
 				},
 			},
 		},
@@ -530,8 +527,7 @@ func TestTLSECHRotateBlockingStorageStopSynchronization(t *testing.T) {
 					ConfigID:      1,
 					RawPublicName: "example.com",
 					meta: echConfigMeta{
-						Created:      time.Now().Add(-24 * time.Hour * 31), // > 30 days old so rotationNeeded returns true
-						Publications: make(publicationHistory),
+						Created: time.Now().Add(-24 * time.Hour * 31), // > 30 days old so rotationNeeded returns true
 					},
 				},
 			},

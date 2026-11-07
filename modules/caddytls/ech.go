@@ -329,6 +329,18 @@ func (ech *ECH) updateKeyList() {
 	}
 }
 
+// addPublicationHistoryToEchConfigList is needed to initialize the publication history
+// because without it, caddy won't remember successfully published ech records in memory.
+// If this map is created lazily when updating the history, due to ranging over a slices
+// creates copies of struct, new publications won't be visible but will be if the map is present.
+func addPublicationHistoryToEchConfigList(echCfgList echConfigList) {
+	for i := range echCfgList {
+		if echCfgList[i].meta.Publications == nil {
+			echCfgList[i].meta.Publications = make(publicationHistory)
+		}
+	}
+}
+
 // publishECHConfigs publishes any configs that are configured for publication and which haven't been published already.
 func (t *TLS) publishECHConfigs(ctx context.Context, logger *zap.Logger) error {
 	if err := ctx.Err(); err != nil {
@@ -378,7 +390,7 @@ func (t *TLS) publishECHConfigs(ctx context.Context, logger *zap.Logger) error {
 	// publish with it, and figure out which inner names to publish
 	// to/for, then publish
 	for _, publication := range publicationList {
-		t.EncryptedClientHello.configsMu.RLock()
+		t.EncryptedClientHello.configsMu.Lock()
 		// this publication is either configured for specific ECH configs,
 		// or we just use an implied default of all ECH configs
 		var echCfgList echConfigList
@@ -386,6 +398,7 @@ func (t *TLS) publishECHConfigs(ctx context.Context, logger *zap.Logger) error {
 		if publication.Configs == nil {
 			// by default, publish all configs
 			for _, configs := range t.EncryptedClientHello.configs {
+				addPublicationHistoryToEchConfigList(configs)
 				echCfgList = append(echCfgList, configs...)
 				for _, c := range configs {
 					configIDs = append(configIDs, c.ConfigID)
@@ -394,6 +407,7 @@ func (t *TLS) publishECHConfigs(ctx context.Context, logger *zap.Logger) error {
 		} else {
 			for _, cfgOuterName := range publication.Configs {
 				if cfgList, ok := t.EncryptedClientHello.configs[cfgOuterName]; ok {
+					addPublicationHistoryToEchConfigList(cfgList)
 					echCfgList = append(echCfgList, cfgList...)
 					for _, c := range cfgList {
 						configIDs = append(configIDs, c.ConfigID)
@@ -401,7 +415,7 @@ func (t *TLS) publishECHConfigs(ctx context.Context, logger *zap.Logger) error {
 				}
 			}
 		}
-		t.EncryptedClientHello.configsMu.RUnlock()
+		t.EncryptedClientHello.configsMu.Unlock()
 
 		// marshal the ECH config list as binary for publication
 		echCfgListBin, err := echCfgList.MarshalBinary()
@@ -518,17 +532,7 @@ func (t *TLS) publishECHConfigs(ctx context.Context, logger *zap.Logger) error {
 					zap.Strings("domains", successNames),
 					zap.Uint8s("config_ids", configIDs))
 
-				for i, cfg := range echCfgList {
-					var needsSync bool
-					// When range over a slice, each value is a copy of the original struct, any changes made on the struct
-					// won't reflect on the original one, but changes to the map itself will persist.
-					// Publications map is only read and written in this function, no need to use mutex to synchronize access.
-					// Needed because caddy will republish the ech records every hour even if all records are successfully published,
-					// as the publication histories are successfully saved to storage but not inside caddy memory.
-					if cfg.meta.Publications == nil {
-						needsSync = true
-						cfg.meta.Publications = make(publicationHistory)
-					}
+				for _, cfg := range echCfgList {
 					if _, ok := cfg.meta.Publications[publisherKey]; !ok {
 						cfg.meta.Publications[publisherKey] = make(map[string]time.Time)
 					}
@@ -541,21 +545,6 @@ func (t *TLS) publishECHConfigs(ctx context.Context, logger *zap.Logger) error {
 					}
 					if err := t.ctx.Storage().Store(t.ctx, echMetaKey(cfg.ConfigID), metaBytes); err != nil {
 						return fmt.Errorf("storing updated ECH config metadata: %v", err)
-					}
-					// sync the changes to the ech configs
-					if needsSync {
-						echCfgList[i].meta.Publications = cfg.meta.Publications
-						t.EncryptedClientHello.configsMu.Lock()
-					outer:
-						for _, cfgList := range t.EncryptedClientHello.configs {
-							for i := range cfgList {
-								if cfgList[i].ConfigID == cfg.ConfigID {
-									cfgList[i].meta.Publications = cfg.meta.Publications
-									break outer
-								}
-							}
-						}
-						t.EncryptedClientHello.configsMu.Unlock()
 					}
 				}
 			} else {
