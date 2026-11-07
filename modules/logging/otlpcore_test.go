@@ -145,10 +145,12 @@ func TestOTLPCoreSharesProviderAcrossReloads(t *testing.T) {
 func TestOTLPCoreAppliesFieldFilters(t *testing.T) {
 	collector := newOTLPCollector(t)
 	core := provisionOTLPCore(t)
-	err := core.ConfigureFromLogEncoder(&AppendEncoder{wrapped: &FilterEncoder{Fields: map[string]LogFieldFilter{
-		"user_id":           DeleteFilter{},
-		"request>remote_ip": &ReplaceFilter{Value: "REDACTED"},
-	}}})
+	err := core.ConfigureFromLogEncoder(&AppendEncoder{wrapped: &FilterEncoder{
+		Fields: map[string]LogFieldFilter{"user_id": DeleteFilter{}},
+		wrapped: &FilterEncoder{
+			Fields: map[string]LogFieldFilter{"request>remote_ip": &ReplaceFilter{Value: "REDACTED"}},
+		},
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}

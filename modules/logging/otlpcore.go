@@ -88,11 +88,12 @@ func (c *OTLPCore) Provision(ctx caddy.Context) error {
 
 // ConfigureFromLogEncoder picks up the field filters of the log's format.
 func (c *OTLPCore) ConfigureFromLogEncoder(enc zapcore.Encoder) error {
+	core := c.Core.(*otlpCore)
 	for {
 		switch e := enc.(type) {
 		case *FilterEncoder:
-			c.Core.(*otlpCore).filters = e.Fields
-			return nil
+			core.filters = append(core.filters, e.Fields)
+			enc = e.wrapped
 		case *AppendEncoder:
 			enc = e.wrapped
 		case *JournaldEncoder:
@@ -131,7 +132,8 @@ func (c *OTLPCore) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 // otlpCore prepares fields before handing them to the OpenTelemetry bridge.
 type otlpCore struct {
 	zapcore.Core
-	filters map[string]LogFieldFilter
+	// filters of the nested filter formats, outermost first
+	filters []map[string]LogFieldFilter
 }
 
 func (c *otlpCore) With(fields []zapcore.Field) zapcore.Core {
@@ -153,19 +155,24 @@ func (c *otlpCore) Write(ent zapcore.Entry, fields []zapcore.Field) error {
 // prepare applies the field filters the way FilterEncoder does, and
 // links the record to the span whose IDs the tracing handler logged.
 func (c *otlpCore) prepare(fields []zapcore.Field) []zapcore.Field {
-	var traceID trace.TraceID
-	var spanID trace.SpanID
-	prepared := make([]zapcore.Field, 0, len(fields)+1)
-	for _, f := range fields {
-		if filter, ok := c.filters[f.Key]; ok {
-			f = filter.Filter(f)
-		} else if marsh, ok := f.Interface.(zapcore.ObjectMarshaler); ok && f.Type == zapcore.ObjectMarshalerType && len(c.filters) > 0 {
-			f.Interface = logObjectMarshalerWrapper{
-				enc:   FilterEncoder{Fields: c.filters, keyPrefix: f.Key + ">"},
-				marsh: marsh,
+	prepared := make([]zapcore.Field, len(fields), len(fields)+1)
+	copy(prepared, fields)
+	for _, filters := range c.filters {
+		for i, f := range prepared {
+			if filter, ok := filters[f.Key]; ok {
+				prepared[i] = filter.Filter(f)
+			} else if marsh, ok := f.Interface.(zapcore.ObjectMarshaler); ok && f.Type == zapcore.ObjectMarshalerType {
+				prepared[i].Interface = logObjectMarshalerWrapper{
+					enc:   FilterEncoder{Fields: filters, keyPrefix: f.Key + ">"},
+					marsh: marsh,
+				}
 			}
 		}
+	}
 
+	var traceID trace.TraceID
+	var spanID trace.SpanID
+	for _, f := range prepared {
 		if f.Type == zapcore.StringType {
 			switch f.Key {
 			case "traceID":
@@ -174,8 +181,6 @@ func (c *otlpCore) prepare(fields []zapcore.Field) []zapcore.Field {
 				spanID, _ = trace.SpanIDFromHex(f.String)
 			}
 		}
-
-		prepared = append(prepared, f)
 	}
 
 	if traceID.IsValid() && spanID.IsValid() {
