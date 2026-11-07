@@ -619,19 +619,30 @@ func (ts *tunnelTracker) closeAttachedConnections() error {
 // tracked connection that match selects. The caller must hold mu. Every
 // graceful close shares one absolute deadline: the loop is serial and holds
 // the lock, so per-connection timeouts would add up across stalled peers.
+// All close messages are sent before any connection is closed, because
+// closing one side of a tunnel makes its copy loops close the other side,
+// which would lose a close message still waiting to be sent there.
 // The first error is returned.
 func (ts *tunnelTracker) closeConnectionsLocked(deadline time.Time, match func(openConnection) bool) error {
-	var err error
+	var batch []openConnection
 	for _, oc := range ts.connections {
-		if !match(oc) {
-			continue
+		if match(oc) {
+			batch = append(batch, oc)
 		}
+	}
+
+	var err error
+	for _, oc := range batch {
 		if oc.gracefulClose != nil {
 			if gracefulErr := oc.gracefulClose(deadline); gracefulErr != nil && err == nil {
 				err = gracefulErr
 			}
 		}
-		if closeErr := oc.conn.Close(); closeErr != nil && err == nil {
+	}
+	for _, oc := range batch {
+		// The other side of a tunnel may already have closed this one, which
+		// is the expected outcome rather than an error worth logging.
+		if closeErr := oc.conn.Close(); closeErr != nil && !errors.Is(closeErr, net.ErrClosed) && err == nil {
 			err = closeErr
 		}
 	}
