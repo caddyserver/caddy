@@ -1,0 +1,46 @@
+{
+	log {
+		output discard
+		core otlp
+	}
+}
+
+:80 {
+	respond "Hello, World!"
+}
+----------
+{
+	"logging": {
+		"logs": {
+			"default": {
+				"writer": {
+					"output": "discard"
+				},
+				"core": {
+					"module": "otlp"
+				}
+			}
+		}
+	},
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":80"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"body": "Hello, World!",
+									"handler": "static_response"
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}
