@@ -21,6 +21,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -47,6 +48,11 @@ type HTTPRedirectListenerWrapper struct {
 	// MaxHeaderBytes is the maximum size to parse from a client's
 	// HTTP request headers. Default: 1 MB
 	MaxHeaderBytes int64 `json:"max_header_bytes,omitempty"`
+
+	// StatusCode is the HTTP status code to use for the redirect
+	// response. It must be one of 301, 302, 303, 307 or 308.
+	// Default: 308 (Permanent Redirect)
+	StatusCode int `json:"status_code,omitempty"`
 }
 
 func (HTTPRedirectListenerWrapper) CaddyModule() caddy.ModuleInfo {
@@ -56,12 +62,71 @@ func (HTTPRedirectListenerWrapper) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
+// UnmarshalCaddyfile sets up the listener wrapper from Caddyfile tokens. Syntax:
+//
+//	http_redirect {
+//		status_code <code>
+//	}
 func (h *HTTPRedirectListenerWrapper) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	d.Next() // consume wrapper name
+
+	// No same-line options are supported
+	if d.NextArg() {
+		return d.ArgErr()
+	}
+
+	for d.NextBlock(0) {
+		switch d.Val() {
+		case "status_code":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			code, err := strconv.Atoi(d.Val())
+			if err != nil {
+				return d.Errf("parsing status code: %v", err)
+			}
+			if !validHTTPRedirectStatus(code) {
+				return d.Errf("invalid redirect status code: %d (must be one of 301, 302, 303, 307, 308)", code)
+			}
+			if d.NextArg() {
+				return d.ArgErr()
+			}
+			h.StatusCode = code
+		default:
+			return d.Errf("unrecognized subdirective '%s'", d.Val())
+		}
+	}
+	return nil
+}
+
+// Validate ensures the configured status code is a redirect status.
+func (h *HTTPRedirectListenerWrapper) Validate() error {
+	if h.StatusCode != 0 && !validHTTPRedirectStatus(h.StatusCode) {
+		return fmt.Errorf("invalid redirect status code: %d (must be one of 301, 302, 303, 307, 308)", h.StatusCode)
+	}
 	return nil
 }
 
 func (h *HTTPRedirectListenerWrapper) WrapListener(l net.Listener) net.Listener {
-	return &httpRedirectListener{l, h.MaxHeaderBytes}
+	statusCode := h.StatusCode
+	if statusCode == 0 {
+		statusCode = http.StatusPermanentRedirect
+	}
+	return &httpRedirectListener{l, h.MaxHeaderBytes, statusCode}
+}
+
+// validHTTPRedirectStatus reports whether code is a status
+// code that can be used for the HTTP->HTTPS redirect.
+func validHTTPRedirectStatus(code int) bool {
+	switch code {
+	case http.StatusMovedPermanently,
+		http.StatusFound,
+		http.StatusSeeOther,
+		http.StatusTemporaryRedirect,
+		http.StatusPermanentRedirect:
+		return true
+	}
+	return false
 }
 
 // httpRedirectListener is listener that checks the first few bytes
@@ -70,6 +135,7 @@ func (h *HTTPRedirectListenerWrapper) WrapListener(l net.Listener) net.Listener 
 type httpRedirectListener struct {
 	net.Listener
 	maxHeaderBytes int64
+	statusCode     int
 }
 
 // Accept waits for and returns the next connection to the listener,
@@ -86,17 +152,19 @@ func (l *httpRedirectListener) Accept() (net.Conn, error) {
 	}
 
 	return &httpRedirectConn{
-		Conn:  c,
-		limit: maxHeaderBytes,
-		r:     bufio.NewReader(c),
+		Conn:       c,
+		limit:      maxHeaderBytes,
+		statusCode: l.statusCode,
+		r:          bufio.NewReader(c),
 	}, nil
 }
 
 type httpRedirectConn struct {
 	net.Conn
-	once  bool
-	limit int64
-	r     *bufio.Reader
+	once       bool
+	limit      int64
+	statusCode int
+	r          *bufio.Reader
 }
 
 // Read tries to peek at the first few bytes of the request, and if we get
@@ -143,8 +211,8 @@ func (c *httpRedirectConn) Read(p []byte) (int, error) {
 	headers.Add("Location", "https://"+req.Host+req.URL.String())
 	resp := &http.Response{
 		Proto:      "HTTP/1.0",
-		Status:     "308 Permanent Redirect",
-		StatusCode: 308,
+		Status:     fmt.Sprintf("%d %s", c.statusCode, http.StatusText(c.statusCode)),
+		StatusCode: c.statusCode,
 		ProtoMajor: 1,
 		ProtoMinor: 0,
 		Header:     headers,
@@ -170,5 +238,6 @@ func firstBytesLookLikeHTTP(hdr []byte) bool {
 
 var (
 	_ caddy.ListenerWrapper = (*HTTPRedirectListenerWrapper)(nil)
+	_ caddy.Validator       = (*HTTPRedirectListenerWrapper)(nil)
 	_ caddyfile.Unmarshaler = (*HTTPRedirectListenerWrapper)(nil)
 )
