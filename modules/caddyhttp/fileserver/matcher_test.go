@@ -603,13 +603,9 @@ func TestMatchExpressionMatch(t *testing.T) {
 	}
 }
 
-// try_policy first_exist_fallback is documented to match unconditionally,
-// falling back to the last try_files entry when no earlier candidate exists.
-// It must therefore match even when that last entry names a file that is not
-// on disk. php_fastcgi relies on this: its generated rewrite route is the only
-// step that normalizes r.URL.Path before the FastCGI transport reads it, so a
-// matcher that fails here silently removes that normalization.
-func TestFirstExistFallbackMatchesWhenFinalFileIsAbsent(t *testing.T) {
+// An absent final entry must not match, or php_fastcgi sends requests of a site
+// without index.php to PHP (https://github.com/caddyserver/caddy/issues/8367).
+func TestFirstExistFallbackRequiresFinalFile(t *testing.T) {
 	for i, tc := range []struct {
 		name         string
 		tryFiles     []string
@@ -619,12 +615,32 @@ func TestFirstExistFallbackMatchesWhenFinalFileIsAbsent(t *testing.T) {
 		expectedPath string
 	}{
 		{
-			name:         "fallback matches although the final file is absent",
-			tryFiles:     []string{"{http.request.uri.path}", "no-such-index.php"},
-			policy:       tryPolicyFirstExistFallback,
-			path:         "/does-not-exist.php",
-			matched:      true,
-			expectedPath: "/no-such-index.php",
+			name:     "fallback does not match when the final file is absent",
+			tryFiles: []string{"{http.request.uri.path}", "no-such-index.php"},
+			policy:   tryPolicyFirstExistFallback,
+			path:     "/does-not-exist.php",
+			matched:  false,
+		},
+		{
+			name:     "php_fastcgi try_files leave a directory to file_server without index.php",
+			tryFiles: []string{"{http.request.uri.path}", "{http.request.uri.path}/no-such-index.php", "no-such-index.php"},
+			policy:   tryPolicyFirstExistFallback,
+			path:     "/foodir/",
+			matched:  false,
+		},
+		{
+			name:     "fallback does not match a regular file with a trailing slash",
+			tryFiles: []string{"{http.request.uri.path}"},
+			policy:   tryPolicyFirstExistFallback,
+			path:     "/foo.txt/",
+			matched:  false,
+		},
+		{
+			name:     "fallback does not match a regular file with a trailing dot segment",
+			tryFiles: []string{"{http.request.uri.path}"},
+			policy:   tryPolicyFirstExistFallback,
+			path:     "/foo.txt/./",
+			matched:  false,
 		},
 		{
 			name:         "fallback still prefers an earlier candidate that exists",
@@ -657,12 +673,11 @@ func TestFirstExistFallbackMatchesWhenFinalFileIsAbsent(t *testing.T) {
 			matched:  false,
 		},
 		{
-			name:         "fallback uses the final entry literally when its glob expands to nothing",
-			tryFiles:     []string{"{http.request.uri.path}", "absent[0-9].php"},
-			policy:       tryPolicyFirstExistFallback,
-			path:         "/does-not-exist.php",
-			matched:      true,
-			expectedPath: "/absent[0-9].php",
+			name:     "fallback does not match when its glob expands to nothing and the literal file is absent",
+			tryFiles: []string{"{http.request.uri.path}", "absent[0-9].php"},
+			policy:   tryPolicyFirstExistFallback,
+			path:     "/does-not-exist.php",
+			matched:  false,
 		},
 		{
 			name:     "first_exist does not use a pattern expanding to nothing literally",
@@ -716,8 +731,10 @@ func TestLiteralGlobNameMatchesOnlyAsFallback(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "lit[1].txt"), []byte("x"), 0o644); err != nil {
-		t.Fatal(err)
+	for _, name := range []string{"lit[1].txt", "lit[1].php", "a[b].txt", "fallback.txt"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	for i, tc := range []struct {
@@ -749,16 +766,21 @@ func TestLiteralGlobNameMatchesOnlyAsFallback(t *testing.T) {
 			expectedPath: "/fallback.txt",
 		},
 		{
-			tryFiles:          []string{"{http.request.uri.path}"},
+			tryFiles:          []string{"{http.request.uri.path}", "lit[1].php/extra"},
 			policy:            tryPolicyFirstExistFallback,
-			path:              "/absent.php/extra",
+			path:              "/absent.txt",
 			matched:           true,
-			expectedPath:      "/absent.php",
+			expectedPath:      "/lit[1].php",
 			expectedRemainder: "/extra",
 		},
 		{
-			// placeholder values are glob-escaped for expansion, but the
-			// literal fallback must use the unescaped value
+			// an absent literal fallback does not match
+			tryFiles: []string{"{http.request.uri.path}"},
+			policy:   tryPolicyFirstExistFallback,
+			path:     "/absent[1].txt",
+			matched:  false,
+		},
+		{
 			tryFiles:     []string{"{http.request.uri.path}"},
 			policy:       tryPolicyFirstExistFallback,
 			path:         "/a[b].txt",
