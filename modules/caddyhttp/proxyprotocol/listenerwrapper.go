@@ -41,12 +41,16 @@ type ListenerWrapper struct {
 	Timeout caddy.Duration `json:"timeout,omitempty"`
 
 	// Allow is an optional list of CIDR ranges to
-	// allow/require PROXY headers from.
+	// allow PROXY headers from.
+	// Note that while the PROXY protocol is allowed,
+	// it is not required to be used by clients in this range.
 	Allow []string `json:"allow,omitempty"`
 	allow []netip.Prefix
 
 	// Deny is an optional list of CIDR ranges to
 	// deny PROXY headers from.
+	// Connections without PROXY headers from clients
+	// in this range are still allowed.
 	Deny []string `json:"deny,omitempty"`
 	deny []netip.Prefix
 
@@ -63,7 +67,7 @@ type ListenerWrapper struct {
 	//
 	// - USE: address from PROXY header
 	//
-	// - REJECT: connection when PROXY header is sent
+	// - REJECT: connection when PROXY header is sent.
 	//   Note: even though the first read on the connection returns an error if
 	//   a PROXY header is present, subsequent reads do not. It is the task of
 	//   the code using the connection to handle that case properly.
