@@ -717,7 +717,11 @@ func fileHidden(filename string, hide []string) bool {
 		}
 		// case- and normalization-insensitive file systems open the same file
 		// under other spellings, so compare the folded forms too
-		fh, fp := foldPath(h), foldPattern(h)
+		fh := foldPath(h)
+		fp := fh
+		if strings.Contains(h, "[") {
+			fp = foldPattern(h)
+		}
 		if (fh != h || fp != h || folded != filename) && hideMatch(fh, fp, folded) {
 			return true
 		}
