@@ -734,15 +734,16 @@ func hideMatch(h, pattern, filename string) bool {
 		// wants to hide any files or folders that match that
 		// name; thus we have to compare against each component
 		// of the filename, e.g. hiding "bar" would hide "/bar"
-		// as well as "/foo/bar/baz" but not "/barstool".
+		// as well as "/foo/bar/baz" but not "/barstool". Literal names
+		// count too, since a glob like "[A]" does not match itself.
 		for c := range strings.SplitSeq(filename, separator) {
-			if hidden, _ := filepath.Match(pattern, c); hidden {
+			if hidden, _ := filepath.Match(pattern, c); hidden || c == h {
 				return true
 			}
 		}
-	} else if after, ok := strings.CutPrefix(filename, h); ok && strings.HasPrefix(after, separator) {
-		// if there is a separator in h, and filename is exactly
-		// prefixed with h, then we can do a prefix match so that
+	} else if after, ok := strings.CutPrefix(filename, h); ok && (after == "" || strings.HasPrefix(after, separator)) {
+		// if there is a separator in h, and filename is exactly h or
+		// prefixed with it, then we can do a prefix match so that
 		// "/foo" matches "/foo/bar" but not "/foobar".
 		return true
 	}

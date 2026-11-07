@@ -221,6 +221,36 @@ func TestFileHidden(t *testing.T) {
 			expect:    true,
 		},
 		{
+			inputHide: []string{"/srv/[A]"},
+			inputPath: "/srv/[A]",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"/srv/[A]"},
+			inputPath: "/srv/[a]",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"/srv/[A]"},
+			inputPath: "/srv/[A]/secret.txt",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"[A]"},
+			inputPath: "/srv/[A]",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"[A]"},
+			inputPath: "/srv/[A]/secret.txt",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"[A]"},
+			inputPath: "/srv/[a]/secret.txt",
+			expect:    true,
+		},
+		{
 			inputHide: []string{"Secret"},
 			inputPath: "/secrets",
 			expect:    false,
