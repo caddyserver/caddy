@@ -790,13 +790,36 @@ func (app *App) stop(exiting bool) error {
 			return
 		}
 
+		// Close the HTTP/1 and HTTP/2 listeners ourselves, before calling
+		// Shutdown below. http.Server.Shutdown() also closes its listeners,
+		// but only after first marking the server as shutting down; nothing
+		// in between stops Accept() from handing out new connections on a
+		// listener that is still open, so a connection accepted in that
+		// window is silently dropped once Shutdown proceeds, instead of
+		// being refused up front or ever reaching a handler. Closing here
+		// removes that window, the same way the HTTP/3 listeners just above
+		// are already closed before h3server.Shutdown() is called.
+		for _, ln := range server.listeners {
+			if err := ln.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+				app.logger.Error("closing listener",
+					zap.Error(err),
+					zap.Strings("addresses", server.Listen))
+			}
+		}
+
 		if err := server.server.Shutdown(ctx); err != nil {
 			if cause := context.Cause(ctx); cause != nil && errors.Is(err, context.DeadlineExceeded) {
 				err = cause
 			}
-			app.logger.Error("server shutdown",
-				zap.Error(err),
-				zap.Strings("addresses", server.Listen))
+			// Shutdown() closes the listeners again itself and returns any
+			// error from that as part of its own return value; since we
+			// already closed them above, ignore that expected case here so
+			// a normal shutdown isn't logged as an error.
+			if !errors.Is(err, net.ErrClosed) {
+				app.logger.Error("server shutdown",
+					zap.Error(err),
+					zap.Strings("addresses", server.Listen))
+			}
 		}
 	}
 	stopH3Server := func(server *Server) {
