@@ -299,8 +299,9 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		return caddyhttp.Error(http.StatusNotFound, fmt.Errorf("filesystem not found"))
 	}
 
-	// remove any trailing `/` as it breaks fs.ValidPath() in the stdlib
-	filename := strings.TrimSuffix(caddyhttp.SanitizedPathJoin(root, r.URL.Path), "/")
+	// remove any trailing separator as it breaks fs.ValidPath() in the stdlib,
+	// and Windows rejects it on a regular file
+	filename := strings.TrimSuffix(caddyhttp.SanitizedPathJoin(root, r.URL.Path), separator)
 
 	if c := fsrv.logger.Check(zapcore.DebugLevel, "sanitized path join"); c != nil {
 		c.Write(
