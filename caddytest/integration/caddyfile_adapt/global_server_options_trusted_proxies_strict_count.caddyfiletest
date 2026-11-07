@@ -1,0 +1,46 @@
+{
+	servers {
+		trusted_proxies static private_ranges
+		trusted_proxies_strict 2
+	}
+}
+
+:8080 {
+	respond "ok"
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8080"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"body": "ok",
+									"handler": "static_response"
+								}
+							]
+						}
+					],
+					"trusted_proxies": {
+						"ranges": [
+							"192.168.0.0/16",
+							"172.16.0.0/12",
+							"10.0.0.0/8",
+							"127.0.0.1/8",
+							"fd00::/8",
+							"::1"
+						],
+						"source": "static"
+					},
+					"trusted_proxies_strict": 2
+				}
+			}
+		}
+	}
+}
