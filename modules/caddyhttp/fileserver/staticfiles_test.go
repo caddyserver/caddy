@@ -120,6 +120,146 @@ func TestFileHidden(t *testing.T) {
 			inputPath: "/second",
 			expect:    true,
 		},
+		{
+			inputHide: []string{"/srv/Caddyfile"},
+			inputPath: "/srv/caddyfile",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"/srv/Caddyfile"},
+			inputPath: "/SRV/CADDYFILE",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"secretdir"},
+			inputPath: "/SecretDir/p.txt",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"/srv/secretdir"},
+			inputPath: "/srv/SECRETDIR/p.txt",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"*.secret"},
+			inputPath: "/X.SECRET",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"/srv/public.txt.gz"},
+			inputPath: "/srv/PUBLIC.TXT.gz",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"café.txt"},
+			inputPath: "/cafe\u0301.txt",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"cafe\u0301.txt"},
+			inputPath: "/CAFÉ.txt",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"straße"},
+			inputPath: "/STRASSE",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"secret"},
+			inputPath: "/\u017Fecret",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"kelvin"},
+			inputPath: "/\u212Aelvin",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"stra?e"},
+			inputPath: "/straße",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"[ß].txt"},
+			inputPath: "/s.txt",
+			expect:    false,
+		},
+		{
+			inputHide: []string{"[ß].txt"},
+			inputPath: "/ß.txt",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"[ﬃ]"},
+			inputPath: "/f",
+			expect:    false,
+		},
+		{
+			inputHide: []string{"*.[Ss]ecret"},
+			inputPath: "/X.SECRET",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"[A-z]b"},
+			inputPath: "/_B",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"[é]t"},
+			inputPath: "/E\u0301T",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"[^a-z]b"},
+			inputPath: "/xB",
+			expect:    false,
+		},
+		{
+			inputHide: []string{"/srv/[A]"},
+			inputPath: "/srv/[a]/secret.txt",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"/srv/[A]"},
+			inputPath: "/srv/[A]",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"/srv/[A]"},
+			inputPath: "/srv/[a]",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"/srv/[A]"},
+			inputPath: "/srv/[A]/secret.txt",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"[A]"},
+			inputPath: "/srv/[A]",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"[A]"},
+			inputPath: "/srv/[A]/secret.txt",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"[A]"},
+			inputPath: "/srv/[a]/secret.txt",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"Secret"},
+			inputPath: "/secrets",
+			expect:    false,
+		},
+		{
+			inputHide: []string{"/foo"},
+			inputPath: "/FOOBAR",
+			expect:    false,
+		},
 	} {
 		if runtime.GOOS == "windows" {
 			if strings.HasPrefix(tc.inputPath, "/") {

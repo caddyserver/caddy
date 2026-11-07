@@ -31,9 +31,13 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/unicode/norm"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -128,10 +132,10 @@ type FileServer struct {
 	// comparisons are made. For maximum clarity and explicitness, use complete,
 	// absolute paths; or, for greater portability, use relative paths instead.
 	//
-	// Note that hide comparisons are case-sensitive. On case-insensitive
-	// filesystems, requests with different path casing may still resolve to the
-	// same file or directory on disk, so hide should not be treated as a
-	// security boundary for sensitive paths.
+	// Comparisons ignore letter case and Unicode normalization on every
+	// platform, because case-insensitive filesystems resolve differently
+	// spelled request paths to the same file. On case-sensitive filesystems,
+	// this also hides files whose names differ from a hidden one only by case.
 	Hide []string `json:"hide,omitempty"`
 
 	// The names of files to try as index files if a folder is requested.
@@ -706,40 +710,179 @@ func fileHidden(filename string, hide []string) bool {
 		filename = filenameAbs
 	}
 
-	var components []string
-
+	folded := foldPath(filename)
 	for _, h := range hide {
-		if !strings.Contains(h, separator) {
-			// if there is no separator in h, then we assume the user
-			// wants to hide any files or folders that match that
-			// name; thus we have to compare against each component
-			// of the filename, e.g. hiding "bar" would hide "/bar"
-			// as well as "/foo/bar/baz" but not "/barstool".
-			if len(components) == 0 {
-				components = strings.Split(filename, separator)
-			}
-			for _, c := range components {
-				if hidden, _ := filepath.Match(h, c); hidden {
-					return true
-				}
-			}
-		} else if after, ok := strings.CutPrefix(filename, h); ok {
-			// if there is a separator in h, and filename is exactly
-			// prefixed with h, then we can do a prefix match so that
-			// "/foo" matches "/foo/bar" but not "/foobar".
-			withoutPrefix := after
-			if strings.HasPrefix(withoutPrefix, separator) {
-				return true
-			}
+		if hideMatch(h, h, filename) {
+			return true
 		}
-
-		// in the general case, a glob match will suffice
-		if hidden, _ := filepath.Match(h, filename); hidden {
+		// case- and normalization-insensitive file systems open the same file
+		// under other spellings, so compare the folded forms too
+		fh := foldPath(h)
+		fp := fh
+		if strings.Contains(h, "[") {
+			fp = foldPattern(h)
+		}
+		if (fh != h || fp != h || folded != filename) && hideMatch(fh, fp, folded) {
 			return true
 		}
 	}
 
 	return false
+}
+
+// hideMatch reports whether filename is hidden by a hide list entry, given
+// as the literal path h and the glob pattern.
+func hideMatch(h, pattern, filename string) bool {
+	if !strings.Contains(h, separator) {
+		// if there is no separator in h, then we assume the user
+		// wants to hide any files or folders that match that
+		// name; thus we have to compare against each component
+		// of the filename, e.g. hiding "bar" would hide "/bar"
+		// as well as "/foo/bar/baz" but not "/barstool". Literal names
+		// count too, since a glob like "[A]" does not match itself.
+		for c := range strings.SplitSeq(filename, separator) {
+			if hidden, _ := filepath.Match(pattern, c); hidden || c == h {
+				return true
+			}
+		}
+	} else if after, ok := strings.CutPrefix(filename, h); ok && (after == "" || strings.HasPrefix(after, separator)) {
+		// if there is a separator in h, and filename is exactly h or
+		// prefixed with it, then we can do a prefix match so that
+		// "/foo" matches "/foo/bar" but not "/foobar".
+		return true
+	}
+
+	// in the general case, a glob match will suffice
+	hidden, _ := filepath.Match(pattern, filename)
+	return hidden
+}
+
+// foldPath maps every spelling that a case-insensitive file system (APFS,
+// NTFS, FAT, SMB, ext4 casefold) may resolve to the same name onto one string.
+func foldPath(s string) string {
+	ascii := true
+	for i := 0; i < len(s); i++ {
+		if s[i] >= utf8.RuneSelf {
+			ascii = false
+			break
+		}
+	}
+	if ascii {
+		return strings.ToLower(s)
+	}
+
+	// NTFS compares simple uppercase forms (ı is I), APFS uses full case
+	// folding (ß is ss) and ignores normalization (é is e + U+0301)
+	s = strings.Map(unicode.ToUpper, s)
+	return norm.NFC.String(cases.Fold().String(norm.NFC.String(s)))
+}
+
+// foldPattern is foldPath for a glob pattern. Character classes are folded
+// item by item, since folding them as text could widen them ([ß] to [ss]).
+func foldPattern(p string) string {
+	if !strings.Contains(p, "[") {
+		return foldPath(p)
+	}
+
+	var sb strings.Builder
+	start := 0
+scan:
+	for i := 0; i < len(p); i++ {
+		switch {
+		case p[i] == '\\' && globEscapes:
+			i++
+		case p[i] == '[':
+			end := classEnd(p, i)
+			if end < 0 {
+				break scan
+			}
+			sb.WriteString(foldPath(p[start:i]))
+			sb.WriteString(foldClass(p[i:end]))
+			start = end
+			i = end - 1
+		}
+	}
+	sb.WriteString(foldPath(p[start:]))
+	return sb.String()
+}
+
+// globEscapes reports whether filepath.Match treats a backslash as an escape.
+const globEscapes = runtime.GOOS != "windows"
+
+// classEnd returns the index just past the character class starting at
+// p[i], or -1 if the class is not terminated.
+func classEnd(p string, i int) int {
+	j := i + 1
+	if j < len(p) && p[j] == '^' {
+		j++
+	}
+	for first := true; j < len(p); first = false {
+		switch {
+		case p[j] == ']' && !first:
+			return j + 1
+		case p[j] == '\\' && globEscapes:
+			j += 2
+		default:
+			j++
+		}
+	}
+	return -1
+}
+
+// foldClass appends the folded form of each item of a character class to the
+// class. Negated classes are returned unchanged so that they keep matching
+// the folded case variants of the names they hide.
+func foldClass(class string) string {
+	body := class[1 : len(class)-1]
+	if strings.HasPrefix(body, "^") {
+		return class
+	}
+
+	var extra strings.Builder
+	for rest := body; rest != ""; {
+		var lo, hi rune
+		lo, rest = classChar(rest)
+		hi = lo
+		if len(rest) > 1 && rest[0] == '-' {
+			hi, rest = classChar(rest[1:])
+		}
+		flo, fhi := foldRune(lo), foldRune(hi)
+		if (flo == lo && fhi == hi) || flo < 0 || fhi < 0 || flo > fhi {
+			continue
+		}
+		writeClassRune(&extra, flo)
+		if fhi != flo {
+			extra.WriteByte('-')
+			writeClassRune(&extra, fhi)
+		}
+	}
+	return class[:len(class)-1] + extra.String() + "]"
+}
+
+// classChar decodes the possibly escaped character at the start of s.
+func classChar(s string) (rune, string) {
+	if len(s) > 1 && s[0] == '\\' && globEscapes {
+		s = s[1:]
+	}
+	r, n := utf8.DecodeRuneInString(s)
+	return r, s[n:]
+}
+
+// foldRune returns the folded form of r, or -1 if it folds to several runes.
+func foldRune(r rune) rune {
+	f := foldPath(string(r))
+	fr, n := utf8.DecodeRuneInString(f)
+	if n != len(f) {
+		return -1
+	}
+	return fr
+}
+
+func writeClassRune(sb *strings.Builder, r rune) {
+	if globEscapes && strings.ContainsRune(`\-]^`, r) {
+		sb.WriteByte('\\')
+	}
+	sb.WriteRune(r)
 }
 
 // notFound returns a 404 error or, if pass-thru is enabled,

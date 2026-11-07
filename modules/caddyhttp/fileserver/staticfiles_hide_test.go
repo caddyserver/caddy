@@ -17,6 +17,7 @@ package fileserver
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -140,5 +141,106 @@ func TestHideRelativeDataDir(t *testing.T) {
 	}
 	if fileHidden("caddyfile.go", fsrv.Hide) {
 		t.Errorf("caddyfile.go is hidden; hide list: %v", fsrv.Hide)
+	}
+}
+
+func TestHideAlternateSpellings(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "Caddyfile"), []byte("hidden config"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(root, "secretdir"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "secretdir", "p.txt"), []byte("hidden body"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "café.txt"), []byte("hidden body"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	fsrv := FileServer{
+		Root:          root,
+		Hide:          []string{filepath.Join(root, "Caddyfile"), "secretdir", "café.txt"},
+		CanonicalURIs: new(bool),
+	}
+	ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+	if err := fsrv.Provision(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, uri := range []string{"/Caddyfile", "/caddyfile", "/CADDYFILE", "/secretdir/p.txt", "/SecretDir/p.txt", "/caf%C3%A9.txt", "/cafe%CC%81.txt", "/CAF%C3%89.txt"} {
+		t.Run(uri, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, uri, nil)
+			original := *r
+			reqCtx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer())
+			reqCtx = context.WithValue(reqCtx, caddyhttp.OriginalRequestCtxKey, original)
+			r = r.WithContext(reqCtx)
+			w := httptest.NewRecorder()
+			err := fsrv.ServeHTTP(w, r, nil)
+			var handlerErr caddyhttp.HandlerError
+			if !errors.As(err, &handlerErr) || handlerErr.StatusCode != http.StatusNotFound {
+				t.Errorf("got error %v and status %d, want 404", err, w.Code)
+			}
+		})
+	}
+}
+
+func TestHideLiteralGlobNames(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		hide func(root string) string
+	}{
+		{name: "path", hide: func(root string) string { return filepath.Join(root, "[A]") }},
+		{name: "name only", hide: func(string) string { return "[A]" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.Mkdir(filepath.Join(root, "[A]"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, "[A]", "secret.txt"), []byte("hidden body"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, "public.txt"), []byte("public body"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			fsrv := FileServer{Root: root, Hide: []string{tc.hide(root)}, Browse: &Browse{}}
+			ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+			if err := fsrv.Provision(ctx); err != nil {
+				t.Fatal(err)
+			}
+
+			serve := func(uri string) (*httptest.ResponseRecorder, error) {
+				r := httptest.NewRequest(http.MethodGet, uri, nil)
+				original := *r
+				reqCtx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer())
+				reqCtx = context.WithValue(reqCtx, caddyhttp.OriginalRequestCtxKey, original)
+				r = r.WithContext(reqCtx)
+				r.Header.Set("Accept", "application/json")
+				w := httptest.NewRecorder()
+				return w, fsrv.ServeHTTP(w, r, nil)
+			}
+
+			w, err := serve("/")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if bytes.Contains(w.Body.Bytes(), []byte("[A]")) {
+				t.Errorf("browse response includes hidden directory: %s", w.Body.String())
+			}
+			if !bytes.Contains(w.Body.Bytes(), []byte("public.txt")) {
+				t.Errorf("browse response omits public path: %s", w.Body.String())
+			}
+
+			for _, uri := range []string{"/%5BA%5D/", "/%5BA%5D/secret.txt"} {
+				w, err := serve(uri)
+				var handlerErr caddyhttp.HandlerError
+				if !errors.As(err, &handlerErr) || handlerErr.StatusCode != http.StatusNotFound {
+					t.Errorf("%s: got error %v and status %d, want 404", uri, err, w.Code)
+				}
+			}
+		})
 	}
 }
