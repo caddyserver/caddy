@@ -712,12 +712,13 @@ func fileHidden(filename string, hide []string) bool {
 
 	folded := foldPath(filename)
 	for _, h := range hide {
-		if hideMatch(h, filename) {
+		if hideMatch(h, h, filename) {
 			return true
 		}
 		// case- and normalization-insensitive file systems open the same file
 		// under other spellings, so compare the folded forms too
-		if fh := foldPattern(h); (fh != h || folded != filename) && hideMatch(fh, folded) {
+		fh, fp := foldPath(h), foldPattern(h)
+		if (fh != h || fp != h || folded != filename) && hideMatch(fh, fp, folded) {
 			return true
 		}
 	}
@@ -725,8 +726,9 @@ func fileHidden(filename string, hide []string) bool {
 	return false
 }
 
-// hideMatch reports whether filename is hidden by the hide list entry h.
-func hideMatch(h, filename string) bool {
+// hideMatch reports whether filename is hidden by a hide list entry, given
+// as the literal path h and the glob pattern.
+func hideMatch(h, pattern, filename string) bool {
 	if !strings.Contains(h, separator) {
 		// if there is no separator in h, then we assume the user
 		// wants to hide any files or folders that match that
@@ -734,7 +736,7 @@ func hideMatch(h, filename string) bool {
 		// of the filename, e.g. hiding "bar" would hide "/bar"
 		// as well as "/foo/bar/baz" but not "/barstool".
 		for c := range strings.SplitSeq(filename, separator) {
-			if hidden, _ := filepath.Match(h, c); hidden {
+			if hidden, _ := filepath.Match(pattern, c); hidden {
 				return true
 			}
 		}
@@ -746,7 +748,7 @@ func hideMatch(h, filename string) bool {
 	}
 
 	// in the general case, a glob match will suffice
-	hidden, _ := filepath.Match(h, filename)
+	hidden, _ := filepath.Match(pattern, filename)
 	return hidden
 }
 
