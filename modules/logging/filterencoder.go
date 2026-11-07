@@ -16,6 +16,7 @@ package logging
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -483,8 +484,28 @@ type logObjectMarshalerWrapper struct {
 }
 
 // MarshalLogObject implements the zapcore.ObjectMarshaler interface.
-func (mom logObjectMarshalerWrapper) MarshalLogObject(_ zapcore.ObjectEncoder) error {
+func (mom logObjectMarshalerWrapper) MarshalLogObject(enc zapcore.ObjectEncoder) error {
+	// encoders that build a tree pass a new encoder for each nested object
+	mom.enc.wrapped = asEncoder(enc)
 	return mom.marsh.MarshalLogObject(mom.enc)
+}
+
+// objectEncoder lets FilterEncoder wrap an encoder that only encodes objects.
+type objectEncoder struct {
+	zapcore.ObjectEncoder
+}
+
+func (oe objectEncoder) Clone() zapcore.Encoder { return oe }
+
+func (objectEncoder) EncodeEntry(zapcore.Entry, []zapcore.Field) (*buffer.Buffer, error) {
+	return nil, errors.New("object encoders cannot encode entries")
+}
+
+func asEncoder(enc zapcore.ObjectEncoder) zapcore.Encoder {
+	if e, ok := enc.(zapcore.Encoder); ok {
+		return e
+	}
+	return objectEncoder{enc}
 }
 
 // Interface guards
