@@ -16,6 +16,8 @@ package caddy
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -229,3 +231,48 @@ type nopWriteCloser struct{}
 
 func (nopWriteCloser) Write(p []byte) (int, error) { return len(p), nil }
 func (nopWriteCloser) Close() error                { return nil }
+
+func TestOpenLogsKeepsDiscardLogsWithCoreModule(t *testing.T) {
+	defaultLoggerMu.RLock()
+	origDefault := defaultLogger
+	defaultLoggerMu.RUnlock()
+	t.Cleanup(func() {
+		defaultLoggerMu.Lock()
+		defaultLogger = origDefault
+		defaultLoggerMu.Unlock()
+	})
+
+	ctx, cancel := NewContext(Context{Context: context.Background()})
+	defer cancel()
+
+	discard := json.RawMessage(`{"output":"discard"}`)
+	logging := &Logging{Logs: map[string]*CustomLog{
+		"discarded": {BaseLog: BaseLog{WriterRaw: discard}},
+		"exported":  {BaseLog: BaseLog{WriterRaw: discard, CoreRaw: json.RawMessage(`{"module":"test"}`)}},
+	}}
+	if err := logging.openLogs(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok := logging.Logs["discarded"]; ok {
+		t.Error("expected the discard log without a core module to be deleted")
+	}
+	if _, ok := logging.Logs["exported"]; !ok {
+		t.Error("expected the discard log with a core module to be kept")
+	}
+}
+
+type testCore struct {
+	zapcore.Core `json:"-"`
+}
+
+func (testCore) CaddyModule() ModuleInfo {
+	return ModuleInfo{
+		ID:  "caddy.logging.cores.test",
+		New: func() Module { return &testCore{Core: zapcore.NewNopCore()} },
+	}
+}
+
+func init() {
+	RegisterModule(testCore{})
+}
