@@ -142,6 +142,67 @@ func TestFileHidden(t *testing.T) {
 	}
 }
 
+// Win32 path normalization strips trailing dots and spaces, so Windows opens
+// hidden files under these aliases; fileHidden relies on FastAbs normalizing alike.
+func TestHideWindowsTrailingDotSpace(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Win32 path normalization only")
+	}
+
+	root := t.TempDir()
+	for _, dir := range []string{"publicdir", "secretdir"} {
+		if err := os.Mkdir(filepath.Join(root, dir), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{"Caddyfile", "public.txt", filepath.Join("publicdir", "p.txt"), filepath.Join("secretdir", "p.txt")} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(name), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	canonicalURIs := false
+	fsrv := FileServer{
+		Root:          root,
+		Hide:          []string{"Caddyfile", filepath.Join(root, "secretdir")},
+		CanonicalURIs: &canonicalURIs,
+	}
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+	if err := fsrv.Provision(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	for i, tc := range []struct {
+		path       string
+		wantStatus int
+	}{
+		{path: "/public.txt.", wantStatus: http.StatusOK},
+		{path: "/public.txt%20", wantStatus: http.StatusOK},
+		{path: "/publicdir./p.txt", wantStatus: http.StatusOK},
+		{path: "/Caddyfile.", wantStatus: http.StatusNotFound},
+		{path: "/Caddyfile%20", wantStatus: http.StatusNotFound},
+		{path: "/Caddyfile.%20..", wantStatus: http.StatusNotFound},
+		{path: "/secretdir./p.txt", wantStatus: http.StatusNotFound},
+	} {
+		r := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		r = r.WithContext(context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
+		w := httptest.NewRecorder()
+
+		status := http.StatusOK
+		if err := fsrv.ServeHTTP(w, r, nil); err != nil {
+			he, ok := errors.AsType[caddyhttp.HandlerError](err)
+			if !ok {
+				t.Fatalf("Test %d (%s): unexpected error: %v", i, tc.path, err)
+			}
+			status = he.StatusCode
+		}
+		if status != tc.wantStatus {
+			t.Errorf("Test %d (%s): expected status %d, got %d (body %q)", i, tc.path, tc.wantStatus, status, w.Body.String())
+		}
+	}
+}
+
 // Check to make sure that we don't serve ETag and Last-Modified headers
 // for files with invalid modification times
 func TestModTimeHeaders(t *testing.T) {
