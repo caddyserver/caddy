@@ -77,10 +77,10 @@ import (
 // repetition may be undesirable, so call consolidateAddrMappings() to map
 // multiple addresses to the same lists of server blocks (a many:many mapping).
 // (Doing this is essentially a map-reduce technique.)
-func (st *ServerType) mapAddressToProtocolToServerBlocks(originalServerBlocks []serverBlock,
+func (st *ServerType) mapAddressToProtocolToServerBlocks(originalServerBlocks []ServerBlock,
 	options map[string]any,
-) (map[string]map[string][]serverBlock, error) {
-	addrToProtocolToServerBlocks := map[string]map[string][]serverBlock{}
+) (map[string]map[string][]ServerBlock, error) {
+	addrToProtocolToServerBlocks := map[string]map[string][]ServerBlock{}
 
 	type keyWithParsedKey struct {
 		key       caddyfile.Token
@@ -94,7 +94,7 @@ func (st *ServerType) mapAddressToProtocolToServerBlocks(originalServerBlocks []
 		// key of a server block as its own, but without having to repeat its
 		// contents in cases where multiple keys really can be served together
 		addrToProtocolToKeyWithParsedKeys := map[string]map[string][]keyWithParsedKey{}
-		for j, key := range sblock.block.Keys {
+		for j, key := range sblock.Block.Keys {
 			parsedKey, err := ParseAddress(key.Text)
 			if err != nil {
 				return nil, fmt.Errorf("parsing key: %v", err)
@@ -154,7 +154,7 @@ func (st *ServerType) mapAddressToProtocolToServerBlocks(originalServerBlocks []
 
 			protocolToServerBlocks, ok := addrToProtocolToServerBlocks[addr]
 			if !ok {
-				protocolToServerBlocks = map[string][]serverBlock{}
+				protocolToServerBlocks = map[string][]ServerBlock{}
 				addrToProtocolToServerBlocks[addr] = protocolToServerBlocks
 			}
 
@@ -169,13 +169,13 @@ func (st *ServerType) mapAddressToProtocolToServerBlocks(originalServerBlocks []
 					parsedKeys[k] = keyWithParsedKey.parsedKey
 				}
 
-				protocolToServerBlocks[prot] = append(protocolToServerBlocks[prot], serverBlock{
-					block: caddyfile.ServerBlock{
+				protocolToServerBlocks[prot] = append(protocolToServerBlocks[prot], ServerBlock{
+					Block: caddyfile.ServerBlock{
 						Keys:     keys,
-						Segments: sblock.block.Segments,
+						Segments: sblock.Block.Segments,
 					},
-					pile:       sblock.pile,
-					parsedKeys: parsedKeys,
+					Pile:       sblock.Pile,
+					ParsedKeys: parsedKeys,
 				})
 			}
 		}
@@ -192,7 +192,7 @@ func (st *ServerType) mapAddressToProtocolToServerBlocks(originalServerBlocks []
 // Identical entries are deleted from the addrToServerBlocks map. Essentially, each pairing (each
 // association from multiple addresses to multiple server blocks; i.e. each element of
 // the returned slice) becomes a server definition in the output JSON.
-func (st *ServerType) consolidateAddrMappings(addrToProtocolToServerBlocks map[string]map[string][]serverBlock) []sbAddrAssociation {
+func (st *ServerType) consolidateAddrMappings(addrToProtocolToServerBlocks map[string]map[string][]ServerBlock) []sbAddrAssociation {
 	sbaddrs := make([]sbAddrAssociation, 0, len(addrToProtocolToServerBlocks))
 
 	addrs := make([]string, 0, len(addrToProtocolToServerBlocks))
@@ -267,7 +267,7 @@ func (st *ServerType) consolidateAddrMappings(addrToProtocolToServerBlocks map[s
 
 // listenersForServerBlockAddress essentially converts the Caddyfile site addresses to a map from
 // Caddy listener addresses and the protocols to serve them with to the parsed address for each server block.
-func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Address,
+func (st *ServerType) listenersForServerBlockAddress(sblock ServerBlock, addr Address,
 	options map[string]any,
 ) (map[string]map[string]struct{}, error) {
 	switch addr.Scheme {
@@ -307,8 +307,8 @@ func (st *ServerType) listenersForServerBlockAddress(sblock serverBlock, addr Ad
 	}
 
 	// the bind directive specifies hosts (and potentially network), and the protocols to serve them with, but is optional
-	lnCfgVals := make([]addressesWithProtocols, 0, len(sblock.pile["bind"]))
-	for _, cfgVal := range sblock.pile["bind"] {
+	lnCfgVals := make([]addressesWithProtocols, 0, len(sblock.Pile["bind"]))
+	for _, cfgVal := range sblock.Pile["bind"] {
 		if val, ok := cfgVal.Value.(addressesWithProtocols); ok {
 			lnCfgVals = append(lnCfgVals, val)
 		}

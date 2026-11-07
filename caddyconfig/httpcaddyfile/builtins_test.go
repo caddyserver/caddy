@@ -1,4 +1,4 @@
-package httpcaddyfile
+package httpcaddyfile_test
 
 import (
 	"encoding/json"
@@ -6,6 +6,9 @@ import (
 	"testing"
 
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
+	_ "github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile/blocktypes/globalblock"
+	_ "github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile/blocktypes/httpserverblock"
 	_ "github.com/caddyserver/caddy/v2/modules/logging"
 )
 
@@ -122,7 +125,7 @@ func TestLogDirectiveSyntax(t *testing.T) {
 	} {
 
 		adapter := caddyfile.Adapter{
-			ServerType: ServerType{},
+			ServerType: httpcaddyfile.ServerType{},
 		}
 
 		out, _, err := adapter.Adapt([]byte(tc.input), nil)
@@ -263,7 +266,7 @@ func TestRedirDirectiveSyntax(t *testing.T) {
 	} {
 
 		adapter := caddyfile.Adapter{
-			ServerType: ServerType{},
+			ServerType: httpcaddyfile.ServerType{},
 		}
 
 		_, _, err := adapter.Adapt([]byte(tc.input), nil)
@@ -326,7 +329,7 @@ func TestImportErrorLine(t *testing.T) {
 		},
 	} {
 		adapter := caddyfile.Adapter{
-			ServerType: ServerType{},
+			ServerType: httpcaddyfile.ServerType{},
 		}
 
 		_, _, err := adapter.Adapt([]byte(tc.input), nil)
@@ -399,7 +402,7 @@ func TestNestedImport(t *testing.T) {
 		},
 	} {
 		adapter := caddyfile.Adapter{
-			ServerType: ServerType{},
+			ServerType: httpcaddyfile.ServerType{},
 		}
 
 		_, _, err := adapter.Adapt([]byte(tc.input), nil)
@@ -425,7 +428,7 @@ func TestLogLevelDirectiveSyntax(t *testing.T) {
 		{"log_level WARN {\n foo\n}", true},
 	} {
 		t.Run(tc.directive, func(t *testing.T) {
-			adapter := caddyfile.Adapter{ServerType: ServerType{}}
+			adapter := caddyfile.Adapter{ServerType: httpcaddyfile.ServerType{}}
 			result, _, err := adapter.Adapt([]byte(":8080 {\n"+tc.directive+"\n}"), nil)
 			if tc.wantError {
 				if err == nil {
@@ -476,7 +479,7 @@ func TestLogLevelDirectiveOrder(t *testing.T) {
 		"log_level INFO\nlog_level /api/* DEBUG\nlog_level /api/private/* ERROR",
 	} {
 		t.Run(input, func(t *testing.T) {
-			adapter := caddyfile.Adapter{ServerType: ServerType{}}
+			adapter := caddyfile.Adapter{ServerType: httpcaddyfile.ServerType{}}
 			result, _, err := adapter.Adapt([]byte(":8080 {\n"+input+"\n}"), nil)
 			if err != nil {
 				t.Fatal(err)
