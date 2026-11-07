@@ -181,6 +181,41 @@ func TestFileHidden(t *testing.T) {
 			expect:    true,
 		},
 		{
+			inputHide: []string{"[ß].txt"},
+			inputPath: "/s.txt",
+			expect:    false,
+		},
+		{
+			inputHide: []string{"[ß].txt"},
+			inputPath: "/ß.txt",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"[ﬃ]"},
+			inputPath: "/f",
+			expect:    false,
+		},
+		{
+			inputHide: []string{"*.[Ss]ecret"},
+			inputPath: "/X.SECRET",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"[A-z]b"},
+			inputPath: "/_B",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"[é]t"},
+			inputPath: "/E\u0301T",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"[^a-z]b"},
+			inputPath: "/xB",
+			expect:    false,
+		},
+		{
 			inputHide: []string{"Secret"},
 			inputPath: "/secrets",
 			expect:    false,

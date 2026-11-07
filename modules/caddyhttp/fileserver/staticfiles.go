@@ -717,7 +717,7 @@ func fileHidden(filename string, hide []string) bool {
 		}
 		// case- and normalization-insensitive file systems open the same file
 		// under other spellings, so compare the folded forms too
-		if fh := foldPath(h); (fh != h || folded != filename) && hideMatch(fh, folded) {
+		if fh := foldPattern(h); (fh != h || folded != filename) && hideMatch(fh, folded) {
 			return true
 		}
 	}
@@ -768,6 +768,114 @@ func foldPath(s string) string {
 	// folding (ß is ss) and ignores normalization (é is e + U+0301)
 	s = strings.Map(unicode.ToUpper, s)
 	return norm.NFC.String(cases.Fold().String(norm.NFC.String(s)))
+}
+
+// foldPattern is foldPath for a glob pattern. Character classes are folded
+// item by item, since folding them as text could widen them ([ß] to [ss]).
+func foldPattern(p string) string {
+	if !strings.Contains(p, "[") {
+		return foldPath(p)
+	}
+
+	var sb strings.Builder
+	start := 0
+scan:
+	for i := 0; i < len(p); i++ {
+		switch {
+		case p[i] == '\\' && globEscapes:
+			i++
+		case p[i] == '[':
+			end := classEnd(p, i)
+			if end < 0 {
+				break scan
+			}
+			sb.WriteString(foldPath(p[start:i]))
+			sb.WriteString(foldClass(p[i:end]))
+			start = end
+			i = end - 1
+		}
+	}
+	sb.WriteString(foldPath(p[start:]))
+	return sb.String()
+}
+
+// globEscapes reports whether filepath.Match treats a backslash as an escape.
+const globEscapes = runtime.GOOS != "windows"
+
+// classEnd returns the index just past the character class starting at
+// p[i], or -1 if the class is not terminated.
+func classEnd(p string, i int) int {
+	j := i + 1
+	if j < len(p) && p[j] == '^' {
+		j++
+	}
+	for first := true; j < len(p); first = false {
+		switch {
+		case p[j] == ']' && !first:
+			return j + 1
+		case p[j] == '\\' && globEscapes:
+			j += 2
+		default:
+			j++
+		}
+	}
+	return -1
+}
+
+// foldClass appends the folded form of each item of a character class to the
+// class. Negated classes are returned unchanged so that they keep matching
+// the folded case variants of the names they hide.
+func foldClass(class string) string {
+	body := class[1 : len(class)-1]
+	if strings.HasPrefix(body, "^") {
+		return class
+	}
+
+	var extra strings.Builder
+	for rest := body; rest != ""; {
+		var lo, hi rune
+		lo, rest = classChar(rest)
+		hi = lo
+		if len(rest) > 1 && rest[0] == '-' {
+			hi, rest = classChar(rest[1:])
+		}
+		flo, fhi := foldRune(lo), foldRune(hi)
+		if (flo == lo && fhi == hi) || flo < 0 || fhi < 0 || flo > fhi {
+			continue
+		}
+		writeClassRune(&extra, flo)
+		if fhi != flo {
+			extra.WriteByte('-')
+			writeClassRune(&extra, fhi)
+		}
+	}
+	return class[:len(class)-1] + extra.String() + "]"
+}
+
+// classChar decodes the possibly escaped character at the start of s.
+func classChar(s string) (rune, string) {
+	if len(s) > 1 && s[0] == '\\' && globEscapes {
+		s = s[1:]
+	}
+	r, n := utf8.DecodeRuneInString(s)
+	return r, s[n:]
+}
+
+// foldRune returns the folded form of r, or -1 if it folds to several runes.
+func foldRune(r rune) rune {
+	f := foldPath(string(r))
+	fr, n := utf8.DecodeRuneInString(f)
+	if n != len(f) {
+		return -1
+	}
+	return fr
+}
+
+func writeClassRune(sb *strings.Builder, r rune) {
+	if globEscapes && strings.ContainsRune(`\-]^`, r) {
+		sb.WriteByte('\\')
+	}
+	sb.WriteRune(r)
 }
 
 // notFound returns a 404 error or, if pass-thru is enabled,
