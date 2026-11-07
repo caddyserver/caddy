@@ -23,6 +23,11 @@
 }
 
 public.example.com, public.other.com {
+	tls {
+		client_auth {
+			mode off
+		}
+	}
 	respond "public"
 }
 ----------
