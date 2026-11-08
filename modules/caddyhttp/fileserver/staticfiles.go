@@ -434,7 +434,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 
 	// a trailing slash denotes a directory: path matchers don't see "/file/"
 	// as "/file", so serving the file here would bypass them
-	if !implicitIndexFile && strings.HasSuffix(r.URL.Path, "/") {
+	if !implicitIndexFile && strings.HasSuffix(caddyhttp.NormalizedPath(r.URL.Path, false), "/") {
 		if c := fsrv.logger.Check(zapcore.DebugLevel, "path with trailing slash is not a directory"); c != nil {
 			c.Write(
 				zap.String("request_path", r.URL.Path),
