@@ -227,3 +227,53 @@ func TestPHPFastCGIDirectoryRedirectStaysOnOrigin(t *testing.T) {
 		}
 	}
 }
+
+// Without a PHP front controller, php_fastcgi must leave static files and
+// directory indexes to file_server instead of sending them to a missing
+// index.php (https://github.com/caddyserver/caddy/issues/8367).
+func TestPHPFastCGIWithoutIndexPHP(t *testing.T) {
+	root := t.TempDir()
+	for name, content := range map[string]string{
+		"index.html":       "home",
+		"style.css":        "css",
+		"about/index.html": "about",
+	} {
+		file := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(file, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	backend := startFakePHPFPM(t)
+
+	tester := caddytest.NewTester(t)
+	tester.InitServer(fmt.Sprintf(`{
+		skip_install_trust
+		admin localhost:2999
+		http_port     9080
+		https_port    9443
+		grace_period  1ns
+	}
+
+	localhost:9080 {
+		root * %s
+		php_fastcgi %s
+		file_server
+	}
+	`, root, backend), "caddyfile")
+
+	tester.AssertGetResponse("http://localhost:9080/", http.StatusOK, "home")
+	tester.AssertGetResponse("http://localhost:9080/about/", http.StatusOK, "about")
+	tester.AssertGetResponse("http://localhost:9080/style.css", http.StatusOK, "css")
+	tester.AssertGetResponse("http://localhost:9080/missing", http.StatusNotFound, "")
+
+	// a front controller added later handles the paths that match no file
+	if err := os.WriteFile(filepath.Join(root, "index.php"), []byte("<?php // front controller"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tester.AssertGetResponse("http://localhost:9080/missing", http.StatusOK, "SCRIPT_FILENAME="+filepath.Join(root, "index.php"))
+	tester.AssertGetResponse("http://localhost:9080/style.css", http.StatusOK, "css")
+}
