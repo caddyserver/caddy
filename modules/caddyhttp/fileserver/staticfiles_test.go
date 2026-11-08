@@ -120,6 +120,56 @@ func TestFileHidden(t *testing.T) {
 			inputPath: "/second",
 			expect:    true,
 		},
+		{
+			inputHide: []string{"/srv/Caddyfile"},
+			inputPath: "/srv/caddyfile",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"/srv/Caddyfile"},
+			inputPath: "/SRV/CADDYFILE",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"secretdir"},
+			inputPath: "/SecretDir/p.txt",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"/srv/secretdir"},
+			inputPath: "/srv/SECRETDIR/p.txt",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"/srv/public.txt.gz"},
+			inputPath: "/srv/PUBLIC.TXT.gz",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"secret"},
+			inputPath: "/\u017Fecret",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"kelvin"},
+			inputPath: "/\u212Aelvin",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"Secret"},
+			inputPath: "/secrets",
+			expect:    false,
+		},
+		{
+			inputHide: []string{"/foo"},
+			inputPath: "/FOOBAR",
+			expect:    false,
+		},
+		{
+			inputHide: []string{"*.secret"},
+			inputPath: "/X.SECRET",
+			expect:    false,
+		},
 	} {
 		if runtime.GOOS == "windows" {
 			if strings.HasPrefix(tc.inputPath, "/") {
