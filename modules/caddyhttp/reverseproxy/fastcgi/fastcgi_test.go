@@ -148,7 +148,7 @@ func TestSplitPos(t *testing.T) {
 		},
 		{
 			name:      "unicode in filename with multiple php occurrences",
-			path:      "/ȺȺȺȺshell.php.txt.php",
+			path:      "/ȺȺȺȺshell.php/txt.php",
 			splitPath: []string{".php"},
 			wantPos:   18, // should match first .php, not be confused by byte offset shift
 		},
@@ -195,7 +195,25 @@ func TestSplitPos(t *testing.T) {
 			name:      "extension in middle of filename",
 			path:      "/test.php.bak",
 			splitPath: []string{".php"},
-			wantPos:   9,
+			wantPos:   -1,
+		},
+		{
+			name:      "extension in middle of filename before a later script",
+			path:      "/admin.php.php",
+			splitPath: []string{".php"},
+			wantPos:   14,
+		},
+		{
+			name:      "extension in middle of a directory name",
+			path:      "/admin.phpx/y.php",
+			splitPath: []string{".php"},
+			wantPos:   17,
+		},
+		{
+			name:      "extension in middle of a directory name with path info",
+			path:      "/a.phpx/b.php/info",
+			splitPath: []string{".php"},
+			wantPos:   13,
 		},
 		// Regression tests adapted from FrankenPHP advisories
 		// GHSA-3g8v-8r37-cgjm and GHSA-v4h7-cj44-8fc8: search.IgnoreCase
@@ -290,7 +308,7 @@ func TestSplitPos(t *testing.T) {
 // incorrect SCRIPT_NAME/PATH_INFO splitting
 func TestSplitPosUnicodeSecurityRegression(t *testing.T) {
 	// U+023A: Ⱥ (UTF-8: C8 BA). Lowercase is ⱥ (UTF-8: E2 B1 A5), longer in bytes.
-	path := "/ȺȺȺȺshell.php.txt.php"
+	path := "/ȺȺȺȺshell.php/txt.php"
 	split := []string{".php"}
 
 	pos := Transport{SplitPath: split}.splitPos(path)
@@ -306,7 +324,7 @@ func TestSplitPosUnicodeSecurityRegression(t *testing.T) {
 		pathInfo := path[pos:]
 
 		assert.Equal(t, "/ȺȺȺȺshell.php", scriptName, "script name should be the path up to first .php")
-		assert.Equal(t, ".txt.php", pathInfo, "path info should be the remainder after first .php")
+		assert.Equal(t, "/txt.php", pathInfo, "path info should be the remainder after first .php")
 	}
 }
 
