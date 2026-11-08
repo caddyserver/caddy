@@ -27,10 +27,12 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -128,9 +130,11 @@ type FileServer struct {
 	// comparisons are made. For maximum clarity and explicitness, use complete,
 	// absolute paths; or, for greater portability, use relative paths instead.
 	//
-	// Note that hide comparisons are case-sensitive. On case-insensitive
-	// filesystems, requests with different path casing may still resolve to the
-	// same file or directory on disk, so hide should not be treated as a
+	// Entries without glob characters are compared ignoring letter case, since
+	// case-insensitive filesystems open differently cased paths as the same
+	// file; glob patterns are compared case-sensitively. Hide is a best-effort
+	// filter: glob patterns, Unicode normalization variants, symlinks and hard
+	// links can still reach hidden files, so hide should not be treated as a
 	// security boundary for sensitive paths.
 	Hide []string `json:"hide,omitempty"`
 
@@ -724,8 +728,21 @@ func fileHidden(filename string, hide []string) bool {
 	}
 
 	var components []string
+	var folded string
 
 	for _, h := range hide {
+		if !hasGlobMeta(h) {
+			// case-insensitive filesystems open other spellings of a literal
+			// entry as the same file
+			if folded == "" {
+				folded = foldCase(filename)
+			}
+			if literalHidden(foldCase(h), folded) {
+				return true
+			}
+			continue
+		}
+
 		if !strings.Contains(h, separator) {
 			// if there is no separator in h, then we assume the user
 			// wants to hide any files or folders that match that
@@ -757,6 +774,31 @@ func fileHidden(filename string, hide []string) bool {
 	}
 
 	return false
+}
+
+// literalHidden reports whether filename is the literal entry h or is inside
+// it, or, if h has no separator, has a path component named h.
+func literalHidden(h, filename string) bool {
+	if !strings.Contains(h, separator) {
+		return slices.Contains(strings.Split(filename, separator), h)
+	}
+	after, ok := strings.CutPrefix(filename, h)
+	return ok && (after == "" || strings.HasPrefix(after, separator))
+}
+
+// hasGlobMeta reports whether filepath.Match treats h as a pattern.
+func hasGlobMeta(h string) bool {
+	magic := `*?[\`
+	if runtime.GOOS == "windows" {
+		magic = `*?[`
+	}
+	return strings.ContainsAny(h, magic)
+}
+
+// foldCase maps the letter cases that case-insensitive filesystems treat as
+// the same name to one form.
+func foldCase(s string) string {
+	return strings.Map(func(r rune) rune { return unicode.ToLower(unicode.ToUpper(r)) }, s)
 }
 
 // notFound returns a 404 error or, if pass-thru is enabled,
