@@ -27,10 +27,12 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -128,9 +130,11 @@ type FileServer struct {
 	// comparisons are made. For maximum clarity and explicitness, use complete,
 	// absolute paths; or, for greater portability, use relative paths instead.
 	//
-	// Note that hide comparisons are case-sensitive. On case-insensitive
-	// filesystems, requests with different path casing may still resolve to the
-	// same file or directory on disk, so hide should not be treated as a
+	// Entries without glob characters are compared ignoring letter case, since
+	// case-insensitive filesystems open differently cased paths as the same
+	// file; glob patterns are compared case-sensitively. Hide is a best-effort
+	// filter: glob patterns, Unicode normalization variants, symlinks and hard
+	// links can still reach hidden files, so hide should not be treated as a
 	// security boundary for sensitive paths.
 	Hide []string `json:"hide,omitempty"`
 
@@ -299,8 +303,13 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		return caddyhttp.Error(http.StatusNotFound, fmt.Errorf("filesystem not found"))
 	}
 
-	// remove any trailing `/` as it breaks fs.ValidPath() in the stdlib
-	filename := strings.TrimSuffix(caddyhttp.SanitizedPathJoin(root, r.URL.Path), "/")
+	// remove any trailing separator as it breaks fs.ValidPath() in the stdlib,
+	// and Windows rejects it on a regular file; keep it on a root such as `/` or
+	// `C:\`, where removing it changes the target
+	filename := caddyhttp.SanitizedPathJoin(root, r.URL.Path)
+	if len(filename) > len(filepath.VolumeName(filename))+1 {
+		filename = strings.TrimSuffix(filename, separator)
+	}
 
 	if c := fsrv.logger.Check(zapcore.DebugLevel, "sanitized path join"); c != nil {
 		c.Write(
@@ -425,6 +434,18 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 				return redirect(w, r, to)
 			}
 		}
+	}
+
+	// a trailing slash denotes a directory: path matchers don't see "/file/"
+	// as "/file", so serving the file here would bypass them
+	if !implicitIndexFile && strings.HasSuffix(caddyhttp.NormalizedPath(r.URL.Path, false), "/") {
+		if c := fsrv.logger.Check(zapcore.DebugLevel, "path with trailing slash is not a directory"); c != nil {
+			c.Write(
+				zap.String("request_path", r.URL.Path),
+				zap.String("filename", filename),
+			)
+		}
+		return fsrv.notFound(w, r, next)
 	}
 
 	var file fs.File
@@ -707,8 +728,21 @@ func fileHidden(filename string, hide []string) bool {
 	}
 
 	var components []string
+	var folded string
 
 	for _, h := range hide {
+		if !hasGlobMeta(h) {
+			// case-insensitive filesystems open other spellings of a literal
+			// entry as the same file
+			if folded == "" {
+				folded = foldCase(filename)
+			}
+			if literalHidden(foldCase(h), folded) {
+				return true
+			}
+			continue
+		}
+
 		if !strings.Contains(h, separator) {
 			// if there is no separator in h, then we assume the user
 			// wants to hide any files or folders that match that
@@ -740,6 +774,31 @@ func fileHidden(filename string, hide []string) bool {
 	}
 
 	return false
+}
+
+// literalHidden reports whether filename is the literal entry h or is inside
+// it, or, if h has no separator, has a path component named h.
+func literalHidden(h, filename string) bool {
+	if !strings.Contains(h, separator) {
+		return slices.Contains(strings.Split(filename, separator), h)
+	}
+	after, ok := strings.CutPrefix(filename, h)
+	return ok && (after == "" || strings.HasPrefix(after, separator))
+}
+
+// hasGlobMeta reports whether filepath.Match treats h as a pattern.
+func hasGlobMeta(h string) bool {
+	magic := `*?[\`
+	if runtime.GOOS == "windows" {
+		magic = `*?[`
+	}
+	return strings.ContainsAny(h, magic)
+}
+
+// foldCase maps the letter cases that case-insensitive filesystems treat as
+// the same name to one form.
+func foldCase(s string) string {
+	return strings.Map(func(r rune) rune { return unicode.ToLower(unicode.ToUpper(r)) }, s)
 }
 
 // notFound returns a 404 error or, if pass-thru is enabled,
