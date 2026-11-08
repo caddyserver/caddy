@@ -19,7 +19,6 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -605,9 +604,10 @@ func (m MatchFile) strictFileExists(fileSystem fs.FS, file string) (os.FileInfo,
 // cannot match a regular file, and reports false for a path ending in "/"
 // unless pattern does too, since only such patterns match a directory.
 func (m MatchFile) cleanSplit(pattern, expanded string) (beforeSplit, afterSplit string, ok bool) {
-	cleaned := path.Clean(expanded)
-	if strings.HasSuffix(expanded, "/") && !strings.HasSuffix(cleaned, "/") {
-		cleaned += "/"
+	cleaned := caddyhttp.NormalizedPath(expanded, true)
+	if cleaned == "" {
+		// Preserve path.Clean's existing result for an empty path.
+		cleaned = "."
 	}
 	beforeSplit, afterSplit = m.firstSplit(cleaned)
 

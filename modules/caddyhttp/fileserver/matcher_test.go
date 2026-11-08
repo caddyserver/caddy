@@ -721,6 +721,39 @@ func TestFirstExistFallbackMatchesWhenFinalFileIsAbsent(t *testing.T) {
 	}
 }
 
+func TestFileMatcherRejectsWindowsSeparators(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("backslash is a path separator only on Windows")
+	}
+
+	for _, policy := range []string{tryPolicyFirstExist, tryPolicyFirstExistFallback} {
+		for _, requestTarget := range []string{
+			"/foo.txt%5c",
+			"/foo.txt%5C",
+			`/foo.txt\`,
+		} {
+			t.Run(policy+requestTarget, func(t *testing.T) {
+				m := &MatchFile{
+					fsmap:     &filesystems.FileSystemMap{},
+					Root:      "./testdata",
+					TryFiles:  []string{"{http.request.uri.path}"},
+					TryPolicy: policy,
+				}
+				req := httptest.NewRequest(http.MethodGet, requestTarget, nil)
+				caddyhttp.NewTestReplacer(req)
+
+				matched, err := m.MatchWithError(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if matched {
+					t.Fatal("separator-qualified regular file matched")
+				}
+			})
+		}
+	}
+}
+
 // Only the final entry of first_exist_fallback may be used without globbing.
 // Every other policy must keep expanding patterns as globs, so a file whose
 // literal name contains glob metacharacters is not matched by that name.
