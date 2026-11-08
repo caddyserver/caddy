@@ -303,8 +303,13 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		return caddyhttp.Error(http.StatusNotFound, fmt.Errorf("filesystem not found"))
 	}
 
-	// remove any trailing `/` as it breaks fs.ValidPath() in the stdlib
-	filename := strings.TrimSuffix(caddyhttp.SanitizedPathJoin(root, r.URL.Path), "/")
+	// remove any trailing separator as it breaks fs.ValidPath() in the stdlib,
+	// and Windows rejects it on a regular file; keep it on a root such as `/` or
+	// `C:\`, where removing it changes the target
+	filename := caddyhttp.SanitizedPathJoin(root, r.URL.Path)
+	if len(filename) > len(filepath.VolumeName(filename))+1 {
+		filename = strings.TrimSuffix(filename, separator)
+	}
 
 	if c := fsrv.logger.Check(zapcore.DebugLevel, "sanitized path join"); c != nil {
 		c.Write(
@@ -429,6 +434,18 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 				return redirect(w, r, to)
 			}
 		}
+	}
+
+	// a trailing slash denotes a directory: path matchers don't see "/file/"
+	// as "/file", so serving the file here would bypass them
+	if !implicitIndexFile && strings.HasSuffix(caddyhttp.NormalizedPath(r.URL.Path, false), "/") {
+		if c := fsrv.logger.Check(zapcore.DebugLevel, "path with trailing slash is not a directory"); c != nil {
+			c.Write(
+				zap.String("request_path", r.URL.Path),
+				zap.String("filename", filename),
+			)
+		}
+		return fsrv.notFound(w, r, next)
 	}
 
 	var file fs.File
