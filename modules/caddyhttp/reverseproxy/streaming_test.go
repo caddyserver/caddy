@@ -822,17 +822,11 @@ func TestHandlerUpgradeBoundsUpstreamCloseMessage(t *testing.T) {
 		t.Fatalf("backend read %q, %v; want %q", hello, err, "hello")
 	}
 
-	// Send the close messages without closing anything. Cleanup closes the
-	// connections in map order, and closing the client side first can tear
-	// down the tunnel before the upstream gets its close message.
-	deadline := time.Now().Add(5 * time.Second)
-	h.tunnelTracker.mu.Lock()
-	for _, oc := range h.tunnelTracker.connections {
-		if err := oc.gracefulClose(deadline); err != nil {
-			t.Errorf("graceful close = %v", err)
-		}
+	// Closing the client side may tear down the tunnel before cleanup closes
+	// the upstream itself; that must not surface as a cleanup error.
+	if err := h.tunnelTracker.cleanupAttachedConnections(); err != nil {
+		t.Errorf("cleanup = %v, want nil", err)
 	}
-	h.tunnelTracker.mu.Unlock()
 	frame := make([]byte, 2)
 	if _, err := io.ReadFull(srv, frame); err != nil {
 		t.Fatalf("backend did not receive a close message: %v", err)
@@ -1161,5 +1155,52 @@ type closeTrackingBody struct {
 
 func (c *closeTrackingBody) Close() error {
 	c.closed = true
+	return nil
+}
+
+func TestTunnelTrackerSendsCloseMessagesBeforeClosing(t *testing.T) {
+	// Closing one side of a tunnel tears down the other, so every close
+	// message in a batch must go out before any connection is closed.
+	for _, tc := range []struct {
+		name     string
+		detached bool
+		close    func(*tunnelTracker) error
+	}{
+		{name: "attached", close: (*tunnelTracker).cleanupAttachedConnections},
+		{name: "detached", detached: true, close: func(ts *tunnelTracker) error {
+			// closeConnectionsForUpstream only acts on a stopped tracker.
+			ts.stopped = true
+			return ts.closeConnectionsForUpstream("upstream", time.Now().Add(time.Second))
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ts := newTunnelTracker(caddy.Log(), 0)
+			var events []string
+			for _, side := range []string{"client", "upstream"} {
+				ts.registerConnection(closeRecorder{side: side, events: &events}, func(time.Time) error {
+					events = append(events, "close message to "+side)
+					return nil
+				}, tc.detached, "upstream")
+			}
+
+			if err := tc.close(ts); err != nil {
+				t.Fatal(err)
+			}
+			if len(events) != 4 || !strings.HasPrefix(events[0], "close message") || !strings.HasPrefix(events[1], "close message") {
+				t.Errorf("events = %q, want both close messages before any connection closes", events)
+			}
+		})
+	}
+}
+
+// closeRecorder records when it is closed.
+type closeRecorder struct {
+	nopReadWriteCloser
+	side   string
+	events *[]string
+}
+
+func (c closeRecorder) Close() error {
+	*c.events = append(*c.events, "closed "+c.side)
 	return nil
 }
