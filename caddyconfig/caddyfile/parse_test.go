@@ -651,6 +651,69 @@ func TestParseAll(t *testing.T) {
 		:80
 		import A
 		`, true, [][]string{}},
+
+		// missing closing brace of the site block; the last directive
+		// having its own block must not mask it (issue #8374)
+		{`:8080 {
+			header {
+				X-Foo "bar"
+			}
+		`, true, [][]string{}},
+
+		// same, with the last directive's block written inline-nested
+		{`:8080 {
+			file_server {
+				browse
+			}
+		`, true, [][]string{}},
+
+		// unclosed global options block whose last directive has a block
+		{`{
+			servers {
+				protocols h1
+			}
+		`, true, [][]string{}},
+
+		// missing closing brace, last directive has no block
+		{`:8080 {
+			file_server
+		`, true, [][]string{}},
+
+		// extra closing brace after a site without braces (issue #8374)
+		{`:8080
+		file_server
+		}
+		`, true, [][]string{}},
+
+		// a closing brace must not separate two braceless sites
+		{`:8080
+		root /www/example.com
+		file_server
+		}
+
+		:3000
+		reverse_proxy localhost:9000
+		`, true, [][]string{}},
+
+		// valid controls: nested directive block as the last directive,
+		// site block closed afterwards
+		{`:8080 {
+			header {
+				X-Foo "bar"
+			}
+		}`, false, [][]string{
+			{":8080"},
+		}},
+
+		{`:8080 {
+			handle {
+				header {
+					X-Foo "bar"
+				}
+			}
+		}`, false, [][]string{
+			{":8080"},
+		}},
 	} {
 		p := testParser(test.input)
 		blocks, err := p.parseAll()
