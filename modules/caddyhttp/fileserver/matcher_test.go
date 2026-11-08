@@ -870,3 +870,32 @@ func TestSizePoliciesWithEmptyFiles(t *testing.T) {
 		})
 	}
 }
+
+func BenchmarkFileMatcher(b *testing.B) {
+	for _, bc := range []struct {
+		name string
+		path string
+	}{
+		{name: "existing file", path: "/index.php"},
+		{name: "front controller", path: "/blog/my-post"},
+	} {
+		b.Run(bc.name, func(b *testing.B) {
+			m := &MatchFile{
+				fsmap:     &filesystems.FileSystemMap{},
+				Root:      "./testdata",
+				TryFiles:  []string{"{http.request.uri.path}", "{http.request.uri.path}/index.php", "index.php"},
+				TryPolicy: tryPolicyFirstExist,
+				SplitPath: []string{".php"},
+			}
+			req := &http.Request{URL: &url.URL{Path: bc.path}}
+			caddyhttp.NewTestReplacer(req)
+
+			b.ReportAllocs()
+			for b.Loop() {
+				if ok, err := m.MatchWithError(req); !ok || err != nil {
+					b.Fatalf("expected match, got %t, %v", ok, err)
+				}
+			}
+		})
+	}
+}
