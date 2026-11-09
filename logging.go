@@ -124,15 +124,16 @@ func (logging *Logging) openLogs(ctx Context) error {
 			return fmt.Errorf("setting up custom log '%s': %v", name, err)
 		}
 
-		// Any other logs that use the discard writer and no core
-		// module can be deleted entirely. This avoids encoding and
-		// processing of each log entry that would just be thrown
-		// away anyway. Notably, we do not reach this point for the
-		// default log, which MUST exist, otherwise core log emissions
-		// would panic because they use the Log() function directly
-		// which expects a non-nil logger. Even if we keep such logs,
-		// they have a nop core, and keeping them at all seems unnecessary.
-		if l.core == zapcore.NewNopCore() {
+		// Any other logs that use the discard writer can be deleted
+		// entirely, unless their core module honors the log's level
+		// and sampling. This avoids encoding and processing of each
+		// log entry that would just be thrown away anyway. Notably,
+		// we do not reach this point for the default log, which MUST
+		// exist, otherwise core log emissions would panic because
+		// they use the Log() function directly which expects a non-nil
+		// logger.
+		_, discards := l.writerOpener.(*DiscardWriter)
+		if _, exports := l.coreModule.(HonorsLogLevelAndSampling); discards && !exports {
 			delete(logging.Logs, name)
 			continue
 		}
@@ -412,6 +413,7 @@ type BaseLog struct {
 	writer       io.WriteCloser
 	encoder      zapcore.Encoder
 	levelEnabler zapcore.LevelEnabler
+	coreModule   zapcore.Core
 	core         zapcore.Core
 }
 
@@ -464,6 +466,7 @@ func (cl *BaseLog) provisionCommon(ctx Context, logging *Logging) error {
 			return fmt.Errorf("loading log core module: %v", err)
 		}
 		extra = mod.(zapcore.Core)
+		cl.coreModule = extra
 		if c, ok := extra.(ConfiguresFromLogEncoder); ok {
 			if err := c.ConfigureFromLogEncoder(cl.encoder); err != nil {
 				return fmt.Errorf("configuring log core module: %v", err)
@@ -756,8 +759,9 @@ type (
 	// StderrWriter writes logs to standard error.
 	StderrWriter struct{}
 
-	// DiscardWriter discards all writes. Entries still
-	// reach the log's core module, if it has one.
+	// DiscardWriter discards all writes. Entries still reach
+	// the log's core module if it honors the log's level and
+	// sampling, as the otlp core does.
 	DiscardWriter struct{}
 )
 
@@ -958,7 +962,8 @@ type ConfiguresFromLogEncoder interface {
 
 // HonorsLogLevelAndSampling is an optional interface that core
 // modules can implement to only receive the entries that pass
-// their log's level and sampling.
+// their log's level and sampling, including when the log's
+// output is discard.
 type HonorsLogLevelAndSampling interface {
 	HonorsLogLevelAndSampling()
 }
