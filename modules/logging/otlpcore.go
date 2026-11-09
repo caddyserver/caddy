@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"go.opentelemetry.io/contrib/bridges/otelzap"
 	"go.opentelemetry.io/contrib/exporters/autoexport"
@@ -195,13 +196,15 @@ func (c *otlpCore) prepare(fields []zapcore.Field) []zapcore.Field {
 	return prepared
 }
 
-var globalLoggerProvider loggerProvider
+var globalLoggerProvider = loggerProvider{shutdownTimeout: 5 * time.Second}
 
 // loggerProvider shares one exporter between all logs and across config reloads.
 type loggerProvider struct {
 	mu       sync.Mutex
 	provider *sdklog.LoggerProvider
 	users    int
+	// bounds the flush so a stalled exporter cannot hang config unloading
+	shutdownTimeout time.Duration
 }
 
 func (p *loggerProvider) acquire(ctx context.Context) (*sdklog.LoggerProvider, error) {
@@ -235,16 +238,19 @@ func (p *loggerProvider) acquire(ctx context.Context) (*sdklog.LoggerProvider, e
 
 func (p *loggerProvider) release() error {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-
 	p.users--
 	if p.users > 0 {
+		p.mu.Unlock()
 		return nil
 	}
-
 	provider := p.provider
 	p.provider = nil
-	if err := provider.Shutdown(context.Background()); err != nil {
+	timeout := p.shutdownTimeout
+	p.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	if err := provider.Shutdown(ctx); err != nil {
 		return fmt.Errorf("shutting down OTLP logger provider: %w", err)
 	}
 

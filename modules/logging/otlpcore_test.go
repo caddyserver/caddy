@@ -17,13 +17,18 @@ package logging
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	"go.opentelemetry.io/contrib/exporters/autoexport"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	logspb "go.opentelemetry.io/proto/otlp/logs/v1"
@@ -207,5 +212,108 @@ func TestOTLPCoreLinksRecordsToSpans(t *testing.T) {
 	}
 	if untraced, _ := collector.record("untraced"); len(untraced.GetTraceId()) != 0 {
 		t.Errorf("expected no trace ID for invalid IDs, got %x", untraced.GetTraceId())
+	}
+}
+
+// stalledExporter hangs on shutdown, ignoring its context, until unblocked.
+type stalledExporter struct {
+	shuttingDown chan struct{}
+	unblock      func()
+	unblocked    chan struct{}
+}
+
+func (*stalledExporter) Export(context.Context, []sdklog.Record) error { return nil }
+func (*stalledExporter) ForceFlush(context.Context) error              { return nil }
+
+func (e *stalledExporter) Shutdown(context.Context) error {
+	e.shuttingDown <- struct{}{}
+	<-e.unblocked
+	return nil
+}
+
+var currentStalledExporter atomic.Pointer[stalledExporter]
+
+func init() {
+	autoexport.RegisterLogExporter("caddy-test-stalled", func(context.Context) (sdklog.Exporter, error) {
+		return currentStalledExporter.Load(), nil
+	})
+}
+
+func useStalledExporter(t *testing.T, shutdownTimeout time.Duration) *stalledExporter {
+	t.Helper()
+
+	unblocked := make(chan struct{})
+	e := &stalledExporter{
+		shuttingDown: make(chan struct{}, 2),
+		unblock:      sync.OnceFunc(func() { close(unblocked) }),
+		unblocked:    unblocked,
+	}
+	currentStalledExporter.Store(e)
+	t.Setenv("OTEL_LOGS_EXPORTER", "caddy-test-stalled")
+
+	globalLoggerProvider.mu.Lock()
+	orig := globalLoggerProvider.shutdownTimeout
+	globalLoggerProvider.shutdownTimeout = shutdownTimeout
+	globalLoggerProvider.mu.Unlock()
+	t.Cleanup(func() {
+		globalLoggerProvider.mu.Lock()
+		globalLoggerProvider.shutdownTimeout = orig
+		globalLoggerProvider.mu.Unlock()
+	})
+	// runs first, so a failed test cannot leave the provider mutex locked
+	t.Cleanup(e.unblock)
+
+	return e
+}
+
+func TestOTLPCoreCleanupBoundsStalledExporter(t *testing.T) {
+	useStalledExporter(t, 10*time.Millisecond)
+	core := provisionOTLPCore(t)
+
+	done := make(chan error, 1)
+	go func() { done <- core.Cleanup() }()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("expected the shutdown to time out, got %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("cleanup hung on a stalled exporter")
+	}
+}
+
+func TestOTLPCoreAcquireDuringStalledShutdown(t *testing.T) {
+	exporter := useStalledExporter(t, time.Minute)
+	oldCore := provisionOTLPCore(t)
+
+	done := make(chan error, 1)
+	go func() { done <- oldCore.Cleanup() }()
+	<-exporter.shuttingDown
+
+	acquired := make(chan *OTLPCore, 1)
+	go func() {
+		ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+		defer cancel()
+		newCore := new(OTLPCore)
+		if err := newCore.Provision(ctx); err != nil {
+			t.Error(err)
+		}
+		acquired <- newCore
+	}()
+
+	var newCore *OTLPCore
+	select {
+	case newCore = <-acquired:
+	case <-time.After(5 * time.Second):
+		t.Fatal("provisioning waited for the previous provider to shut down")
+	}
+
+	exporter.unblock()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if err := newCore.Cleanup(); err != nil {
+		t.Fatal(err)
 	}
 }
