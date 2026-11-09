@@ -362,6 +362,126 @@ func TestClientAuthenticationProvision(t *testing.T) {
 	}
 }
 
+func TestClientAuthenticationProvisionTrustPoolRequirement(t *testing.T) {
+	ctx, err := caddy.ProvisionContext(&caddy.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	leafVerifier := json.RawMessage(`{"verifier":"leaf"}`)
+	inlinePool := json.RawMessage(fmt.Sprintf(`{"provider":"inline","trusted_ca_certs":["%s"]}`, test_der_1))
+
+	tests := []struct {
+		name    string
+		ca      ClientAuthentication
+		wantErr bool
+	}{
+		{
+			name:    "require_and_verify without a trust pool is rejected",
+			ca:      ClientAuthentication{Mode: "require_and_verify"},
+			wantErr: true,
+		},
+		{
+			name:    "verify_if_given without a trust pool is rejected",
+			ca:      ClientAuthentication{Mode: "verify_if_given"},
+			wantErr: true,
+		},
+		{
+			name:    "require_and_verify with only a custom verifier is rejected",
+			ca:      ClientAuthentication{Mode: "require_and_verify", VerifiersRaw: []json.RawMessage{leafVerifier}},
+			wantErr: true,
+		},
+		{
+			name:    "require_and_verify with only trusted leaf certs is rejected",
+			ca:      ClientAuthentication{Mode: "require_and_verify", TrustedLeafCerts: []string{test_der_1}},
+			wantErr: true,
+		},
+		{
+			name: "require_and_verify with the system trust pool is accepted",
+			ca:   ClientAuthentication{Mode: "require_and_verify", CARaw: json.RawMessage(`{"provider":"system"}`)},
+		},
+		{
+			name: "verify_if_given with an inline trust pool is accepted",
+			ca:   ClientAuthentication{Mode: "verify_if_given", CARaw: inlinePool},
+		},
+		{
+			name: "require_and_verify with trusted CA certs is accepted",
+			ca:   ClientAuthentication{Mode: "require_and_verify", TrustedCACerts: []string{test_der_1}},
+		},
+		{
+			name: "require_and_verify with trusted CA cert PEM files is accepted",
+			ca:   ClientAuthentication{Mode: "require_and_verify", TrustedCACertPEMFiles: []string{test_cert_file_1}},
+		},
+		{
+			name: "verifier only, no mode, is accepted",
+			ca:   ClientAuthentication{VerifiersRaw: []json.RawMessage{leafVerifier}},
+		},
+		{
+			name: "verifier only with require mode is accepted",
+			ca:   ClientAuthentication{Mode: "require", VerifiersRaw: []json.RawMessage{leafVerifier}},
+		},
+		{
+			name: "request mode without a trust pool is accepted",
+			ca:   ClientAuthentication{Mode: "request"},
+		},
+		{
+			name: "require mode without a trust pool is accepted",
+			ca:   ClientAuthentication{Mode: "require"},
+		},
+		{
+			name: "trusted leaf certs without a mode are accepted",
+			ca:   ClientAuthentication{TrustedLeafCerts: []string{test_der_1}},
+		},
+		{
+			name: "empty client authentication is accepted",
+			ca:   ClientAuthentication{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ca := tt.ca
+			if err := ca.provision(ctx); (err != nil) != tt.wantErr {
+				t.Errorf("ClientAuthentication.provision() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestConnectionPoliciesClientAuthTrustPool(t *testing.T) {
+	ctx, err := caddy.ProvisionContext(&caddy.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// a verification mode without a trust pool must fail while the
+	// connection policies are being provisioned, i.e. at config load
+	pol := &ConnectionPolicy{
+		ClientAuthentication: &ClientAuthentication{Mode: "require_and_verify"},
+	}
+	if err := (ConnectionPolicies{pol}).Provision(ctx); err == nil {
+		t.Fatal("expected an error provisioning a verify mode without a trust pool, got nil")
+	}
+
+	// with a trust pool, the assembled TLS config must carry both the
+	// verification mode and the pool
+	pol = &ConnectionPolicy{
+		ClientAuthentication: &ClientAuthentication{
+			Mode:           "require_and_verify",
+			TrustedCACerts: []string{test_der_1},
+		},
+	}
+	if err := (ConnectionPolicies{pol}).Provision(ctx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pol.TLSConfig.ClientAuth != tls.RequireAndVerifyClientCert {
+		t.Errorf("expected ClientAuth %v, got %v", tls.RequireAndVerifyClientCert, pol.TLSConfig.ClientAuth)
+	}
+	if pol.TLSConfig.ClientCAs == nil {
+		t.Error("expected assembled TLS config to carry the trust pool in ClientCAs, got nil")
+	}
+}
+
 func TestParseCaddyfileNestedMatcherSet(t *testing.T) {
 	for i, tc := range []struct {
 		input   string

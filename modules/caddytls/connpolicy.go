@@ -829,19 +829,31 @@ func (clientauth *ClientAuthentication) provision(ctx caddy.Context) error {
 		clientauth.ca = caPool
 	}
 
-	// if we don't have any CARaw set, there's not much work to do
-	if clientauth.CARaw == nil {
-		return nil
+	// if we have a CA module configured, load it
+	if clientauth.CARaw != nil {
+		caRaw, err := ctx.LoadModule(clientauth, "CARaw")
+		if err != nil {
+			return err
+		}
+		ca, ok := caRaw.(CA)
+		if !ok {
+			return fmt.Errorf("'ca' module '%s' is not a certificate pool provider", ca)
+		}
+		clientauth.ca = ca
 	}
-	caRaw, err := ctx.LoadModule(clientauth, "CARaw")
-	if err != nil {
-		return err
+
+	// Modes which verify client certificates require an explicit trust
+	// pool; without one, crypto/tls silently falls back to verifying
+	// presented certificates against the host's system root pool, which
+	// is unlikely to be what the operator intended. Custom verifiers do
+	// not change this: in a verification mode, crypto/tls performs the
+	// standard chain verification before any verifier is consulted.
+	switch clientauth.Mode {
+	case "verify_if_given", "require_and_verify":
+		if clientauth.ca == nil {
+			return fmt.Errorf("client authentication mode %q requires a trust pool to verify client certificates against; without one, certificates would be verified against the system root pool; configure a trust pool (such as 'trust_pool system') to choose the pool explicitly", clientauth.Mode)
+		}
 	}
-	ca, ok := caRaw.(CA)
-	if !ok {
-		return fmt.Errorf("'ca' module '%s' is not a certificate pool provider", ca)
-	}
-	clientauth.ca = ca
 
 	return nil
 }
