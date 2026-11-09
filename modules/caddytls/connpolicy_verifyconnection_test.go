@@ -8,12 +8,15 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"errors"
 	"math/big"
 	"net"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/caddyserver/caddy/v2"
 )
 
 type testClientCertificateVerifier struct {
@@ -142,6 +145,69 @@ func TestClientAuthenticationModeWithLeafVerifier(t *testing.T) {
 			if !tc.wantError && err != nil {
 				t.Errorf("mode %s, %s, %s: unexpected handshake error: %v", tc.mode, tls.VersionName(version), certName, err)
 			}
+		}
+	}
+}
+
+// TestClientAuthenticationVerifyModesWithTrustPoolHandshake provisions
+// client authentication with an explicit trust pool through the same
+// code path a loaded config takes, then runs real TLS handshakes for
+// both verification modes.
+func TestClientAuthenticationVerifyModesWithTrustPoolHandshake(t *testing.T) {
+	ca := issueTestCert(t, nil, 0)
+	otherCA := issueTestCert(t, nil, 0)
+	serverCert := issueTestCert(t, &ca, x509.ExtKeyUsageServerAuth)
+	trustedClient := issueTestCert(t, &ca, x509.ExtKeyUsageClientAuth)
+	untrustedClient := issueTestCert(t, &otherCA, x509.ExtKeyUsageClientAuth)
+
+	caDER := base64.StdEncoding.EncodeToString(ca.Certificate[0])
+
+	for _, tc := range []struct {
+		mode      string
+		cert      *tls.Certificate
+		wantError bool
+	}{
+		{mode: "require_and_verify", cert: nil, wantError: true},
+		{mode: "require_and_verify", cert: &trustedClient, wantError: false},
+		{mode: "require_and_verify", cert: &untrustedClient, wantError: true},
+		{mode: "verify_if_given", cert: nil, wantError: false},
+		{mode: "verify_if_given", cert: &trustedClient, wantError: false},
+		{mode: "verify_if_given", cert: &untrustedClient, wantError: true},
+	} {
+		clientauth := &ClientAuthentication{
+			Mode:           tc.mode,
+			TrustedCACerts: []string{caDER},
+		}
+		if err := clientauth.provision(caddy.Context{}); err != nil {
+			t.Fatalf("mode %s: provisioning client authentication: %v", tc.mode, err)
+		}
+		serverConfig := &tls.Config{Certificates: []tls.Certificate{serverCert}}
+		if err := clientauth.ConfigureTLSConfig(serverConfig); err != nil {
+			t.Fatalf("mode %s: configuring TLS: %v", tc.mode, err)
+		}
+		if serverConfig.ClientCAs == nil {
+			t.Fatalf("mode %s: expected the trust pool in the assembled TLS config", tc.mode)
+		}
+
+		clientConfig := &tls.Config{InsecureSkipVerify: true} //nolint:gosec // test client does not verify the test server
+		certName := "no certificate"
+		if tc.cert != nil {
+			// use GetClientCertificate so the client actually sends the
+			// cert even if its issuer is not in the server's pool; a
+			// plain Certificates list would be filtered by issuer and
+			// the untrusted cert would never reach the server
+			clientConfig.GetClientCertificate = func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+				return tc.cert, nil
+			}
+			certName = tc.cert.Leaf.Subject.CommonName
+		}
+
+		err := serverHandshake(t, serverConfig, clientConfig)
+		if tc.wantError && err == nil {
+			t.Errorf("mode %s, %s: expected handshake error but got none", tc.mode, certName)
+		}
+		if !tc.wantError && err != nil {
+			t.Errorf("mode %s, %s: unexpected handshake error: %v", tc.mode, certName, err)
 		}
 	}
 }
