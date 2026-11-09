@@ -37,25 +37,47 @@ func init() {
 }
 
 // OTLPCore exports log entries as OpenTelemetry log records, in addition
-// to the log's writer. Set the log's output to discard to only export
-// the entries.
+// to the log's writer. The log's level, sampling, and include and exclude
+// lists apply to exported entries too. Set the log's output to discard to
+// only export the entries:
 //
-// The exporter is configured with the standard OTEL_* environment
-// variables, such as OTEL_EXPORTER_OTLP_ENDPOINT and
-// OTEL_EXPORTER_OTLP_PROTOCOL.
-//
-// The fields of the filter format apply to exported records too, and
-// access logs are linked to the span of the tracing handler.
-//
-// Fields added by the append format are NOT exported. To attach
-// information about the Caddy instance to exported records, set it as
-// resource attributes instead, for example
-// OTEL_RESOURCE_ATTRIBUTES=host.name=web-1,deployment.environment=prod.
-//
-//	log {
-//		output discard
-//		otlp
+//	{
+//		"writer": {"output": "discard"},
+//		"core": {"module": "otlp"}
 //	}
+//
+// Each record carries the entry's level, message, and fields as
+// attributes. The logger name, such as http.log.access, is the
+// instrumentation scope. Access logs are linked to the span of the
+// tracing handler.
+//
+// The exporter is configured with the standard OpenTelemetry environment
+// variables:
+//
+//   - OTEL_LOGS_EXPORTER: otlp (default), console, or none
+//   - OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf (default) or grpc
+//   - OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_EXPORTER_OTLP_HEADERS,
+//     OTEL_EXPORTER_OTLP_TIMEOUT, OTEL_EXPORTER_OTLP_COMPRESSION,
+//     OTEL_EXPORTER_OTLP_INSECURE, OTEL_EXPORTER_OTLP_CERTIFICATE,
+//     OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE, OTEL_EXPORTER_OTLP_CLIENT_KEY
+//   - the OTEL_EXPORTER_OTLP_LOGS_* variant of each variable above, which
+//     takes precedence
+//   - OTEL_SERVICE_NAME and OTEL_RESOURCE_ATTRIBUTES
+//   - OTEL_BLRP_SCHEDULE_DELAY, OTEL_BLRP_EXPORT_TIMEOUT,
+//     OTEL_BLRP_MAX_QUEUE_SIZE, and OTEL_BLRP_MAX_EXPORT_BATCH_SIZE
+//   - OTEL_LOGRECORD_ATTRIBUTE_COUNT_LIMIT and
+//     OTEL_LOGRECORD_ATTRIBUTE_VALUE_LENGTH_LIMIT
+//
+// All logs share one exporter, which survives config reloads. Pending
+// records are flushed, for up to 5 seconds, when the last log using it
+// is unloaded.
+//
+// The log's format only shapes the writer's output, except for two
+// formats. The field filters of the filter format apply to exported
+// records too, so redacted fields stay redacted. Fields added by the
+// append format are NOT exported. To attach information about the Caddy instance to
+// exported records, set it as resource attributes instead, for example
+// OTEL_RESOURCE_ATTRIBUTES=host.name=web-1,deployment.environment=prod.
 type OTLPCore struct {
 	zapcore.Core `json:"-"`
 
