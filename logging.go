@@ -380,6 +380,8 @@ type BaseLog struct {
 
 	// Tees entries through a zap.Core module which can extract
 	// log entry metadata and fields for further processing.
+	// The module receives every entry, regardless of the log's
+	// level and sampling, unless it opts in to them.
 	CoreRaw json.RawMessage `json:"core,omitempty" caddy:"namespace=caddy.logging.cores inline_key=module"`
 
 	// Level is the minimum level to emit, and is inclusive.
@@ -481,29 +483,32 @@ func (cl *BaseLog) buildCore(extra zapcore.Core) {
 			cl.levelEnabler,
 		))
 	}
-	if extra != nil {
+	if _, ok := extra.(HonorsLogLevelAndSampling); ok {
 		cores = append(cores, &levelFilteredCore{Core: extra, level: cl.levelEnabler})
+		extra = nil
 	}
 	// logs which only discard their output don't need
 	// to perform encoding or any other processing steps
 	// at all, so just shortcut to a nop core instead
-	if len(cores) == 0 {
-		cl.core = zapcore.NewNopCore()
-		return
+	c := zapcore.NewNopCore()
+	if len(cores) > 0 {
+		c = zapcore.NewTee(cores...)
+		if cl.Sampling != nil {
+			if cl.Sampling.Interval == 0 {
+				cl.Sampling.Interval = 1 * time.Second
+			}
+			if cl.Sampling.First == 0 {
+				cl.Sampling.First = 100
+			}
+			if cl.Sampling.Thereafter == 0 {
+				cl.Sampling.Thereafter = 100
+			}
+			c = zapcore.NewSamplerWithOptions(c, cl.Sampling.Interval,
+				cl.Sampling.First, cl.Sampling.Thereafter)
+		}
 	}
-	c := zapcore.NewTee(cores...)
-	if cl.Sampling != nil {
-		if cl.Sampling.Interval == 0 {
-			cl.Sampling.Interval = 1 * time.Second
-		}
-		if cl.Sampling.First == 0 {
-			cl.Sampling.First = 100
-		}
-		if cl.Sampling.Thereafter == 0 {
-			cl.Sampling.Thereafter = 100
-		}
-		c = zapcore.NewSamplerWithOptions(c, cl.Sampling.Interval,
-			cl.Sampling.First, cl.Sampling.Thereafter)
+	if extra != nil {
+		c = zapcore.NewTee(c, extra)
 	}
 	cl.core = c
 }
@@ -949,6 +954,13 @@ type ConfiguresFormatterDefault interface {
 // instance to apply the same field filters.
 type ConfiguresFromLogEncoder interface {
 	ConfigureFromLogEncoder(zapcore.Encoder) error
+}
+
+// HonorsLogLevelAndSampling is an optional interface that core
+// modules can implement to only receive the entries that pass
+// their log's level and sampling.
+type HonorsLogLevelAndSampling interface {
+	HonorsLogLevelAndSampling()
 }
 
 const DefaultLoggerName = "default"

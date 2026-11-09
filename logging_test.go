@@ -198,34 +198,54 @@ func TestUnbufferDefaultLogger(t *testing.T) {
 	}
 }
 
-func TestBaseLogCoreModuleHonorsLevelAndSampling(t *testing.T) {
-	for _, writer := range []WriterOpener{&DiscardWriter{}, StderrWriter{}} {
-		t.Run(writer.WriterKey(), func(t *testing.T) {
-			observed, logs := observer.New(zapcore.DebugLevel)
-			cl := &BaseLog{
-				writerOpener: writer,
-				writer:       nopWriteCloser{},
-				encoder:      zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()),
-				levelEnabler: zapcore.InfoLevel,
-				Sampling:     &LogSampling{Interval: time.Minute, First: 1, Thereafter: 100},
-			}
-			cl.buildCore(observed)
+func TestBaseLogCoreModuleLevelAndSampling(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		optIn        bool
+		belowLevel   int
+		sampledCount int
+	}{
+		{name: "third-party core gets every entry", optIn: false, belowLevel: 1, sampledCount: 3},
+		{name: "opted-in core honors level and sampling", optIn: true, belowLevel: 0, sampledCount: 1},
+	} {
+		for _, writer := range []WriterOpener{&DiscardWriter{}, StderrWriter{}} {
+			t.Run(tc.name+"/"+writer.WriterKey(), func(t *testing.T) {
+				observed, logs := observer.New(zapcore.DebugLevel)
+				var extra zapcore.Core = observed
+				if tc.optIn {
+					extra = leveledCore{observed}
+				}
+				cl := &BaseLog{
+					writerOpener: writer,
+					writer:       nopWriteCloser{},
+					encoder:      zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()),
+					levelEnabler: zapcore.InfoLevel,
+					Sampling:     &LogSampling{Interval: time.Minute, First: 1, Thereafter: 100},
+				}
+				cl.buildCore(extra)
 
-			logger := zap.New(cl.core)
-			logger.Debug("below level")
-			for range 3 {
-				logger.Info("sampled")
-			}
+				logger := zap.New(cl.core)
+				logger.Debug("below level")
+				for range 3 {
+					logger.Info("sampled")
+				}
 
-			if logs.FilterMessage("below level").Len() != 0 {
-				t.Error("expected the core module to drop entries below the log level")
-			}
-			if got := logs.FilterMessage("sampled").Len(); got != 1 {
-				t.Errorf("expected sampling to keep 1 entry, got %d", got)
-			}
-		})
+				if got := logs.FilterMessage("below level").Len(); got != tc.belowLevel {
+					t.Errorf("expected %d entries below the log level, got %d", tc.belowLevel, got)
+				}
+				if got := logs.FilterMessage("sampled").Len(); got != tc.sampledCount {
+					t.Errorf("expected %d sampled entries, got %d", tc.sampledCount, got)
+				}
+			})
+		}
 	}
 }
+
+type leveledCore struct {
+	zapcore.Core
+}
+
+func (leveledCore) HonorsLogLevelAndSampling() {}
 
 type nopWriteCloser struct{}
 

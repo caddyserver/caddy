@@ -127,6 +127,9 @@ func (c *OTLPCore) ConfigureFromLogEncoder(enc zapcore.Encoder) error {
 	}
 }
 
+// HonorsLogLevelAndSampling opts in to the log's level and sampling.
+func (*OTLPCore) HonorsLogLevelAndSampling() {}
+
 // Cleanup flushes pending records when the last OTLP core is unloaded.
 func (c *OTLPCore) Cleanup() error {
 	if c.provider == nil {
@@ -286,5 +289,6 @@ var (
 	_ caddy.CleanerUpper    = (*OTLPCore)(nil)
 	_ caddyfile.Unmarshaler = (*OTLPCore)(nil)
 
-	_ caddy.ConfiguresFromLogEncoder = (*OTLPCore)(nil)
+	_ caddy.ConfiguresFromLogEncoder  = (*OTLPCore)(nil)
+	_ caddy.HonorsLogLevelAndSampling = (*OTLPCore)(nil)
 )
