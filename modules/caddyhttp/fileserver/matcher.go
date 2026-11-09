@@ -610,9 +610,15 @@ func (m MatchFile) cleanSplit(pattern, expanded string) (beforeSplit, afterSplit
 		cleaned = "."
 	}
 	beforeSplit, afterSplit = m.firstSplit(cleaned)
+	patternHasTrailingSlash := strings.HasSuffix(pattern, "/")
+	// SanitizedPathJoin cleans the doubled slash but uses it to preserve
+	// the filesystem separator after the site root.
+	if beforeSplit == "/" && patternHasTrailingSlash {
+		beforeSplit += "/"
+	}
 
 	// with "{path}", a request for "/dir/" falls through to the next entry (e.g. "{path}/index.php")
-	if beforeSplit != "/" && strings.HasSuffix(beforeSplit, "/") && !strings.HasSuffix(pattern, "/") {
+	if beforeSplit != "/" && strings.HasSuffix(beforeSplit, "/") && !patternHasTrailingSlash {
 		return "", "", false
 	}
 	return beforeSplit, afterSplit, true
