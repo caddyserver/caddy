@@ -641,9 +641,12 @@ type ClientAuthentication struct {
 	// `verify_if_given` | Ask clients for a certificate; allow even if there isn't one, but verify it if there is
 	// `require_and_verify` | Require clients to present a valid certificate that is verified
 	//
-	// The default mode is `require_and_verify` if any
-	// TrustedCACerts or TrustedCACertPEMFiles or TrustedLeafCerts
-	// are provided; otherwise, the default mode is `require`.
+	// The `verify_if_given` and `require_and_verify` modes need a
+	// trust pool (`ca`). To verify against the system's root
+	// certificates, use the `tls.ca_pool.source.system` module.
+	//
+	// The default mode is `require_and_verify` if a trust pool is
+	// provided; otherwise, the default mode is `require`.
 	Mode string `json:"mode,omitempty"`
 
 	existingVerifyPeerCert func([][]byte, [][]*x509.Certificate) error
@@ -660,7 +663,8 @@ type ClientAuthentication struct {
 //	}
 //
 // If `mode` is not provided, it defaults to `require_and_verify` if `trust_pool` is provided.
-// Otherwise, it defaults to `require`.
+// Otherwise, it defaults to `require`. The `verify_if_given` and `require_and_verify` modes
+// need a `trust_pool`; use `trust_pool system` to verify against the system roots.
 func (ca *ClientAuthentication) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.NextArg() {
 		// consume any tokens on the same line, if any.
@@ -866,12 +870,17 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 		// otherwise, set a safe default mode
 		if len(clientauth.TrustedCACerts) > 0 ||
 			len(clientauth.TrustedCACertPEMFiles) > 0 ||
-			len(clientauth.TrustedLeafCerts) > 0 ||
 			clientauth.CARaw != nil || clientauth.ca != nil {
 			cfg.ClientAuth = tls.RequireAndVerifyClientCert
 		} else {
 			cfg.ClientAuth = tls.RequireAnyClientCert
 		}
+	}
+
+	// without ClientCAs, Go verifies client certs against the system roots
+	verifyMode := cfg.ClientAuth == tls.VerifyClientCertIfGiven || cfg.ClientAuth == tls.RequireAndVerifyClientCert
+	if verifyMode && clientauth.ca == nil {
+		return fmt.Errorf("client auth modes verify_if_given and require_and_verify need a trust pool; use the system trust pool to verify against system roots")
 	}
 
 	// enforce CA verification by adding CA certs to the ClientCAs pool
