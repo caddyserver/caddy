@@ -410,9 +410,14 @@ func (h *Handler) doActiveHealthCheck(dialInfo DialInfo, hostAddr string, networ
 		u.Host = net.JoinHostPort(host, port)
 	}
 
-	// override health check schemes if applicable
+	// override health check schemes if applicable, based on the port
+	// the health check connects to (health_upstream may change it)
 	if hcsot, ok := h.Transport.(HealthCheckSchemeOverriderTransport); ok {
-		hcsot.OverrideHealthCheckScheme(u, port)
+		_, hcPort, err := net.SplitHostPort(u.Host)
+		if err != nil {
+			hcPort = port
+		}
+		hcsot.OverrideHealthCheckScheme(u, hcPort)
 	}
 
 	// if we have a provisioned uri, use that, otherwise use
