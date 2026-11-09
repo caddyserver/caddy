@@ -259,11 +259,9 @@ func (ops *HeaderOps) ApplyTo(hdr http.Header, repl *caddy.Replacer) {
 		if expanded := repl.ReplaceKnown(fieldName, ""); expanded != fieldName {
 			fieldName = http.CanonicalHeaderKey(expanded)
 		}
-		var newVals []string
+		newVals := make([]string, len(vals))
 		for i := range vals {
-			// append to new slice so we don't overwrite
-			// the original values in ops.Set
-			newVals = append(newVals, repl.ReplaceKnown(vals[i], ""))
+			newVals[i] = repl.ReplaceKnown(vals[i], "")
 		}
 		if fieldName == "Set-Cookie" && len(newVals) > 1 {
 			hdr.Del(fieldName)

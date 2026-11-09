@@ -3,9 +3,11 @@ package caddyhttp
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -249,7 +251,8 @@ func TestResponseRecorderSwitchingProtocolsIsHijackAware(t *testing.T) {
 	if rr.DetachAfterHijack(true) {
 		t.Fatal("response recorder should report hijacked state by returning false")
 	}
-	if DetachResponseWriterAfterHijack(rr, true) {
+	req := requestWithResponseWriterBoundary(w)
+	if DetachResponseWriterAfterHijack(rr, req, true) {
 		t.Fatal("DetachResponseWriterAfterHijack() should report false after hijack")
 	}
 	if err := rr.WriteResponse(); err != nil {
@@ -274,7 +277,8 @@ func TestResponseRecorderNestedDetach(t *testing.T) {
 			// Include an intervening middleware wrapper in the recorder chain.
 			outer := NewResponseRecorder(&ResponseWriterWrapper{ResponseWriter: inner}, nil, nil)
 			outer.WriteHeader(http.StatusSwitchingProtocols)
-			if !DetachResponseWriterAfterHijack(outer, detached) {
+			req := requestWithResponseWriterBoundary(inner)
+			if !DetachResponseWriterAfterHijack(outer, req, detached) {
 				t.Fatal("detach configuration failed")
 			}
 			conn, brw, err := http.NewResponseController(outer).Hijack()
@@ -301,11 +305,58 @@ func TestResponseRecorderNestedDetach(t *testing.T) {
 					t.Errorf("%s recorder size = %d, want %d", name, rr.Size(), want)
 				}
 			}
-			if DetachResponseWriterAfterHijack(outer, true) {
+			if DetachResponseWriterAfterHijack(outer, req, true) {
 				t.Error("detach should fail after hijack")
 			}
 		})
 	}
+}
+
+func TestDetachResponseWriterAfterHijackRejectsOpaqueInnerWriter(t *testing.T) {
+	raw := newHijackRespWriter()
+	opaque := struct{ http.ResponseWriter }{raw}
+	recorder := NewResponseRecorder(opaque, nil, nil)
+	req := requestWithResponseWriterBoundary(raw)
+
+	if DetachResponseWriterAfterHijack(recorder, req, true) {
+		t.Fatal("detach succeeded through a writer without Unwrap")
+	}
+}
+
+func TestDetachResponseWriterAfterHijackAtBoundary(t *testing.T) {
+	w := newHijackRespWriter()
+	req := requestWithResponseWriterBoundary(w)
+	if !DetachResponseWriterAfterHijack(w, req, true) {
+		t.Fatal("detach failed at the server-owned writer")
+	}
+	if DetachResponseWriterAfterHijack(w, nil, true) {
+		t.Fatal("detach succeeded without a request")
+	}
+}
+
+func TestDetachResponseWriterAfterHijackRejectsCycles(t *testing.T) {
+	raw := newHijackRespWriter()
+	req := requestWithResponseWriterBoundary(raw)
+	a := &cycleWriter{}
+	b := &cycleWriter{next: a}
+	a.next = b
+
+	for name, w := range map[string]http.ResponseWriter{
+		"uncomparable self-reference": uncomparableWriter{},
+		"indirect cycle":              a,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if DetachResponseWriterAfterHijack(w, req, true) {
+				t.Fatal("detach succeeded without reaching the server-owned writer")
+			}
+		})
+	}
+}
+
+func requestWithResponseWriterBoundary(w http.ResponseWriter) *http.Request {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	ctx := context.WithValue(req.Context(), responseWriterBoundaryCtxKey, w)
+	return req.WithContext(ctx)
 }
 
 // targetIface is an interface that only the innermost writer in the tests

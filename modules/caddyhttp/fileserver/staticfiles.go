@@ -27,11 +27,12 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
-	"unicode/utf8"
+	"unicode"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -129,9 +130,11 @@ type FileServer struct {
 	// comparisons are made. For maximum clarity and explicitness, use complete,
 	// absolute paths; or, for greater portability, use relative paths instead.
 	//
-	// Note that hide comparisons are case-sensitive. On case-insensitive
-	// filesystems, requests with different path casing may still resolve to the
-	// same file or directory on disk, so hide should not be treated as a
+	// Entries without glob characters are compared ignoring letter case, since
+	// case-insensitive filesystems open differently cased paths as the same
+	// file; glob patterns are compared case-sensitively. Hide is a best-effort
+	// filter: glob patterns, Unicode normalization variants, symlinks and hard
+	// links can still reach hidden files, so hide should not be treated as a
 	// security boundary for sensitive paths.
 	Hide []string `json:"hide,omitempty"`
 
@@ -210,6 +213,13 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 		fsrv.IndexNames = defaultIndexNames
 	}
 
+	// a relative data directory sits under the working directory and holds private keys
+	if dataDir := caddy.AppDataDir(); !filepath.IsAbs(dataDir) {
+		if abs, err := caddy.FastAbs(dataDir); err == nil {
+			fsrv.Hide = append(fsrv.Hide, abs)
+		}
+	}
+
 	// for hide paths that are static (i.e. no placeholders), we can transform them into
 	// absolute paths before the server starts for very slight performance improvement
 	for i, h := range fsrv.Hide {
@@ -268,57 +278,6 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-const windowsShortNamePunctuation = "$%'-_@~`!(){}^#&"
-
-// possibleWindowsShortNamePart reports whether s could be part of an 8.3
-// alias. Extended characters are allowed when Windows' allowextchar behavior
-// is enabled, so non-ASCII characters must be accepted here to fail closed.
-func possibleWindowsShortNamePart(s string) bool {
-	for _, c := range s {
-		if c >= utf8.RuneSelf ||
-			(c >= 'a' && c <= 'z') ||
-			(c >= 'A' && c <= 'Z') ||
-			(c >= '0' && c <= '9') ||
-			strings.ContainsRune(windowsShortNamePunctuation, c) {
-			continue
-		}
-		return false
-	}
-	return true
-}
-
-// hasWindowsShortName reports whether any component of p has the syntax of an
-// NTFS 8.3 short name. Both slash types separate components on Windows, which
-// also ignores trailing dots and spaces in each component.
-func hasWindowsShortName(p string) bool {
-	for _, component := range strings.FieldsFunc(p, func(r rune) bool {
-		return r == '/' || r == '\\'
-	}) {
-		component = strings.TrimRight(component, ". ")
-		base, extension, hasExtension := strings.Cut(component, ".")
-		if utf8.RuneCountInString(base) > 8 || !possibleWindowsShortNamePart(base) ||
-			(hasExtension && (utf8.RuneCountInString(extension) > 3 || !possibleWindowsShortNamePart(extension))) {
-			continue
-		}
-
-		tilde := strings.LastIndexByte(base, '~')
-		if tilde <= 0 || tilde == len(base)-1 {
-			continue
-		}
-		shortNameNumber := base[tilde+1:]
-		for _, c := range shortNameNumber {
-			if c < '0' || c > '9' {
-				shortNameNumber = ""
-				break
-			}
-		}
-		if shortNameNumber != "" {
-			return true
-		}
-	}
-	return false
-}
-
 func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
@@ -328,7 +287,7 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			return caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("illegal ADS path"))
 		}
 		// reject paths with "8.3" short names
-		if hasWindowsShortName(r.URL.Path) {
+		if caddyhttp.HasWindowsShortName(r.URL.Path) {
 			return caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("illegal short name"))
 		}
 		// both of those could bypass file hiding or possibly leak information even if the file is not hidden
@@ -344,8 +303,13 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 		return caddyhttp.Error(http.StatusNotFound, fmt.Errorf("filesystem not found"))
 	}
 
-	// remove any trailing `/` as it breaks fs.ValidPath() in the stdlib
-	filename := strings.TrimSuffix(caddyhttp.SanitizedPathJoin(root, r.URL.Path), "/")
+	// remove any trailing separator as it breaks fs.ValidPath() in the stdlib,
+	// and Windows rejects it on a regular file; keep it on a root such as `/` or
+	// `C:\`, where removing it changes the target
+	filename := caddyhttp.SanitizedPathJoin(root, r.URL.Path)
+	if len(filename) > len(filepath.VolumeName(filename))+1 {
+		filename = strings.TrimSuffix(filename, separator)
+	}
 
 	if c := fsrv.logger.Check(zapcore.DebugLevel, "sanitized path join"); c != nil {
 		c.Write(
@@ -470,6 +434,18 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 				return redirect(w, r, to)
 			}
 		}
+	}
+
+	// a trailing slash denotes a directory: path matchers don't see "/file/"
+	// as "/file", so serving the file here would bypass them
+	if !implicitIndexFile && strings.HasSuffix(caddyhttp.NormalizedPath(r.URL.Path, false), "/") {
+		if c := fsrv.logger.Check(zapcore.DebugLevel, "path with trailing slash is not a directory"); c != nil {
+			c.Write(
+				zap.String("request_path", r.URL.Path),
+				zap.String("filename", filename),
+			)
+		}
+		return fsrv.notFound(w, r, next)
 	}
 
 	var file fs.File
@@ -752,8 +728,21 @@ func fileHidden(filename string, hide []string) bool {
 	}
 
 	var components []string
+	var folded string
 
 	for _, h := range hide {
+		if !hasGlobMeta(h) {
+			// case-insensitive filesystems open other spellings of a literal
+			// entry as the same file
+			if folded == "" {
+				folded = foldCase(filename)
+			}
+			if literalHidden(foldCase(h), folded) {
+				return true
+			}
+			continue
+		}
+
 		if !strings.Contains(h, separator) {
 			// if there is no separator in h, then we assume the user
 			// wants to hide any files or folders that match that
@@ -785,6 +774,31 @@ func fileHidden(filename string, hide []string) bool {
 	}
 
 	return false
+}
+
+// literalHidden reports whether filename is the literal entry h or is inside
+// it, or, if h has no separator, has a path component named h.
+func literalHidden(h, filename string) bool {
+	if !strings.Contains(h, separator) {
+		return slices.Contains(strings.Split(filename, separator), h)
+	}
+	after, ok := strings.CutPrefix(filename, h)
+	return ok && (after == "" || strings.HasPrefix(after, separator))
+}
+
+// hasGlobMeta reports whether filepath.Match treats h as a pattern.
+func hasGlobMeta(h string) bool {
+	magic := `*?[\`
+	if runtime.GOOS == "windows" {
+		magic = `*?[`
+	}
+	return strings.ContainsAny(h, magic)
+}
+
+// foldCase maps the letter cases that case-insensitive filesystems treat as
+// the same name to one form.
+func foldCase(s string) string {
+	return strings.Map(func(r rune) rune { return unicode.ToLower(unicode.ToUpper(r)) }, s)
 }
 
 // notFound returns a 404 error or, if pass-thru is enabled,

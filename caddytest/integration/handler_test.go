@@ -77,11 +77,7 @@ func TestRequestBodyPlaceholderRespectsMaxSizeInTemplate(t *testing.T) {
 	}
   `, "caddyfile")
 
-	req, err := http.NewRequest(http.MethodPost, "http://localhost:9080/", bytes.NewBufferString("abcdefghijklm"))
-	if err != nil {
-		t.Fatalf("creating request: %v", err)
-	}
-	res := tester.AssertResponseCode(req, http.StatusRequestEntityTooLarge)
+	res := tester.AssertResponseCode(newUnknownLengthPost(t, "abcdefghijklm"), http.StatusRequestEntityTooLarge)
 	res.Body.Close()
 }
 
@@ -109,11 +105,7 @@ func TestRequestBodyPlaceholderRespectsMaxSizeInVarsRegexp(t *testing.T) {
 	}
   `, "caddyfile")
 
-	req, err := http.NewRequest(http.MethodPost, "http://localhost:9080/", bytes.NewBufferString("abcdefghijklmnopqrstuvwxyz"))
-	if err != nil {
-		t.Fatalf("creating request: %v", err)
-	}
-	res := tester.AssertResponseCode(req, http.StatusRequestEntityTooLarge)
+	res := tester.AssertResponseCode(newUnknownLengthPost(t, "abcdefghijklmnopqrstuvwxyz"), http.StatusRequestEntityTooLarge)
 	res.Body.Close()
 }
 
@@ -138,5 +130,43 @@ func TestRequestBodyPlaceholderDirectRespondExpansion(t *testing.T) {
 	// direct placeholder consumers expand the sanitized request-body limit
 	// marker to its text instead of failing the request with 413; only the
 	// templates and vars matchers propagate the 413 status
-	tester.AssertPostResponseBody("http://localhost:9080/", nil, bytes.NewBufferString("abcdefghijklm"), http.StatusOK, "request body: http: request body too large")
+	tester.AssertResponse(newUnknownLengthPost(t, "abcdefghijklm"), http.StatusOK, "request body: http: request body too large")
+}
+
+// newUnknownLengthPost sends no Content-Length, so the body gets past
+// request_body's early check and max_size trips while handlers read it.
+func newUnknownLengthPost(t *testing.T, body string) *http.Request {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, "http://localhost:9080/", bytes.NewBufferString(body))
+	if err != nil {
+		t.Fatalf("creating request: %v", err)
+	}
+	req.ContentLength = -1
+	return req
+}
+
+func TestRequestBodyMaxSizeLimitsErrorRoute(t *testing.T) {
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`
+	{
+		skip_install_trust
+		admin localhost:2999
+		http_port     9080
+		https_port    9443
+		grace_period  1ns
+	}
+	http://localhost:9080 {
+		request_body {
+			max_size 10
+		}
+		respond "next handler reached"
+		handle_errors {
+			respond "{http.request.body}" {err.status_code}
+		}
+	}
+  `, "caddyfile")
+
+	// the declared length is rejected before respond runs, and the error
+	// route reading the body must still be held to max_size
+	tester.AssertPostResponseBody("http://localhost:9080/", nil, bytes.NewBufferString("abcdefghijklm"), http.StatusRequestEntityTooLarge, "request body: http: request body too large")
 }

@@ -29,6 +29,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"cel.dev/cel-go/cel"
 	"cel.dev/cel-go/common"
@@ -95,13 +96,10 @@ type (
 	//
 	// Even though wildcards (`*`) operate in the normalized space, the special
 	// escaped wildcard (`%*`), which is not a valid escape sequence, may be
-	// used in place of a span that should NOT be decoded; that is, `/bands/%*`
-	// will match `/bands/AC%2fDC` whereas `/bands/*` will not.
-	//
-	// Even though path matching is done in normalized space, the special
-	// wildcard `%*` may be used in place of a span that should NOT be decoded;
-	// that is, `/bands/%*/` will match `/bands/AC%2fDC/` whereas `/bands/*/`
-	// will not.
+	// used in place of a span that should NOT be decoded; that is, `/bands/%*/`
+	// will match `/bands/AC%2fDC/` whereas `/bands/*/` will not. Note that a
+	// pattern ending in a bare trailing wildcard, such as `/bands/*`, is a
+	// prefix match in normalized space, so it does match `/bands/AC%2fDC`.
 	//
 	// This matcher is fast, so it does not support regular expressions or
 	// capture groups. For slower but more powerful matching, use the
@@ -409,7 +407,10 @@ func (MatchPath) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-// Provision lower-cases the paths in m to ensure case-insensitive matching.
+// Provision lower-cases the static paths in m to ensure case-insensitive
+// matching. Paths with placeholders are left untouched, since placeholder
+// names can be case-sensitive (e.g. environment variables); they are
+// lower-cased after replacement, at request time.
 func (m MatchPath) Provision(_ caddy.Context) error {
 	for i := range m {
 		if m[i] == "*" && i > 0 {
@@ -417,7 +418,9 @@ func (m MatchPath) Provision(_ caddy.Context) error {
 			m[0] = m[i]
 			break
 		}
-		m[i] = strings.ToLower(m[i])
+		if !strings.Contains(m[i], "{") {
+			m[i] = strings.ToLower(m[i])
+		}
 	}
 	return nil
 }
@@ -441,7 +444,9 @@ func (m MatchPath) MatchWithError(r *http.Request) (bool, error) {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	for _, matchPattern := range m {
-		matchPattern = repl.ReplaceAll(matchPattern, "")
+		if strings.Contains(matchPattern, "{") {
+			matchPattern = strings.ToLower(repl.ReplaceAll(matchPattern, ""))
+		}
 
 		// special case: whole path is wildcard; this is unnecessary
 		// as it matches all requests, which is the same as no matcher
@@ -547,6 +552,7 @@ func (MatchPath) matchPatternWithEscapeSequence(escapedPath, matchPath string) b
 	// of the path, then switching to the escaped parts where
 	// the pattern hints to us wherever % is present.
 	var sb strings.Builder
+	sb.Grow(len(escapedPath))
 
 	// iterate the pattern and escaped path in lock-step;
 	// increment iPattern every time we consume a char from the pattern,
@@ -699,6 +705,57 @@ func normalizeWindowsPath(p string) string {
 	return strings.Join(segments, "/")
 }
 
+const windowsShortNamePunctuation = "$%'-_@~`!(){}^#&"
+
+// possibleWindowsShortNamePart reports whether s could be part of an 8.3
+// alias. Extended characters are allowed when Windows' allowextchar behavior
+// is enabled, so non-ASCII characters must be accepted here to fail closed.
+func possibleWindowsShortNamePart(s string) bool {
+	for _, c := range s {
+		if c >= utf8.RuneSelf ||
+			(c >= 'a' && c <= 'z') ||
+			(c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9') ||
+			strings.ContainsRune(windowsShortNamePunctuation, c) {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+// HasWindowsShortName reports whether any component of p has the syntax of an
+// NTFS 8.3 short name. Both slash types separate components on Windows, which
+// also ignores trailing dots and spaces in each component.
+func HasWindowsShortName(p string) bool {
+	for _, component := range strings.FieldsFunc(p, func(r rune) bool {
+		return r == '/' || r == '\\'
+	}) {
+		component = strings.TrimRight(component, ". ")
+		base, extension, hasExtension := strings.Cut(component, ".")
+		if utf8.RuneCountInString(base) > 8 || !possibleWindowsShortNamePart(base) ||
+			(hasExtension && (utf8.RuneCountInString(extension) > 3 || !possibleWindowsShortNamePart(extension))) {
+			continue
+		}
+
+		tilde := strings.LastIndexByte(base, '~')
+		if tilde <= 0 || tilde == len(base)-1 {
+			continue
+		}
+		shortNameNumber := base[tilde+1:]
+		for _, c := range shortNameNumber {
+			if c < '0' || c > '9' {
+				shortNameNumber = ""
+				break
+			}
+		}
+		if shortNameNumber != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // normalizeWindowsEscapedPath applies the same Windows normalization as
 // normalizeWindowsPath, but in raw/escaped space (used when a matcher pattern
 // contains '%'), where path separators may be percent-encoded ("%2f") and a
@@ -843,6 +900,13 @@ func (m MatchPathRE) MatchWithError(r *http.Request) (bool, error) {
 // Example:
 //
 //	expression path_regexp('^/bar')
+//
+// The pattern is a CEL string literal, so CEL's own escape sequences
+// (e.g. \b, \n, \t) are interpreted before the result reaches the regexp
+// engine. A pattern that needs a literal backslash escape meant for the
+// regexp engine, such as \b for a word boundary, should be written as a
+// CEL raw string (prefixed with r) so CEL passes the backslash through
+// unchanged: expression path_regexp(r'^/bar\b').
 func (MatchPathRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 	unnamedPattern, err := CELMatcherImpl(
 		"path_regexp",
@@ -1309,6 +1373,15 @@ func (m MatchHeaderRE) Validate() error {
 // Example:
 //
 //	expression header_regexp('foo', 'Field', 'fo+')
+//
+// The pattern is a CEL string literal, so CEL's own escape sequences
+// (e.g. \b, \n, \t) are interpreted before the result reaches the regexp
+// engine. A pattern that needs a literal backslash escape meant for the
+// regexp engine, such as \b for a word boundary, should be written as a
+// CEL raw string (prefixed with r) so CEL passes the backslash through
+// unchanged: expression header_regexp('foo', 'User-Agent', r'bot\b').
+// Without the r prefix, \b is interpreted by CEL as a backspace
+// character before the regexp engine ever sees the pattern.
 func (MatchHeaderRE) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 	unnamedPattern, err := CELMatcherImpl(
 		"header_regexp",

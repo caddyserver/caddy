@@ -43,7 +43,7 @@ php_fastcgi localhost:9000 {
 									"handler": "static_response",
 									"headers": {
 										"Location": [
-											"{http.request.orig_uri.path}/{http.request.orig_uri.prefixed_query}"
+											"./{http.request.orig_uri.path.file_escaped}/{http.request.orig_uri.prefixed_query}"
 										]
 									},
 									"status_code": 308
@@ -59,7 +59,6 @@ php_fastcgi localhost:9000 {
 											"{http.request.uri.path}/index.php5",
 											"index.php5"
 										],
-										"try_policy": "first_exist_fallback",
 										"split_path": [
 											".php",
 											".php5"

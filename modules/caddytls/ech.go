@@ -329,6 +329,18 @@ func (ech *ECH) updateKeyList() {
 	}
 }
 
+// addPublicationHistoryToEchConfigList is needed to initialize the publication history
+// because without it, caddy won't remember successfully published ech records in memory.
+// Ranging over the config slice copies each struct, so initializing a map on
+// a copy would not update the original config. Initialize it before copying instead.
+func addPublicationHistoryToEchConfigList(echCfgList echConfigList) {
+	for i := range echCfgList {
+		if echCfgList[i].meta.Publications == nil {
+			echCfgList[i].meta.Publications = make(publicationHistory)
+		}
+	}
+}
+
 // publishECHConfigs publishes any configs that are configured for publication and which haven't been published already.
 func (t *TLS) publishECHConfigs(ctx context.Context, logger *zap.Logger) error {
 	if err := ctx.Err(); err != nil {
@@ -378,7 +390,7 @@ func (t *TLS) publishECHConfigs(ctx context.Context, logger *zap.Logger) error {
 	// publish with it, and figure out which inner names to publish
 	// to/for, then publish
 	for _, publication := range publicationList {
-		t.EncryptedClientHello.configsMu.RLock()
+		t.EncryptedClientHello.configsMu.Lock()
 		// this publication is either configured for specific ECH configs,
 		// or we just use an implied default of all ECH configs
 		var echCfgList echConfigList
@@ -386,6 +398,7 @@ func (t *TLS) publishECHConfigs(ctx context.Context, logger *zap.Logger) error {
 		if publication.Configs == nil {
 			// by default, publish all configs
 			for _, configs := range t.EncryptedClientHello.configs {
+				addPublicationHistoryToEchConfigList(configs)
 				echCfgList = append(echCfgList, configs...)
 				for _, c := range configs {
 					configIDs = append(configIDs, c.ConfigID)
@@ -394,6 +407,7 @@ func (t *TLS) publishECHConfigs(ctx context.Context, logger *zap.Logger) error {
 		} else {
 			for _, cfgOuterName := range publication.Configs {
 				if cfgList, ok := t.EncryptedClientHello.configs[cfgOuterName]; ok {
+					addPublicationHistoryToEchConfigList(cfgList)
 					echCfgList = append(echCfgList, cfgList...)
 					for _, c := range cfgList {
 						configIDs = append(configIDs, c.ConfigID)
@@ -401,7 +415,7 @@ func (t *TLS) publishECHConfigs(ctx context.Context, logger *zap.Logger) error {
 				}
 			}
 		}
-		t.EncryptedClientHello.configsMu.RUnlock()
+		t.EncryptedClientHello.configsMu.Unlock()
 
 		// marshal the ECH config list as binary for publication
 		echCfgListBin, err := echCfgList.MarshalBinary()
@@ -519,9 +533,6 @@ func (t *TLS) publishECHConfigs(ctx context.Context, logger *zap.Logger) error {
 					zap.Uint8s("config_ids", configIDs))
 
 				for _, cfg := range echCfgList {
-					if cfg.meta.Publications == nil {
-						cfg.meta.Publications = make(publicationHistory)
-					}
 					if _, ok := cfg.meta.Publications[publisherKey]; !ok {
 						cfg.meta.Publications[publisherKey] = make(map[string]time.Time)
 					}

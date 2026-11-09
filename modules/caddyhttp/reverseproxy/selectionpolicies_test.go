@@ -126,8 +126,8 @@ func TestWeightedRoundRobinPolicy(t *testing.T) {
 	pool[1].countRequest(1)
 	pool[1].MaxRequests = 1
 	h = wrrPolicy.Select(pool, req, nil)
-	if h != pool[2] {
-		t.Error("Expected to skip full host.")
+	if h != pool[0] {
+		t.Error("Expected to use the weights of the available hosts.")
 	}
 }
 
@@ -145,6 +145,24 @@ func TestWeightedRoundRobinPolicyFewerWeightsThanUpstreams(t *testing.T) {
 		if h != pool[1] {
 			t.Fatalf("Selection %d: got %v, want the only available weighted host %v", i+1, h, pool[1])
 		}
+	}
+}
+
+func TestWeightedRoundRobinPolicySingleWeight(t *testing.T) {
+	pool := testPool()
+	wrrPolicy := WeightedRoundRobinSelection{
+		Weights:     []int{1},
+		totalWeight: 1,
+	}
+	req, _ := http.NewRequest("GET", "/", nil)
+
+	if h := wrrPolicy.Select(pool, req, nil); h != pool[0] {
+		t.Errorf("got %v, want the only weighted host %v", h, pool[0])
+	}
+
+	pool[0].setHealthy(false)
+	if h := wrrPolicy.Select(pool, req, nil); h != nil {
+		t.Errorf("got %v, want nil when the only weighted host is unavailable", h)
 	}
 }
 
@@ -988,5 +1006,18 @@ func TestCookieHashPolicyWithSecret(t *testing.T) {
 	cookieHashPolicy.Select(pool, request, w)
 	if len(w.Result().Cookies()) == 0 {
 		t.Error("Expected a new cookie to be set for a non-matching value")
+	}
+}
+
+func TestWeightedRoundRobinPolicyAvailableWeights(t *testing.T) {
+	pool := testPool()
+	pool[1].setHealthy(false)
+	policy := WeightedRoundRobinSelection{Weights: []int{1, 8, 3}, totalWeight: 12}
+	counts := make(map[*Upstream]int)
+	for i := 0; i < 12; i++ {
+		counts[policy.Select(pool, nil, nil)]++
+	}
+	if counts[pool[0]] != 3 || counts[pool[2]] != 9 || len(counts) != 2 {
+		t.Fatalf("Expected a 1:3 distribution among available hosts, got %v", counts)
 	}
 }

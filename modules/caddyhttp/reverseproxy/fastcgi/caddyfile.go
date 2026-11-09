@@ -19,7 +19,6 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
-	"strings"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -140,10 +139,9 @@ func (t *Transport) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 //	}
 //	redir @canonicalPath {path}/ 308
 //
-//	# If the requested file does not exist, try index files and assume index.php always exists
+//	# If the requested file does not exist, try index files
 //	@indexFiles file {
 //	    try_files {path} {path}/index.php index.php
-//	    try_policy first_exist_fallback
 //	    split_path .php
 //	}
 //	rewrite @indexFiles {http.matchers.file.relative}
@@ -317,18 +315,12 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 	if indexFile != "off" {
 		var dirRedir bool
 		dirIndex := "{http.request.uri.path}/" + indexFile
-		tryPolicy := "first_exist_fallback"
 
 		// if tryFiles wasn't overridden, use a reasonable default
 		if len(tryFiles) == 0 {
 			tryFiles = []string{"{http.request.uri.path}", dirIndex, indexFile}
 			dirRedir = true
 		} else {
-			if !strings.HasSuffix(tryFiles[len(tryFiles)-1], ".php") {
-				// use first_exist strategy if the last file is not a PHP file
-				tryPolicy = ""
-			}
-
 			dirRedir = slices.Contains(tryFiles, dirIndex)
 		}
 
@@ -346,9 +338,17 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 					},
 				}),
 			}
+			// The matcher above judges the cleaned request path, so the
+			// Location must not echo the raw original path: a request for
+			// /%2Fevil.com%2F..%2Fsub matches <root>/sub/index.php but would
+			// redirect to //evil.com/../sub/, which browsers resolve to
+			// another host. A reference relative to the last path segment
+			// resolves against the URL the client actually requested, so it
+			// can only ever land on the same origin; the leading ./ keeps a
+			// segment containing ':' from being read as a scheme.
 			redirHandler := caddyhttp.StaticResponse{
 				StatusCode: caddyhttp.WeakString(strconv.Itoa(http.StatusPermanentRedirect)),
-				Headers:    http.Header{"Location": []string{"{http.request.orig_uri.path}/{http.request.orig_uri.prefixed_query}"}},
+				Headers:    http.Header{"Location": []string{"./{http.request.orig_uri.path.file_escaped}/{http.request.orig_uri.prefixed_query}"}},
 			}
 			redirRoute := caddyhttp.Route{
 				MatcherSetsRaw: []caddy.ModuleMap{redirMatcherSet},
@@ -362,7 +362,6 @@ func parsePHPFastCGI(h httpcaddyfile.Helper) ([]httpcaddyfile.ConfigValue, error
 		rewriteMatcherSet := caddy.ModuleMap{
 			"file": h.JSON(fileserver.MatchFile{
 				TryFiles:  tryFiles,
-				TryPolicy: tryPolicy,
 				SplitPath: extensions,
 			}),
 		}

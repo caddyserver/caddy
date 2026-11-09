@@ -406,3 +406,13 @@ func TestHTTPTransportH3UsesConfiguredTrustPool(t *testing.T) {
 		t.Fatal("HTTP/3 transport: TLS client config must be a clone, not the same pointer as the HTTP/1.1+2 transport's")
 	}
 }
+
+func TestTLSConfigRejectsUnknownCurve(t *testing.T) {
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+
+	tc := &TLSConfig{Curves: []string{"X25519"}}
+	if _, err := tc.MakeTLSClientConfig(ctx); err == nil {
+		t.Fatal("expected an error for an unknown curve, got nil")
+	}
+}

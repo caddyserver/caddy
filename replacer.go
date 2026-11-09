@@ -29,6 +29,8 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+
+	"github.com/caddyserver/caddy/v2/internal/systemd"
 )
 
 // NewReplacer returns a new Replacer.
@@ -460,6 +462,13 @@ func (f globalDefaultReplacementProvider) replace(key string) (any, bool) {
 	if strings.HasPrefix(key, envPrefix) {
 		return os.Getenv(key[len(envPrefix):]), true
 	}
+	if name, ok := strings.CutPrefix(key, systemdListenPrefix); ok {
+		descriptor, err := systemd.ListenFD(name)
+		if err != nil {
+			return nil, false
+		}
+		return descriptor, true
+	}
 
 	switch key {
 	case "system.hostname":
@@ -530,6 +539,8 @@ const ReplacerCtxKey CtxKey = "replacer"
 const phOpen, phClose, phEscape = '{', '}', '\\'
 
 const filePrefix = "file."
+
+const systemdListenPrefix = "systemd.listen."
 
 // maxFileCacheBytes bounds the memoized file contents to 8 MiB (8,388,608 bytes) per replace call.
 const maxFileCacheBytes = 8 << 20

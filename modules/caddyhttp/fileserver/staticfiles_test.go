@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -120,6 +121,56 @@ func TestFileHidden(t *testing.T) {
 			inputPath: "/second",
 			expect:    true,
 		},
+		{
+			inputHide: []string{"/srv/Caddyfile"},
+			inputPath: "/srv/caddyfile",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"/srv/Caddyfile"},
+			inputPath: "/SRV/CADDYFILE",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"secretdir"},
+			inputPath: "/SecretDir/p.txt",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"/srv/secretdir"},
+			inputPath: "/srv/SECRETDIR/p.txt",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"/srv/public.txt.gz"},
+			inputPath: "/srv/PUBLIC.TXT.gz",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"secret"},
+			inputPath: "/\u017Fecret",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"kelvin"},
+			inputPath: "/\u212Aelvin",
+			expect:    true,
+		},
+		{
+			inputHide: []string{"Secret"},
+			inputPath: "/secrets",
+			expect:    false,
+		},
+		{
+			inputHide: []string{"/foo"},
+			inputPath: "/FOOBAR",
+			expect:    false,
+		},
+		{
+			inputHide: []string{"*.secret"},
+			inputPath: "/X.SECRET",
+			expect:    false,
+		},
 	} {
 		if runtime.GOOS == "windows" {
 			if strings.HasPrefix(tc.inputPath, "/") {
@@ -142,108 +193,64 @@ func TestFileHidden(t *testing.T) {
 	}
 }
 
-func TestHasWindowsShortName(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		path string
-		want bool
+// Win32 path normalization strips trailing dots and spaces, so Windows opens
+// hidden files under these aliases; fileHidden relies on FastAbs normalizing alike.
+func TestHideWindowsTrailingDotSpace(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Win32 path normalization only")
+	}
+
+	root := t.TempDir()
+	for _, dir := range []string{"publicdir", "secretdir"} {
+		if err := os.Mkdir(filepath.Join(root, dir), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{"Caddyfile", "public.txt", filepath.Join("publicdir", "p.txt"), filepath.Join("secretdir", "p.txt")} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(name), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	canonicalURIs := false
+	fsrv := FileServer{
+		Root:          root,
+		Hide:          []string{"Caddyfile", filepath.Join(root, "secretdir")},
+		CanonicalURIs: &canonicalURIs,
+	}
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+	if err := fsrv.Provision(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	for i, tc := range []struct {
+		path       string
+		wantStatus int
 	}{
-		{
-			name: "final component",
-			path: "/DIRECT~1.TXT",
-			want: true,
-		},
-		{
-			name: "parent component with long final filename",
-			path: "/PROTEC~1/this-is-a-long-final-filename.txt",
-			want: true,
-		},
-		{
-			name: "middle component",
-			path: "/public/PROTEC~1/file.txt",
-			want: true,
-		},
-		{
-			name: "backslash separator",
-			path: `\public\PROTEC~1\file.txt`,
-			want: true,
-		},
-		{
-			name: "two digit short name suffix",
-			path: "/PROTE~12/file.txt",
-			want: true,
-		},
-		{
-			name: "trailing dots and spaces",
-			path: "/PROTEC~1.  /file.txt",
-			want: true,
-		},
-		{
-			name: "permitted punctuation",
-			path: "/$%'-_~1.!#&",
-			want: true,
-		},
-		{
-			name: "ordinary tilde name",
-			path: "/ordinary~name/file.txt",
-			want: false,
-		},
-		{
-			name: "space in short name shape",
-			path: "/my f~1.txt",
-			want: false,
-		},
-		{
-			name: "space in long tilde name",
-			path: "/my file~1.txt",
-			want: false,
-		},
-		{
-			name: "non-ASCII short name shape in parent component",
-			path: "/public/café~1/this-is-a-long-final-filename.txt",
-			want: true,
-		},
-		{
-			name: "non-ASCII ordinary tilde name",
-			path: "/café~name.txt",
-			want: false,
-		},
-		{
-			name: "forbidden punctuation",
-			path: "/MY+F~1.TXT",
-			want: false,
-		},
-		{
-			name: "tilde followed by non-digit",
-			path: "/SHORT~A/file.txt",
-			want: false,
-		},
-		{
-			name: "characters after numeric suffix",
-			path: "/SHORT~1-file.txt",
-			want: false,
-		},
-		{
-			name: "base too long for 8.3",
-			path: "/TOOLONG~1/file.txt",
-			want: false,
-		},
-		{
-			name: "extension too long for 8.3",
-			path: "/SHORT~1.LONG/file.txt",
-			want: false,
-		},
-		{
-			name: "multiple extension separators",
-			path: "/SHORT~1.T.X/file.txt",
-			want: false,
-		},
+		{path: "/public.txt.", wantStatus: http.StatusOK},
+		{path: "/public.txt%20", wantStatus: http.StatusOK},
+		{path: "/publicdir./p.txt", wantStatus: http.StatusOK},
+		{path: "/Caddyfile.", wantStatus: http.StatusNotFound},
+		{path: "/Caddyfile%20", wantStatus: http.StatusNotFound},
+		{path: "/Caddyfile.%20..", wantStatus: http.StatusNotFound},
+		{path: "/secretdir./p.txt", wantStatus: http.StatusNotFound},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := hasWindowsShortName(tc.path); got != tc.want {
-				t.Fatalf("hasWindowsShortName(%q) = %t, want %t", tc.path, got, tc.want)
+		r := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		r = r.WithContext(context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
+		w := httptest.NewRecorder()
+
+		status := http.StatusOK
+		if err := fsrv.ServeHTTP(w, r, nil); err != nil {
+			he, ok := errors.AsType[caddyhttp.HandlerError](err)
+			if !ok {
+				t.Fatalf("Test %d (%s): unexpected error: %v", i, tc.path, err)
 			}
-		})
+			status = he.StatusCode
+		}
+		if status != tc.wantStatus {
+			t.Errorf("Test %d (%s): expected status %d, got %d (body %q)", i, tc.path, tc.wantStatus, status, w.Body.String())
+		}
 	}
 }
 
@@ -487,5 +494,154 @@ func TestServeHTTPStatErrors(t *testing.T) {
 		if he, ok := errors.AsType[caddyhttp.HandlerError](err); !ok || he.StatusCode != tc.wantStatus {
 			t.Errorf("Test %d: expected status %d, got %v", i, tc.wantStatus, err)
 		}
+	}
+}
+
+// A trailing slash denotes a directory, so path matchers don't treat
+// "/secret.env/" as "*.env"; the file server must not serve the file either.
+func TestServeHTTPTrailingSlashOnFile(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "secret.env"), []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "secret.env.gz"), gzipBytes(t, []byte("secret")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(root, "dir"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "dir", "index.html"), []byte("index"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for i, tc := range []struct {
+		path           string
+		canonical      bool
+		acceptEncoding string
+		passThru       bool
+		wantStatus     int
+		wantLocation   string
+		wantNext       bool
+	}{
+		{path: "/secret.env", wantStatus: http.StatusOK},
+		{path: "/secret.env/", wantStatus: http.StatusNotFound},
+		{path: "/secret.env/./", wantStatus: http.StatusNotFound},
+		{path: "/secret.env//", wantStatus: http.StatusNotFound},
+		{path: "/secret.env%2F", wantStatus: http.StatusNotFound},
+		{path: "/secret.env%5c", wantStatus: http.StatusNotFound},
+		{path: "/secret.env%5C", wantStatus: http.StatusNotFound},
+		{path: `/secret.env\`, wantStatus: http.StatusNotFound},
+		{path: "/secret.env%5c", canonical: true, wantStatus: http.StatusNotFound},
+		{path: "/secret.env%5C", canonical: true, wantStatus: http.StatusNotFound},
+		{path: `/secret.env\`, canonical: true, wantStatus: http.StatusNotFound},
+		{path: "/secret.env/", acceptEncoding: "gzip", wantStatus: http.StatusNotFound},
+		{path: "/secret.env/", passThru: true, wantNext: true},
+		{path: "/secret.env/", canonical: true, wantStatus: http.StatusPermanentRedirect, wantLocation: "/secret.env"},
+		{path: "/dir/", wantStatus: http.StatusOK},
+		{path: "/dir", wantStatus: http.StatusOK},
+		{path: "/dir/index.html/", wantStatus: http.StatusNotFound},
+	} {
+		fsrv := FileServer{
+			Root:               root,
+			CanonicalURIs:      &tc.canonical,
+			PassThru:           tc.passThru,
+			PrecompressedOrder: []string{"gzip"},
+		}
+		ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+		if err := fsrv.Provision(ctx); err != nil {
+			t.Fatal(err)
+		}
+		fsrv.precompressors = map[string]encode.Precompressed{
+			"gzip": testPrecompressed{encoding: "gzip", suffix: ".gz"},
+		}
+
+		r := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		r.Header.Set("Accept-Encoding", tc.acceptEncoding)
+		reqCtx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer())
+		reqCtx = context.WithValue(reqCtx, caddyhttp.OriginalRequestCtxKey, *r)
+		r = r.WithContext(reqCtx)
+
+		var calledNext bool
+		next := caddyhttp.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
+			calledNext = true
+			return nil
+		})
+
+		w := httptest.NewRecorder()
+		err := fsrv.ServeHTTP(w, r, next)
+		cancel()
+
+		if tc.wantNext {
+			if err != nil || !calledNext {
+				t.Errorf("Test %d (%s): expected the next handler, got called=%t err=%v", i, tc.path, calledNext, err)
+			}
+			continue
+		}
+		status := w.Code
+		if he, ok := errors.AsType[caddyhttp.HandlerError](err); ok {
+			status = he.StatusCode
+		} else if err != nil {
+			t.Errorf("Test %d (%s): unexpected error: %v", i, tc.path, err)
+			continue
+		}
+		if status != tc.wantStatus {
+			t.Errorf("Test %d (%s): expected status %d, got %d", i, tc.path, tc.wantStatus, status)
+		}
+		if got := w.Header().Get("Location"); got != tc.wantLocation {
+			t.Errorf("Test %d (%s): expected Location %q, got %q", i, tc.path, tc.wantLocation, got)
+		}
+	}
+}
+
+// The trailing separator of a filesystem root such as "/" or `C:\` must be
+// kept, else `C:` resolves to the current directory of the drive.
+func TestServeHTTPFilesystemRoot(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	volume := filepath.VolumeName(wd)
+	// top-level directory leading to wd, listed only if the root is served
+	topDir := strings.Split(strings.TrimPrefix(wd[len(volume):], separator), separator)[0]
+
+	roots := []string{volume + separator}
+	if runtime.GOOS == "windows" {
+		roots = append(roots, separator)
+	}
+	for _, root := range roots {
+		t.Run(root, func(t *testing.T) {
+			fsrv := FileServer{Root: root, Browse: &Browse{}}
+			ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+			defer cancel()
+			if err := fsrv.Provision(ctx); err != nil {
+				t.Fatal(err)
+			}
+
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			reqCtx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer())
+			reqCtx = context.WithValue(reqCtx, caddyhttp.OriginalRequestCtxKey, *r)
+			r = r.WithContext(reqCtx)
+			r.Header.Set("Accept", "application/json")
+			w := httptest.NewRecorder()
+			if err := fsrv.ServeHTTP(w, r, nil); err != nil {
+				t.Fatal(err)
+			}
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+			}
+
+			var items []struct {
+				Name string `json:"name"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &items); err != nil {
+				t.Fatal(err)
+			}
+			for _, item := range items {
+				if strings.TrimSuffix(item.Name, "/") == topDir {
+					return
+				}
+			}
+			t.Errorf("listing of %q doesn't contain %q: %s", root, topDir, w.Body.String())
+		})
 	}
 }

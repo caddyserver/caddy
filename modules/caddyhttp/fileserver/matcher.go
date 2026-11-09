@@ -19,7 +19,6 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -378,12 +377,11 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 			expandedFile = file // "oh well," I guess?
 		}
 
-		// clean the path and split, if configured -- we must split before
-		// globbing so that the file system doesn't include the remainder
-		// ("afterSplit") in the filename; be sure to restore trailing slash
-		beforeSplit, afterSplit := m.firstSplit(path.Clean(expandedFile))
-		if strings.HasSuffix(file, "/") {
-			beforeSplit += "/"
+		// we must split before globbing so that the file system
+		// doesn't include the remainder ("afterSplit") in the filename
+		beforeSplit, afterSplit, ok := m.cleanSplit(file, expandedFile)
+		if !ok {
+			return nil
 		}
 
 		// create the full path to the file by prepending the site root
@@ -420,7 +418,7 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 	// without expanding globs or checking that the file exists. It is used only
 	// for the final entry of first_exist_fallback, which matches unconditionally
 	// even when globbing found nothing because the file is absent.
-	makeLiteralCandidate := func(file string) matchCandidate {
+	makeLiteralCandidate := func(file string) (matchCandidate, bool) {
 		// placeholders are not glob-escaped here, since nothing is globbed;
 		// errors were already logged by makeCandidates for the same pattern
 		expandedFile, err := repl.ReplaceFunc(file, func(_ string, val any) (any, error) {
@@ -429,16 +427,16 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 		if err != nil {
 			expandedFile = file
 		}
-		beforeSplit, afterSplit := m.firstSplit(path.Clean(expandedFile))
-		if strings.HasSuffix(file, "/") {
-			beforeSplit += "/"
+		beforeSplit, afterSplit, ok := m.cleanSplit(file, expandedFile)
+		if !ok {
+			return matchCandidate{}, false
 		}
 		fullPath := caddyhttp.SanitizedPathJoin(root, beforeSplit)
 		return matchCandidate{
 			fullpath:       fullPath,
 			relative:       strings.TrimPrefix(fullPath, root),
 			splitRemainder: afterSplit,
-		}
+		}, true
 	}
 
 	// setPlaceholders creates the placeholders for the matched file
@@ -473,7 +471,9 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 			candidates := makeCandidates(pattern)
 			// globbing finds only files that exist, but the fallback entry matches anyway
 			if i == maxI && len(candidates) == 0 {
-				candidates = []matchCandidate{makeLiteralCandidate(pattern)}
+				if c, ok := makeLiteralCandidate(pattern); ok {
+					candidates = []matchCandidate{c}
+				}
 			}
 			for _, c := range candidates {
 				// Skip the IO if using fallback policy and it's the latest item
@@ -498,7 +498,7 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 			candidates := makeCandidates(pattern)
 			for _, c := range candidates {
 				info, err := fs.Stat(fileSystem, c.fullpath)
-				if err == nil && info.Size() > largestSize {
+				if err == nil && (largestInfo == nil || info.Size() > largestSize) {
 					largestSize = info.Size()
 					largest = c
 					largestInfo = info
@@ -519,7 +519,7 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 			candidates := makeCandidates(pattern)
 			for _, c := range candidates {
 				info, err := fs.Stat(fileSystem, c.fullpath)
-				if err == nil && (smallestSize == 0 || info.Size() < smallestSize) {
+				if err == nil && (smallestInfo == nil || info.Size() < smallestSize) {
 					smallestSize = info.Size()
 					smallest = c
 					smallestInfo = info
@@ -597,6 +597,25 @@ func (m MatchFile) strictFileExists(fileSystem fs.FS, file string) (os.FileInfo,
 	// by convention, file paths NOT ending
 	// in a path separator must NOT be a directory
 	return info, !info.IsDir()
+}
+
+// cleanSplit cleans expanded, the expansion of pattern, and splits it if
+// configured. It keeps the trailing slash so that "/file/" or "/file/./"
+// cannot match a regular file, and reports false for a path ending in "/"
+// unless pattern does too, since only such patterns match a directory.
+func (m MatchFile) cleanSplit(pattern, expanded string) (beforeSplit, afterSplit string, ok bool) {
+	cleaned := caddyhttp.NormalizedPath(expanded, true)
+	if cleaned == "" {
+		// Preserve path.Clean's existing result for an empty path.
+		cleaned = "."
+	}
+	beforeSplit, afterSplit = m.firstSplit(cleaned)
+
+	// with "{path}", a request for "/dir/" falls through to the next entry (e.g. "{path}/index.php")
+	if beforeSplit != "/" && strings.HasSuffix(beforeSplit, "/") && !strings.HasSuffix(pattern, "/") {
+		return "", "", false
+	}
+	return beforeSplit, afterSplit, true
 }
 
 // firstSplit returns the first result where the path

@@ -148,7 +148,7 @@ func TestSplitPos(t *testing.T) {
 		},
 		{
 			name:      "unicode in filename with multiple php occurrences",
-			path:      "/ȺȺȺȺshell.php.txt.php",
+			path:      "/ȺȺȺȺshell.php/txt.php",
 			splitPath: []string{".php"},
 			wantPos:   18, // should match first .php, not be confused by byte offset shift
 		},
@@ -195,7 +195,25 @@ func TestSplitPos(t *testing.T) {
 			name:      "extension in middle of filename",
 			path:      "/test.php.bak",
 			splitPath: []string{".php"},
-			wantPos:   9,
+			wantPos:   -1,
+		},
+		{
+			name:      "extension in middle of filename before a later script",
+			path:      "/admin.php.php",
+			splitPath: []string{".php"},
+			wantPos:   14,
+		},
+		{
+			name:      "extension in middle of a directory name",
+			path:      "/admin.phpx/y.php",
+			splitPath: []string{".php"},
+			wantPos:   17,
+		},
+		{
+			name:      "extension in middle of a directory name with path info",
+			path:      "/a.phpx/b.php/info",
+			splitPath: []string{".php"},
+			wantPos:   13,
 		},
 		// Regression tests adapted from FrankenPHP advisories
 		// GHSA-3g8v-8r37-cgjm and GHSA-v4h7-cj44-8fc8: search.IgnoreCase
@@ -290,7 +308,7 @@ func TestSplitPos(t *testing.T) {
 // incorrect SCRIPT_NAME/PATH_INFO splitting
 func TestSplitPosUnicodeSecurityRegression(t *testing.T) {
 	// U+023A: Ⱥ (UTF-8: C8 BA). Lowercase is ⱥ (UTF-8: E2 B1 A5), longer in bytes.
-	path := "/ȺȺȺȺshell.php.txt.php"
+	path := "/ȺȺȺȺshell.php/txt.php"
 	split := []string{".php"}
 
 	pos := Transport{SplitPath: split}.splitPos(path)
@@ -306,7 +324,7 @@ func TestSplitPosUnicodeSecurityRegression(t *testing.T) {
 		pathInfo := path[pos:]
 
 		assert.Equal(t, "/ȺȺȺȺshell.php", scriptName, "script name should be the path up to first .php")
-		assert.Equal(t, ".txt.php", pathInfo, "path info should be the remainder after first .php")
+		assert.Equal(t, "/txt.php", pathInfo, "path info should be the remainder after first .php")
 	}
 }
 
@@ -487,6 +505,52 @@ func TestBuildEnvDropsProxyHeader(t *testing.T) {
 	})
 }
 
+// Over HTTP/2, net/http keeps a "host" field sent next to :authority in
+// r.Header; it must not replace HTTP_HOST, which comes from the routed r.Host.
+func TestBuildEnvIgnoresHostHeaderField(t *testing.T) {
+	t.Parallel()
+
+	for _, casing := range []string{"Host", "host"} {
+		t.Run("casing "+casing, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "http://example.com/index.php", nil)
+			r.Header = http.Header{casing: []string{"admin.example.com"}}
+			ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer())
+			ctx = context.WithValue(ctx, caddyhttp.VarsCtxKey, map[string]any{})
+			ctx = context.WithValue(ctx, caddyhttp.OriginalRequestCtxKey, *r)
+
+			env, err := Transport{}.buildEnv(r.WithContext(ctx))
+			require.NoError(t, err)
+
+			assert.Equal(t, "example.com", env["HTTP_HOST"])
+			assert.Equal(t, "example.com", env["SERVER_NAME"])
+		})
+	}
+}
+
+// A client header must not override an HTTP_* variable set with the env subdirective.
+func TestBuildEnvConfiguredVarsOverrideHeaders(t *testing.T) {
+	t.Parallel()
+
+	r := httptest.NewRequest(http.MethodGet, "http://example.com/index.php", nil)
+	r.Header.Set("X-Forwarded-Proto", "http")
+	r.Header.Set("X-Auth-User", "admin")
+	repl := caddy.NewReplacer()
+	repl.Set("http.auth.user.id", "alice")
+	ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl)
+	ctx = context.WithValue(ctx, caddyhttp.VarsCtxKey, map[string]any{})
+	ctx = context.WithValue(ctx, caddyhttp.OriginalRequestCtxKey, *r)
+
+	tr := Transport{EnvVars: map[string]string{
+		"HTTP_X_FORWARDED_PROTO": "https",
+		"HTTP_X_AUTH_USER":       "{http.auth.user.id}",
+	}}
+	env, err := tr.buildEnv(r.WithContext(ctx))
+	require.NoError(t, err)
+
+	assert.Equal(t, "https", env["HTTP_X_FORWARDED_PROTO"])
+	assert.Equal(t, "alice", env["HTTP_X_AUTH_USER"])
+}
+
 // A request path containing dot segments must not let the client select a
 // different script than the one every path matcher in the chain evaluated.
 // Matchers judge the cleaned path (see caddyhttp.MatchPath), so the transport
@@ -519,18 +583,6 @@ func TestBuildEnvDotSegmentsCannotSelectAnotherScript(t *testing.T) {
 		{
 			name:               "single dot segment",
 			target:             "/admin.php/../other.php",
-			expectedScriptName: "/other.php",
-			expectedPathInfo:   "",
-		},
-		{
-			name:               "percent-encoded separators",
-			target:             "/admin.php/..%2f..%2fother.php",
-			expectedScriptName: "/other.php",
-			expectedPathInfo:   "",
-		},
-		{
-			name:               "percent-encoded dots",
-			target:             "/admin.php/%2e%2e/other.php",
 			expectedScriptName: "/other.php",
 			expectedPathInfo:   "",
 		},
@@ -571,6 +623,45 @@ func TestBuildEnvDotSegmentsCannotSelectAnotherScript(t *testing.T) {
 			}
 			assert.NotContains(t, env["SCRIPT_FILENAME"], "admin.php",
 				"a pre-clean path component must never become the executed script")
+		})
+	}
+}
+
+// Path matchers whose pattern contains "%" clean the escaped path, so
+// "/public/tool.php%2f..%2f..%2fadmin%2ftool.php" matches "path /public/%*"
+// while the decoded path selects admin/tool.php.
+func TestBuildEnvEscapedPathCannotSelectAnotherScript(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		target             string
+		wantErr            bool
+		expectedScriptName string
+	}{
+		{target: "/public/tool.php%2f..%2f..%2fadmin%2ftool.php", wantErr: true},
+		{target: "/admin.php/..%2f..%2fother.php", wantErr: true},
+		{target: "/admin.php/%2e%2e/other.php", wantErr: true},
+		{target: "/dir%2fscript.php/a", expectedScriptName: "/dir/script.php"},
+		{target: "/index.php/a%2f..%2fb", expectedScriptName: "/index.php"},
+		{target: "/index.php/a%2Fb", expectedScriptName: "/index.php"},
+	} {
+		t.Run(tc.target, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, tc.target, nil)
+			ctx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer())
+			ctx = context.WithValue(ctx, caddyhttp.VarsCtxKey, map[string]any{})
+			ctx = context.WithValue(ctx, caddyhttp.OriginalRequestCtxKey, *r)
+
+			tr := Transport{Root: t.TempDir(), SplitPath: []string{".php"}}
+			env, err := tr.buildEnv(r.WithContext(ctx))
+			if !tc.wantErr {
+				require.NoError(t, err)
+				assert.Equal(t, tc.expectedScriptName, env["SCRIPT_NAME"])
+				return
+			}
+
+			var herr caddyhttp.HandlerError
+			require.ErrorAs(t, err, &herr)
+			assert.Equal(t, http.StatusBadRequest, herr.StatusCode)
 		})
 	}
 }

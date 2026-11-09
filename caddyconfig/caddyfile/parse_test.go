@@ -319,8 +319,12 @@ func TestParseOneAndImport(t *testing.T) {
 		  dir1 "{}"`, false, []string{"localhost"}, []int{2}},
 
 		// quoted braces are literal arguments: they must not open/close blocks or swallow directives
-		{"localhost {\n dir1 \"{\" `}`\n dir2 \"}\"\n dir3 \"{\"\n}",
-			false, []string{"localhost"}, []int{3, 2, 2}},
+		{
+			"localhost {\n dir1 \"{\" `}`\n dir2 \"}\"\n dir3 \"{\"\n}",
+			false,
+			[]string{"localhost"},
+			[]int{3, 2, 2},
+		},
 
 		// quoted "{" as the last argument before a real block
 		{`localhost {
@@ -422,7 +426,8 @@ func TestRecursiveImport(t *testing.T) {
 	err = os.WriteFile(recursiveFile1, []byte(
 		`localhost
 		dir1
-		import recursive_import_test2`), 0o644)
+		import recursive_import_test2`,
+	), 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -456,7 +461,8 @@ func TestRecursiveImport(t *testing.T) {
 	err = os.WriteFile(recursiveFile1, []byte(
 		`localhost
 		dir1
-		import `+recursiveFile2), 0o644)
+		import `+recursiveFile2,
+	), 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -651,6 +657,69 @@ func TestParseAll(t *testing.T) {
 		:80
 		import A
 		`, true, [][]string{}},
+
+		// missing closing brace of the site block; the last directive
+		// having its own block must not mask it (issue #8374)
+		{`:8080 {
+			header {
+				X-Foo "bar"
+			}
+		`, true, [][]string{}},
+
+		// same, with the last directive's block written inline-nested
+		{`:8080 {
+			file_server {
+				browse
+			}
+		`, true, [][]string{}},
+
+		// unclosed global options block whose last directive has a block
+		{`{
+			servers {
+				protocols h1
+			}
+		`, true, [][]string{}},
+
+		// missing closing brace, last directive has no block
+		{`:8080 {
+			file_server
+		`, true, [][]string{}},
+
+		// extra closing brace after a site without braces (issue #8374)
+		{`:8080
+		file_server
+		}
+		`, true, [][]string{}},
+
+		// a closing brace must not separate two braceless sites
+		{`:8080
+		root /www/example.com
+		file_server
+		}
+
+		:3000
+		reverse_proxy localhost:9000
+		`, true, [][]string{}},
+
+		// valid controls: nested directive block as the last directive,
+		// site block closed afterwards
+		{`:8080 {
+			header {
+				X-Foo "bar"
+			}
+		}`, false, [][]string{
+			{":8080"},
+		}},
+
+		{`:8080 {
+			handle {
+				header {
+					X-Foo "bar"
+				}
+			}
+		}`, false, [][]string{
+			{":8080"},
+		}},
 	} {
 		p := testParser(test.input)
 		blocks, err := p.parseAll()
@@ -809,6 +878,46 @@ func TestImportReplacementInJSONWithBrace(t *testing.T) {
 	}
 }
 
+func TestArgsReplacerOutOfBoundsIndex(t *testing.T) {
+	for i, test := range []struct {
+		args   []string
+		input  string
+		expect string
+	}{
+		{
+			args:   []string{"a", "b"},
+			input:  "{args[1]}",
+			expect: "b",
+		},
+		{
+			args:   []string{"a", "b"},
+			input:  "{args[2]}",
+			expect: "{args[2]}",
+		},
+		{
+			args:   []string{"a", "b"},
+			input:  "{args[-1]}",
+			expect: "{args[-1]}",
+		},
+		{
+			args:   []string{"a", "b"},
+			input:  "{args.-1}",
+			expect: "{args.-1}",
+		},
+		{
+			args:   nil,
+			input:  "{args[-1]}",
+			expect: "{args[-1]}",
+		},
+	} {
+		repl := makeArgsReplacer(test.args)
+		actual := repl.ReplaceKnown(test.input, "")
+		if actual != test.expect {
+			t.Errorf("Test %d: Expected: '%s' but got '%s'", i, test.expect, actual)
+		}
+	}
+}
+
 func TestSnippets(t *testing.T) {
 	p := testParser(`
 		(common) {
@@ -874,6 +983,11 @@ func writeStringToTempFileOrDie(t *testing.T, str string) (pathToFile string) {
 	if err != nil {
 		panic(err) // get a stack trace so we know where this was called from.
 	}
+	t.Cleanup(func() {
+		if err := os.Remove(file.Name()); err != nil {
+			t.Logf("Failed to remove temp file %s: %v", file.Name(), err)
+		}
+	})
 	if _, err := file.WriteString(str); err != nil {
 		panic(err)
 	}

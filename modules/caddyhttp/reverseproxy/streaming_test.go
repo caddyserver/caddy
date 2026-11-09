@@ -10,9 +10,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -441,86 +443,93 @@ func TestHandlerUpgradedStreamHalfClose(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			srvc := make(chan *net.TCPConn, 1)
-
-			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				conn, _, err := http.NewResponseController(w).Hijack()
-				if err != nil {
-					t.Errorf("backend hijack failed: %v", err)
-					return
-				}
-				tcp, ok := conn.(*net.TCPConn)
-				if !ok {
-					conn.Close()
-					t.Errorf("backend conn is %T, want *net.TCPConn", conn)
-					return
-				}
-				if _, err := io.WriteString(tcp, "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n"); err != nil {
-					tcp.Close()
-					t.Errorf("backend upgrade write failed: %v", err)
-					return
-				}
-				srvc <- tcp
-			}))
-			defer backend.Close()
-
-			h := minimalHandler(0, &Upstream{
-				Host: new(Host),
-				Dial: backend.Listener.Addr().String(),
-			})
-			h.tunnelTracker = newTunnelTracker(caddy.Log(), 0)
-			initReverseProxyMetrics(h, prometheus.NewRegistry())
-
-			frontend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// Isolate half-close propagation from request cancellation which has
-				// its own backend-close path.
-				r = r.WithContext(context.WithoutCancel(r.Context()))
-				_ = h.ServeHTTP(w, prepareTestRequest(r), caddyhttp.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
-					return nil
-				}))
-			}))
-			defer frontend.Close()
-
-			frontendURL, err := url.Parse(frontend.URL)
-			if err != nil {
-				t.Fatalf("failed to parse frontend URL: %v", err)
-			}
-			addr, err := net.ResolveTCPAddr("tcp", frontendURL.Host)
-			if err != nil {
-				t.Fatalf("failed to resolve TCP address: %v", err)
-			}
-			cli, err := net.DialTCP("tcp", nil, addr)
-			if err != nil {
-				t.Fatalf("failed to dial frontend: %v", err)
-			}
-			defer cli.Close()
-
-			req, _ := http.NewRequest(http.MethodGet, frontend.URL, nil)
-			req.Header.Set("Connection", "Upgrade")
-			req.Header.Set("Upgrade", "websocket")
-			if err := req.Write(cli); err != nil {
-				t.Fatalf("failed to write upgrade request: %v", err)
-			}
-
-			resp, err := http.ReadResponse(bufio.NewReader(cli), &http.Request{Method: http.MethodGet})
-			if err != nil {
-				t.Fatalf("failed to read upgrade response: %v", err)
-			}
-			if resp.StatusCode != http.StatusSwitchingProtocols {
-				t.Fatalf("status = %d, want 101", resp.StatusCode)
-			}
-
-			var srv *net.TCPConn
-			select {
-			case srv = <-srvc:
-			case <-time.After(5 * time.Second):
-				t.Fatal("timed out waiting for the backend connection")
-			}
-			defer srv.Close()
-
+			_, cli, srv := newUpgradedTunnel(t)
 			test(t, cli, srv)
 		})
 	}
+}
+
+// newUpgradedTunnel proxies a websocket upgrade from a raw client connection
+// through a Handler to a hijacking backend and returns both ends of the
+// tunnel. The Handler's tunnel tracker holds the proxied connections.
+func newUpgradedTunnel(t *testing.T) (h *Handler, cli, srv *net.TCPConn) {
+	t.Helper()
+	srvc := make(chan *net.TCPConn, 1)
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, _, err := http.NewResponseController(w).Hijack()
+		if err != nil {
+			t.Errorf("backend hijack failed: %v", err)
+			return
+		}
+		tcp, ok := conn.(*net.TCPConn)
+		if !ok {
+			conn.Close()
+			t.Errorf("backend conn is %T, want *net.TCPConn", conn)
+			return
+		}
+		if _, err := io.WriteString(tcp, "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n"); err != nil {
+			tcp.Close()
+			t.Errorf("backend upgrade write failed: %v", err)
+			return
+		}
+		srvc <- tcp
+	}))
+	t.Cleanup(backend.Close)
+
+	h = minimalHandler(0, &Upstream{
+		Host: new(Host),
+		Dial: backend.Listener.Addr().String(),
+	})
+	h.tunnelTracker = newTunnelTracker(caddy.Log(), 0)
+	initReverseProxyMetrics(h, prometheus.NewRegistry())
+
+	frontend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Isolate the tunnel from request cancellation, which has its own
+		// backend-close path.
+		r = r.WithContext(context.WithoutCancel(r.Context()))
+		_ = h.ServeHTTP(w, prepareTestRequest(r), caddyhttp.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
+			return nil
+		}))
+	}))
+	t.Cleanup(frontend.Close)
+
+	frontendURL, err := url.Parse(frontend.URL)
+	if err != nil {
+		t.Fatalf("failed to parse frontend URL: %v", err)
+	}
+	addr, err := net.ResolveTCPAddr("tcp", frontendURL.Host)
+	if err != nil {
+		t.Fatalf("failed to resolve TCP address: %v", err)
+	}
+	cli, err = net.DialTCP("tcp", nil, addr)
+	if err != nil {
+		t.Fatalf("failed to dial frontend: %v", err)
+	}
+	t.Cleanup(func() { cli.Close() })
+
+	req, _ := http.NewRequest(http.MethodGet, frontend.URL, nil)
+	req.Header.Set("Connection", "Upgrade")
+	req.Header.Set("Upgrade", "websocket")
+	if err := req.Write(cli); err != nil {
+		t.Fatalf("failed to write upgrade request: %v", err)
+	}
+
+	resp, err := http.ReadResponse(bufio.NewReader(cli), &http.Request{Method: http.MethodGet})
+	if err != nil {
+		t.Fatalf("failed to read upgrade response: %v", err)
+	}
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("status = %d, want 101", resp.StatusCode)
+	}
+
+	select {
+	case srv = <-srvc:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for the backend connection")
+	}
+	t.Cleanup(func() { srv.Close() })
+	return h, cli, srv
 }
 
 // A response carrying the Incremental header field (RFC 10036) must be
@@ -617,7 +626,7 @@ func TestDetachedTrackerRemovalAllowsConcurrentConnectionDeletion(t *testing.T) 
 	}
 	deleted := make(chan struct{})
 	conn := newTrackingReadWriteCloser()
-	del := ts.registerConnection(conn, func() error {
+	del := ts.registerConnection(conn, func(time.Time) error {
 		go func() {
 			deleteOther()
 			close(deleted)
@@ -641,6 +650,222 @@ func TestDetachedTrackerRemovalAllowsConcurrentConnectionDeletion(t *testing.T) 
 	<-deleted
 	if !conn.isClosed() {
 		t.Error("removed upstream connection was not closed")
+	}
+}
+
+// newStalledWebsocketPeer returns one end of a pipe whose other end never
+// reads, with a goroutine stuck writing to it the way a tunnel's copy loop
+// would be. net.Pipe is unbuffered and lets only one write through at a
+// time, so a close message written to conn waits behind that stuck write,
+// just as it does on a socket whose peer stopped reading.
+func newStalledWebsocketPeer(t *testing.T) net.Conn {
+	t.Helper()
+	conn, peer := net.Pipe()
+	t.Cleanup(func() {
+		conn.Close()
+		peer.Close()
+	})
+	go func() { _, _ = conn.Write([]byte("stalled")) }()
+	return conn
+}
+
+// shortenCloseControlWriteTimeout makes a stalled peer time out quickly for
+// the rest of the test.
+func shortenCloseControlWriteTimeout(t *testing.T) {
+	t.Helper()
+	saved := closeControlWriteTimeout
+	closeControlWriteTimeout = 10 * time.Millisecond
+	t.Cleanup(func() { closeControlWriteTimeout = saved })
+}
+
+func TestHandlerCleanupDoesNotBlockOnStalledWebsocketPeer(t *testing.T) {
+	conn := newStalledWebsocketPeer(t)
+
+	ts := newTunnelTracker(caddy.Log(), 0)
+	shortenCloseControlWriteTimeout(t)
+	ts.registerConnection(conn, func(deadline time.Time) error {
+		return writeCloseControl(conn, false, deadline)
+	}, false, "upstream")
+
+	cleanupDone := make(chan error, 1)
+	go func() { cleanupDone <- ts.cleanupAttachedConnections() }()
+
+	select {
+	case err := <-cleanupDone:
+		if !errors.Is(err, os.ErrDeadlineExceeded) {
+			t.Errorf("cleanup = %v, want %v", err, os.ErrDeadlineExceeded)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("cleanup blocked on a websocket peer that stopped reading")
+	}
+}
+
+func TestHandlerCleanupUsesOneDeadlinePerBatch(t *testing.T) {
+	// The close loop is serial and holds the tracker lock, so a deadline per
+	// connection would let every stalled peer add another full timeout.
+	ts := newTunnelTracker(caddy.Log(), 0)
+	shortenCloseControlWriteTimeout(t)
+	var deadlines []time.Time
+	for range 2 {
+		conn := newStalledWebsocketPeer(t)
+		ts.registerConnection(conn, func(deadline time.Time) error {
+			deadlines = append(deadlines, deadline)
+			return writeCloseControl(conn, false, deadline)
+		}, false, "upstream")
+	}
+
+	_ = ts.cleanupAttachedConnections()
+	if len(deadlines) != 2 {
+		t.Fatalf("got %d graceful closes, want 2", len(deadlines))
+	}
+	if !deadlines[0].Equal(deadlines[1]) {
+		t.Errorf("graceful closes got deadlines %v and %v, want one shared deadline", deadlines[0], deadlines[1])
+	}
+}
+
+func TestUpstreamRemovalUsesOneDeadlineAcrossTrackers(t *testing.T) {
+	// Removing an upstream notifies every stopped tracker in turn, and each
+	// close loop holds its own lock, so a deadline per tracker would let
+	// every tracker with a stalled peer add another full timeout.
+	const upstream = "upstream-removal-one-deadline"
+	shortenCloseControlWriteTimeout(t)
+	var deadlines []time.Time
+	var trackers []*tunnelTracker
+	for range 2 {
+		ts := newTunnelTracker(caddy.Log(), 0)
+		registerDetachedTunnelTrackers(ts)
+		t.Cleanup(func() { unregisterDetachedTunnelTrackers(ts) })
+		conn := newStalledWebsocketPeer(t)
+		ts.registerConnection(conn, func(deadline time.Time) error {
+			deadlines = append(deadlines, deadline)
+			return writeCloseControl(conn, false, deadline)
+		}, true, upstream)
+		if err := ts.cleanupAttachedConnections(); err != nil {
+			t.Fatal(err)
+		}
+		trackers = append(trackers, ts)
+	}
+
+	_ = notifyDetachedTunnelTrackersOfUpstreamRemoval(upstream, trackers[0])
+	if len(deadlines) != 2 {
+		t.Fatalf("got %d graceful closes, want 2", len(deadlines))
+	}
+	if !deadlines[0].Equal(deadlines[1]) {
+		t.Errorf("trackers got deadlines %v and %v, want one shared deadline", deadlines[0], deadlines[1])
+	}
+}
+
+func TestWriteCloseControlSkipsConnectionsWithoutWriteDeadline(t *testing.T) {
+	// A write that cannot be bounded could block forever behind a stalled
+	// peer, so the best-effort close message is skipped instead.
+	var buf bytes.Buffer
+	if err := writeCloseControl(&buf, false, time.Now().Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if buf.Len() != 0 {
+		t.Errorf("close message %q was written to a connection without write deadlines", buf.Bytes())
+	}
+}
+
+func TestExtendedConnectReadWriteCloserSetWriteDeadline(t *testing.T) {
+	rw := &writeDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	rwc := extendedConnectReadWriteCloser{io.NopCloser(strings.NewReader("")), rw}
+	deadline := time.Now().Add(time.Second)
+	if err := rwc.SetWriteDeadline(deadline); err != nil {
+		t.Fatal(err)
+	}
+	if !rw.writeDeadline.Equal(deadline) {
+		t.Errorf("write deadline = %v, want %v", rw.writeDeadline, deadline)
+	}
+
+	// Writers without deadline support report ErrNotSupported, which
+	// writeCloseControl treats as a reason to skip the close message.
+	plain := extendedConnectReadWriteCloser{io.NopCloser(strings.NewReader("")), httptest.NewRecorder()}
+	if err := plain.SetWriteDeadline(deadline); !errors.Is(err, http.ErrNotSupported) {
+		t.Errorf("SetWriteDeadline on a plain recorder = %v, want ErrNotSupported", err)
+	}
+}
+
+type writeDeadlineRecorder struct {
+	*httptest.ResponseRecorder
+	writeDeadline time.Time
+}
+
+func (r *writeDeadlineRecorder) SetWriteDeadline(deadline time.Time) error {
+	r.writeDeadline = deadline
+	return nil
+}
+
+func TestHandlerUpgradeBoundsUpstreamCloseMessage(t *testing.T) {
+	switch runtime.GOOS {
+	case "plan9", "js", "wasip1":
+		t.Skipf("not supported on %s", runtime.GOOS)
+	}
+
+	// net/http hands upgraded HTTP/1 bodies back inside a type that hides the
+	// socket's deadline methods, so without the connection recorded during
+	// the round trip the close message to the upstream would be skipped.
+	h, cli, srv := newUpgradedTunnel(t)
+	if err := cli.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+
+	// Data reaching the backend proves both connections are registered.
+	if _, err := io.WriteString(cli, "hello"); err != nil {
+		t.Fatal(err)
+	}
+	hello := make([]byte, len("hello"))
+	if _, err := io.ReadFull(srv, hello); err != nil || string(hello) != "hello" {
+		t.Fatalf("backend read %q, %v; want %q", hello, err, "hello")
+	}
+
+	// Closing the client side may tear down the tunnel before cleanup closes
+	// the upstream itself; that must not surface as a cleanup error.
+	if err := h.tunnelTracker.cleanupAttachedConnections(); err != nil {
+		t.Errorf("cleanup = %v, want nil", err)
+	}
+	frame := make([]byte, 2)
+	if _, err := io.ReadFull(srv, frame); err != nil {
+		t.Fatalf("backend did not receive a close message: %v", err)
+	}
+	if frame[0] != 0x88 || frame[1]&0x80 == 0 {
+		t.Fatalf("backend received %x, want a masked close frame", frame)
+	}
+}
+
+func TestUpstreamWriteCloser(t *testing.T) {
+	// The HTTP/1 path, including the recorded socket, is covered end to end
+	// by TestHandlerUpgradeBoundsUpstreamCloseMessage. HTTP/2 and HTTP/3 share
+	// their connection between streams, so the close message must never go
+	// to a recorded socket for them.
+	body, _ := net.Pipe()
+	socket, _ := net.Pipe()
+	for _, tc := range []struct {
+		name       string
+		protoMajor int
+		recorded   net.Conn
+		want       io.ReadWriteCloser
+	}{
+		{name: "http/1 with recorded socket", protoMajor: 1, recorded: socket, want: socket},
+		{name: "http/1 without recorded socket", protoMajor: 1, want: body},
+		{name: "http/2", protoMajor: 2, recorded: socket, want: body},
+		{name: "http/3", protoMajor: 3, recorded: socket, want: body},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			recorded := new(atomic.Pointer[net.Conn])
+			if tc.recorded != nil {
+				recorded.Store(&tc.recorded)
+			}
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req = req.WithContext(context.WithValue(req.Context(), upstreamConnCtxKey, recorded))
+			res := &http.Response{ProtoMajor: tc.protoMajor}
+			if got := upstreamWriteCloser(req, res, body); got != tc.want {
+				t.Errorf("upstreamWriteCloser() = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -703,7 +928,7 @@ func TestUpgradeDetachmentRequiresWriterSupport(t *testing.T) {
 			initReverseProxyMetrics(h, prometheus.NewRegistry())
 			recorder := caddyhttp.NewResponseRecorder(pipeUpgradeWriter{httptest.NewRecorder(), front}, nil, nil)
 			writer := tc.wrap(recorder)
-			req := prepareTestRequest(httptest.NewRequest(http.MethodGet, "/upgrade", nil))
+			req := caddyhttp.PrepareRequest(httptest.NewRequest(http.MethodGet, "/upgrade", nil), caddy.NewReplacer(), recorder, &caddyhttp.Server{})
 			req.Header.Set("Connection", "Upgrade")
 			req.Header.Set("Upgrade", "test-stream")
 			res := &http.Response{StatusCode: http.StatusSwitchingProtocols, Header: req.Header.Clone(), Body: back}
@@ -930,5 +1155,52 @@ type closeTrackingBody struct {
 
 func (c *closeTrackingBody) Close() error {
 	c.closed = true
+	return nil
+}
+
+func TestTunnelTrackerSendsCloseMessagesBeforeClosing(t *testing.T) {
+	// Closing one side of a tunnel tears down the other, so every close
+	// message in a batch must go out before any connection is closed.
+	for _, tc := range []struct {
+		name     string
+		detached bool
+		close    func(*tunnelTracker) error
+	}{
+		{name: "attached", close: (*tunnelTracker).cleanupAttachedConnections},
+		{name: "detached", detached: true, close: func(ts *tunnelTracker) error {
+			// closeConnectionsForUpstream only acts on a stopped tracker.
+			ts.stopped = true
+			return ts.closeConnectionsForUpstream("upstream", time.Now().Add(time.Second))
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ts := newTunnelTracker(caddy.Log(), 0)
+			var events []string
+			for _, side := range []string{"client", "upstream"} {
+				ts.registerConnection(closeRecorder{side: side, events: &events}, func(time.Time) error {
+					events = append(events, "close message to "+side)
+					return nil
+				}, tc.detached, "upstream")
+			}
+
+			if err := tc.close(ts); err != nil {
+				t.Fatal(err)
+			}
+			if len(events) != 4 || !strings.HasPrefix(events[0], "close message") || !strings.HasPrefix(events[1], "close message") {
+				t.Errorf("events = %q, want both close messages before any connection closes", events)
+			}
+		})
+	}
+}
+
+// closeRecorder records when it is closed.
+type closeRecorder struct {
+	nopReadWriteCloser
+	side   string
+	events *[]string
+}
+
+func (c closeRecorder) Close() error {
+	*c.events = append(*c.events, "closed "+c.side)
 	return nil
 }

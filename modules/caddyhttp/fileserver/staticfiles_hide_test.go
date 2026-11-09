@@ -17,6 +17,7 @@ package fileserver
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -118,6 +119,65 @@ func TestBrowseHidesPathQualifiedEntries(t *testing.T) {
 			}
 			if !bytes.Contains(w.Body.Bytes(), []byte("public.txt")) {
 				t.Errorf("browse response omits public path: %s", w.Body.String())
+			}
+		})
+	}
+}
+
+func TestHideRelativeDataDir(t *testing.T) {
+	for _, env := range []string{"XDG_DATA_HOME", "HOME", "AppData", "HOMEDRIVE", "HOMEPATH", "USERPROFILE", "home"} {
+		t.Setenv(env, "")
+	}
+
+	fsrv := FileServer{Root: "."}
+	ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+	if err := fsrv.Provision(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	key := filepath.Join("caddy", "certificates", "local", "localhost", "localhost.key")
+	if !fileHidden(key, fsrv.Hide) {
+		t.Errorf("%s is not hidden; hide list: %v", key, fsrv.Hide)
+	}
+	if fileHidden("caddyfile.go", fsrv.Hide) {
+		t.Errorf("caddyfile.go is hidden; hide list: %v", fsrv.Hide)
+	}
+}
+
+func TestHideOtherLetterCases(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "Caddyfile"), []byte("hidden config"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(root, "secretdir"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "secretdir", "p.txt"), []byte("hidden body"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	fsrv := FileServer{
+		Root:          root,
+		Hide:          []string{filepath.Join(root, "Caddyfile"), "secretdir"},
+		CanonicalURIs: new(bool),
+	}
+	ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+	if err := fsrv.Provision(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, uri := range []string{"/Caddyfile", "/caddyfile", "/CADDYFILE", "/secretdir/p.txt", "/SecretDir/p.txt"} {
+		t.Run(uri, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, uri, nil)
+			original := *r
+			reqCtx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer())
+			reqCtx = context.WithValue(reqCtx, caddyhttp.OriginalRequestCtxKey, original)
+			r = r.WithContext(reqCtx)
+			w := httptest.NewRecorder()
+			err := fsrv.ServeHTTP(w, r, nil)
+			var handlerErr caddyhttp.HandlerError
+			if !errors.As(err, &handlerErr) || handlerErr.StatusCode != http.StatusNotFound {
+				t.Errorf("got error %v and status %d, want 404", err, w.Code)
 			}
 		})
 	}
