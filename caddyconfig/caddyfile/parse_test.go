@@ -319,8 +319,12 @@ func TestParseOneAndImport(t *testing.T) {
 		  dir1 "{}"`, false, []string{"localhost"}, []int{2}},
 
 		// quoted braces are literal arguments: they must not open/close blocks or swallow directives
-		{"localhost {\n dir1 \"{\" `}`\n dir2 \"}\"\n dir3 \"{\"\n}",
-			false, []string{"localhost"}, []int{3, 2, 2}},
+		{
+			"localhost {\n dir1 \"{\" `}`\n dir2 \"}\"\n dir3 \"{\"\n}",
+			false,
+			[]string{"localhost"},
+			[]int{3, 2, 2},
+		},
 
 		// quoted "{" as the last argument before a real block
 		{`localhost {
@@ -422,7 +426,8 @@ func TestRecursiveImport(t *testing.T) {
 	err = os.WriteFile(recursiveFile1, []byte(
 		`localhost
 		dir1
-		import recursive_import_test2`), 0o644)
+		import recursive_import_test2`,
+	), 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -456,7 +461,8 @@ func TestRecursiveImport(t *testing.T) {
 	err = os.WriteFile(recursiveFile1, []byte(
 		`localhost
 		dir1
-		import `+recursiveFile2), 0o644)
+		import `+recursiveFile2,
+	), 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -977,6 +983,11 @@ func writeStringToTempFileOrDie(t *testing.T, str string) (pathToFile string) {
 	if err != nil {
 		panic(err) // get a stack trace so we know where this was called from.
 	}
+	t.Cleanup(func() {
+		if err := os.Remove(file.Name()); err != nil {
+			t.Logf("Failed to remove temp file %s: %v", file.Name(), err)
+		}
+	})
 	if _, err := file.WriteString(str); err != nil {
 		panic(err)
 	}
