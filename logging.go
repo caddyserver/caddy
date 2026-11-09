@@ -751,7 +751,8 @@ type (
 	// StderrWriter writes logs to standard error.
 	StderrWriter struct{}
 
-	// DiscardWriter discards all writes.
+	// DiscardWriter discards all writes. Entries still
+	// reach the log's core module, if it has one.
 	DiscardWriter struct{}
 )
 
