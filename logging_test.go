@@ -252,7 +252,7 @@ type nopWriteCloser struct{}
 func (nopWriteCloser) Write(p []byte) (int, error) { return len(p), nil }
 func (nopWriteCloser) Close() error                { return nil }
 
-func TestOpenLogsKeepsDiscardLogsWithCoreModule(t *testing.T) {
+func TestOpenLogsDiscardLogsWithCoreModule(t *testing.T) {
 	defaultLoggerMu.RLock()
 	origDefault := defaultLogger
 	defaultLoggerMu.RUnlock()
@@ -267,8 +267,9 @@ func TestOpenLogsKeepsDiscardLogsWithCoreModule(t *testing.T) {
 
 	discard := json.RawMessage(`{"output":"discard"}`)
 	logging := &Logging{Logs: map[string]*CustomLog{
-		"discarded": {BaseLog: BaseLog{WriterRaw: discard}},
-		"exported":  {BaseLog: BaseLog{WriterRaw: discard, CoreRaw: json.RawMessage(`{"module":"test"}`)}},
+		"discarded":   {BaseLog: BaseLog{WriterRaw: discard}},
+		"third-party": {BaseLog: BaseLog{WriterRaw: discard, CoreRaw: json.RawMessage(`{"module":"test"}`)}},
+		"exported":    {BaseLog: BaseLog{WriterRaw: discard, CoreRaw: json.RawMessage(`{"module":"test_leveled"}`)}},
 	}}
 	if err := logging.openLogs(ctx); err != nil {
 		t.Fatal(err)
@@ -277,8 +278,11 @@ func TestOpenLogsKeepsDiscardLogsWithCoreModule(t *testing.T) {
 	if _, ok := logging.Logs["discarded"]; ok {
 		t.Error("expected the discard log without a core module to be deleted")
 	}
+	if _, ok := logging.Logs["third-party"]; ok {
+		t.Error("expected the discard log with a core module that ignores the log level to be deleted")
+	}
 	if _, ok := logging.Logs["exported"]; !ok {
-		t.Error("expected the discard log with a core module to be kept")
+		t.Error("expected the discard log with a core module that honors the log level to be kept")
 	}
 }
 
@@ -293,6 +297,20 @@ func (testCore) CaddyModule() ModuleInfo {
 	}
 }
 
+type testLeveledCore struct {
+	testCore
+}
+
+func (testLeveledCore) CaddyModule() ModuleInfo {
+	return ModuleInfo{
+		ID:  "caddy.logging.cores.test_leveled",
+		New: func() Module { return &testLeveledCore{testCore{Core: zapcore.NewNopCore()}} },
+	}
+}
+
+func (testLeveledCore) HonorsLogLevelAndSampling() {}
+
 func init() {
 	RegisterModule(testCore{})
+	RegisterModule(testLeveledCore{})
 }
