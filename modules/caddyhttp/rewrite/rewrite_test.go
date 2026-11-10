@@ -15,6 +15,7 @@
 package rewrite
 
 import (
+	"context"
 	"net/http"
 	"reflect"
 	"regexp"
@@ -22,6 +23,7 @@ import (
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
 func TestRewrite(t *testing.T) {
@@ -823,6 +825,49 @@ func TestStripPathPrefixCanonicalizesRemainder(t *testing.T) {
 			}
 			if r.URL.RawQuery != "keep=yes" || r.RequestURI != r.URL.EscapedPath()+"?keep=yes" {
 				t.Errorf("query or request target changed inconsistently: %q", r.RequestURI)
+			}
+		})
+	}
+}
+
+func TestPathReplacementsCanonicalizeRemainder(t *testing.T) {
+	for _, rule := range []struct {
+		name string
+		rule Rewrite
+	}{
+		{"substring", Rewrite{URISubstring: []substrReplacer{{Find: "/mount"}}}},
+		{"regexp", Rewrite{PathRegexp: []*regexReplacer{{Find: "^/mount", re: regexp.MustCompile("^/mount")}}}},
+	} {
+		t.Run(rule.name, func(t *testing.T) {
+			for _, tc := range []struct {
+				target, path, rawPath string
+			}{
+				{"/mount../secret", "/secret", ""},
+				{"/mount..%2fsecret", "/secret", ""},
+				{"/mount%2e%2e/secret", "/secret", ""},
+				{"/mount", "/", ""},
+				{"/mountain", "/ain", ""},
+				{"/mount/public", "/public", ""},
+				{"/mount/a%2Fb", "/a/b", "/a%2Fb"},
+				{"/mount/%252e%252e/secret", "/%2e%2e/secret", ""},
+				{"/mount/%ff", "/\xff", "/%ff"},
+				{"/unmatched", "/unmatched", ""},
+			} {
+				t.Run(tc.target, func(t *testing.T) {
+					r := newRequest(t, http.MethodGet, tc.target+"?keep=yes")
+					repl := caddy.NewReplacer()
+					r = r.WithContext(context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl))
+					rule.rule.Rewrite(r, repl)
+					if r.URL.Path != tc.path || r.URL.RawPath != tc.rawPath {
+						t.Errorf("Path/RawPath = %q/%q; want %q/%q", r.URL.Path, r.URL.RawPath, tc.path, tc.rawPath)
+					}
+					if r.URL.RawQuery != "keep=yes" || r.RequestURI != r.URL.EscapedPath()+"?keep=yes" {
+						t.Errorf("inconsistent request target: %q", r.RequestURI)
+					}
+					if tc.path == "/secret" && !(caddyhttp.MatchPath{"/secret*"}).Match(r) {
+						t.Error("rewritten secret does not match downstream path restriction")
+					}
+				})
 			}
 		})
 	}

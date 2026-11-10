@@ -83,7 +83,8 @@ type Rewrite struct {
 	// to have that same escape at that position in order to match.
 	StripPathSuffix string `json:"strip_path_suffix,omitempty"`
 
-	// Performs substring replacements on the URI.
+	// Performs substring replacements on the URI. If a replacement
+	// changes the path, dot segments in the result are cleaned.
 	URISubstring []substrReplacer `json:"uri_substring,omitempty"`
 
 	// Performs regular expression replacements on the URI path.
@@ -581,9 +582,13 @@ func (rep substrReplacer) do(r *http.Request, repl *caddy.Replacer) {
 
 	mergeSlashes := !strings.Contains(rep.Find, "//")
 
+	oldPath := r.URL.Path
 	changePath(r, func(pathOrRawPath string) string {
 		return strings.Replace(caddyhttp.CleanPath(pathOrRawPath, mergeSlashes), find, replace, lim)
 	})
+	if r.URL.Path != oldPath {
+		canonicalizePath(r)
+	}
 
 	r.URL.RawQuery = strings.Replace(r.URL.RawQuery, find, replace, lim)
 }
@@ -605,9 +610,13 @@ func (rep regexReplacer) do(r *http.Request, repl *caddy.Replacer) {
 		return
 	}
 	replace := repl.ReplaceAll(rep.Replace, "")
+	oldPath := r.URL.Path
 	changePath(r, func(pathOrRawPath string) string {
 		return rep.re.ReplaceAllString(pathOrRawPath, replace)
 	})
+	if r.URL.Path != oldPath {
+		canonicalizePath(r)
+	}
 }
 
 func changePath(req *http.Request, newVal func(pathOrRawPath string) string) {
@@ -625,11 +634,10 @@ func changePath(req *http.Request, newVal func(pathOrRawPath string) string) {
 	}
 }
 
-// canonicalizePath anchors and cleans a stripped origin-form path while
+// canonicalizePath anchors and cleans a modified origin-form path while
 // preserving an alternate RawPath encoding when it still represents the
-// canonical Path. It is applied after prefix or suffix removal because stripping can
-// expose a relative path or dot segments that downstream handlers interpret
-// differently.
+// canonical Path. Removing or replacing path components can expose a relative
+// path or dot segments that downstream handlers interpret differently.
 func canonicalizePath(req *http.Request) {
 	p := req.URL.Path
 	if !strings.HasPrefix(p, "/") {
