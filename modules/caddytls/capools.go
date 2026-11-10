@@ -617,8 +617,8 @@ func (t *TLSConfig) makeTLSClientConfig(ctx caddy.Context) (*tls.Config, error) 
 		return nil, fmt.Errorf("invalid TLS renegotiation level: %v", t.Renegotiation)
 	}
 
-	// override for the server name used verify the TLS handshake
-	cfg.ServerName = repl.ReplaceKnown(cfg.ServerName, "")
+	// override for the server name used to verify the TLS handshake
+	cfg.ServerName = repl.ReplaceKnown(t.ServerName, "")
 
 	// throw all security out the window
 	cfg.InsecureSkipVerify = t.InsecureSkipVerify
