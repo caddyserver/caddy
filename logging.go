@@ -78,6 +78,8 @@ type Logging struct {
 	// must have their keys added to this list so they
 	// can be closed when cleaning up
 	writerKeys []string
+
+	owner *loggingOwner
 }
 
 // openLogs sets up the config and opens all the configured writers.
@@ -99,6 +101,11 @@ func (logging *Logging) openLogs(ctx Context) error {
 			return fmt.Errorf("setting up sink log: %v", err)
 		}
 	}
+	var sink *zap.Logger
+	if logging.Sink != nil {
+		sink = logging.Sink.logger
+	}
+	logging.owner = claimLogging(sink)
 
 	// as a special case, set up the default structured Caddy log next
 	if err := logging.setupNewDefault(ctx); err != nil {
@@ -172,6 +179,7 @@ func (logging *Logging) setupNewDefault(ctx Context) error {
 	defaultLoggerMu.Lock()
 	oldDefault := defaultLogger
 	defaultLogger = newDefault
+	logging.owner.defaultLog = newDefault
 	defaultLoggerMu.Unlock()
 
 	// if the new writer is different, indicate it in the logs for convenience
@@ -206,6 +214,9 @@ func (logging *Logging) setupNewDefault(ctx Context) error {
 // A successful call to openLogs calls this automatically
 // when the context is canceled.
 func (logging *Logging) closeLogs() error {
+	if logging.owner != nil {
+		logging.owner.release()
+	}
 	for _, key := range logging.writerKeys {
 		_, err := writers.Delete(key)
 		if err != nil {
@@ -213,6 +224,69 @@ func (logging *Logging) closeLogs() error {
 		}
 	}
 	return nil
+}
+
+// loggingOwner tracks overlapping configurations, including ones still being
+// provisioned. Old configuration cleanup must not undo newer redirects, and a
+// failed new configuration must restore the most recent still-live owner.
+type loggingOwner struct {
+	defaultLog *defaultCustomLog
+	stdLog     stdLogState
+}
+
+type stdLogState struct {
+	output io.Writer
+	flags  int
+	prefix string
+}
+
+func currentStdLog() stdLogState {
+	return stdLogState{log.Writer(), log.Flags(), log.Prefix()}
+}
+
+func (s stdLogState) restore() {
+	log.SetOutput(s.output)
+	log.SetFlags(s.flags)
+	log.SetPrefix(s.prefix)
+}
+
+func claimLogging(sink *zap.Logger) *loggingOwner {
+	defaultLoggerMu.Lock()
+	defer defaultLoggerMu.Unlock()
+	if len(loggingOwners) == 0 {
+		loggingBaseline = loggingOwner{defaultLogger, currentStdLog()}
+	}
+	owner := &loggingOwner{defaultLog: defaultLogger, stdLog: loggingBaseline.stdLog}
+	if sink != nil {
+		// zap's undo function always restores stderr, not the previous writer.
+		// Save the full state ourselves so failed provisioning can roll back.
+		zap.RedirectStdLog(sink)
+		owner.stdLog = currentStdLog()
+	} else {
+		owner.stdLog.restore()
+	}
+	loggingOwners = append(loggingOwners, owner)
+	return owner
+}
+
+func (o *loggingOwner) release() {
+	defaultLoggerMu.Lock()
+	defer defaultLoggerMu.Unlock()
+	for i, owner := range loggingOwners {
+		if owner != o {
+			continue
+		}
+		loggingOwners = slices.Delete(loggingOwners, i, i+1)
+		if i == len(loggingOwners) {
+			restore := &loggingBaseline
+			if i > 0 {
+				restore = loggingOwners[i-1]
+			}
+			defaultLogger = restore.defaultLog
+			restore.stdLog.restore()
+		}
+		return
+	}
 }
 
 // Logger returns a logger that is ready for the module to use.
@@ -444,9 +518,12 @@ func (cl *BaseLog) buildOptions() ([]zap.Option, error) {
 // global logger in the log package. This is necessary because
 // module dependencies which are not built specifically for
 // Caddy will use the standard logger. This is also known as
-// the "sink" logger.
+// the "sink" logger. Removing it on reload restores the standard logger's
+// original output, prefix, and flags.
 type SinkLog struct {
 	BaseLog
+
+	logger *zap.Logger
 }
 
 func (sll *SinkLog) provision(ctx Context, logging *Logging) error {
@@ -459,8 +536,7 @@ func (sll *SinkLog) provision(ctx Context, logging *Logging) error {
 		return err
 	}
 
-	logger := zap.New(sll.core, options...)
-	ctx.cleanupFuncs = append(ctx.cleanupFuncs, zap.RedirectStdLog(logger))
+	sll.logger = zap.New(sll.core, options...)
 	return nil
 }
 
@@ -819,6 +895,8 @@ var (
 	coloringEnabled  = os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != "xterm-mono"
 	defaultLogger, _ = newDefaultProductionLog()
 	defaultLoggerMu  sync.RWMutex
+	loggingOwners    []*loggingOwner // protected by defaultLoggerMu
+	loggingBaseline  loggingOwner
 )
 
 var writers = NewUsagePool()

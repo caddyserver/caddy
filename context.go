@@ -49,7 +49,7 @@ type Context struct {
 	moduleInstances map[string][]Module
 	cfg             *Config
 	ancestry        []Module
-	cleanupFuncs    []func()                // invoked at every config unload
+	cleanupFuncs    *contextCleanup         // shared by value copies; invoked at every config unload
 	exitFuncs       []func(context.Context) // invoked at config unload ONLY IF the process is exiting (EXPERIMENTAL)
 	metricsRegistry *prometheus.Registry
 }
@@ -70,13 +70,18 @@ func NewContext(ctx Context) (Context, context.CancelFunc) {
 // NewContextWithCause is like NewContext but returns a context.CancelCauseFunc.
 // EXPERIMENTAL: This API is subject to change.
 func NewContextWithCause(ctx Context) (Context, context.CancelCauseFunc) {
-	newCtx := Context{moduleInstances: make(map[string][]Module), cfg: ctx.cfg, metricsRegistry: prometheus.NewPedanticRegistry()}
+	newCtx := Context{
+		moduleInstances: make(map[string][]Module),
+		cfg:             ctx.cfg,
+		metricsRegistry: prometheus.NewPedanticRegistry(),
+		cleanupFuncs:    new(contextCleanup),
+	}
 	c, cancel := context.WithCancelCause(ctx.Context)
 	wrappedCancel := func(cause error) {
 		cancel(cause)
 
-		for _, f := range ctx.cleanupFuncs {
-			f()
+		if !newCtx.cleanupFuncs.run() {
+			return
 		}
 
 		for modName, modInstances := range newCtx.moduleInstances {
@@ -95,9 +100,49 @@ func NewContextWithCause(ctx Context) (Context, context.CancelCauseFunc) {
 	return newCtx, wrappedCancel
 }
 
-// OnCancel executes f when ctx is canceled.
+// OnCancel executes f once when ctx is canceled. Registrations on value copies
+// and WithValue contexts share the same lifetime. Registrations on a context
+// created by NewContext belong to that new lifetime, not its parent.
+// If cancellation has already begun, f is executed immediately.
 func (ctx *Context) OnCancel(f func()) {
-	ctx.cleanupFuncs = append(ctx.cleanupFuncs, f)
+	if ctx.cleanupFuncs == nil {
+		// a Context not created by NewContext has no cancel func to run f
+		ctx.cleanupFuncs = new(contextCleanup)
+	}
+	ctx.cleanupFuncs.add(f)
+}
+
+type contextCleanup struct {
+	mu       sync.Mutex
+	canceled bool
+	funcs    []func()
+}
+
+func (c *contextCleanup) add(f func()) {
+	c.mu.Lock()
+	if c.canceled {
+		c.mu.Unlock()
+		f()
+		return
+	}
+	c.funcs = append(c.funcs, f)
+	c.mu.Unlock()
+}
+
+func (c *contextCleanup) run() bool {
+	c.mu.Lock()
+	if c.canceled {
+		c.mu.Unlock()
+		return false
+	}
+	c.canceled = true
+	funcs := c.funcs
+	c.funcs = nil
+	c.mu.Unlock()
+	for _, f := range funcs {
+		f()
+	}
+	return true
 }
 
 // FileSystems returns a ref to the FilesystemMap.

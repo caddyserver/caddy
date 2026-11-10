@@ -17,9 +17,84 @@ package caddy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
+	"sync"
+	"sync/atomic"
 	"testing"
 )
+
+func TestContextCancellationCallbacks(t *testing.T) {
+	ctx, cancel := NewContextWithCause(Context{Context: context.Background()})
+	copy := ctx
+	derived := ctx.WithValue("key", "value")
+	var count atomic.Int32
+	for _, c := range []*Context{&ctx, &copy, &derived} {
+		c.OnCancel(func() { count.Add(1) })
+	}
+	cause := errors.New("test cancellation")
+	cancel(cause)
+	cancel(errors.New("second cancellation"))
+	copy.OnCancel(func() { count.Add(1) })
+	if got := count.Load(); got != 4 {
+		t.Fatalf("callbacks ran %d times, want 4", got)
+	}
+	if context.Cause(ctx) != cause {
+		t.Fatalf("cancellation cause = %v, want %v", context.Cause(ctx), cause)
+	}
+}
+
+func TestContextCancellationLifetimes(t *testing.T) {
+	parent, cancelParent := NewContext(Context{Context: context.Background()})
+	child, cancelChild := NewContext(parent)
+	var parents, children int
+	parent.OnCancel(func() { parents++ })
+	child.OnCancel(func() { children++ })
+	cancelChild()
+	if parents != 0 || children != 1 {
+		t.Fatalf("after child cancel: parent=%d child=%d", parents, children)
+	}
+	cancelParent()
+	cancelChild()
+	if parents != 1 || children != 1 {
+		t.Fatalf("cleanup counts: parent=%d child=%d", parents, children)
+	}
+}
+
+func TestContextOnCancelZeroValue(t *testing.T) {
+	var ctx Context
+	ctx.OnCancel(func() { t.Fatal("callback on context without cancel func must not run") })
+}
+
+func TestContextCancellationConcurrent(t *testing.T) {
+	ctx, cancel := NewContext(Context{Context: context.Background()})
+	cleaner := new(contextTestCleaner)
+	ctx.moduleInstances["test"] = []Module{cleaner}
+	var count atomic.Int32
+	var wg sync.WaitGroup
+	for range 50 {
+		wg.Go(func() {
+			copy := ctx
+			copy.OnCancel(func() { count.Add(1) })
+			cancel()
+		})
+	}
+	wg.Wait()
+	if count.Load() != 50 {
+		t.Fatalf("callbacks ran %d times, want 50", count.Load())
+	}
+	if cleaner.count.Load() != 1 {
+		t.Fatalf("module cleanup ran %d times, want 1", cleaner.count.Load())
+	}
+}
+
+type contextTestCleaner struct{ count atomic.Int32 }
+
+func (*contextTestCleaner) CaddyModule() ModuleInfo { return ModuleInfo{ID: "test"} }
+func (c *contextTestCleaner) Cleanup() error {
+	c.count.Add(1)
+	return nil
+}
 
 func TestContextWithValuePreservesMetricsRegistry(t *testing.T) {
 	ctx, cancel := NewContext(Context{Context: context.Background()})
