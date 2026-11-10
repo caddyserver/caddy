@@ -321,7 +321,7 @@ func (ap *AutomationPolicy) makeCertMagicConfig(tlsApp *TLS, issuers []certmagic
 				if noProtections {
 					return fmt.Errorf("no permission module configured; certificates not allowed except from external Managers")
 				}
-				if tlsApp.Automation == nil || tlsApp.Automation.OnDemand == nil {
+				if tlsApp.Automation == nil || tlsApp.Automation.OnDemand == nil || tlsApp.Automation.OnDemand.permission == nil {
 					return nil
 				}
 

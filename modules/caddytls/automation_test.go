@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
 	"math/big"
 	"net"
@@ -19,6 +20,82 @@ import (
 	"github.com/caddyserver/certmagic"
 	"go.uber.org/zap"
 )
+
+func TestAutomationPolicyMissingPermission(t *testing.T) {
+	var emptyOnDemand AutomationConfig
+	if err := json.Unmarshal([]byte(`{"on_demand":{}}`), &emptyOnDemand); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name       string
+		automation *AutomationConfig
+	}{
+		{name: "no automation"},
+		{name: "no on-demand settings", automation: new(AutomationConfig)},
+		{name: "empty JSON on-demand object", automation: &emptyOnDemand},
+	} {
+		for _, policy := range []struct {
+			name string
+			ap   AutomationPolicy
+		}{
+			{name: "explicit subject", ap: AutomationPolicy{OnDemand: true, subjects: []string{"example.com"}}},
+			{name: "internal issuer", ap: AutomationPolicy{OnDemand: true, Issuers: []certmagic.Issuer{new(InternalIssuer)}}},
+			{name: "tailscale", ap: AutomationPolicy{subjects: []string{"test.example.ts.net"}, Managers: []certmagic.Manager{Tailscale{}}}},
+		} {
+			t.Run(tc.name+"/"+policy.name, func(t *testing.T) {
+				cfg, err := policy.ap.makeCertMagicConfig(&TLS{
+					Automation: tc.automation,
+					logger:     zap.NewNop(),
+				}, policy.ap.Issuers, &certmagic.FileStorage{Path: t.TempDir()})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := cfg.OnDemand.DecisionFunc(context.Background(), "example.com"); err != nil {
+					t.Fatalf("exempted policy without permission module must be allowed: %v", err)
+				}
+			})
+		}
+	}
+}
+
+func TestAutomationPolicyEmptyPermissionHandshake(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		ap      AutomationPolicy
+		wantErr bool
+	}{
+		{name: "explicit subject", ap: AutomationPolicy{OnDemand: true, subjects: []string{"managed.example.com"}}},
+		{
+			name: "unprotected manager miss",
+			ap: AutomationPolicy{
+				Managers: []certmagic.Manager{automationTestManager(func(context.Context, *tls.ClientHelloInfo) (*tls.Certificate, error) {
+					return nil, nil
+				})},
+				hadExplicitManagers: true,
+			},
+			wantErr: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			issuer := newAutomationTestIssuer(t, "test-issuer")
+			tc.ap.Issuers = []certmagic.Issuer{issuer}
+			cfg := automationTestConfig(t, &tc.ap, &AutomationConfig{OnDemand: new(OnDemandConfig)})
+			cert, err := automationTestGetCertificate(cfg, "managed.example.com")
+			if tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "no permission module configured") {
+					t.Fatalf("expected permission rejection, got %v", err)
+				}
+				if issuer.calls != 0 {
+					t.Fatal("empty permission config must not permit unprotected manager fallback")
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			} else if cert == nil || issuer.calls != 1 {
+				t.Fatalf("expected local certificate issuance, got certificate %v and %d issuer calls", cert != nil, issuer.calls)
+			}
+		})
+	}
+}
 
 func TestAutomationPolicyExternalManagerPermission(t *testing.T) {
 	server := httptest.NewTLSServer(nil)
