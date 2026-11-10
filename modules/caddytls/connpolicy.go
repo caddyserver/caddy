@@ -892,7 +892,7 @@ func (clientauth *ClientAuthentication) ConfigureTLSConfig(cfg *tls.Config) erro
 	// without ClientCAs, Go verifies client certs against the system roots
 	verifyMode := cfg.ClientAuth == tls.VerifyClientCertIfGiven || cfg.ClientAuth == tls.RequireAndVerifyClientCert
 	if verifyMode && clientauth.ca == nil {
-		return fmt.Errorf("client auth modes verify_if_given and require_and_verify need a trust pool; use the system trust pool to verify against system roots")
+		return fmt.Errorf("client auth modes verify_if_given and require_and_verify need a trust pool; use the 'system' trust pool to verify against system roots")
 	}
 
 	// enforce CA verification by adding CA certs to the ClientCAs pool
