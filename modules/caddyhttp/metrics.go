@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -57,17 +58,17 @@ type Metrics struct {
 	// CARDINALITY PROTECTION: To prevent unbounded cardinality attacks,
 	// only explicitly configured hosts (via host matchers) are allowed
 	// by default. Other hosts are aggregated under the "_other" label.
-	// See AllowCatchAllHosts to change this behavior.
+	// See ObserveCatchallHosts to change this behavior. This also applies to
+	// HTTPS, including On-Demand TLS sites, which do not have host matchers
+	// for every name they serve. Host labels never include the port.
 	PerHost bool `json:"per_host,omitempty"`
 
 	// Allow metrics for catch-all hosts (hosts without explicit configuration).
 	// When false (default), only hosts explicitly configured via host matchers
 	// will get individual metrics labels. All other hosts will be aggregated
-	// under the "_other" label to prevent cardinality explosion.
-	//
-	// This is automatically enabled for HTTPS servers (since certificates provide
-	// some protection against unbounded cardinality), but disabled for HTTP servers
-	// by default to prevent cardinality attacks from arbitrary Host headers.
+	// under the "_other" label to prevent cardinality explosion. HTTPS
+	// requests are not exempt: the Host header is not bound to the TLS
+	// certificate, so it can be any value.
 	//
 	// Set to true to allow all hosts to get individual metrics (NOT RECOMMENDED
 	// for production environments exposed to the internet).
@@ -82,11 +83,10 @@ type Metrics struct {
 	// keep this field false to disable OTLP export.
 	OTLP bool `json:"otlp,omitempty"`
 
-	init           sync.Once
-	httpMetrics    *httpMetrics
-	allowedHosts   map[string]struct{}
-	hasHTTPSServer bool
-	meterProvider  *sdkmetric.MeterProvider
+	init          sync.Once
+	httpMetrics   *httpMetrics
+	allowedHosts  map[string]struct{}
+	meterProvider *sdkmetric.MeterProvider
 }
 
 type httpMetrics struct {
@@ -235,44 +235,50 @@ func (m *Metrics) scanConfigForHosts(app *App) {
 	}
 
 	m.allowedHosts = make(map[string]struct{})
-	m.hasHTTPSServer = false
-
-	for _, srv := range app.Servers {
-		// Check if this server has TLS enabled
-		serverHasTLS := len(srv.TLSConnPolicies) > 0
-		if serverHasTLS {
-			m.hasHTTPSServer = true
-		}
-
-		// Collect hosts from route matchers
-		for _, route := range srv.Routes {
+	var scanRoutes func(RouteList)
+	scanRoutes = func(routes RouteList) {
+		for _, route := range routes {
 			for _, matcherSet := range route.MatcherSets {
 				for _, matcher := range matcherSet {
 					if hm, ok := matcher.(*MatchHost); ok {
 						for _, host := range *hm {
 							// Only allow non-fuzzy hosts to prevent unbounded cardinality
 							if !hm.fuzzy(host) {
-								m.allowedHosts[strings.ToLower(host)] = struct{}{}
+								m.allowedHosts[metricsHost(host)] = struct{}{}
 							}
 						}
 					}
 				}
 			}
+			for _, handler := range route.Handlers {
+				if sr, ok := handler.(*Subroute); ok {
+					scanRoutes(sr.Routes)
+					if sr.Errors != nil {
+						scanRoutes(sr.Errors.Routes)
+					}
+				}
+			}
+		}
+	}
+	for _, srv := range app.Servers {
+		scanRoutes(srv.Routes)
+		if srv.Errors != nil {
+			scanRoutes(srv.Errors.Routes)
+		}
+		for _, route := range srv.NamedRoutes {
+			scanRoutes(RouteList{*route})
 		}
 	}
 }
 
 // shouldAllowHostMetrics determines if metrics should be collected for the given host.
-// This implements the cardinality protection by only allowing metrics for:
-// 1. Explicitly configured hosts
-// 2. Catch-all requests on HTTPS servers (if AllowCatchAllHosts is true or auto-enabled)
-// 3. Catch-all requests on HTTP servers only if explicitly allowed
-func (m *Metrics) shouldAllowHostMetrics(host string, isHTTPS bool) bool {
+// Only explicitly configured hosts are allowed unless catch-all observation is enabled.
+func (m *Metrics) shouldAllowHostMetrics(host string) bool {
 	if !m.PerHost {
 		return true // host won't be used in labels anyway
 	}
 
-	normalizedHost := strings.ToLower(host)
+	normalizedHost := metricsHost(host)
 
 	// Always allow explicitly configured hosts
 	if _, exists := m.allowedHosts[normalizedHost]; exists {
@@ -280,8 +286,14 @@ func (m *Metrics) shouldAllowHostMetrics(host string, isHTTPS bool) bool {
 	}
 
 	// For catch-all requests (not in allowed hosts)
-	allowCatchAll := m.ObserveCatchallHosts || (isHTTPS && m.hasHTTPSServer)
-	return allowCatchAll
+	return m.ObserveCatchallHosts
+}
+
+func metricsHost(host string) string {
+	if hostname, _, err := net.SplitHostPort(host); err == nil {
+		host = hostname
+	}
+	return strings.ToLower(strings.Trim(host, "[]"))
 }
 
 // serverNameFromContext extracts the current server name from the context.
@@ -319,14 +331,12 @@ func (h *metricsInstrumentedRoute) ServeHTTP(w http.ResponseWriter, r *http.Requ
 	// of a panic
 	statusLabels := prometheus.Labels{"server": server, "handler": h.handler, "method": method, "code": ""}
 
-	// Determine if this is an HTTPS request
-	isHTTPS := r.TLS != nil
-
 	if h.metrics.PerHost {
 		// Apply cardinality protection for host metrics
-		if h.metrics.shouldAllowHostMetrics(r.Host, isHTTPS) {
-			labels["host"] = strings.ToLower(r.Host)
-			statusLabels["host"] = strings.ToLower(r.Host)
+		host := metricsHost(r.Host)
+		if h.metrics.shouldAllowHostMetrics(host) {
+			labels["host"] = host
+			statusLabels["host"] = host
 		} else {
 			// Use a catch-all label for unallowed hosts to prevent cardinality explosion
 			labels["host"] = "_other"
