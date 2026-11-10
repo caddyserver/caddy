@@ -225,9 +225,16 @@ func (r *IdleTimeoutReader) SetReadDeadline(deadline time.Time) error {
 }
 
 // ceilingLocked returns the earliest of HardDeadline and the deadline
-// set by the handler, or zero if there is neither.
+// set by the handler, or zero if there is neither. Once the body has
+// reached a terminal state, HardDeadline no longer applies: it bounds
+// reading the body, and re-arming it after the body has been read would
+// let it cancel the request long after the handler cleared its own
+// deadline (see #8399).
 func (r *IdleTimeoutReader) ceilingLocked() time.Time {
 	hard := r.Deadline.HardDeadline
+	if r.terminalErr != nil {
+		hard = time.Time{}
+	}
 	if r.handlerDeadline.IsZero() || (!hard.IsZero() && hard.Before(r.handlerDeadline)) {
 		return hard
 	}
