@@ -29,6 +29,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"cel.dev/cel-go/cel"
@@ -419,7 +420,7 @@ func (m MatchPath) Provision(_ caddy.Context) error {
 			break
 		}
 		if !strings.Contains(m[i], "{") {
-			m[i] = strings.ToLower(m[i])
+			m[i] = lowerPath(m[i])
 		}
 	}
 	return nil
@@ -439,13 +440,13 @@ func (m MatchPath) MatchWithError(r *http.Request) (bool, error) {
 	// related to differences between operating systems, applications,
 	// etc; if case-sensitive matching is needed, the regex matcher
 	// can be used instead.
-	reqPath := normalizeWindowsPath(strings.ToLower(r.URL.Path))
+	reqPath := normalizeWindowsPath(lowerPath(r.URL.Path))
 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	for _, matchPattern := range m {
 		if strings.Contains(matchPattern, "{") {
-			matchPattern = strings.ToLower(repl.ReplaceAll(matchPattern, ""))
+			matchPattern = lowerPath(repl.ReplaceAll(matchPattern, ""))
 		}
 
 		// special case: whole path is wildcard; this is unnecessary
@@ -543,7 +544,7 @@ func (m MatchPath) MatchWithError(r *http.Request) (bool, error) {
 }
 
 func (MatchPath) matchPatternWithEscapeSequence(escapedPath, matchPath string) bool {
-	escapedPath = strings.ToLower(escapedPath)
+	escapedPath = lowerPath(escapedPath)
 	// We would just compare the pattern against r.URL.Path,
 	// but the pattern contains %, indicating that we should
 	// compare at least some part of the path in raw/escaped
@@ -660,8 +661,27 @@ func (MatchPath) matchPatternWithEscapeSequence(escapedPath, matchPath string) b
 	matchPath = strings.ReplaceAll(matchPath, "%*", "*")
 
 	// ignore error here because we can't handle it anyway
-	matches, _ := path.Match(matchPath, strings.ToLower(sb.String()))
+	matches, _ := path.Match(matchPath, lowerPath(sb.String()))
 	return matches
+}
+
+// lowerPath lowercases Unicode text without replacing invalid UTF-8 path bytes.
+func lowerPath(p string) string {
+	if utf8.ValidString(p) {
+		return strings.ToLower(p)
+	}
+	var sb strings.Builder
+	sb.Grow(len(p))
+	for len(p) > 0 {
+		ch, size := utf8.DecodeRuneInString(p)
+		if ch == utf8.RuneError && size == 1 {
+			sb.WriteByte(p[0])
+		} else {
+			sb.WriteRune(unicode.ToLower(ch))
+		}
+		p = p[size:]
+	}
+	return sb.String()
 }
 
 // windowsEscapedPathSeparatorRepl normalizes Windows backslash separators

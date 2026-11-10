@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -145,6 +146,65 @@ func TestSanitizedPathJoin(t *testing.T) {
 				i, tc.inputRoot, tc.inputPath, actual, tc.expect)
 		}
 	}
+}
+
+func TestCleanPathPreservesBytes(t *testing.T) {
+	for b := 0; b < 256; b++ {
+		if b == '/' {
+			continue
+		}
+		input := "/public//byte" + string([]byte{byte(b)}) + "/file"
+		if got := CleanPath(input, false); got != input {
+			t.Errorf("CleanPath(%q, false) = %q; want unchanged bytes", input, got)
+		}
+	}
+	for _, tc := range []struct {
+		input, want string
+	}{
+		{"/\xff//a/../\xfe/", "/\xff//\xfe/"},
+		{"/Äpfel//./�/../\xff", "/Äpfel//\xff"},
+		{"//", "//"},
+		{"///", "///"},
+		{"//.", "/"},
+		{"//..", "/"},
+		{"a/..//b", "/b"},
+		{".//", "/"},
+		{"a//../../..", ".."},
+		{"", "."},
+		{"./", "./"},
+		{"../", "../"},
+	} {
+		if got := CleanPath(tc.input, false); got != tc.want {
+			t.Errorf("CleanPath(%q, false) = %q; want %q", tc.input, got, tc.want)
+		}
+	}
+}
+
+func TestCleanPathSlashPreservingSemantics(t *testing.T) {
+	var check func([]string, int)
+	check = func(segments []string, depth int) {
+		p := strings.Join(segments, "/")
+		for _, input := range []string{p, "/" + p, p + "/", "/" + p + "/"} {
+			var marked strings.Builder
+			for i := 0; i < len(input); i++ {
+				if input[i] == '/' && i > 0 && input[i-1] == '/' {
+					marked.WriteByte(0)
+				}
+				marked.WriteByte(input[i])
+			}
+			want := strings.ReplaceAll(cleanPath(marked.String()), "\x00", "")
+			if got := CleanPath(input, false); got != want {
+				t.Errorf("CleanPath(%q, false) = %q; want %q", input, got, want)
+			}
+		}
+		if depth == 0 {
+			return
+		}
+		for _, segment := range []string{"", "a", ".", "..", "Ä", "%2f", "a\xff"} {
+			check(append(segments, segment), depth-1)
+		}
+	}
+	check(nil, 4)
 }
 
 func TestCleanPath(t *testing.T) {

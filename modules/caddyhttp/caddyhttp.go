@@ -275,28 +275,50 @@ func SanitizedPathJoin(root, reqPath string) string {
 
 // CleanPath cleans path p according to path.Clean(), but only
 // merges repeated slashes if collapseSlashes is true, and always
-// preserves trailing slashes.
+// preserves trailing slashes. Path bytes, including invalid UTF-8, are preserved.
 func CleanPath(p string, collapseSlashes bool) string {
-	if collapseSlashes {
+	if collapseSlashes || !strings.Contains(p, "//") {
 		return cleanPath(p)
 	}
 
-	// insert an invalid/impossible URI character into each two consecutive
-	// slashes to expand empty path segments; then clean the path as usual,
-	// and then remove the remaining temporary characters.
-	const tmpCh = 0xff
-	var sb strings.Builder
-	sb.Grow(len(p) + 1)
-	for i, ch := range p {
-		if ch == '/' && i > 0 && p[i-1] == '/' {
-			sb.WriteByte(tmpCh)
-		}
-		sb.WriteRune(ch)
+	rooted := strings.HasPrefix(p, "/")
+	trailing := strings.HasSuffix(p, "/")
+	segments := strings.Split(p, "/")
+	if rooted {
+		segments = segments[1:]
 	}
-	halfCleaned := cleanPath(sb.String())
-	halfCleaned = strings.ReplaceAll(halfCleaned, string([]byte{tmpCh}), "")
+	if trailing && len(segments) > 0 {
+		segments = segments[:len(segments)-1]
+	}
+	cleaned := segments[:0]
+	for _, segment := range segments {
+		switch segment {
+		case ".":
+		case "..":
+			if len(cleaned) > 0 && cleaned[len(cleaned)-1] != ".." {
+				cleaned = cleaned[:len(cleaned)-1]
+			} else if !rooted {
+				cleaned = append(cleaned, segment)
+			}
+		default:
+			cleaned = append(cleaned, segment)
+		}
+	}
+	result := strings.Join(cleaned, "/")
+	if rooted {
+		result = "/" + result
+	}
+	if trailing && len(cleaned) > 0 {
+		result += "/"
+	}
+	if result == "" && len(cleaned) == 0 {
+		result = "."
+		if trailing {
+			result += "/"
+		}
+	}
 
-	return halfCleaned
+	return result
 }
 
 // cleanPath does path.Clean(p) but preserves any trailing slash.
