@@ -365,7 +365,10 @@ are exported via a tarball.
 				Short: "Imports storage assets from a tarball.",
 				Long: `
 Imports storage assets to the configured storage module. The import file must be
-a tar archive.
+a tar archive of regular files with canonical, relative storage keys, such as one
+produced by 'caddy storage export'. Directory entries and a leading "./" are
+ignored. Absolute paths, traversal components, backslashes, colons, links, and
+other special files are not accepted.
 
 --input is required, - can be given for stdin.
 `,

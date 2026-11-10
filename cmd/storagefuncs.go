@@ -23,6 +23,8 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/caddyserver/certmagic"
 
@@ -117,14 +119,29 @@ func cmdImportStorage(fl Flags) (int, error) {
 			return caddy.ExitCodeFailedQuit, fmt.Errorf("reading archive: %v", err)
 		}
 
+		// storage has no directories; archives made with tar(1) include them
+		if hdr.Typeflag == tar.TypeDir {
+			continue
+		}
+		key := strings.TrimPrefix(hdr.Name, "./")
+		if !fs.ValidPath(key) || key == "." || strings.ContainsAny(key, `\:`) {
+			return caddy.ExitCodeFailedQuit, fmt.Errorf("invalid storage key in archive: %q", hdr.Name)
+		}
+		if _, err := filepath.Localize(key); err != nil {
+			return caddy.ExitCodeFailedQuit, fmt.Errorf("invalid storage key in archive %q: %w", hdr.Name, err)
+		}
+		if hdr.Typeflag != tar.TypeReg {
+			return caddy.ExitCodeFailedQuit, fmt.Errorf("unsupported archive entry type %d for %q", hdr.Typeflag, hdr.Name)
+		}
+
 		b, err := io.ReadAll(tr)
 		if err != nil {
 			return caddy.ExitCodeFailedQuit, fmt.Errorf("reading archive: %v", err)
 		}
 
-		err = stor.Store(ctx, hdr.Name, b)
+		err = stor.Store(ctx, key, b)
 		if err != nil {
-			return caddy.ExitCodeFailedQuit, fmt.Errorf("reading archive: %v", err)
+			return caddy.ExitCodeFailedQuit, fmt.Errorf("storing archive entry %q: %w", hdr.Name, err)
 		}
 	}
 
