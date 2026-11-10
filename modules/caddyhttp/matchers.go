@@ -566,6 +566,7 @@ func (MatchPath) matchPatternWithEscapeSequence(escapedPath, matchPath string) b
 		// get the next character from the request path
 
 		pathCh := string(escapedPath[iPath])
+		pathChLen := 1
 		var escapedPathCh string
 
 		// normalize (decode) escape sequences
@@ -584,7 +585,7 @@ func (MatchPath) matchPatternWithEscapeSequence(escapedPath, matchPath string) b
 				// should be impossible unless EscapedPath() is giving us an invalid sequence!
 				return false
 			}
-			iPath += 2 // escape sequence is 2 bytes longer than normal char
+			pathChLen = 3
 		}
 
 		// now get the next character from the pattern
@@ -597,7 +598,7 @@ func (MatchPath) matchPatternWithEscapeSequence(escapedPath, matchPath string) b
 			// if not a wildcard ("%*"), compare literally; consume next two bytes of pattern
 			if len(matchPath) >= iPattern+3 && matchPath[iPattern+1] != '*' {
 				sb.WriteString(escapedPathCh)
-				iPath++
+				iPath += pathChLen
 				iPattern += 2
 				break
 			}
@@ -635,7 +636,7 @@ func (MatchPath) matchPatternWithEscapeSequence(escapedPath, matchPath string) b
 			iPath += until
 		default:
 			sb.WriteString(pathCh)
-			iPath++
+			iPath += pathChLen
 		}
 
 		iPattern++

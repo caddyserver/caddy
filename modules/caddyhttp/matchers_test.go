@@ -518,6 +518,41 @@ func TestPathMatcher(t *testing.T) {
 	}
 }
 
+func TestEscapedPathWildcardCursor(t *testing.T) {
+	for _, tc := range []struct {
+		pattern, target string
+		want            bool
+	}{
+		{"/foo*bar%2f", "/fooXbar%2f", true},
+		{"/foo*bar%2f", "/foobar%2f", true},
+		{"/foo*bar%2f", "/foo%41bar%2f", true},
+		{"/foo*bar%2f", "/foo%252fbar%2f", true},
+		{"/foo*bar%2f", "/foo/bar/", false},
+		{"/foo*bar%2f", "/foo/bar%2f", false},
+		{"/foo*bar%2f", "/foo%2fbar%2f", false},
+		{"/foo*bar%2f", "/foo%2Fbar%2F", false},
+		{"/foo%2f*bar%2f", "/foo%2fXbar%2f", true},
+		{"/foo%2f*bar%2f", "/foo%2f%2fbar%2f", false},
+		{"/foo%2f*", "/foo%2f%41", true},
+		{"/foo%2f*", "/foo%2f%2f", false},
+		{"/foo%*bar%2f", "/foo%2fbar%2f", true},
+		{"/foo%*bar%2f", "/foo/bar%2f", false},
+	} {
+		t.Run(tc.pattern+" "+tc.target, func(t *testing.T) {
+			m := MatchPath{tc.pattern}
+			if err := m.Provision(caddy.Context{}); err != nil {
+				t.Fatal(err)
+			}
+			r := httptest.NewRequest(http.MethodGet, tc.target, nil)
+			NewTestReplacer(r)
+			got, err := m.MatchWithError(r)
+			if err != nil || got != tc.want {
+				t.Errorf("match = %t, %v; want %t", got, err, tc.want)
+			}
+		})
+	}
+}
+
 func TestPathMatcherWindows(t *testing.T) {
 	// only Windows has this bug where it will ignore
 	// trailing dots and spaces in a filename
