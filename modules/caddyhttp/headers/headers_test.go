@@ -26,6 +26,65 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
+func TestDynamicReplacementExpandedOnce(t *testing.T) {
+	for _, field := range []string{"X-Test", "*"} {
+		for _, invalid := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/invalid=%t", field, invalid), func(t *testing.T) {
+				ops := &HeaderOps{Replace: map[string][]Replacement{
+					field: {{SearchRegexp: "^foo{pattern}$", Replace: "replaced"}},
+				}}
+				if err := ops.Provision(caddy.Context{}); err != nil {
+					t.Fatal(err)
+				}
+				if ops.Replace[field][0].re != nil {
+					t.Fatal("dynamic pattern was precompiled")
+				}
+				pattern := "bar"
+				if invalid {
+					pattern = "["
+				}
+				expansions := 0
+				repl := caddy.NewReplacer()
+				repl.Map(func(key string) (any, bool) {
+					if key == "pattern" {
+						expansions++
+						return pattern, true
+					}
+					return nil, false
+				})
+				for _, value := range []string{"foobar", "foobaz"} {
+					if value == "foobaz" && !invalid {
+						pattern = "baz"
+					}
+					hdr := http.Header{
+						"X-Test": {"foobar", value},
+						"x-test": {value},
+						"Other":  {value},
+					}
+					before := expansions
+					ops.ApplyTo(hdr, repl)
+					if got := expansions - before; got != 1 {
+						t.Fatalf("expanded pattern %d times, want once", got)
+					}
+					want := value
+					if !invalid {
+						want = "replaced"
+					}
+					if hdr["X-Test"][1] != want || hdr["x-test"][0] != want {
+						t.Fatalf("unexpected named-field replacement: %v", hdr)
+					}
+					if field != "*" {
+						want = value
+					}
+					if hdr["Other"][0] != want {
+						t.Fatalf("unexpected other-field replacement: %v", hdr)
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestHandler(t *testing.T) {
 	for i, tc := range []struct {
 		handler            Handler
