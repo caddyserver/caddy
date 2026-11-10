@@ -17,6 +17,7 @@ package rewrite
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"reflect"
 	"regexp"
 	"strings"
@@ -684,6 +685,66 @@ func TestRewriteEscapesFileMatcherRemainder(t *testing.T) {
 		if expected, actual := tc.expect, req.URL.RequestURI(); expected != actual {
 			t.Errorf("Test %d: Expected URL.RequestURI()='%s' but got '%s'", i, expected, actual)
 		}
+	}
+}
+
+func TestRewriteEscapesDecodedPathPlaceholders(t *testing.T) {
+	for _, name := range []string{
+		"http.request.uri.path",
+		"http.request.uri.path.dir",
+		"http.request.uri.path.file",
+		"http.request.uri.path.file.base",
+		"http.request.uri.path.file.ext",
+		"http.request.uri.path.1",
+		"http.request.orig_uri.path",
+		"http.request.orig_uri.path.dir",
+		"http.request.orig_uri.path.file",
+		"http.request.orig_uri.path.1",
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newRequest(t, http.MethodGet, "/pub/%252e%252e/a%3Fb%23c.%25txt")
+			repl := caddy.NewReplacer()
+			r = caddyhttp.PrepareRequest(r, repl, nil, &caddyhttp.Server{})
+			value, ok := repl.Get(name)
+			if !ok {
+				t.Fatalf("unknown placeholder: %s", name)
+			}
+			pathValue := caddy.ToString(value)
+			Rewrite{URI: "/files{" + name + "}?q={" + name + "}"}.Rewrite(r, repl)
+			if r.URL.Path != "/files"+pathValue {
+				t.Errorf("Path = %q; want %q", r.URL.Path, "/files"+pathValue)
+			}
+			if r.URL.RawQuery != "q="+url.QueryEscape(pathValue) || r.URL.Fragment != "" {
+				t.Errorf("incorrect query or injected fragment: %s", r.URL)
+			}
+		})
+	}
+	for _, tc := range []struct {
+		name, target, uri, want string
+	}{
+		{"original path traversal", "/pub/%252e%252e/priv/secret", "/files{http.request.orig_uri.path}", "/files/pub/%252e%252e/priv/secret"},
+		{"original after rewrite", "/pub/%252fsecret", "/files{http.request.orig_uri.path}", "/files/pub/%252fsecret"},
+		{"escaped file", "/pub/a%2Fb%3Fc%23d%25", "/files/{http.request.orig_uri.path.file_escaped}", "/files/a/b%3Fc%23d%25"},
+		{"whole URI", "/pub/a%3Fb?x=y", "{http.request.orig_uri}", "/pub/a%3Fb?x=y"},
+		{"escaped current path", "/pub/%252e%252e", "{http.request.uri.path_escaped}", "/pub/%252e%252e"},
+		{"literal escapes", "/pub", "/files/%2e%2e/public?x=y", "/files/../public?x=y"},
+		{"encoded extension", "/pub/file.%252f", "/files/{http.request.uri.path.file.ext}", "/files/.%252f"},
+		{"literal placeholder text", "/pub/%7Benv.SCAN_PATH_TEST%7D", "/files{http.request.orig_uri.path}", "/files/pub/%7Benv.SCAN_PATH_TEST%7D"},
+		{"non-UTF-8 path", "/pub/%ff", "/files{http.request.orig_uri.path}", "/files/pub/%FF"},
+		{"Unicode path", "/pub/%C3%84pfel", "/files{http.request.orig_uri.path}", "/files/pub/%C3%84pfel"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRequest(t, http.MethodGet, tc.target)
+			repl := caddy.NewReplacer()
+			r = caddyhttp.PrepareRequest(r, repl, nil, &caddyhttp.Server{})
+			if tc.name == "original after rewrite" {
+				Rewrite{URI: "/changed"}.Rewrite(r, repl)
+			}
+			Rewrite{URI: tc.uri}.Rewrite(r, repl)
+			if r.RequestURI != tc.want {
+				t.Errorf("RequestURI = %q; want %q", r.RequestURI, tc.want)
+			}
+		})
 	}
 }
 
