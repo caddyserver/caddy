@@ -182,3 +182,33 @@ func TestHideOtherLetterCases(t *testing.T) {
 		})
 	}
 }
+
+func TestHideRelativeConfigDir(t *testing.T) {
+	for _, env := range []string{"XDG_CONFIG_HOME", "HOME", "AppData", "HOMEDRIVE", "HOMEPATH", "USERPROFILE", "home"} {
+		t.Setenv(env, "")
+	}
+	// an absolute data directory must not mask a relative config directory:
+	// autosave.json holds the running configuration
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+
+	if dir := caddy.AppConfigDir(); filepath.IsAbs(dir) {
+		t.Fatalf("test setup: config directory is absolute: %s", dir)
+	}
+	if dir := caddy.AppDataDir(); !filepath.IsAbs(dir) {
+		t.Fatalf("test setup: data directory is relative: %s", dir)
+	}
+
+	fsrv := FileServer{Root: "."}
+	ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
+	if err := fsrv.Provision(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	autosave := filepath.Join("caddy", "autosave.json")
+	if !fileHidden(autosave, fsrv.Hide) {
+		t.Errorf("%s is not hidden; hide list: %v", autosave, fsrv.Hide)
+	}
+	if fileHidden("caddyfile.go", fsrv.Hide) {
+		t.Errorf("caddyfile.go is hidden; hide list: %v", fsrv.Hide)
+	}
+}

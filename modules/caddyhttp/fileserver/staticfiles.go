@@ -213,9 +213,17 @@ func (fsrv *FileServer) Provision(ctx caddy.Context) error {
 		fsrv.IndexNames = defaultIndexNames
 	}
 
-	// a relative data directory sits under the working directory and holds private keys
-	if dataDir := caddy.AppDataDir(); !filepath.IsAbs(dataDir) {
-		if abs, err := caddy.FastAbs(dataDir); err == nil {
+	// a relative data or config directory sits under the working directory and
+	// holds private keys or the last saved configuration, so hide it
+	for _, dir := range []string{caddy.AppDataDir(), caddy.AppConfigDir()} {
+		if filepath.IsAbs(dir) {
+			continue
+		}
+		abs, err := caddy.FastAbs(dir)
+		if err != nil {
+			continue
+		}
+		if !slices.Contains(fsrv.Hide, abs) {
 			fsrv.Hide = append(fsrv.Hide, abs)
 		}
 	}
