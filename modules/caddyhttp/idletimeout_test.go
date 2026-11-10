@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -1602,6 +1603,38 @@ func TestIdleTimeoutWriterRestoresHardDeadline(t *testing.T) {
 			}
 			require.NoError(t, err)
 			assert.Equal(t, hard, rec.deadlines[len(rec.deadlines)-1])
+		})
+	}
+}
+
+func TestIdleDeadlineMinRateLargeTransfer(t *testing.T) {
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	const gb = 1_000_000_000
+	for _, tc := range []struct {
+		name        string
+		transferred int64
+		minRate     int64
+		want        time.Duration // allowance past start, excluding Timeout
+	}{
+		{"small", 5 * 1024 * 1024, 1024 * 1024, 5 * time.Second},
+		{"just below overflow", 9 * gb, gb, 9 * time.Second},
+		{"10 GB at 1 MB/s", 10 * gb, 1_000_000, 10_000 * time.Second},
+		{"100 GB at 1 GB/s", 100 * gb, gb, 100 * time.Second},
+		{"1 TB at 1 B/s", 1000 * gb, 1, math.MaxInt64},
+		{"max int64 bytes", math.MaxInt64, 1, math.MaxInt64},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := IdleDeadline{Start: start, Timeout: time.Minute, MinRate: tc.minRate, transferred: tc.transferred}
+			got := d.next()
+			if tc.want == math.MaxInt64 {
+				if !got.After(start.Add(100 * 365 * 24 * time.Hour)) {
+					t.Fatalf("deadline = %v, want far in the future", got)
+				}
+				return
+			}
+			if want := start.Add(time.Minute + tc.want); !got.Equal(want) {
+				t.Fatalf("deadline = %v, want %v", got, want)
+			}
 		})
 	}
 }

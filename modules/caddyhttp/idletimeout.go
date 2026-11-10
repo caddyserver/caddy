@@ -18,6 +18,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"math"
+	"math/bits"
 	"net/http"
 	"os"
 	"sync"
@@ -64,8 +66,11 @@ type IdleDeadline struct {
 
 func (d *IdleDeadline) next() (deadline time.Time) {
 	if d.MinRate > 0 {
-		credit := time.Duration(d.transferred) * time.Second / time.Duration(d.MinRate)
-		deadline = d.Start.Add(d.Timeout + credit)
+		allowance := d.Timeout + rateCredit(d.transferred, d.MinRate)
+		if allowance < d.Timeout { // the sum overflowed
+			allowance = math.MaxInt64
+		}
+		deadline = d.Start.Add(allowance)
 	} else {
 		deadline = time.Now().Add(d.Timeout)
 	}
@@ -74,6 +79,25 @@ func (d *IdleDeadline) next() (deadline time.Time) {
 	}
 
 	return
+}
+
+// rateCredit returns how long transferring n bytes may take at rate
+// bytes/second, saturating instead of overflowing: n * time.Second exceeds
+// int64 once n passes about 9.2 GB, which would turn the credit negative
+// and abort large transfers that easily sustain the rate.
+func rateCredit(n, rate int64) time.Duration {
+	if n <= 0 {
+		return 0
+	}
+	hi, lo := bits.Mul64(uint64(n), uint64(time.Second))
+	if hi >= uint64(rate) {
+		return math.MaxInt64
+	}
+	q, _ := bits.Div64(hi, lo, uint64(rate))
+	if q > math.MaxInt64 {
+		return math.MaxInt64
+	}
+	return time.Duration(q)
 }
 
 // idleOverride holds what restore needs to undo an override.
