@@ -1,6 +1,7 @@
 package caddytls
 
 import (
+	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -8,12 +9,15 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"errors"
 	"math/big"
 	"net"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/caddyserver/caddy/v2"
 )
 
 type testClientCertificateVerifier struct {
@@ -142,6 +146,96 @@ func TestClientAuthenticationModeWithLeafVerifier(t *testing.T) {
 			if !tc.wantError && err != nil {
 				t.Errorf("mode %s, %s, %s: unexpected handshake error: %v", tc.mode, tls.VersionName(version), certName, err)
 			}
+		}
+	}
+}
+
+func TestClientAuthenticationVerifyModesNeedTrustPool(t *testing.T) {
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+
+	// verifiers are loaded by the connection policy, so set both fields like a provisioned config
+	verifiersRaw := []json.RawMessage{json.RawMessage(`{"verifier":"leaf"}`)}
+	verifiers := []ClientCertificateVerifier{LeafCertClientAuth{trustedLeafCerts: []*x509.Certificate{issueTestCert(t, nil, 0).Leaf}}}
+	customPool := json.RawMessage(`{"provider":"inline","trusted_ca_certs":["` + test_der_1 + `"]}`)
+	systemPool := json.RawMessage(`{"provider":"system"}`)
+
+	for i, tc := range []struct {
+		clientauth ClientAuthentication
+		want       tls.ClientAuthType
+		wantErr    bool
+	}{
+		{clientauth: ClientAuthentication{Mode: "verify_if_given"}, wantErr: true},
+		{clientauth: ClientAuthentication{Mode: "require_and_verify"}, wantErr: true},
+		{clientauth: ClientAuthentication{Mode: "require_and_verify", VerifiersRaw: verifiersRaw, verifiers: verifiers}, wantErr: true},
+		{clientauth: ClientAuthentication{Mode: "verify_if_given", CARaw: systemPool}, want: tls.VerifyClientCertIfGiven},
+		{clientauth: ClientAuthentication{Mode: "require_and_verify", CARaw: systemPool}, want: tls.RequireAndVerifyClientCert},
+		{clientauth: ClientAuthentication{Mode: "verify_if_given", CARaw: customPool}, want: tls.VerifyClientCertIfGiven},
+		{clientauth: ClientAuthentication{Mode: "require_and_verify", CARaw: customPool}, want: tls.RequireAndVerifyClientCert},
+		{clientauth: ClientAuthentication{CARaw: customPool}, want: tls.RequireAndVerifyClientCert},
+		{clientauth: ClientAuthentication{Mode: "request"}, want: tls.RequestClientCert},
+		{clientauth: ClientAuthentication{Mode: "require"}, want: tls.RequireAnyClientCert},
+		{clientauth: ClientAuthentication{VerifiersRaw: verifiersRaw, verifiers: verifiers}, want: tls.RequireAnyClientCert},
+		{clientauth: ClientAuthentication{TrustedLeafCerts: []string{test_der_1}}, want: tls.RequireAnyClientCert},
+	} {
+		if err := tc.clientauth.provision(ctx); err != nil {
+			t.Fatalf("Test %d: provisioning: %v", i, err)
+		}
+		cfg := new(tls.Config)
+		err := tc.clientauth.ConfigureTLSConfig(cfg)
+		if tc.wantErr {
+			if err == nil {
+				t.Errorf("Test %d: expected error but got none", i)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("Test %d: unexpected error: %v", i, err)
+			continue
+		}
+		if cfg.ClientAuth != tc.want {
+			t.Errorf("Test %d: expected %v, got %v", i, tc.want, cfg.ClientAuth)
+		}
+		if tc.clientauth.CARaw != nil && cfg.ClientCAs == nil {
+			t.Errorf("Test %d: expected ClientCAs to be set", i)
+		}
+	}
+}
+
+func TestClientAuthenticationVerifierOnlyHandshake(t *testing.T) {
+	ca := issueTestCert(t, nil, 0)
+	serverCert := issueTestCert(t, &ca, x509.ExtKeyUsageServerAuth)
+	trusted := issueTestCert(t, &ca, x509.ExtKeyUsageClientAuth)
+	untrusted := issueTestCert(t, &ca, x509.ExtKeyUsageClientAuth)
+
+	for _, tc := range []struct {
+		cert      *tls.Certificate
+		wantError bool
+	}{
+		{cert: nil, wantError: true},
+		{cert: &trusted, wantError: false},
+		{cert: &untrusted, wantError: true},
+	} {
+		// no mode and no trust pool, so only the verifier checks the cert
+		clientauth := &ClientAuthentication{
+			VerifiersRaw: []json.RawMessage{json.RawMessage(`{"verifier":"leaf"}`)},
+			verifiers:    []ClientCertificateVerifier{LeafCertClientAuth{trustedLeafCerts: []*x509.Certificate{trusted.Leaf}}},
+		}
+		serverConfig := &tls.Config{Certificates: []tls.Certificate{serverCert}}
+		if err := clientauth.ConfigureTLSConfig(serverConfig); err != nil {
+			t.Fatalf("configuring TLS: %v", err)
+		}
+		clientConfig := &tls.Config{InsecureSkipVerify: true}
+		if tc.cert != nil {
+			clientConfig.Certificates = []tls.Certificate{*tc.cert}
+		}
+
+		err := serverHandshake(t, serverConfig, clientConfig)
+		if tc.wantError && err == nil {
+			t.Errorf("cert %v: expected handshake error but got none", tc.cert != nil)
+		}
+		if !tc.wantError && err != nil {
+			t.Errorf("cert %v: unexpected handshake error: %v", tc.cert != nil, err)
 		}
 	}
 }

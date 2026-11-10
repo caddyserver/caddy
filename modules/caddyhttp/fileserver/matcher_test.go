@@ -64,6 +64,12 @@ func TestFileMatcher(t *testing.T) {
 
 	for i, tc := range []testCase{
 		{
+			path:         "/",
+			expectedPath: "/",
+			expectedType: "directory",
+			matched:      true,
+		},
+		{
 			path:         "/.env",
 			expectedPath: "/.env",
 			expectedType: "file",
