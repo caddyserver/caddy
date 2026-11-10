@@ -37,6 +37,9 @@ func init() {
 // FilterEncoder can filter (manipulate) fields on
 // log entries before they are actually encoded by
 // an underlying encoder.
+// The hash, ip_mask, regexp, and multi_regexp filters also operate on
+// string arrays, including typed string, IP address, and URI slices
+// returned by request placeholders.
 type FilterEncoder struct {
 	// The underlying encoder that actually encodes the
 	// log entries. If not specified, defaults to "json",
