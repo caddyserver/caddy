@@ -104,7 +104,7 @@ func (st ServerType) Setup(
 	// with actual identifiers used by Caddy
 	replacer := NewShorthandReplacer()
 
-	originalServerBlocks, err = st.extractNamedRoutes(originalServerBlocks, options, &warnings, replacer)
+	originalServerBlocks, err = st.extractNamedRoutes(originalServerBlocks, options, &warnings, replacer, gc)
 	if err != nil {
 		return nil, warnings, err
 	}
@@ -477,11 +477,11 @@ func (ServerType) extractNamedRoutes(
 	options map[string]any,
 	warnings *[]caddyconfig.Warning,
 	replacer ShorthandReplacer,
+	gc counter,
 ) ([]serverBlock, error) {
 	namedRoutes := map[string]*caddyhttp.Route{}
 	namedRouteInvokes := map[string][]string{}
 
-	gc := counter{new(int)}
 	state := make(map[string]any)
 
 	// copy the server blocks so we can
