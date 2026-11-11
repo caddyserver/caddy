@@ -95,6 +95,7 @@ type Rewrite struct {
 	URISubstring []substrReplacer `json:"uri_substring,omitempty"`
 
 	// Performs regular expression replacements on the URI path.
+	// Dot segments are cleaned before matching and after replacement.
 	PathRegexp []*regexReplacer `json:"path_regexp,omitempty"`
 
 	// Mutates the query string of the URI.
@@ -607,6 +608,9 @@ func (rep regexReplacer) do(r *http.Request, repl *caddy.Replacer) {
 		return
 	}
 	replace := repl.ReplaceAll(rep.Replace, "")
+	// Match the same cleaned path that path guards and filesystem handlers use,
+	// before a replacement can change the depth at which dot segments resolve.
+	canonicalizePath(r)
 	oldPath := r.URL.Path
 	changePath(r, func(pathOrRawPath string) string {
 		return rep.re.ReplaceAllString(pathOrRawPath, replace)
