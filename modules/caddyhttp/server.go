@@ -599,6 +599,14 @@ var (
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 
+	// Opaque URIs have no routable path but can override the serialized target
+	// when forwarded. Reject them before either normal or error routes run.
+	if r.URL.Opaque != "" {
+		s.logger.Debug("rejecting opaque HTTP request target")
+		http.Error(w, "invalid request target", http.StatusBadRequest)
+		return
+	}
+
 	// Count HTTP/3 requests on connections ServeQUICConn owns. http3.Server
 	// does not track those, so shutdown uses this to tell an idle keepalive
 	// from work that still has to drain.

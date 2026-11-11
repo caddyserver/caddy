@@ -1827,6 +1827,7 @@ func cloneRequest(origReq *http.Request) *http.Request {
 		// dialer will behave. See #4237 for context.
 		newURL.Scheme = ""
 		newURL.Host = ""
+		newURL.Opaque = ""
 		req.URL = newURL
 	}
 	if origReq.Header != nil {
