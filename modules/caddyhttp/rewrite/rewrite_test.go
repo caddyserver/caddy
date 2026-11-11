@@ -62,7 +62,7 @@ func TestRewrite(t *testing.T) {
 		{
 			rule:   Rewrite{URI: "foo"},
 			input:  newRequest(t, "GET", "/"),
-			expect: newRequest(t, "GET", "foo"),
+			expect: newRequest(t, "GET", "/foo"),
 		},
 		{
 			rule:   Rewrite{URI: "{http.request.uri}"},
@@ -727,7 +727,7 @@ func TestRewriteEscapesDecodedPathPlaceholders(t *testing.T) {
 		{"escaped file", "/pub/a%2Fb%3Fc%23d%25", "/files/{http.request.orig_uri.path.file_escaped}", "/files/a/b%3Fc%23d%25"},
 		{"whole URI", "/pub/a%3Fb?x=y", "{http.request.orig_uri}", "/pub/a%3Fb?x=y"},
 		{"escaped current path", "/pub/%252e%252e", "{http.request.uri.path_escaped}", "/pub/%252e%252e"},
-		{"literal escapes", "/pub", "/files/%2e%2e/public?x=y", "/files/../public?x=y"},
+		{"literal escapes", "/pub", "/files/%2e%2e/public?x=y", "/public?x=y"},
 		{"encoded extension", "/pub/file.%252f", "/files/{http.request.uri.path.file.ext}", "/files/.%252f"},
 		{"literal placeholder text", "/pub/%7Benv.SCAN_PATH_TEST%7D", "/files{http.request.orig_uri.path}", "/files/pub/%7Benv.SCAN_PATH_TEST%7D"},
 		{"non-UTF-8 path", "/pub/%ff", "/files{http.request.orig_uri.path}", "/files/pub/%FF"},
@@ -969,4 +969,41 @@ func reqEqual(r1, r2 *http.Request) bool {
 		r1.URL.RawPath == r2.URL.RawPath &&
 		r1.URL.RawQuery == r2.URL.RawQuery &&
 		r1.URL.Fragment == r2.URL.Fragment
+}
+
+func TestRewriteURICanonicalizesChangedPath(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		method string
+		target string
+		header string
+		uri    string
+		want   string
+	}{
+		{name: "relative placeholder", target: "/x", header: "../secret", uri: "{http.request.header.X-Path}", want: "/secret"},
+		{name: "relative literal", target: "/x", uri: "secret", want: "/secret"},
+		{name: "dot segments from placeholder", target: "/x", header: "/public/../secret", uri: "{http.request.header.X-Path}", want: "/secret"},
+		{name: "query kept", target: "/x?a=b", header: "../secret", uri: "{http.request.header.X-Path}?{http.request.uri.query}", want: "/secret?a=b"},
+		{name: "repeated slashes preserved", target: "/x", uri: "/a//b/", want: "/a//b/"},
+		{name: "unchanged path left alone", target: "/a/../b", uri: "{http.request.uri.path}", want: "/a/../b"},
+		{name: "OPTIONS star preserved", method: http.MethodOptions, target: "/x", uri: "*", want: "*"},
+		{name: "star from placeholder is a path", target: "/x", header: "*", uri: "{http.request.header.X-Path}", want: "/%2A"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			method := tc.method
+			if method == "" {
+				method = http.MethodGet
+			}
+			r := newRequest(t, method, tc.target)
+			if tc.header != "" {
+				r.Header.Set("X-Path", tc.header)
+			}
+			repl := caddy.NewReplacer()
+			r = caddyhttp.PrepareRequest(r, repl, nil, &caddyhttp.Server{})
+			Rewrite{URI: tc.uri}.Rewrite(r, repl)
+			if r.RequestURI != tc.want {
+				t.Errorf("RequestURI = %q; want %q", r.RequestURI, tc.want)
+			}
+		})
+	}
 }

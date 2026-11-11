@@ -75,6 +75,10 @@ type Rewrite struct {
 	// path stay part of the new path instead of starting a query string.
 	// Placeholders ending in "_escaped" are inserted unchanged.
 	//
+	// If the path changes, the result is made absolute and its dot
+	// segments are resolved (repeated slashes are preserved), so
+	// "foo.html" becomes "/foo.html".
+	//
 	// To clear the query string, explicitly set an empty one: "?"
 	URI string `json:"uri,omitempty"`
 
@@ -272,12 +276,22 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 		// update the URI with the new components
 		// only after building them
 		if pathStart >= 0 {
+			oldPath := r.URL.Path
 			if path, err := url.PathUnescape(newPath); err != nil {
 				r.URL.Path = newPath
 			} else {
 				r.URL.Path = path
 			}
 			r.URL.RawPath = "" // force recomputing when EscapedPath() is called
+
+			// a rewritten path can be relative or contain dot segments (often
+			// from a placeholder), which downstream matchers and handlers would
+			// interpret differently; so anchor and clean it, except for an
+			// explicitly configured OPTIONS * request target
+			optionsStar := r.Method == http.MethodOptions && path == "*" && newPath == "*"
+			if r.URL.Path != oldPath && !optionsStar {
+				canonicalizePath(r)
+			}
 		}
 		if qsStart >= 0 || queryInjected {
 			r.URL.RawQuery = newQuery
