@@ -309,7 +309,7 @@ func (m MatchFile) Validate() error {
 // Match returns true if r matches m. Returns true
 // if a file was matched. If so, four placeholders
 // will be available:
-//   - http.matchers.file.relative: Path to file relative to site root
+//   - http.matchers.file.relative: Slash-prefixed path to file relative to site root
 //   - http.matchers.file.absolute: Path to file including site root
 //   - http.matchers.file.type: file or directory
 //   - http.matchers.file.remainder: Portion remaining after splitting file path (if configured)
@@ -345,6 +345,21 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 	}
 	type matchCandidate struct {
 		fullpath, relative, splitRemainder string
+	}
+	makeCandidate := func(fullpath, remainder string) (matchCandidate, bool) {
+		relative, err := filepath.Rel(root, fullpath)
+		if err != nil {
+			m.logger.Error("making root-relative file path", zap.String("path", fullpath), zap.Error(err))
+			return matchCandidate{}, false
+		}
+		if relative == "." {
+			relative = ""
+		}
+		relative = "/" + filepath.ToSlash(relative)
+		if strings.HasSuffix(fullpath, separator) && !strings.HasSuffix(relative, "/") {
+			relative += "/"
+		}
+		return matchCandidate{fullpath: fullpath, relative: relative, splitRemainder: remainder}, true
 	}
 
 	// makeCandidates evaluates placeholders in file and expands any glob expressions
@@ -404,11 +419,9 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 		// for each glob result, combine all the forms of the path
 		candidates := make([]matchCandidate, 0, len(globResults))
 		for _, result := range globResults {
-			candidates = append(candidates, matchCandidate{
-				fullpath:       result,
-				relative:       strings.TrimPrefix(result, root),
-				splitRemainder: afterSplit,
-			})
+			if candidate, ok := makeCandidate(result, afterSplit); ok {
+				candidates = append(candidates, candidate)
+			}
 		}
 
 		return candidates
@@ -432,11 +445,7 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 			return matchCandidate{}, false
 		}
 		fullPath := caddyhttp.SanitizedPathJoin(root, beforeSplit)
-		return matchCandidate{
-			fullpath:       fullPath,
-			relative:       strings.TrimPrefix(fullPath, root),
-			splitRemainder: afterSplit,
-		}, true
+		return makeCandidate(fullPath, afterSplit)
 	}
 
 	// setPlaceholders creates the placeholders for the matched file
