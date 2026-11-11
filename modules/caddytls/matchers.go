@@ -175,10 +175,11 @@ type MatchRegexp struct {
 	compiled *regexp.Regexp
 }
 
-// Provision compiles the regular expression which may include placeholders.
+// Provision compiles the regular expression which may include known placeholders.
+// Unknown placeholders are preserved so regexp quantifiers remain intact.
 func (mre *MatchRegexp) Provision(caddy.Context) error {
 	repl := caddy.NewReplacer()
-	re, err := regexp.Compile(repl.ReplaceAll(mre.Pattern, ""))
+	re, err := regexp.Compile(repl.ReplaceKnown(mre.Pattern, ""))
 	if err != nil {
 		return fmt.Errorf("compiling matcher regexp %s: %v", mre.Pattern, err)
 	}
