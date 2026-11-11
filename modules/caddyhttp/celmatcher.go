@@ -505,7 +505,7 @@ func CELMatcherIsLiteral(v ref.Val) bool {
 func CELMatcherArgument(eh cel.MacroExprFactory, e ast.Expr) ast.Expr {
 	switch e.Kind() {
 	case ast.MapKind:
-		var entries []ast.EntryExpr
+		entries := make([]ast.EntryExpr, 0, len(e.AsMap().Entries()))
 		for _, entry := range e.AsMap().Entries() {
 			pair := entry.AsMapEntry()
 			entries = append(entries, eh.NewMapEntry(
@@ -513,17 +513,18 @@ func CELMatcherArgument(eh cel.MacroExprFactory, e ast.Expr) ast.Expr {
 		}
 		return eh.NewMap(entries...)
 	case ast.ListKind:
-		var elems []ast.Expr
+		elems := make([]ast.Expr, 0, len(e.AsList().Elements()))
 		for _, elem := range e.AsList().Elements() {
 			elems = append(elems, CELMatcherArgument(eh, elem))
 		}
 		return eh.NewList(elems...)
-	default:
-		if celMatcherStaticString(e) {
-			return e
-		}
-		return eh.NewCall("caddyMatcherLiteral", e)
+	case ast.UnspecifiedExprKind, ast.CallKind, ast.ComprehensionKind, ast.IdentKind, ast.LiteralKind, ast.SelectKind, ast.StructKind:
+		// String expressions are handled below.
 	}
+	if celMatcherStaticString(e) {
+		return e
+	}
+	return eh.NewCall("caddyMatcherLiteral", e)
 }
 
 func celMatcherStaticString(e ast.Expr) bool {
