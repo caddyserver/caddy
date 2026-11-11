@@ -1007,3 +1007,34 @@ func TestRewriteURICanonicalizesChangedPath(t *testing.T) {
 		})
 	}
 }
+
+func TestRewriteEscapesRegexpCaptures(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		target string
+		uri    string
+		want   string
+	}{
+		{name: "double-encoded traversal stays data", target: "/pub/%252e%252e%252fsecret", uri: "/files/{http.regexp.pub.1}", want: "/files/%252e%252e%252fsecret"},
+		{name: "decoded question mark stays in path", target: "/pub/a%3Fx=1", uri: "/files/{http.regexp.pub.1}", want: "/files/a%3Fx=1"},
+		{name: "slashes preserved", target: "/pub/a/b", uri: "/files/{http.regexp.pub.1}", want: "/files/a/b"},
+		{name: "configured query unaffected", target: "/pub/a", uri: "/files?id={http.regexp.pub.1}", want: "/files?id=a"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRequest(t, http.MethodGet, tc.target)
+			repl := caddy.NewReplacer()
+			r = caddyhttp.PrepareRequest(r, repl, nil, &caddyhttp.Server{})
+			m := caddyhttp.MatchPathRE{MatchRegexp: caddyhttp.MatchRegexp{Name: "pub", Pattern: "^/pub/(.*)$"}}
+			if err := m.Provision(caddy.Context{}); err != nil {
+				t.Fatal(err)
+			}
+			if ok, err := m.MatchWithError(r); err != nil || !ok {
+				t.Fatalf("path_regexp did not match: %v", err)
+			}
+			Rewrite{URI: tc.uri}.Rewrite(r, repl)
+			if r.RequestURI != tc.want {
+				t.Errorf("RequestURI = %q; want %q", r.RequestURI, tc.want)
+			}
+		})
+	}
+}

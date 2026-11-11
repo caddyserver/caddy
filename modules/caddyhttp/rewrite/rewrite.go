@@ -70,9 +70,11 @@ type Rewrite struct {
 	//
 	// Decoded path placeholders, such as {http.request.orig_uri.path},
 	// {http.request.uri.path.*}, and the file matcher's relative and
-	// remainder paths, are percent-encoded (except for slashes) when
-	// used before the "?", so characters like "?" or "%" from a request
-	// path stay part of the new path instead of starting a query string.
+	// remainder paths, as well as regular expression captures
+	// ({http.regexp.*}, from any matcher), are percent-encoded (except
+	// for slashes) when used before the "?", so characters like "?" or
+	// "%" from a request stay part of the new path instead of starting a
+	// query string or forming an escape sequence.
 	// Placeholders ending in "_escaped" are inserted unchanged.
 	//
 	// If the path changes, the result is made absolute and its dot
@@ -368,7 +370,10 @@ func replacePathPlaceholders(path string, r *http.Request, repl *caddy.Replacer)
 			strings.HasPrefix(name, "http.request.uri.path.") ||
 			strings.HasPrefix(name, "http.request.orig_uri.path.") ||
 			name == "http.matchers.file.relative" ||
-			name == "http.matchers.file.remainder"
+			name == "http.matchers.file.remainder" ||
+			// regexp captures usually come from the decoded path (path_regexp),
+			// and their names don't say which value they were captured from
+			strings.HasPrefix(name, "http.regexp.")
 		if decodedPath && !strings.HasSuffix(name, "_escaped") {
 			return escapePathPreservingSlashes(caddy.ToString(val)), nil
 		}
