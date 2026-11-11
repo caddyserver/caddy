@@ -538,7 +538,11 @@ func (st ServerType) buildTLSApp(
 		}
 
 		// consolidate automation policies that are the exact same
-		tlsApp.Automation.Policies = consolidateAutomationPolicies(tlsApp.Automation.Policies)
+		var err error
+		tlsApp.Automation.Policies, err = consolidateAutomationPolicies(tlsApp.Automation.Policies)
+		if err != nil {
+			return nil, warnings, err
+		}
 
 		// ensure automation policies don't overlap subjects (this should be
 		// an error at provision-time as well, but catch it in the adapt phase
@@ -1064,17 +1068,38 @@ func newBaseAutomationPolicy(
 
 // consolidateAutomationPolicies combines automation policies that are the same,
 // for a cleaner overall output.
-func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) []*caddytls.AutomationPolicy {
-	// sort from most specific to least specific; we depend on this ordering
-	sort.SliceStable(aps, func(i, j int) bool {
-		if automationPolicyIsSubset(aps[i], aps[j]) {
-			return true
+func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) ([]*caddytls.AutomationPolicy, error) {
+	// Consolidate merge-equivalent policies that can be combined without shadowing issues
+	// before validating topological ordering. This ensures merge-equivalent crossed policies
+	// are merged rather than falsely rejected as specificity cycles.
+outerPreMerge:
+	for i := 0; i < len(aps); i++ {
+		for j := i + 1; j < len(aps); j++ {
+			if reflect.DeepEqual(aps[i], aps[j]) {
+				aps = slices.Delete(aps, j, j+1)
+				i--
+				continue outerPreMerge
+			}
+			if len(aps[i].SubjectsRaw) > 0 && len(aps[j].SubjectsRaw) > 0 &&
+				automationPoliciesAreMergeEquivalent(aps[i], aps[j]) &&
+				!automationPolicyMergeShadows(i, j, aps) {
+				for _, subj := range aps[j].SubjectsRaw {
+					if !slices.Contains(aps[i].SubjectsRaw, subj) {
+						aps[i].SubjectsRaw = append(aps[i].SubjectsRaw, subj)
+					}
+				}
+				aps = slices.Delete(aps, j, j+1)
+				i--
+				continue outerPreMerge
+			}
 		}
-		if automationPolicyIsSubset(aps[j], aps[i]) {
-			return false
-		}
-		return len(aps[i].SubjectsRaw) > len(aps[j].SubjectsRaw)
-	})
+	}
+
+	var err error
+	aps, err = sortAutomationPoliciesBySpecificity(aps)
+	if err != nil {
+		return nil, err
+	}
 
 	emptyAPCount := 0
 	origLenAPs := len(aps)
@@ -1111,7 +1136,7 @@ func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) []*caddytls
 	}
 	// If all policies are empty, we can return nil, as there is no need to set any policy
 	if emptyAPCount == origLenAPs {
-		return nil
+		return nil, nil
 	}
 
 	// remove or combine duplicate policies
@@ -1134,14 +1159,7 @@ outer:
 			// otherwise the one without any subjects (a catch-all) would be
 			// eaten up by the one with subjects; and if both have subjects, we
 			// need to combine their lists
-			if automationPoliciesHaveSameIssuers(aps[i], aps[j]) &&
-				reflect.DeepEqual(aps[i].ManagersRaw, aps[j].ManagersRaw) &&
-				bytes.Equal(aps[i].StorageRaw, aps[j].StorageRaw) &&
-				aps[i].MustStaple == aps[j].MustStaple &&
-				aps[i].KeyType == aps[j].KeyType &&
-				aps[i].OnDemand == aps[j].OnDemand &&
-				aps[i].ReusePrivateKeys == aps[j].ReusePrivateKeys &&
-				aps[i].RenewalWindowRatio == aps[j].RenewalWindowRatio {
+			if automationPoliciesAreMergeEquivalent(aps[i], aps[j]) {
 				if len(aps[i].SubjectsRaw) > 0 && len(aps[j].SubjectsRaw) == 0 {
 					// later policy (at j) has no subjects ("catch-all"), so we can
 					// remove the identical-but-more-specific policy that comes first
@@ -1170,7 +1188,112 @@ outer:
 		}
 	}
 
-	return aps
+	return aps, nil
+}
+
+// sortAutomationPoliciesBySpecificity orders automation policies from most specific
+// to least specific using a stable topological sort over the partial order defined
+// by pairwise specificity constraints. Disjoint or incomparable policies preserve
+// their original declaration order.
+func sortAutomationPoliciesBySpecificity(aps []*caddytls.AutomationPolicy) ([]*caddytls.AutomationPolicy, error) {
+	n := len(aps)
+	if n <= 1 {
+		return aps, nil
+	}
+
+	adj := make([][]int, n)
+	inDegree := make([]int, n)
+
+	for i := 0; i < n; i++ {
+		for j := i + 1; j < n; j++ {
+			cmp, err := compareAutomationPolicies(aps[i], aps[j])
+			if err != nil {
+				return nil, err
+			}
+			switch {
+			case cmp < 0:
+				// aps[i] is more specific than aps[j]; aps[i] must precede aps[j]
+				adj[i] = append(adj[i], j)
+				inDegree[j]++
+			case cmp > 0:
+				// aps[j] is more specific than aps[i]; aps[j] must precede aps[i]
+				adj[j] = append(adj[j], i)
+				inDegree[i]++
+			}
+		}
+	}
+
+	sorted := make([]*caddytls.AutomationPolicy, 0, n)
+	visited := make([]bool, n)
+
+	for step := 0; step < n; step++ {
+		next := -1
+		for i := 0; i < n; i++ {
+			if !visited[i] && inDegree[i] == 0 {
+				next = i
+				break
+			}
+		}
+		if next == -1 {
+			return nil, fmt.Errorf("ambiguous automation policies: overlapping subjects require conflicting ordering")
+		}
+
+		visited[next] = true
+		sorted = append(sorted, aps[next])
+
+		for _, neighbor := range adj[next] {
+			inDegree[neighbor]--
+		}
+	}
+
+	return sorted, nil
+}
+
+// compareAutomationPolicies compares the specificity of two automation policies.
+// It returns -1 if a is strictly more specific than b, 1 if b is strictly more
+// specific than a, 0 if they are disjoint or equally specific, and an error if
+// their overlapping subjects have conflicting specificity.
+func compareAutomationPolicies(a, b *caddytls.AutomationPolicy) (int, error) {
+	aSubjects := a.SubjectsRaw
+	bSubjects := b.SubjectsRaw
+
+	// A policy without subjects acts as a catch-all/default policy and matches
+	// any subject. A policy with subjects is strictly more specific than a catch-all.
+	if len(aSubjects) == 0 && len(bSubjects) == 0 {
+		return 0, nil
+	}
+	if len(aSubjects) > 0 && len(bSubjects) == 0 {
+		return -1, nil
+	}
+	if len(aSubjects) == 0 && len(bSubjects) > 0 {
+		return 1, nil
+	}
+
+	var needABeforeB, needBBeforeA bool
+	for _, aSubj := range aSubjects {
+		for _, bSubj := range bSubjects {
+			if strings.EqualFold(aSubj, bSubj) {
+				continue
+			}
+			if certmagic.MatchWildcard(aSubj, bSubj) {
+				needABeforeB = true
+			}
+			if certmagic.MatchWildcard(bSubj, aSubj) {
+				needBBeforeA = true
+			}
+		}
+	}
+
+	if needABeforeB && needBBeforeA {
+		return 0, fmt.Errorf("ambiguous automation policies: overlapping subjects require conflicting ordering")
+	}
+	if needABeforeB {
+		return -1, nil
+	}
+	if needBBeforeA {
+		return 1, nil
+	}
+	return 0, nil
 }
 
 // automationPolicyIsSubset returns true if a's subjects are a subset
@@ -1255,6 +1378,17 @@ func subjectQualifiesForPublicCert(ap *caddytls.AutomationPolicy, subj string) b
 	return !certmagic.SubjectIsIP(subj) &&
 		!certmagic.SubjectIsInternal(subj) &&
 		(strings.Count(subj, "*.") < 2 || ap.OnDemand)
+}
+
+func automationPoliciesAreMergeEquivalent(a, b *caddytls.AutomationPolicy) bool {
+	return automationPoliciesHaveSameIssuers(a, b) &&
+		reflect.DeepEqual(a.ManagersRaw, b.ManagersRaw) &&
+		bytes.Equal(a.StorageRaw, b.StorageRaw) &&
+		a.MustStaple == b.MustStaple &&
+		a.KeyType == b.KeyType &&
+		a.OnDemand == b.OnDemand &&
+		a.ReusePrivateKeys == b.ReusePrivateKeys &&
+		a.RenewalWindowRatio == b.RenewalWindowRatio
 }
 
 func automationPoliciesHaveSameIssuers(a, b *caddytls.AutomationPolicy) bool {
