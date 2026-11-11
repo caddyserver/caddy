@@ -686,6 +686,13 @@ func (w *readDeadlineWriter) ReadFrom(r io.Reader) (int64, error) {
 	return w.ResponseWriterWrapper.ReadFrom(r)
 }
 
+// FlushError marks the connection non-reusable before a flush commits the
+// response headers, including when a handler uses http.ResponseController.
+func (w *readDeadlineWriter) FlushError() error {
+	w.setConnectionClose()
+	return http.NewResponseController(w.ResponseWriter).Flush()
+}
+
 func (w *readDeadlineWriter) SetReadDeadline(deadline time.Time) error {
 	return w.reader.SetReadDeadline(deadline)
 }
@@ -721,6 +728,7 @@ var (
 	_ io.ReadCloser                   = (*IdleTimeoutReader)(nil)
 	_ http.ResponseWriter             = (*readDeadlineWriter)(nil)
 	_ io.ReaderFrom                   = (*readDeadlineWriter)(nil)
+	_ interface{ FlushError() error } = (*readDeadlineWriter)(nil)
 	_ http.ResponseWriter             = (*IdleTimeoutWriter)(nil)
 	_ io.ReaderFrom                   = (*IdleTimeoutWriter)(nil)
 	_ interface{ FlushError() error } = (*IdleTimeoutWriter)(nil)

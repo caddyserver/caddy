@@ -1520,6 +1520,96 @@ func TestIdleTimeoutReaderHandlerDeadlineAfterTimeout(t *testing.T) {
 	assert.Equal(t, expired, deadlines[len(deadlines)-1])
 }
 
+// A flush can commit response headers without going through WriteHeader or
+// Write. The read-deadline wrapper must therefore see ResponseController.Flush
+// before the underlying writer sends the headers on a timed-out HTTP/1 body.
+func TestIdleTimeoutReaderFlushConnectionClose(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		body            io.Reader
+		closeConnection bool
+		wantTimeout     bool
+		wantClose       bool
+	}{
+		{
+			name:            "HTTP/1 timeout",
+			body:            iotest.ErrReader(os.ErrDeadlineExceeded),
+			closeConnection: true,
+			wantTimeout:     true,
+			wantClose:       true,
+		},
+		{
+			name:            "HTTP/2 timeout",
+			body:            iotest.ErrReader(os.ErrDeadlineExceeded),
+			wantTimeout:     true,
+		},
+		{
+			name:            "HTTP/1 successful read",
+			body:            strings.NewReader("ok"),
+			closeConnection: true,
+		},
+		{
+			name:            "HTTP/1 end of body",
+			body:            strings.NewReader(""),
+			closeConnection: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+			reader := &IdleTimeoutReader{
+				ReadCloser:      io.NopCloser(tc.body),
+				Ctrl:            http.NewResponseController(rec),
+				Deadline:        IdleDeadline{Timeout: time.Minute},
+				Logger:          zap.NewNop(),
+				CloseConnection: tc.closeConnection,
+			}
+			_, err := reader.Read(make([]byte, 1))
+			if tc.wantTimeout {
+				require.ErrorIs(t, err, os.ErrDeadlineExceeded)
+			} else {
+				require.NotErrorIs(t, err, os.ErrDeadlineExceeded)
+			}
+
+			// Exercise the same unwrapping path used by handlers and middleware.
+			wrapped := &ResponseWriterWrapper{ResponseWriter: reader.WrapResponseWriter(rec)}
+			require.NoError(t, http.NewResponseController(wrapped).Flush())
+			assert.True(t, rec.Flushed)
+			if tc.wantClose {
+				assert.Equal(t, "close", rec.Header().Get("Connection"))
+			} else {
+				assert.Empty(t, rec.Header().Get("Connection"))
+			}
+		})
+	}
+}
+
+func TestIdleTimeoutReaderFlushClosesHTTP1Connection(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		reader := &IdleTimeoutReader{
+			ReadCloser:      io.NopCloser(iotest.ErrReader(os.ErrDeadlineExceeded)),
+			Ctrl:            http.NewResponseController(w),
+			Deadline:        IdleDeadline{Timeout: time.Minute},
+			Logger:          zap.NewNop(),
+			CloseConnection: true,
+		}
+		_, err := reader.Read(make([]byte, 1))
+		if !errors.Is(err, os.ErrDeadlineExceeded) {
+			t.Errorf("read error = %v, want deadline exceeded", err)
+			return
+		}
+		if err := http.NewResponseController(reader.WrapResponseWriter(w)).Flush(); err != nil {
+			t.Errorf("flush: %v", err)
+		}
+	}))
+	defer srv.Close()
+
+	resp, err := srv.Client().Get(srv.URL)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, 1, resp.ProtoMajor)
+	assert.True(t, resp.Close, "HTTP/1 must not reuse a connection after the body times out")
+}
+
 // TestIdleTimeoutReaderHandlerDoneClearsReleasedHardDeadline checks
 // that the hard deadline put back after a partial read doesn't outlive
 // the handler when it returns without reading the rest of the body.
