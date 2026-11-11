@@ -349,10 +349,7 @@ func TestRequestTrailersRetry(t *testing.T) {
 					return nil, err
 				}
 				if tc.partial {
-					_, err := io.ReadAll(r.Body)
-					if err == nil {
-						t.Error("partially consumed request body became replayable")
-					}
+					t.Error("partially consumed request body was retried")
 					return nil, errors.New("consumed body is not replayable")
 				}
 				return transport.RoundTrip(r)
@@ -367,8 +364,14 @@ func TestRequestTrailersRetry(t *testing.T) {
 			req = req.WithContext(ctx)
 			rec := httptest.NewRecorder()
 			err := h.ServeHTTP(rec, req, nil)
-			if attempts != 2 {
-				t.Fatalf("attempts=%d, want 2", attempts)
+			wantAttempts := 2
+			if tc.partial {
+				// Consumed streams must stop before another transport attempt;
+				// unread dial failures and fully buffered bodies remain replayable.
+				wantAttempts = 1
+			}
+			if attempts != wantAttempts {
+				t.Fatalf("attempts=%d, want %d", attempts, wantAttempts)
 			}
 			if tc.partial {
 				if err == nil {
