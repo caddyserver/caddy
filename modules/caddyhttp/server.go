@@ -846,43 +846,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) error {
-	// reject very long methods; probably a mistake or an attack
-	if len(r.Method) > 32 {
-		if s.shouldLogRequest(r) {
-			if c := s.accessLogger.Check(zapcore.DebugLevel, "rejecting request with long method"); c != nil {
-				c.Write(
-					zap.String("method_trunc", r.Method[:32]),
-					zap.String("remote_addr", r.RemoteAddr),
-				)
-			}
-		}
-		return HandlerError{StatusCode: http.StatusMethodNotAllowed}
-	}
-
-	// RFC 9112 section 3.2: "A server MUST respond with a 400 (Bad Request) status
-	// code to any HTTP/1.1 request message that lacks a Host header field and to any
-	// request message that contains more than one Host header field line or a Host
-	// header field with an invalid field value."
-	if r.ProtoMajor == 1 && r.ProtoMinor == 1 && r.Host == "" {
-		return HandlerError{
-			Err:        errors.New("rfc9112 forbids empty Host"),
-			StatusCode: http.StatusBadRequest,
-		}
-	}
-
-	// the host may be used in a file path (`root /srv/{host}`): HTTP/2 and HTTP/3 don't
-	// validate :authority, and Windows trims trailing dots, so "..." can act like ".."
-	host, _, err := net.SplitHostPort(r.Host)
-	if err != nil {
-		host = r.Host
-	}
-	if !httpguts.ValidHostHeader(r.Host) || (host != "" && strings.Trim(host, ".") == "") {
-		return HandlerError{
-			Err:        errors.New("invalid host"),
-			StatusCode: http.StatusBadRequest,
-		}
-	}
-
 	// Drop headers whose names contain `_` or `.`: once FastCGI/CGI/FrankenPHP etc.
 	// rewrites `-` to `_` (and PHP additionally folds `.` to `_` when registering
 	// $_SERVER keys), an underscore or dot alias collides with the legitimate
@@ -957,6 +920,41 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) error {
 			if c := s.logger.Check(zapcore.DebugLevel, "dropping hyphenated variant of expected underscore/dot header"); c != nil {
 				c.Write(zap.String("header", k))
 			}
+		}
+	}
+
+	// Sanitize headers before validation so user-defined error routes receive
+	// the same protection as the primary handler chain.
+	if len(r.Method) > 32 {
+		if s.shouldLogRequest(r) {
+			if c := s.accessLogger.Check(zapcore.DebugLevel, "rejecting request with long method"); c != nil {
+				c.Write(
+					zap.String("method_trunc", r.Method[:32]),
+					zap.String("remote_addr", r.RemoteAddr),
+				)
+			}
+		}
+		return HandlerError{StatusCode: http.StatusMethodNotAllowed}
+	}
+
+	// RFC 9112 section 3.2 requires rejecting HTTP/1.1 requests without Host.
+	if r.ProtoMajor == 1 && r.ProtoMinor == 1 && r.Host == "" {
+		return HandlerError{
+			Err:        errors.New("rfc9112 forbids empty Host"),
+			StatusCode: http.StatusBadRequest,
+		}
+	}
+
+	// The host may be used in a file path. HTTP/2 and HTTP/3 don't validate
+	// :authority, and Windows trims trailing dots, so "..." can act like "..".
+	host, _, err := net.SplitHostPort(r.Host)
+	if err != nil {
+		host = r.Host
+	}
+	if !httpguts.ValidHostHeader(r.Host) || (host != "" && strings.Trim(host, ".") == "") {
+		return HandlerError{
+			Err:        errors.New("invalid host"),
+			StatusCode: http.StatusBadRequest,
 		}
 	}
 
