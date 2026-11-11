@@ -170,7 +170,7 @@ type Handler struct {
 	// only when the request already meets the transport's framing requirements.
 	// Only fully buffered bodies can be replayed after an upstream reads them.
 	// Bodies reaching a positive limit remain streaming and cannot be retried
-	// after reading starts; -1 buffers without a size limit.
+	// after data is read from them; -1 buffers without a size limit.
 	RequestBuffers int64 `json:"request_buffers,omitempty"`
 
 	// If nonzero, the entire response body up to this size will be read
@@ -598,11 +598,15 @@ func (h *Handler) Cleanup() error {
 
 // bodyNopCloserIfNotRead wraps a request body to prevent closing if not read, i.e., when
 // dialing to upstream fails.
-// It will close the body as normal if the body is read.
+// It will close the body as normal if the body is read. A body that is empty on
+// its first read (such as an HTTP/3 GET, which has an unknown length and is
+// probed by the transport) is not considered consumed, so it remains retryable.
 type bodyNopCloserIfNotRead struct {
 	io.ReadCloser
 	mu        sync.Mutex
-	read      bool
+	reading   int  // reads in progress
+	consumed  bool // data, a read error, or an interrupted read was observed
+	empty     bool // EOF was reached without consuming any data
 	closed    bool
 	closeOnce sync.Once
 	closeErr  error
@@ -614,28 +618,56 @@ func (b *bodyNopCloserIfNotRead) Read(p []byte) (int, error) {
 		b.mu.Unlock()
 		return 0, net.ErrClosed
 	}
-	b.read = true
+	if b.empty {
+		b.mu.Unlock()
+		return 0, io.EOF
+	}
+	b.reading++
 	b.mu.Unlock()
-	return b.ReadCloser.Read(p)
+
+	n, err := b.ReadCloser.Read(p)
+
+	b.mu.Lock()
+	b.reading--
+	if n > 0 || (err != nil && err != io.EOF) {
+		b.consumed = true
+	} else if err == io.EOF && !b.consumed {
+		b.empty = true
+	}
+	b.mu.Unlock()
+	return n, err
 }
 
 func (b *bodyNopCloserIfNotRead) Close() error {
 	b.closeOnce.Do(func() {
 		b.mu.Lock()
 		b.closed = true
-		read := b.read
+		// closing the stream is the only way to interrupt a blocked read,
+		// after which the stream can no longer be replayed
+		if b.reading > 0 {
+			b.consumed = true
+		}
+		consumed := b.consumed
 		b.mu.Unlock()
-		if read {
+		if consumed {
 			b.closeErr = b.ReadCloser.Close()
 		}
 	})
 	return b.closeErr
 }
 
+// didRead reports whether the stream was (or may have been) partially consumed.
 func (b *bodyNopCloserIfNotRead) didRead() bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.read
+	return b.consumed
+}
+
+// isEmpty reports whether the stream ended without yielding any data.
+func (b *bodyNopCloserIfNotRead) isEmpty() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.empty && !b.consumed
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
@@ -726,6 +758,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		var attemptBody *bodyNopCloserIfNotRead
 		if bufferedReqBody != nil {
 			clonedReq.Body = &bufferedBodyReader{owner: bufferedReqBody}
+		} else if streamingReqBody == http.NoBody {
+			clonedReq.Body = http.NoBody
 		} else if streamingReqBody != nil {
 			attemptBody = &bodyNopCloserIfNotRead{ReadCloser: streamingReqBody}
 			clonedReq.Body = attemptBody
@@ -739,6 +773,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 			attemptBody.Close()
 			if attemptBody.didRead() {
 				done = true
+			} else if attemptBody.isEmpty() {
+				// the stream is drained but nothing was lost; replay it as empty
+				streamingReqBody = http.NoBody
 			}
 		}
 		if done {
