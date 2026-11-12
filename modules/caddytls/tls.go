@@ -144,6 +144,7 @@ type TLS struct {
 	echRotateInterval  time.Duration
 	logger             *zap.Logger
 	events             *caddyevents.App
+	cacheOpts          certmagic.CacheOptions
 
 	serverNames   map[string]serverNameRegistration
 	serverNamesMu *sync.Mutex
@@ -197,7 +198,9 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		t.dns = dnsMod
 	}
 
-	// set up a new certificate cache; this (re)loads all certificates
+	// set up the certificate cache; if one already exists, it keeps using the
+	// running TLS app until this one is started, since a config that is still
+	// provisioning (or fails to) must not be consulted by cache maintenance
 	cacheOpts := certmagic.CacheOptions{
 		GetConfigForCert: func(cert certmagic.Certificate) (*certmagic.Config, error) {
 			return t.getConfigForName(cert.Names[0]), nil
@@ -215,11 +218,11 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		cacheOpts.Capacity = 10000
 	}
 
+	t.cacheOpts = cacheOpts
+
 	certCacheMu.Lock()
 	if certCache == nil {
 		certCache = certmagic.NewCache(cacheOpts)
-	} else {
-		certCache.SetOptions(cacheOpts)
 	}
 	certCacheMu.Unlock()
 
@@ -414,6 +417,15 @@ func (t *TLS) Start() error {
 				break
 			}
 		}
+	}
+
+	// now that this config is becoming active, let the cache use it
+	if t.cacheOpts.GetConfigForCert != nil {
+		certCacheMu.RLock()
+		if certCache != nil {
+			certCache.SetOptions(t.cacheOpts)
+		}
+		certCacheMu.RUnlock()
 	}
 
 	if t.bgCtx == nil {
