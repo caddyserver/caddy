@@ -115,6 +115,7 @@ func parseBind(h Helper) ([]ConfigValue, error) {
 //	    get_certificate               <module_name> [...]
 //	    insecure_secrets_log          <log_file>
 //	    renewal_window_ratio          <ratio>
+//	    ech                           <public_names...>
 //	}
 func parseTLS(h Helper) ([]ConfigValue, error) {
 	h.Next() // consume directive name
@@ -132,6 +133,7 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 	var reusePrivateKeys bool
 	var forceAutomate bool
 	var renewalWindowRatio float64
+	var ech *caddytls.ECH
 
 	// Track which DNS challenge options are set
 	var dnsOptionsSet []string
@@ -490,6 +492,13 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 			}
 			renewalWindowRatio = ratio
 
+		case "ech":
+			var err error
+			ech, err = parseECH(h.NewFromNextSegment())
+			if err != nil {
+				return nil, err
+			}
+
 		default:
 			return nil, h.Errf("unknown subdirective: %s", h.Val())
 		}
@@ -607,6 +616,13 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 		})
 	}
 
+	if ech != nil {
+		configVals = append(configVals, ConfigValue{
+			Class: tlsECHClass,
+			Value: ech,
+		})
+	}
+
 	// if enabled, the names in the site addresses will be
 	// added to the automation policies
 	if forceAutomate {
@@ -633,6 +649,8 @@ func parseTLS(h Helper) ([]ConfigValue, error) {
 
 	return configVals, nil
 }
+
+const tlsECHClass = "tls.ech"
 
 // parseRoot parses the root directive. Syntax:
 //
