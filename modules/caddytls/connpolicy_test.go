@@ -60,74 +60,119 @@ func TestConnectionPolicyIDNSNIMatcherFastPath(t *testing.T) {
 	}
 }
 
-func TestConnectionPolicySNIFastPathKeepsFirstMatch(t *testing.T) {
-	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
-	defer cancel()
+// sniPolicy returns an unprovisioned connection policy that matches the
+// given server names, configured the same way as one decoded from JSON.
+func sniPolicy(names ...string) *ConnectionPolicy {
+	raw, err := json.Marshal(names)
+	if err != nil {
+		panic(err)
+	}
+	return &ConnectionPolicy{MatchersRaw: caddy.ModuleMap{"sni": raw}}
+}
 
-	anyIP := MatchRemoteIP{Ranges: []string{"0.0.0.0/0", "::/0"}}
-	if err := anyIP.Provision(ctx); err != nil {
-		t.Fatalf("provisioning remote_ip matcher: %v", err)
+func TestConnectionPolicySNIFastPathKeepsFirstMatch(t *testing.T) {
+	ctx, err := caddy.ProvisionContext(&caddy.Config{})
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	wildcardTLSConfig := &tls.Config{ClientAuth: tls.RequireAndVerifyClientCert}
-	siteTLSConfig := &tls.Config{}
-	catchAllTLSConfig := &tls.Config{}
-
-	// each case puts a policy that matches "site.localhost" by something other
-	// than an exact SNI name ahead of the exact-SNI policy for that host; with
-	// more than 30 policies the SNI fast-path index must still reach the earlier
-	// policy first
+	// each case puts a policy ahead of the exact-SNI policy for
+	// "site.localhost"; with more than 30 provisioned policies the SNI
+	// fast-path index is used, and it must still select the same policy
+	// a linear scan would
 	for i, tc := range []struct {
-		first      *ConnectionPolicy
-		expect     *tls.Config
-		expectDrop bool
+		first     *ConnectionPolicy
+		wantFirst bool
 	}{
 		{
 			// catch-all drop ahead of the exact-SNI policy
-			first:      &ConnectionPolicy{matchers: []ConnectionMatcher{anyIP}, Drop: true},
-			expectDrop: true,
+			first: &ConnectionPolicy{
+				MatchersRaw: caddy.ModuleMap{"remote_ip": json.RawMessage(`{"ranges":["0.0.0.0/0","::/0"]}`)},
+				Drop:        true,
+			},
+			wantFirst: true,
 		},
 		{
 			// wildcard-SNI policy ahead of the exact-SNI policy
-			first:  &ConnectionPolicy{matchers: []ConnectionMatcher{MatchServerName{"*.localhost"}}, TLSConfig: wildcardTLSConfig},
-			expect: wildcardTLSConfig,
+			first:     sniPolicy("*.localhost"),
+			wantFirst: true,
 		},
 		{
 			// placeholder-SNI policy ahead of the exact-SNI policy
-			first:  &ConnectionPolicy{matchers: []ConnectionMatcher{MatchServerName{"{env.CADDY_TEST_UNSET}site.localhost"}}, TLSConfig: wildcardTLSConfig},
-			expect: wildcardTLSConfig,
+			first:     sniPolicy("{env.CADDY_TEST_UNSET}site.localhost"),
+			wantFirst: true,
+		},
+		{
+			// unrelated exact-SNI policy ahead of the exact-SNI policy
+			first:     sniPolicy("other.localhost"),
+			wantFirst: false,
 		},
 	} {
 		policies := ConnectionPolicies{tc.first}
-		for j := 0; j < 30; j++ {
-			policies = append(policies, &ConnectionPolicy{
-				matchers:  []ConnectionMatcher{MatchServerName{fmt.Sprintf("example-%d.localhost", j)}},
-				TLSConfig: &tls.Config{},
-			})
+		for j := range 30 {
+			policies = append(policies, sniPolicy(fmt.Sprintf("example-%d.localhost", j)))
 		}
-		policies = append(policies,
-			&ConnectionPolicy{matchers: []ConnectionMatcher{MatchServerName{"site.localhost"}}, TLSConfig: siteTLSConfig},
-			&ConnectionPolicy{TLSConfig: catchAllTLSConfig},
-		)
+		site := sniPolicy("site.localhost")
+		policies = append(policies, site, &ConnectionPolicy{})
+		if err := policies.Provision(ctx); err != nil {
+			t.Fatalf("Test %d: provisioning policies: %v", i, err)
+		}
+		if _, ok := site.matchers[0].(*MatchServerName); !ok {
+			t.Fatalf("Test %d: expected provisioned SNI matcher to be *MatchServerName, got %T", i, site.matchers[0])
+		}
 
 		hello := &tls.ClientHelloInfo{
 			ServerName: "site.localhost",
 			Conn:       testConn{addr: testAddr("198.51.100.1:443")},
 		}
 		got, err := policies.TLSConfig(ctx).GetConfigForClient(hello)
-		if tc.expectDrop {
+		switch {
+		case tc.first.Drop:
 			if err == nil {
 				t.Errorf("Test %d: expected the first policy to drop the connection, got a config", i)
 			}
-			continue
-		}
-		if err != nil {
+		case err != nil:
 			t.Errorf("Test %d: unexpected error: %v", i, err)
-			continue
+		case tc.wantFirst && got != tc.first.TLSConfig:
+			t.Errorf("Test %d: indexed lookup skipped the earlier matching policy", i)
+		case !tc.wantFirst && got != site.TLSConfig:
+			t.Errorf("Test %d: indexed lookup did not select the exact-SNI policy", i)
 		}
-		if got != tc.expect {
-			t.Errorf("Test %d: indexed lookup did not return the first matching policy", i)
-		}
+	}
+}
+
+func BenchmarkConnectionPolicySNIFastPath(b *testing.B) {
+	ctx, err := caddy.ProvisionContext(&caddy.Config{})
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	for _, n := range []int{100, 1000, 10000} {
+		b.Run(fmt.Sprintf("policies=%d", n), func(b *testing.B) {
+			// one exact-SNI policy per site followed by a catch-all, which
+			// is the shape the Caddyfile adapter produces for many sites
+			policies := make(ConnectionPolicies, 0, n+1)
+			for i := range n {
+				policies = append(policies, sniPolicy(fmt.Sprintf("site-%d.localhost", i)))
+			}
+			policies = append(policies, &ConnectionPolicy{})
+			if err := policies.Provision(ctx); err != nil {
+				b.Fatal(err)
+			}
+			getConfigForClient := policies.TLSConfig(ctx).GetConfigForClient
+
+			// the last site is the worst case for a linear scan
+			hello := &tls.ClientHelloInfo{ServerName: fmt.Sprintf("site-%d.localhost", n-1)}
+			want := policies[n-1].TLSConfig
+
+			b.ReportAllocs()
+			for b.Loop() {
+				got, err := getConfigForClient(hello)
+				if err != nil || got != want {
+					b.Fatalf("selected wrong policy: %v", err)
+				}
+			}
+		})
 	}
 }
 
