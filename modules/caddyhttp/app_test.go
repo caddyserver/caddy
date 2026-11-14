@@ -16,6 +16,7 @@ package caddyhttp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -180,6 +181,29 @@ func TestServerErrorLoggerLevels(t *testing.T) {
 			}
 			if got.Message != tc.message {
 				t.Errorf("expected message %q, got %q", tc.message, got.Message)
+			}
+		})
+	}
+}
+
+func TestValidateTrustedProxiesStrictCount(t *testing.T) {
+	for _, tc := range []struct {
+		count   string
+		wantErr bool
+	}{
+		{"0", false},
+		{"2", false},
+		{"-1", true},
+	} {
+		t.Run(tc.count, func(t *testing.T) {
+			var app App
+			config := `{"servers": {"srv0": {"listen": [":443"], "trusted_proxies_strict": ` + tc.count + `}}}`
+			if err := json.Unmarshal([]byte(config), &app); err != nil {
+				t.Fatal(err)
+			}
+			err := app.Validate()
+			if tc.wantErr != (err != nil) {
+				t.Fatalf("Validate() = %v, want error: %t", err, tc.wantErr)
 			}
 		})
 	}
