@@ -104,6 +104,18 @@ func TestImportStorageArchive(t *testing.T) {
 			if code, err := cmdExportStorage(Flags{exportFlags}); err != nil || code != caddy.ExitCodeSuccess {
 				t.Fatalf("export failed: code %d, error %v", code, err)
 			}
+			outputFile, err := os.Open(output)
+			if err != nil {
+				t.Fatal(err)
+			}
+			exportedHeader, err := tar.NewReader(outputFile).Next()
+			outputFile.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if exportedHeader.Name != tc.key {
+				t.Fatalf("exported archive key %q, want %q", exportedHeader.Name, tc.key)
+			}
 			if err := flags.Set("input", output); err != nil {
 				t.Fatal(err)
 			}
