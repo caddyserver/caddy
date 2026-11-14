@@ -16,6 +16,7 @@ package logging
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -40,6 +41,9 @@ func init() {
 // The hash, ip_mask, regexp, and multi_regexp filters also operate on
 // string arrays, including typed string, IP address, and URI slices
 // returned by request placeholders.
+//
+// The field filters also apply to the records exported
+// by the otlp log core.
 type FilterEncoder struct {
 	// The underlying encoder that actually encodes the
 	// log entries. If not specified, defaults to "json",
@@ -483,8 +487,28 @@ type logObjectMarshalerWrapper struct {
 }
 
 // MarshalLogObject implements the zapcore.ObjectMarshaler interface.
-func (mom logObjectMarshalerWrapper) MarshalLogObject(_ zapcore.ObjectEncoder) error {
+func (mom logObjectMarshalerWrapper) MarshalLogObject(enc zapcore.ObjectEncoder) error {
+	// encoders that build a tree pass a new encoder for each nested object
+	mom.enc.wrapped = asEncoder(enc)
 	return mom.marsh.MarshalLogObject(mom.enc)
+}
+
+// objectEncoder lets FilterEncoder wrap an encoder that only encodes objects.
+type objectEncoder struct {
+	zapcore.ObjectEncoder
+}
+
+func (oe objectEncoder) Clone() zapcore.Encoder { return oe }
+
+func (objectEncoder) EncodeEntry(zapcore.Entry, []zapcore.Field) (*buffer.Buffer, error) {
+	return nil, errors.New("object encoders cannot encode entries")
+}
+
+func asEncoder(enc zapcore.ObjectEncoder) zapcore.Encoder {
+	if e, ok := enc.(zapcore.Encoder); ok {
+		return e
+	}
+	return objectEncoder{enc}
 }
 
 // Interface guards

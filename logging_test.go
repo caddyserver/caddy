@@ -16,11 +16,15 @@ package caddy
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/caddyserver/caddy/v2/internal"
 )
@@ -192,4 +196,121 @@ func TestUnbufferDefaultLogger(t *testing.T) {
 	if _, ok := Log().Core().(*internal.LogBufferCore); ok {
 		t.Fatal("unexpected buffer core after second unbuffer call")
 	}
+}
+
+func TestBaseLogCoreModuleLevelAndSampling(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		optIn        bool
+		belowLevel   int
+		sampledCount int
+	}{
+		{name: "third-party core gets every entry", optIn: false, belowLevel: 1, sampledCount: 3},
+		{name: "opted-in core honors level and sampling", optIn: true, belowLevel: 0, sampledCount: 1},
+	} {
+		for _, writer := range []WriterOpener{&DiscardWriter{}, StderrWriter{}} {
+			t.Run(tc.name+"/"+writer.WriterKey(), func(t *testing.T) {
+				observed, logs := observer.New(zapcore.DebugLevel)
+				var extra zapcore.Core = observed
+				if tc.optIn {
+					extra = leveledCore{observed}
+				}
+				cl := &BaseLog{
+					writerOpener: writer,
+					writer:       nopWriteCloser{},
+					encoder:      zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()),
+					levelEnabler: zapcore.InfoLevel,
+					Sampling:     &LogSampling{Interval: time.Minute, First: 1, Thereafter: 100},
+				}
+				cl.buildCore(extra)
+
+				logger := zap.New(cl.core)
+				logger.Debug("below level")
+				for range 3 {
+					logger.Info("sampled")
+				}
+
+				if got := logs.FilterMessage("below level").Len(); got != tc.belowLevel {
+					t.Errorf("expected %d entries below the log level, got %d", tc.belowLevel, got)
+				}
+				if got := logs.FilterMessage("sampled").Len(); got != tc.sampledCount {
+					t.Errorf("expected %d sampled entries, got %d", tc.sampledCount, got)
+				}
+			})
+		}
+	}
+}
+
+type leveledCore struct {
+	zapcore.Core
+}
+
+func (leveledCore) HonorsLogLevelAndSampling() {}
+
+type nopWriteCloser struct{}
+
+func (nopWriteCloser) Write(p []byte) (int, error) { return len(p), nil }
+func (nopWriteCloser) Close() error                { return nil }
+
+func TestOpenLogsDiscardLogsWithCoreModule(t *testing.T) {
+	defaultLoggerMu.RLock()
+	origDefault := defaultLogger
+	defaultLoggerMu.RUnlock()
+	t.Cleanup(func() {
+		defaultLoggerMu.Lock()
+		defaultLogger = origDefault
+		defaultLoggerMu.Unlock()
+	})
+
+	ctx, cancel := NewContext(Context{Context: context.Background()})
+	defer cancel()
+
+	discard := json.RawMessage(`{"output":"discard"}`)
+	logging := &Logging{Logs: map[string]*CustomLog{
+		"discarded":   {BaseLog: BaseLog{WriterRaw: discard}},
+		"third-party": {BaseLog: BaseLog{WriterRaw: discard, CoreRaw: json.RawMessage(`{"module":"test"}`)}},
+		"exported":    {BaseLog: BaseLog{WriterRaw: discard, CoreRaw: json.RawMessage(`{"module":"test_leveled"}`)}},
+	}}
+	if err := logging.openLogs(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok := logging.Logs["discarded"]; ok {
+		t.Error("expected the discard log without a core module to be deleted")
+	}
+	if _, ok := logging.Logs["third-party"]; ok {
+		t.Error("expected the discard log with a core module that ignores the log level to be deleted")
+	}
+	if _, ok := logging.Logs["exported"]; !ok {
+		t.Error("expected the discard log with a core module that honors the log level to be kept")
+	}
+}
+
+type testCore struct {
+	zapcore.Core `json:"-"`
+}
+
+func (testCore) CaddyModule() ModuleInfo {
+	return ModuleInfo{
+		ID:  "caddy.logging.cores.test",
+		New: func() Module { return &testCore{Core: zapcore.NewNopCore()} },
+	}
+}
+
+type testLeveledCore struct {
+	testCore
+}
+
+func (testLeveledCore) CaddyModule() ModuleInfo {
+	return ModuleInfo{
+		ID:  "caddy.logging.cores.test_leveled",
+		New: func() Module { return &testLeveledCore{testCore{Core: zapcore.NewNopCore()}} },
+	}
+}
+
+func (testLeveledCore) HonorsLogLevelAndSampling() {}
+
+func init() {
+	RegisterModule(testCore{})
+	RegisterModule(testLeveledCore{})
 }

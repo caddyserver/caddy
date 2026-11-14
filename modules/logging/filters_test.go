@@ -2,9 +2,11 @@ package logging
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
+	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
 	"github.com/caddyserver/caddy/v2"
@@ -592,5 +594,31 @@ func TestMultiRegexpFilterOverlappingPatterns(t *testing.T) {
 	expected := "my-SENSITIVE-end"
 	if out.String != expected {
 		t.Fatalf("field has not been filtered correctly: got %s, expected %s", out.String, expected)
+	}
+}
+
+type testObject map[string]string
+
+func (o testObject) MarshalLogObject(enc zapcore.ObjectEncoder) error {
+	for k, v := range o {
+		enc.AddString(k, v)
+	}
+	return nil
+}
+
+func TestFilterEncoderNestedObjectInTreeEncoder(t *testing.T) {
+	tree := zapcore.NewMapObjectEncoder()
+	fe := FilterEncoder{
+		Fields:  map[string]LogFieldFilter{"request>remote_ip": DeleteFilter{}},
+		wrapped: asEncoder(tree),
+	}
+
+	zap.Object("request", testObject{"remote_ip": "192.0.2.1", "host": "example.com"}).AddTo(fe)
+
+	if len(tree.Fields) != 1 {
+		t.Fatalf("expected only the request object at the top level, got %v", tree.Fields)
+	}
+	if got := tree.Fields["request"]; !reflect.DeepEqual(got, map[string]any{"host": "example.com"}) {
+		t.Errorf("unexpected request object %v", got)
 	}
 }
