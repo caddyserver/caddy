@@ -1573,6 +1573,34 @@ func TestIdleTimeoutReaderRestoresHardDeadline(t *testing.T) {
 	}
 }
 
+// TestIdleTimeoutReaderTerminalBodyDropsHardDeadline checks #8399: once
+// the body has reached its terminal state, a handler clearing its read
+// deadline must not re-arm the hard deadline. The hard deadline bounds
+// reading the body, so re-arming it after the body was read would fail
+// the request long after the handler cleared its own deadline.
+func TestIdleTimeoutReaderTerminalBodyDropsHardDeadline(t *testing.T) {
+	for _, clear := range []bool{false, true} {
+		t.Run(fmt.Sprintf("clear=%t", clear), func(t *testing.T) {
+			hard := time.Now().Add(time.Minute)
+			rec := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+			r := &IdleTimeoutReader{
+				ReadCloser:        io.NopCloser(strings.NewReader("abcd")),
+				Ctrl:              http.NewResponseController(rec),
+				Deadline:          IdleDeadline{Timeout: time.Hour, HardDeadline: hard},
+				Logger:            zap.NewNop(),
+				ClearBetweenReads: clear,
+			}
+			_, err := io.Copy(io.Discard, r)
+			require.NoError(t, err)
+			// The handler clears its own deadline after reading the body.
+			require.NoError(t, r.SetReadDeadline(time.Time{}))
+			deadlines := rec.snapshot()
+			assert.True(t, deadlines[len(deadlines)-1].IsZero(),
+				"a cleared handler deadline must not re-arm the hard deadline after the body was read")
+		})
+	}
+}
+
 // TestIdleTimeoutWriterRestoresHardDeadline checks that another handler's
 // deadline update cannot bypass the hard ceiling on writes or the final flush.
 func TestIdleTimeoutWriterRestoresHardDeadline(t *testing.T) {
