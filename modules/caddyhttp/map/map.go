@@ -20,6 +20,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -124,6 +125,65 @@ func (h *Handler) Validate() error {
 	return nil
 }
 
+// escapeTemplate prepares an operator-written output template for the two
+// expansion passes in ServeHTTP. Placeholders ({...}) are expanded by the
+// replacer first, capture references ($1, ${1}, $name) by ExpandString last.
+//
+// The two syntaxes overlap on "${", so the precedence is fixed here rather
+// than inferred from the capture groups of a particular regular expression:
+//
+//   - "${" up to the next "}" is a capture reference when the text between the
+//     braces is a possible reference name, i.e. letters, digits and
+//     underscores only. Its opening brace is escaped for the replacer, which
+//     drops the escape character again, so ExpandString sees the original
+//     "${name}". This also keeps references to a group the expression does not
+//     define expanding to the empty string, as they always have.
+//   - any other "${" is a literal dollar followed by a Caddy placeholder: the
+//     dollar is doubled so it survives ExpandString, and the placeholder is
+//     left for the replacer. "${http.request.method}" becomes "$${...}", the
+//     replacer yields "$$GET" and ExpandString restores "$GET".
+//
+// Everything else is passed through untouched, which is exactly what
+// ExpandString documents: "$$" is a literal dollar, a "$" that does not begin
+// a reference is literal text, and a reference to an unknown or out-of-range
+// group expands to the empty string.
+func escapeTemplate(template string) string {
+	var b strings.Builder
+	b.Grow(len(template))
+
+	for i := 0; i < len(template); {
+		if template[i] != '$' || i+1 >= len(template) || template[i+1] != '{' {
+			b.WriteByte(template[i])
+			i++
+			continue
+		}
+		if end := strings.IndexByte(template[i+2:], '}'); end >= 0 && isReferenceName(template[i+2:i+2+end]) {
+			b.WriteString(`$\{`)
+			b.WriteString(template[i+2 : i+2+end])
+			b.WriteByte('}')
+			i += end + 3
+			continue
+		}
+		// A literal dollar in front of a Caddy placeholder: the dollar is
+		// data for ExpandString, the placeholder is not.
+		b.WriteString(`$$`)
+		i++
+	}
+	return b.String()
+}
+
+// isReferenceName reports whether name is what regexp.ExpandString accepts
+// between the braces of a "${name}" reference: a run, possibly empty, of
+// letters, digits and underscores.
+func isReferenceName(name string) bool {
+	for _, r := range name {
+		if r != '_' && !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			return false
+		}
+	}
+	return true
+}
+
 func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
@@ -148,13 +208,30 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 
 			// evaluate regular expression if configured
 			if m.re != nil {
-				var result []byte
 				matches := m.re.FindStringSubmatchIndex(input)
 				if matches == nil {
 					continue
 				}
-				result = m.re.ExpandString(result, outputStr, input, matches)
-				return string(result), true
+
+				// Expand the placeholders configured in the output first, and
+				// only then substitute capture references. Evaluation order
+				// matters: the output is a template written by the operator,
+				// while the values it resolves to are data. Escape "$" in those
+				// values so ExpandString cannot reinterpret it as a capture
+				// reference (a header value of "$1" stays "$1"), just as braces
+				// in a capture group are never re-evaluated.
+				//
+				// A braced capture reference such as ${1} would otherwise look
+				// like a placeholder to the replacer, so escape its opening
+				// brace first; the replacer drops the escape character again.
+				// escapeTemplate() decides which "${" that applies to: a Caddy
+				// placeholder that follows a literal dollar, such as
+				// ${http.request.method}, must still be expanded.
+				template := escapeTemplate(outputStr)
+				expanded, _ := repl.ReplaceFunc(template, func(_ string, val any) (any, error) {
+					return strings.ReplaceAll(caddy.ToString(val), "$", "$$"), nil
+				})
+				return string(m.re.ExpandString(nil, expanded, input, matches)), true
 			}
 
 			// otherwise simple string comparison
