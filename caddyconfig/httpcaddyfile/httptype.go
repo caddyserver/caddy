@@ -849,21 +849,6 @@ func (st *ServerType) serversFromPairings(
 						emptyConnPolicies = append(emptyConnPolicies, cp)
 					}
 				}
-			} else if specificHosts := slices.DeleteFunc(
-				slices.Clone(hosts),
-				func(h string) bool { return h == "" || strings.Contains(h, "*") },
-			); len(specificHosts) > 0 {
-				// site blocks with no TLS connection policy of their own may
-				// still need an empty policy hoisted above a wildcard policy
-				// that requires client authentication, or that requirement
-				// would apply to their more specific hostnames too - see the
-				// hoisting loop below and issue #7860
-				slices.Sort(specificHosts)
-				emptyConnPolicies = append(emptyConnPolicies, &caddytls.ConnectionPolicy{
-					MatchersRaw: caddy.ModuleMap{
-						"sni": caddyconfig.JSON(specificHosts, warnings),
-					},
-				})
 			}
 
 			for _, addr := range sblock.parsedKeys {
@@ -1027,9 +1012,9 @@ func (st *ServerType) serversFromPairings(
 			return nil, err
 		}
 
-		// hostnames whose site blocks configure no TLS settings of their own
-		// still need shielding if a policy matching a wildcard hostname would
-		// otherwise impose CLIENT AUTHENTICATION on them. Because connection
+		// hostnames whose site blocks explicitly configure TLS but produce an
+		// empty policy need shielding if a wildcard policy would otherwise
+		// impose CLIENT AUTHENTICATION on them. Because connection
 		// policies are first-match, the shield hoisted above the wildcard
 		// policy must be a COPY of that policy with only client_authentication
 		// removed: an empty policy would not just lift the client-auth
