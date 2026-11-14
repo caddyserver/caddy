@@ -56,10 +56,7 @@ func TestCopyResponseHeadersStripsHopByHop(t *testing.T) {
 		return h
 	}
 
-	// The replacement body is the same length as the upstream body.
-	// copy_response_headers also copies Content-Length, and a shorter
-	// body makes the client report unexpected EOF. X-Replaced shows
-	// that static_response ran.
+	// X-Replaced shows that static_response ran.
 	const replaced = `{"handler":"static_response","body":"from-upstream","headers":{"X-Replaced":["yes"]}}`
 	cases := []struct {
 		name        string
@@ -179,5 +176,68 @@ func TestCopyResponseHeadersStripLeavesUpstreamHeader(t *testing.T) {
 	}
 	if got := res.Header.Get("Connection"); got != "close, X-Hop" {
 		t.Errorf("upstream Connection = %q, want it unchanged", got)
+	}
+}
+
+func TestCopyResponseHeadersStripsContentLength(t *testing.T) {
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	t.Cleanup(cancel)
+
+	for _, tc := range []struct {
+		name string
+		body string
+	}{
+		{name: "shorter", body: "SHORT"},
+		{name: "longer", body: "a replacement body longer than the upstream body"},
+		{name: "bodyless"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, filter := range []struct {
+				name    string
+				include []string
+				exclude []string
+			}{
+				{name: "default"},
+				{name: "include", include: []string{"Content-Length", "X-Upstream"}},
+				{name: "exclude", exclude: []string{"X-Other"}},
+			} {
+				t.Run(filter.name, func(t *testing.T) {
+					h := &CopyResponseHeadersHandler{Include: filter.include, Exclude: filter.exclude}
+					if err := h.Provision(ctx); err != nil {
+						t.Fatal(err)
+					}
+					res := &http.Response{Header: make(http.Header), StatusCode: http.StatusOK}
+					res.Header.Set("Content-Length", "13")
+					res.Header.Set("X-Upstream", "kept")
+					req := httptest.NewRequest(http.MethodGet, "/", nil)
+					req = req.WithContext(context.WithValue(req.Context(), proxyHandleResponseContextCtxKey, &handleResponseContext{
+						response: res,
+					}))
+					rec := httptest.NewRecorder()
+					err := h.ServeHTTP(rec, req, caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+						if got := w.Header().Get("Content-Length"); got != "" {
+							t.Errorf("copied Content-Length = %q, want absent", got)
+						}
+						if got := w.Header().Get("X-Upstream"); got != "kept" {
+							t.Errorf("X-Upstream = %q, want kept", got)
+						}
+						_, err := io.WriteString(w, tc.body)
+						return err
+					}))
+					if err != nil {
+						t.Fatal(err)
+					}
+					if got := rec.Body.String(); got != tc.body {
+						t.Errorf("body = %q, want %q", got, tc.body)
+					}
+					if got := rec.Result().Header.Get("Content-Length"); got != "" {
+						t.Errorf("response Content-Length = %q, want absent", got)
+					}
+					if got := res.Header.Get("Content-Length"); got != "13" {
+						t.Errorf("upstream Content-Length = %q, want unchanged", got)
+					}
+				})
+			}
+		})
 	}
 }
