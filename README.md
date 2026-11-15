@@ -193,7 +193,6 @@ Nearly all of Caddy's configuration is contained in a single config document, ra
 
 Our website has complete documentation:
 
-**https://caddyserver.com/docs/**
 
 The docs are also open source. You can contribute to them here: https://github.com/caddyserver/website
 
