@@ -58,6 +58,36 @@ func TestRedirect(t *testing.T) {
 	tester.AssertGetResponse("http://localhost:9080/", 200, "hello from localhost")
 }
 
+func TestRedirectHTMLEscapesPlaceholders(t *testing.T) {
+	// arrange
+	tester := caddytest.NewTester(t)
+	tester.InitServer(`
+  {
+    admin localhost:2999
+    http_port     9080
+    https_port    9443
+    grace_period  1ns
+  }
+
+  localhost:9080 {
+    redir /old/* https://example.com{path}?a=1&b=2 html
+  }
+  `, "caddyfile")
+
+	// act and assert: {path} is decoded, so markup sent percent-encoded
+	// in the request path must still come out escaped in the page
+	to := "https://example.com/old/&#34;&gt;&lt;/script&gt;&lt;script&gt;alert(1)&lt;/script&gt;?a=1&amp;b=2"
+	tester.AssertGetResponse("http://localhost:9080/old/%22%3E%3C/script%3E%3Cscript%3Ealert(1)%3C/script%3E", 200, `<!DOCTYPE html>
+<html>
+	<head>
+		<title>Redirecting...</title>
+		<meta http-equiv="refresh" content="0; URL='`+to+`'">
+	</head>
+	<body>Redirecting to <a href="`+to+`">`+to+`</a>...<script>window.location.replace(document.querySelector("a").href);</script></body>
+</html>
+`)
+}
+
 func TestDuplicateHosts(t *testing.T) {
 	// act and assert
 	caddytest.AssertLoadError(t,

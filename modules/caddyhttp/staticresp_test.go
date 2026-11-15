@@ -138,3 +138,25 @@ func TestStaticResponseHeadersStillReplaceKnownPlaceholders(t *testing.T) {
 		t.Errorf("X-Var header = %q, want %q (real placeholders must still expand)", got, want)
 	}
 }
+
+func TestStaticResponseEscapeHTML(t *testing.T) {
+	r := fakeRequest()
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	repl.Set("testvar", `"><script>alert(1)</script>&`)
+	w := httptest.NewRecorder()
+
+	s := StaticResponse{
+		Body:       `<a href="{testvar}">{testvar}</a><style>p{color:red}</style>`,
+		EscapeHTML: true,
+	}
+
+	err := s.ServeHTTP(w, r, nil)
+	if err != nil {
+		t.Errorf("did not expect an error, but got: %v", err)
+	}
+
+	want := `<a href="&#34;&gt;&lt;script&gt;alert(1)&lt;/script&gt;&amp;">&#34;&gt;&lt;script&gt;alert(1)&lt;/script&gt;&amp;</a><style>p{color:red}</style>`
+	if got := w.Body.String(); got != want {
+		t.Errorf("body = %q, want %q (placeholder values must be escaped, unknown placeholders kept)", got, want)
+	}
+}
