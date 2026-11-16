@@ -662,6 +662,17 @@ func (s *CookieHashSelection) Provision(ctx caddy.Context) error {
 	return nil
 }
 
+// Validate ensures that s's configuration is valid.
+func (s *CookieHashSelection) Validate() error {
+	if s.MaxAge < 0 {
+		return fmt.Errorf("cookie max_age must be non-negative")
+	}
+	if s.MaxAge > 0 && time.Duration(s.MaxAge) < time.Second {
+		return fmt.Errorf("cookie max_age must be at least 1s")
+	}
+	return nil
+}
+
 // Select returns an available host, if any.
 func (s CookieHashSelection) Select(pool UpstreamPool, req *http.Request, w http.ResponseWriter) *Upstream {
 	// selects a new Host using the fallback policy (typically random)
@@ -766,6 +777,9 @@ func (s *CookieHashSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 			if maxAge <= 0 {
 				return d.Errf("invalid duration: %s, max_age should be non-zero and positive", d.Val())
+			}
+			if maxAge < time.Second {
+				return d.Errf("invalid duration: %s, max_age must be at least 1s", d.Val())
 			}
 			if d.NextArg() {
 				return d.ArgErr()
@@ -904,10 +918,13 @@ var (
 
 	_ caddy.Validator = (*RandomChoiceSelection)(nil)
 	_ caddy.Validator = (*WeightedRoundRobinSelection)(nil)
+	_ caddy.Validator = (*CookieHashSelection)(nil)
 
 	_ caddy.Provisioner = (*RandomChoiceSelection)(nil)
 	_ caddy.Provisioner = (*WeightedRoundRobinSelection)(nil)
+	_ caddy.Provisioner = (*CookieHashSelection)(nil)
 
 	_ caddyfile.Unmarshaler = (*RandomChoiceSelection)(nil)
 	_ caddyfile.Unmarshaler = (*WeightedRoundRobinSelection)(nil)
+	_ caddyfile.Unmarshaler = (*CookieHashSelection)(nil)
 )

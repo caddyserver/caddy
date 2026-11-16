@@ -1,0 +1,47 @@
+:8884
+
+reverse_proxy 127.0.0.1:65535 {
+	lb_policy cookie lb_cookie secret {
+		fallback first
+		max_age 1h
+	}
+}
+----------
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":8884"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "reverse_proxy",
+									"load_balancing": {
+										"selection_policy": {
+											"fallback": {
+												"policy": "first"
+											},
+											"max_age": 3600000000000,
+											"name": "lb_cookie",
+											"policy": "cookie",
+											"secret": "secret"
+										}
+									},
+									"upstreams": [
+										{
+											"dial": "127.0.0.1:65535"
+										}
+									]
+								}
+							]
+						}
+					]
+				}
+			}
+		}
+	}
+}
