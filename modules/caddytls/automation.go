@@ -111,6 +111,12 @@ type AutomationPolicy struct {
 	// enables on-demand TLS, i.e. it has the side-effect of setting
 	// the on_demand parameter to `true`.
 	//
+	// If no on-demand permission module is configured, a policy that has
+	// no subjects or any wildcard subject, and that uses a non-internal
+	// issuer, serves certificates only from these Managers: when they do
+	// not provide one, the handshake fails rather than loading a
+	// certificate from storage or obtaining a new one.
+	//
 	// TODO: This is an EXPERIMENTAL feature. Subject to change or removal.
 	ManagersRaw []json.RawMessage `json:"get_certificate,omitempty" caddy:"namespace=tls.get_certificate inline_key=via"`
 
@@ -185,7 +191,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 	subjects := make([]string, len(ap.SubjectsRaw))
 	for i, sub := range ap.SubjectsRaw {
 		sub = repl.ReplaceAll(sub, "")
-		subASCII, err := idna.ToASCII(sub)
+		subASCII, err := normalizeAutomationSubject(sub)
 		if err != nil {
 			return fmt.Errorf("could not convert automation policy subject '%s' to punycode: %v", sub, err)
 		}
@@ -266,6 +272,39 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 	return nil
 }
 
+// normalizeAutomationSubject uses the same IDNA profile as CertMagic's
+// handshake name normalization, while allowing wildcard policy labels.
+func normalizeAutomationSubject(name string) (string, error) {
+	if ascii, err := idna.Lookup.ToASCII(name); err == nil {
+		return ascii, nil
+	}
+	if strings.Contains(name, "*") {
+		// Lookup rejects wildcards, so normalize the other labels independently.
+		dottedName := strings.Map(func(r rune) rune {
+			switch r {
+			case '\u3002', '\uff0e', '\uff61': // UTS #46 label separators
+				return '.'
+			}
+			return r
+		}, name)
+		labels := strings.Split(dottedName, ".")
+		for i, label := range labels {
+			if label == "*" {
+				continue
+			}
+			ascii, err := idna.Lookup.ToASCII(label)
+			if err != nil {
+				return idna.ToASCII(name)
+			}
+			labels[i] = ascii
+		}
+		return strings.Join(labels, "."), nil
+	}
+	// Preserve provisioning's existing handling of non-DNS subjects (e.g. IPv6)
+	// and invalid names. CertMagic still validates names before issuing.
+	return idna.ToASCII(name)
+}
+
 // makeCertMagicConfig constructs a certmagic.Config for this policy using the
 // provided issuers and storage. It encapsulates common logic shared between
 // Provision and RebuildCertMagic so we don't duplicate code.
@@ -300,7 +339,6 @@ func (ap *AutomationPolicy) makeCertMagicConfig(tlsApp *TLS, issuers []certmagic
 		// prevent issuance from Issuers (when Managers don't provide a certificate) if there's no
 		// permission module configured
 		noProtections := ap.isWildcardOrDefault() && !ap.onlyInternalIssuer() && (tlsApp.Automation == nil || tlsApp.Automation.OnDemand == nil || tlsApp.Automation.OnDemand.permission == nil)
-		failClosed := noProtections && !ap.hadExplicitManagers // don't allow on-demand issuance (other than implicit managers) if no managers have been explicitly configured
 		if noProtections {
 			if !ap.hadExplicitManagers {
 				// no managers, no explicitly-configured permission module, this is a config error
@@ -311,10 +349,12 @@ func (ap *AutomationPolicy) makeCertMagicConfig(tlsApp *TLS, issuers []certmagic
 		}
 		ond = &certmagic.OnDemandConfig{
 			DecisionFunc: func(ctx context.Context, name string) error {
-				if failClosed {
+				// CertMagic tries Managers before this callback. After a manager miss,
+				// unprotected policies must not fall through to storage or issuance.
+				if noProtections {
 					return fmt.Errorf("no permission module configured; certificates not allowed except from external Managers")
 				}
-				if tlsApp.Automation == nil || tlsApp.Automation.OnDemand == nil {
+				if tlsApp.Automation == nil || tlsApp.Automation.OnDemand == nil || tlsApp.Automation.OnDemand.permission == nil {
 					return nil
 				}
 

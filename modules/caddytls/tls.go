@@ -904,6 +904,10 @@ func (t *TLS) getConfigForName(name string) *certmagic.Config {
 // default policy is used, depending on whether the name qualifies for a
 // public certificate or not.
 func (t *TLS) getAutomationPolicyForName(name string) *AutomationPolicy {
+	// Match the name CertMagic will use for issuance and caching, not the raw SNI.
+	if normalized, err := normalizeAutomationSubject(strings.TrimSpace(name)); err == nil {
+		name = normalized
+	}
 	for _, ap := range t.Automation.Policies {
 		if len(ap.subjects) == 0 {
 			return ap // no host filter is an automatic match

@@ -216,8 +216,6 @@ func (app *App) Provision(ctx caddy.Context) error {
 	if app.Metrics != nil {
 		app.Metrics.init = sync.Once{}
 		app.Metrics.httpMetrics = &httpMetrics{}
-		// Scan config for allowed hosts to prevent cardinality explosion
-		app.Metrics.scanConfigForHosts(app)
 		if err := app.Metrics.provisionOTLP(ctx); err != nil {
 			return err
 		}
@@ -418,6 +416,9 @@ func (app *App) Provision(ctx caddy.Context) error {
 		if srv.MaxWriteChunk == 0 {
 			srv.MaxWriteChunk = DefaultMaxWriteChunk
 		}
+	}
+	if app.Metrics != nil {
+		app.Metrics.scanConfigForHosts(app)
 	}
 	ctx.Context = oldContext
 	return nil

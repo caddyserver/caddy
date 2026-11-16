@@ -47,14 +47,17 @@ func TestWrapUnbracedSiteIdempotentAndSemantic(t *testing.T) {
 }
 
 func TestWrapUnbracedSiteIdempotentReproducer(t *testing.T) {
-	// A valid Caddyfile (Parse accepts it) that used to be non-idempotent under
-	// WrapUnbracedSite: it reads as "not a single site" on the raw stream (a
-	// blank-line gap), but after formatTokens removes the blank line and folds a
-	// dangling brace, a second pass saw a single unbraced site and wrapped it.
-	// Deciding on the normalized stream makes the wrap decision stable.
+	// An input that used to be non-idempotent under WrapUnbracedSite: it reads
+	// as "not a single site" on the raw stream (a blank-line gap), but after
+	// formatTokens removes the blank line and folds a dangling brace, a second
+	// pass saw a single unbraced site and wrapped it. Deciding on the
+	// normalized stream makes the wrap decision stable. Parse rejects this
+	// input since the fix for unbalanced braces in site blocks (the stray "}"
+	// after a braceless site is an error), but the formatter works on the
+	// token stream and must stay idempotent on it regardless.
 	in := []byte(") 0((.b ))\na\t\tab(\n}\n\n { }")
-	if _, err := Parse("", in); err != nil {
-		t.Fatalf("reproducer must be a valid Caddyfile, got parse error: %v", err)
+	if _, err := Parse("", in); err == nil {
+		t.Fatalf("reproducer should be rejected by Parse (unbalanced braces), got no error")
 	}
 	once := FormatWithOptions(in, FormatOptions{WrapUnbracedSite: true})
 	twice := FormatWithOptions(once, FormatOptions{WrapUnbracedSite: true})

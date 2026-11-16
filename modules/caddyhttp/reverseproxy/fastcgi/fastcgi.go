@@ -487,6 +487,10 @@ func (t Transport) buildEnv(r *http.Request) (envVars, error) {
 // example: if splitPath is [".php"]
 // "/path/to/script.php/some/path": ("/path/to/script.php", "/some/path")
 //
+// A match must end the path or be followed by "/", as in the file matcher, so
+// "/admin.php.php" or "/admin.phpx/y.php" can't run "/admin.php" past route
+// matchers that judged another file.
+//
 // Matching is strictly ASCII case-insensitive. Bytes >= utf8.RuneSelf in path
 // never match any split entry: split strings are validated ASCII-only and
 // lower-cased in Provision(), so any Unicode equivalence (e.g. fullwidth or
@@ -533,8 +537,8 @@ func (t Transport) splitPos(path string) int {
 				}
 			}
 
-			if match {
-				return i + splitLen
+			if end := i + splitLen; match && (end == pathLen || path[end] == '/') {
+				return end
 			}
 		}
 	}

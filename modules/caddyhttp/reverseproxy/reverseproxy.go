@@ -168,6 +168,9 @@ type Handler struct {
 	// chunked encodings. An incremental request with an explicitly configured
 	// buffer receives a 501 response. A transport-supplied default is bypassed
 	// only when the request already meets the transport's framing requirements.
+	// Only fully buffered bodies can be replayed after an upstream reads them.
+	// Bodies reaching a positive limit remain streaming and cannot be retried
+	// after data is read from them; -1 buffers without a size limit.
 	RequestBuffers int64 `json:"request_buffers,omitempty"`
 
 	// If nonzero, the entire response body up to this size will be read
@@ -557,9 +560,11 @@ func notifyDetachedTunnelTrackersOfUpstreamRemoval(upstream string, self *tunnel
 
 	// Connection deletion unregisters empty trackers. Do not hold the
 	// registry lock while acquiring tracker locks or closing connections.
+	// One deadline for every tracker; see closeConnectionsLocked.
+	deadline := time.Now().Add(closeControlWriteTimeout)
 	var err error
 	for _, tunnel := range trackers {
-		if closeErr := tunnel.closeConnectionsForUpstream(upstream); closeErr != nil && tunnel == self && err == nil {
+		if closeErr := tunnel.closeConnectionsForUpstream(upstream, deadline); closeErr != nil && tunnel == self && err == nil {
 			err = closeErr
 		}
 	}
@@ -593,35 +598,76 @@ func (h *Handler) Cleanup() error {
 
 // bodyNopCloserIfNotRead wraps a request body to prevent closing if not read, i.e., when
 // dialing to upstream fails.
-// It will close the body as normal if the body is read.
+// It will close the body as normal if the body is read. A body that is empty on
+// its first read (such as an HTTP/3 GET, which has an unknown length and is
+// probed by the transport) is not considered consumed, so it remains retryable.
 type bodyNopCloserIfNotRead struct {
 	io.ReadCloser
-	read int // tracks the number of bytes read, -1 when first Read returns 0, io.EOF
+	mu        sync.Mutex
+	reading   int  // reads in progress
+	consumed  bool // data, a read error, or an interrupted read was observed
+	empty     bool // EOF was reached without consuming any data
+	closed    bool
+	closeOnce sync.Once
+	closeErr  error
 }
 
 func (b *bodyNopCloserIfNotRead) Read(p []byte) (int, error) {
-	if b.read == -1 {
+	b.mu.Lock()
+	if b.closed {
+		b.mu.Unlock()
+		return 0, net.ErrClosed
+	}
+	if b.empty {
+		b.mu.Unlock()
 		return 0, io.EOF
 	}
+	b.reading++
+	b.mu.Unlock()
+
 	n, err := b.ReadCloser.Read(p)
-	// first Read returns 0, io.EOF
-	if b.read == 0 && n == 0 && err == io.EOF {
-		b.read = -1
-	} else {
-		b.read += n
+
+	b.mu.Lock()
+	b.reading--
+	if n > 0 || (err != nil && err != io.EOF) {
+		b.consumed = true
+	} else if err == io.EOF && !b.consumed {
+		b.empty = true
 	}
+	b.mu.Unlock()
 	return n, err
 }
 
 func (b *bodyNopCloserIfNotRead) Close() error {
-	// don't close the body
-	if b.read == 0 {
-		return nil
-	}
-	// close as usual, when -1, any read will return EOF as the original read will do
-	// in other cases, the read will fail as body is closed because we do not want partial bodies to be sent to the upstream
-	// users can buffer the entire request body to allow the request to be resent
-	return b.ReadCloser.Close()
+	b.closeOnce.Do(func() {
+		b.mu.Lock()
+		b.closed = true
+		// closing the stream is the only way to interrupt a blocked read,
+		// after which the stream can no longer be replayed
+		if b.reading > 0 {
+			b.consumed = true
+		}
+		consumed := b.consumed
+		b.mu.Unlock()
+		if consumed {
+			b.closeErr = b.ReadCloser.Close()
+		}
+	})
+	return b.closeErr
+}
+
+// didRead reports whether the stream was (or may have been) partially consumed.
+func (b *bodyNopCloserIfNotRead) didRead() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.consumed
+}
+
+// isEmpty reports whether the stream ended without yielding any data.
+func (b *bodyNopCloserIfNotRead) isEmpty() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.empty && !b.consumed
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
@@ -667,8 +713,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	reqHeader := clonedReq.Header
 	requestWasIncremental := caddyhttp.IsIncremental(reqHeader)
 
-	// If the request contained a body, wrap it in io.NopCloser
-	// to prevent Go's transport from closing it on dial errors.
+	// If the request contained a body, keep it open on dial errors.
 	// cloneRequest does a shallow copy, so clonedReq.Body and
 	// r.Body share the same io.ReadCloser — a dial-failure Close()
 	// would kill the original body for all subsequent retry
@@ -676,20 +721,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	// the HTTP server when the handler returns.
 	//
 	// If the body was already fully buffered (via request_buffers),
-	// we also extract the buffer so the retry loop can replay it
+	// we retain ownership so the retry loop can replay it
 	// from the beginning on each attempt. (see #6259, #7546, #7713)
-	var bufferedReqBody *bytes.Buffer
+	var bufferedReqBody *bodyReadCloser
+	var streamingReqBody io.ReadCloser
 	if clonedReq.Body != nil {
-		if reqBodyBuf, ok := clonedReq.Body.(bodyReadCloser); ok && reqBodyBuf.body == nil && reqBodyBuf.buf != nil {
-			bufferedReqBody = reqBodyBuf.buf
-			reqBodyBuf.buf = nil
-			clonedReq.Body = io.NopCloser(bytes.NewReader(bufferedReqBody.Bytes()))
-			defer func() {
-				bufferedReqBody.Reset()
-				bufPool.Put(bufferedReqBody)
-			}()
-		} else {
-			clonedReq.Body = &bodyNopCloserIfNotRead{ReadCloser: clonedReq.Body}
+		if reqBodyBuf, ok := clonedReq.Body.(*bodyReadCloser); ok {
+			defer reqBodyBuf.Close()
+			if reqBodyBuf.body == nil {
+				bufferedReqBody = reqBodyBuf
+			}
+		}
+		if bufferedReqBody == nil {
+			streamingReqBody = clonedReq.Body
 		}
 	}
 
@@ -711,12 +755,29 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		// and reusable, so if a backend partially or fully reads the body but then
 		// produces an error, the request can be repeated to the next backend with
 		// the full body (retries should only happen for idempotent requests) (see #6259)
+		var attemptBody *bodyNopCloserIfNotRead
 		if bufferedReqBody != nil {
-			clonedReq.Body = io.NopCloser(bytes.NewReader(bufferedReqBody.Bytes()))
+			clonedReq.Body = &bufferedBodyReader{owner: bufferedReqBody}
+		} else if streamingReqBody == http.NoBody {
+			clonedReq.Body = http.NoBody
+		} else if streamingReqBody != nil {
+			attemptBody = &bodyNopCloserIfNotRead{ReadCloser: streamingReqBody}
+			clonedReq.Body = attemptBody
 		}
 
 		var done bool
 		done, proxyErr = h.proxyLoopIteration(clonedReq, r, w, proxyErr, start, retries, repl, reqHeader, reqHost, requestWasIncremental, next)
+		if attemptBody != nil {
+			// Retire this attempt before deciding whether to reuse the stream.
+			// RoundTrippers may close or read the body asynchronously.
+			attemptBody.Close()
+			if attemptBody.didRead() {
+				done = true
+			} else if attemptBody.isEmpty() {
+				// the stream is drained but nothing was lost; replay it as empty
+				streamingReqBody = http.NoBody
+			}
+		}
 		if done {
 			break
 		}
@@ -963,7 +1024,7 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 		var readBytes int64
 		req.Body, readBytes = h.bufferedBody(req.Body, h.RequestBuffers)
 		// set Content-Length when body is fully buffered
-		if b, ok := req.Body.(bodyReadCloser); ok && b.body == nil {
+		if b, ok := req.Body.(*bodyReadCloser); ok && b.body == nil {
 			req.ContentLength = readBytes
 			req.Header["Content-Length"] = []string{strconv.FormatInt(req.ContentLength, 10)}
 		}
@@ -979,6 +1040,9 @@ func (h Handler) prepareRequest(req *http.Request, repl *caddy.Replacer) (*http.
 	}
 
 	if req.ContentLength == 0 {
+		if b, ok := req.Body.(*bodyReadCloser); ok {
+			b.Close()
+		}
 		req.Body = nil // Issue golang/go#16036: nil Body for http.Transport retries
 	}
 
@@ -1242,6 +1306,16 @@ func (h *Handler) reverseProxy(rw http.ResponseWriter, req *http.Request, origRe
 	// http.Transport reads a newer value to dial a new connection when that new
 	// value is updated by another reverse proxy handler, typically forward_auth.
 	ctx := context.WithValue(req.Context(), dialInfoCtxKey, di)
+	// Record the upstream socket for the websocket close message, since an
+	// upgraded HTTP/1 body hides it; see upstreamWriteCloser.
+	if isWebsocket(req) {
+		upstreamConn := new(atomic.Pointer[net.Conn])
+		trace.GotConn = func(info httptrace.GotConnInfo) {
+			conn := info.Conn
+			upstreamConn.Store(&conn)
+		}
+		ctx = context.WithValue(ctx, upstreamConnCtxKey, upstreamConn)
+	}
 	req = req.WithContext(httptrace.WithClientTrace(ctx, trace))
 
 	// do the round-trip
@@ -1716,7 +1790,7 @@ func (h Handler) provisionUpstream(upstream *Upstream, dynamic bool) {
 // then returns a reader for the buffer along with how many bytes were buffered. Always close
 // the return value when done with it, just like if it was the original body! If limit is 0
 // (which it shouldn't be), this function returns its input; i.e. is a no-op, for safety.
-// Otherwise, it returns bodyReadCloser, the original body will be closed and body will be nil
+// Otherwise, it returns *bodyReadCloser, the original body will be closed and body will be nil
 // if it's explicitly configured to buffer all or EOF is reached when reading.
 // If reading fails, the body is returned as partially buffered, so the read error
 // is not hidden from the caller.
@@ -1734,16 +1808,14 @@ func (h Handler) bufferedBody(originalBody io.ReadCloser, limit int64) (io.ReadC
 		written, err = io.Copy(buf, originalBody)
 	}
 	if (err != nil && err != io.EOF) || written == limit {
-		return bodyReadCloser{
-			Reader: io.MultiReader(buf, originalBody),
-			buf:    buf,
-			body:   originalBody,
+		return &bodyReadCloser{
+			buf:  buf,
+			body: originalBody,
 		}, written
 	}
 	originalBody.Close() // no point in keeping it open
-	return bodyReadCloser{
-		Reader: buf,
-		buf:    buf,
+	return &bodyReadCloser{
+		buf: buf,
 	}, written
 }
 
@@ -1792,6 +1864,7 @@ func cloneRequest(origReq *http.Request) *http.Request {
 		// dialer will behave. See #4237 for context.
 		newURL.Scheme = ""
 		newURL.Host = ""
+		newURL.Opaque = ""
 		req.URL = newURL
 	}
 	if origReq.Header != nil {
@@ -2302,23 +2375,80 @@ type retryableResponseError struct {
 }
 
 // bodyReadCloser is a reader that, upon closing, will return
-// its buffer to the pool and close the underlying body reader.
+// its buffer to the pool and close the underlying body reader exactly once.
+// Buffer reads and release are serialized, but stream reads must remain
+// interruptible by Close.
 type bodyReadCloser struct {
-	io.Reader
-	buf  *bytes.Buffer
-	body io.ReadCloser
+	mu        sync.Mutex
+	buf       *bytes.Buffer
+	body      io.ReadCloser
+	closed    bool
+	closeOnce sync.Once
+	closeErr  error
 }
 
-func (brc bodyReadCloser) Close() error {
-	// Inside this package this will be set to nil for fully-buffered
-	// requests due to the possibility of retrial.
-	if brc.buf != nil {
+func (brc *bodyReadCloser) Read(p []byte) (int, error) {
+	brc.mu.Lock()
+	if brc.closed {
+		brc.mu.Unlock()
+		return 0, net.ErrClosed
+	}
+	if brc.buf.Len() > 0 {
+		n, err := brc.buf.Read(p)
+		brc.mu.Unlock()
+		return n, err
+	}
+	body := brc.body
+	brc.mu.Unlock()
+	if body != nil {
+		// Do not hold the buffer lock across a blocking stream read:
+		// Close must be able to close the stream to unblock it.
+		return body.Read(p)
+	}
+	return 0, io.EOF
+}
+
+func (brc *bodyReadCloser) Close() error {
+	brc.closeOnce.Do(func() {
+		brc.mu.Lock()
+		brc.closed = true
+		brc.buf.Reset()
 		bufPool.Put(brc.buf)
+		brc.buf = nil
+		brc.mu.Unlock()
+		if brc.body != nil {
+			brc.closeErr = brc.body.Close()
+		}
+	})
+	return brc.closeErr
+}
+
+// bufferedBodyReader is an independent replay cursor. The owner serializes
+// buffer access with release, including reads after a RoundTripper returns.
+type bufferedBodyReader struct {
+	owner  *bodyReadCloser
+	offset int
+	closed bool
+}
+
+func (r *bufferedBodyReader) Read(p []byte) (int, error) {
+	r.owner.mu.Lock()
+	defer r.owner.mu.Unlock()
+	if r.closed || r.owner.closed {
+		return 0, net.ErrClosed
 	}
-	// For fully-buffered bodies, body is nil, so Close is a no-op.
-	if brc.body != nil {
-		return brc.body.Close()
+	if r.offset == r.owner.buf.Len() {
+		return 0, io.EOF
 	}
+	n := copy(p, r.owner.buf.Bytes()[r.offset:])
+	r.offset += n
+	return n, nil
+}
+
+func (r *bufferedBodyReader) Close() error {
+	r.owner.mu.Lock()
+	r.closed = true
+	r.owner.mu.Unlock()
 	return nil
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -434,11 +435,10 @@ func TestMetricsCardinalityProtection(t *testing.T) {
 func TestMetricsHTTPSCatchAll(t *testing.T) {
 	ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
 
-	// Test that HTTPS requests allow catch-all even when AllowCatchAllHosts is false
+	// HTTPS must not implicitly disable cardinality protection.
 	metrics := &Metrics{
 		PerHost:              true,
 		ObserveCatchallHosts: false,
-		hasHTTPSServer:       true, // Simulate having HTTPS servers
 		init:                 sync.Once{},
 		httpMetrics:          &httpMetrics{},
 		allowedHosts:         make(map[string]struct{}), // Empty - no explicitly allowed hosts
@@ -451,7 +451,7 @@ func TestMetricsHTTPSCatchAll(t *testing.T) {
 
 	ih := newMetricsInstrumentedRoute(ctx, "test", h, metrics)
 
-	// Test HTTPS request (should be allowed even though not in allowedHosts)
+	// Test HTTPS request (should be mapped to "_other").
 	r1 := httptest.NewRequest("GET", "https://unknown.com/", nil)
 	r1.Host = "unknown.com"
 	r1.TLS = &tls.ConnectionState{} // Mark as TLS/HTTPS
@@ -465,18 +465,137 @@ func TestMetricsHTTPSCatchAll(t *testing.T) {
 	w2 := httptest.NewRecorder()
 	ih.ServeHTTP(w2, r2)
 
-	// Check that HTTPS request gets real host, HTTP gets "_other"
+	// Both requests should be aggregated.
 	expected := `
 	# HELP caddy_http_requests_total Counter of HTTP(S) requests made.
 	# TYPE caddy_http_requests_total counter
-	caddy_http_requests_total{handler="test",host="_other",server="UNKNOWN"} 1
-	caddy_http_requests_total{handler="test",host="unknown.com",server="UNKNOWN"} 1
+	caddy_http_requests_total{handler="test",host="_other",server="UNKNOWN"} 2
 	`
 
 	if err := testutil.GatherAndCompare(ctx.GetMetricsRegistry(), strings.NewReader(expected),
 		"caddy_http_requests_total",
 	); err != nil {
 		t.Errorf("HTTPS catch-all test failed: %s", err)
+	}
+}
+
+func TestMetricsHostCardinality(t *testing.T) {
+	for _, scheme := range []string{"http", "https"} {
+		for _, catchall := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/catchall=%t", scheme, catchall), func(t *testing.T) {
+				ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+				defer cancel()
+				m := &Metrics{
+					PerHost:              true,
+					ObserveCatchallHosts: catchall,
+					httpMetrics:          &httpMetrics{},
+					allowedHosts:         map[string]struct{}{"site.test": {}},
+				}
+				h := newMetricsInstrumentedRoute(ctx, "test", HandlerFunc(func(w http.ResponseWriter, _ *http.Request) error {
+					w.WriteHeader(http.StatusOK)
+					return nil
+				}), m)
+				for i := range 80 {
+					for _, host := range []string{
+						fmt.Sprintf("SITE.test:%d", 20000+i),
+						fmt.Sprintf("metric-%d.site.test", i),
+						fmt.Sprintf("unrelated-%d.test", i),
+					} {
+						req := httptest.NewRequest(http.MethodGet, scheme+"://site.test/", nil)
+						req.Host = host
+						if req.TLS != nil {
+							req.TLS.ServerName = "site.test"
+						}
+						if err := h.ServeHTTP(httptest.NewRecorder(), req); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+				families, err := ctx.GetMetricsRegistry().Gather()
+				if err != nil {
+					t.Fatal(err)
+				}
+				wantCount := 2
+				if catchall {
+					wantCount = 161
+				}
+				found := false
+				for _, family := range families {
+					if family.GetName() != "caddy_http_requests_total" {
+						continue
+					}
+					found = true
+					if len(family.Metric) != wantCount {
+						t.Fatalf("got %d series, want %d", len(family.Metric), wantCount)
+					}
+					for _, metric := range family.Metric {
+						for _, label := range metric.Label {
+							if label.GetName() != "host" {
+								continue
+							}
+							host := label.GetValue()
+							if strings.Contains(host, ":") {
+								t.Errorf("port persisted in host label %q", host)
+							}
+							if !catchall && host != "site.test" && host != "_other" {
+								t.Errorf("unbounded host label %q", host)
+							}
+							if host == "site.test" && metric.Counter.GetValue() != 80 {
+								t.Errorf("port variants not aggregated: %v", metric.Counter.GetValue())
+							}
+						}
+					}
+				}
+				if !found {
+					t.Fatal("request counter not collected")
+				}
+			})
+		}
+	}
+}
+
+func TestMetricsScanNestedHosts(t *testing.T) {
+	hostRoute := func(hosts ...string) Route {
+		matcher := MatchHost(hosts)
+		return Route{MatcherSets: MatcherSets{{&matcher}}}
+	}
+	named := hostRoute("NAMED.test")
+	m := &Metrics{PerHost: true}
+	m.scanConfigForHosts(&App{Servers: map[string]*Server{
+		"test": {
+			Routes: RouteList{
+				hostRoute("TOP.test", "*.wild.test", "{dynamic}.test"),
+				{Handlers: []MiddlewareHandler{&Subroute{
+					Routes: RouteList{hostRoute("nested.test")},
+					Errors: &HTTPErrorConfig{Routes: RouteList{hostRoute("nested-error.test")}},
+				}}},
+			},
+			Errors:      &HTTPErrorConfig{Routes: RouteList{hostRoute("error.test")}},
+			NamedRoutes: map[string]*Route{"named": &named},
+		},
+	}})
+	for _, host := range []string{"top.test", "NESTED.test:443", "nested-error.test", "error.test", "named.test"} {
+		if !m.shouldAllowHostMetrics(host) {
+			t.Errorf("configured host %q was not collected", host)
+		}
+	}
+	if len(m.allowedHosts) != 5 {
+		t.Fatalf("unexpected allowlist: %v", m.allowedHosts)
+	}
+	for _, host := range []string{"random.wild.test", "unknown.test", "attacker.test:999999999"} {
+		if m.shouldAllowHostMetrics(host) {
+			t.Errorf("unconfigured host %q admitted", host)
+		}
+	}
+	for _, tc := range []struct{ input, want string }{
+		{"EXAMPLE.test:999999999999999999", "example.test"},
+		{"[::1]:443", "::1"},
+		{"[::1]", "::1"},
+		{"::1", "::1"},
+	} {
+		if got := metricsHost(tc.input); got != tc.want {
+			t.Errorf("metricsHost(%q) = %q, want %q", tc.input, got, tc.want)
+		}
 	}
 }
 

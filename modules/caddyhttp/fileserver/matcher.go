@@ -19,7 +19,6 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -31,6 +30,7 @@ import (
 	"cel.dev/cel-go/common/operators"
 	"cel.dev/cel-go/common/types"
 	"cel.dev/cel-go/common/types/ref"
+	"cel.dev/cel-go/common/types/traits"
 	"cel.dev/cel-go/parser"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -112,6 +112,10 @@ type MatchFile struct {
 	fsmap caddy.FileSystems
 
 	logger *zap.Logger
+
+	celLiteralRoot  bool
+	celLiteralFS    bool
+	celLiteralFiles map[int]bool
 }
 
 // CaddyModule returns the Caddy module information.
@@ -171,6 +175,9 @@ func (m *MatchFile) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 //	expression file()
 //	expression file({http.request.uri.path}, '/index.php')
 //	expression file({'root': '/srv', 'try_files': [{http.request.uri.path}, '/index.php'], 'try_policy': 'first_exist', 'split_path': ['.php']})
+//
+// Runtime strings are literal paths; static strings retain placeholder and glob
+// expansion. A concatenation involving runtime data is also a literal path.
 func (MatchFile) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 	requestType := cel.ObjectType("http.Request")
 
@@ -202,6 +209,23 @@ func (MatchFile) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 			SplitPath:  values["split_path"],
 			FileSystem: fsName,
 		}
+		mapping := data.(traits.Mapper)
+		if v, found := mapping.Find(types.String("root")); found {
+			m.celLiteralRoot = root != "" && caddyhttp.CELMatcherIsLiteral(v)
+		}
+		if v, found := mapping.Find(types.String("fs")); found {
+			m.celLiteralFS = fsName != "" && caddyhttp.CELMatcherIsLiteral(v)
+		}
+		if v, found := mapping.Find(types.String("try_files")); found {
+			m.celLiteralFiles = make(map[int]bool)
+			if list, ok := v.(traits.Lister); ok {
+				for i := types.Int(0); i < list.Size().(types.Int); i++ {
+					m.celLiteralFiles[int(i)] = caddyhttp.CELMatcherIsLiteral(list.Get(i))
+				}
+			} else {
+				m.celLiteralFiles[0] = caddyhttp.CELMatcherIsLiteral(v)
+			}
+		}
 
 		err = m.Provision(ctx)
 		return m, err
@@ -212,7 +236,7 @@ func (MatchFile) CELLibrary(ctx caddy.Context) (cel.Library, error) {
 		cel.Function("file", cel.Overload("file_request_map", []*cel.Type{requestType, caddyhttp.CELTypeJSON}, cel.BoolType)),
 		cel.Function("file_request_map",
 			cel.Overload("file_request_map", []*cel.Type{requestType, caddyhttp.CELTypeJSON}, cel.BoolType),
-			cel.SingletonBinaryBinding(caddyhttp.CELMatcherRuntimeFunction("file_request_map", matcherFactory))),
+			cel.SingletonBinaryBinding(caddyhttp.CELMatcherRuntimeFunction("file_request_map", caddyhttp.CELMatcherLiteralFactory(matcherFactory)))),
 	}
 
 	programOptions := []cel.ProgramOption{
@@ -232,18 +256,18 @@ func celFileMatcherMacroExpander() parser.MacroExpander {
 		}
 		if len(args) == 1 {
 			arg := args[0]
-			if isCELStringLiteral(arg) || isCELCaddyPlaceholderCall(arg) {
+			if isCELStringExpr(arg) {
 				return eh.NewCall("file",
 					eh.NewIdent(caddyhttp.CELRequestVarName),
 					eh.NewMap(eh.NewMapEntry(
 						eh.NewLiteral(types.String("try_files")),
-						eh.NewList(arg),
+						caddyhttp.CELMatcherArgument(eh, eh.NewList(arg)),
 						false,
 					)),
 				), nil
 			}
 			if isCELTryFilesLiteral(arg) {
-				return eh.NewCall("file", eh.NewIdent(caddyhttp.CELRequestVarName), arg), nil
+				return eh.NewCall("file", eh.NewIdent(caddyhttp.CELRequestVarName), caddyhttp.CELMatcherArgument(eh, arg)), nil
 			}
 			return nil, &common.Error{
 				Location: eh.OffsetLocation(arg.ID()),
@@ -252,7 +276,7 @@ func celFileMatcherMacroExpander() parser.MacroExpander {
 		}
 
 		for _, arg := range args {
-			if !isCELStringLiteral(arg) && !isCELCaddyPlaceholderCall(arg) {
+			if !isCELStringExpr(arg) {
 				return nil, &common.Error{
 					Location: eh.OffsetLocation(arg.ID()),
 					Message:  "matcher only supports repeated string literal arguments",
@@ -263,7 +287,7 @@ func celFileMatcherMacroExpander() parser.MacroExpander {
 			eh.NewIdent(caddyhttp.CELRequestVarName),
 			eh.NewMap(eh.NewMapEntry(
 				eh.NewLiteral(types.String("try_files")),
-				eh.NewList(args...),
+				caddyhttp.CELMatcherArgument(eh, eh.NewList(args...)),
 				false,
 			)),
 		), nil
@@ -310,7 +334,7 @@ func (m MatchFile) Validate() error {
 // Match returns true if r matches m. Returns true
 // if a file was matched. If so, four placeholders
 // will be available:
-//   - http.matchers.file.relative: Path to file relative to site root
+//   - http.matchers.file.relative: Slash-prefixed path to file relative to site root
 //   - http.matchers.file.absolute: Path to file including site root
 //   - http.matchers.file.type: file or directory
 //   - http.matchers.file.remainder: Portion remaining after splitting file path (if configured)
@@ -333,9 +357,16 @@ func (m MatchFile) MatchWithError(r *http.Request) (bool, error) {
 func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
-	root := filepath.Clean(repl.ReplaceAll(m.Root, "."))
+	root := m.Root
+	if !m.celLiteralRoot {
+		root = repl.ReplaceAll(root, ".")
+	}
+	root = filepath.Clean(root)
 
-	fsName := repl.ReplaceAll(m.FileSystem, "")
+	fsName := m.FileSystem
+	if !m.celLiteralFS {
+		fsName = repl.ReplaceAll(fsName, "")
+	}
 
 	fileSystem, ok := m.fsmap.Get(fsName)
 	if !ok {
@@ -347,6 +378,21 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 	type matchCandidate struct {
 		fullpath, relative, splitRemainder string
 	}
+	makeCandidate := func(fullpath, remainder string) (matchCandidate, bool) {
+		relative, err := filepath.Rel(root, fullpath)
+		if err != nil {
+			m.logger.Error("making root-relative file path", zap.String("path", fullpath), zap.Error(err))
+			return matchCandidate{}, false
+		}
+		if relative == "." {
+			relative = ""
+		}
+		relative = "/" + filepath.ToSlash(relative)
+		if strings.HasSuffix(fullpath, separator) && !strings.HasSuffix(relative, "/") {
+			relative += "/"
+		}
+		return matchCandidate{fullpath: fullpath, relative: relative, splitRemainder: remainder}, true
+	}
 
 	// makeCandidates evaluates placeholders in file and expands any glob expressions
 	// to build a list of file candidates. Special glob characters are escaped in
@@ -356,20 +402,28 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 	// support placeholders on Windows (pick one). (Actually, evaluating untrusted
 	// globs is not the end of the world since the file server will still hide any
 	// hidden files, it just might lead to unexpected behavior.)
-	makeCandidates := func(file string) []matchCandidate {
+	makeCandidates := func(file string, literal bool) []matchCandidate {
 		// first, evaluate placeholders in the file pattern
-		expandedFile, err := repl.ReplaceFunc(file, func(variable string, val any) (any, error) {
-			if runtime.GOOS == "windows" {
+		expandedFile := file
+		var err error
+		if literal {
+			if runtime.GOOS != "windows" {
+				expandedFile = globSafeRepl.Replace(file)
+			}
+		} else {
+			expandedFile, err = repl.ReplaceFunc(file, func(variable string, val any) (any, error) {
+				if runtime.GOOS == "windows" {
+					return val, nil
+				}
+				switch v := val.(type) {
+				case string:
+					return globSafeRepl.Replace(v), nil
+				case fmt.Stringer:
+					return globSafeRepl.Replace(v.String()), nil
+				}
 				return val, nil
-			}
-			switch v := val.(type) {
-			case string:
-				return globSafeRepl.Replace(v), nil
-			case fmt.Stringer:
-				return globSafeRepl.Replace(v.String()), nil
-			}
-			return val, nil
-		})
+			})
+		}
 		if err != nil {
 			if c := m.logger.Check(zapcore.ErrorLevel, "evaluating placeholders"); c != nil {
 				c.Write(zap.Error(err))
@@ -378,24 +432,19 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 			expandedFile = file // "oh well," I guess?
 		}
 
-		// clean the path and split, if configured -- we must split before
-		// globbing so that the file system doesn't include the remainder
-		// ("afterSplit") in the filename; be sure to restore trailing slash
-		// so that "/file/" or "/file/./" cannot match a regular file
-		cleanedFile := path.Clean(expandedFile)
-		if strings.HasSuffix(expandedFile, "/") && !strings.HasSuffix(cleanedFile, "/") {
-			cleanedFile += "/"
-		}
-		beforeSplit, afterSplit := m.firstSplit(cleanedFile)
-
-		// only a pattern ending in "/" matches a directory, so with "{path}" a
-		// request for "/dir/" falls through to the next entry (e.g. "{path}/index.php")
-		if beforeSplit != "/" && strings.HasSuffix(beforeSplit, "/") && !strings.HasSuffix(file, "/") {
+		// we must split before globbing so that the file system
+		// doesn't include the remainder ("afterSplit") in the filename
+		beforeSplit, afterSplit, ok := m.cleanSplit(file, expandedFile)
+		if !ok {
 			return nil
 		}
 
 		// create the full path to the file by prepending the site root
-		fullPattern := caddyhttp.SanitizedPathJoin(root, beforeSplit)
+		globRoot := root
+		if runtime.GOOS != "windows" {
+			globRoot = globSafeRepl.Replace(root)
+		}
+		fullPattern := caddyhttp.SanitizedPathJoin(globRoot, beforeSplit)
 
 		// expand glob expressions, but not on Windows because Glob() doesn't
 		// support escaping on Windows due to path separator)
@@ -414,11 +463,9 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 		// for each glob result, combine all the forms of the path
 		candidates := make([]matchCandidate, 0, len(globResults))
 		for _, result := range globResults {
-			candidates = append(candidates, matchCandidate{
-				fullpath:       result,
-				relative:       strings.TrimPrefix(result, root),
-				splitRemainder: afterSplit,
-			})
+			if candidate, ok := makeCandidate(result, afterSplit); ok {
+				candidates = append(candidates, candidate)
+			}
 		}
 
 		return candidates
@@ -428,25 +475,25 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 	// without expanding globs or checking that the file exists. It is used only
 	// for the final entry of first_exist_fallback, which matches unconditionally
 	// even when globbing found nothing because the file is absent.
-	makeLiteralCandidate := func(file string) matchCandidate {
+	makeLiteralCandidate := func(file string, literal bool) (matchCandidate, bool) {
 		// placeholders are not glob-escaped here, since nothing is globbed;
 		// errors were already logged by makeCandidates for the same pattern
-		expandedFile, err := repl.ReplaceFunc(file, func(_ string, val any) (any, error) {
-			return val, nil
-		})
-		if err != nil {
-			expandedFile = file
+		expandedFile := file
+		if !literal {
+			var err error
+			expandedFile, err = repl.ReplaceFunc(file, func(_ string, val any) (any, error) {
+				return val, nil
+			})
+			if err != nil {
+				expandedFile = file
+			}
 		}
-		beforeSplit, afterSplit := m.firstSplit(path.Clean(expandedFile))
-		if strings.HasSuffix(file, "/") {
-			beforeSplit += "/"
+		beforeSplit, afterSplit, ok := m.cleanSplit(file, expandedFile)
+		if !ok {
+			return matchCandidate{}, false
 		}
 		fullPath := caddyhttp.SanitizedPathJoin(root, beforeSplit)
-		return matchCandidate{
-			fullpath:       fullPath,
-			relative:       strings.TrimPrefix(fullPath, root),
-			splitRemainder: afterSplit,
-		}
+		return makeCandidate(fullPath, afterSplit)
 	}
 
 	// setPlaceholders creates the placeholders for the matched file
@@ -474,14 +521,18 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 			// If the pattern is a status code, emit an error,
 			// which short-circuits the middleware pipeline and
 			// writes an HTTP error response.
-			if err := parseErrorCode(pattern); err != nil {
-				return false, err
+			if !m.celLiteralFiles[i] {
+				if err := parseErrorCode(pattern); err != nil {
+					return false, err
+				}
 			}
 
-			candidates := makeCandidates(pattern)
+			candidates := makeCandidates(pattern, m.celLiteralFiles[i])
 			// globbing finds only files that exist, but the fallback entry matches anyway
 			if i == maxI && len(candidates) == 0 {
-				candidates = []matchCandidate{makeLiteralCandidate(pattern)}
+				if c, ok := makeLiteralCandidate(pattern, m.celLiteralFiles[i]); ok {
+					candidates = []matchCandidate{c}
+				}
 			}
 			for _, c := range candidates {
 				// Skip the IO if using fallback policy and it's the latest item
@@ -502,8 +553,8 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 		var largestSize int64
 		var largest matchCandidate
 		var largestInfo os.FileInfo
-		for _, pattern := range m.TryFiles {
-			candidates := makeCandidates(pattern)
+		for i, pattern := range m.TryFiles {
+			candidates := makeCandidates(pattern, m.celLiteralFiles[i])
 			for _, c := range candidates {
 				info, err := fs.Stat(fileSystem, c.fullpath)
 				if err == nil && (largestInfo == nil || info.Size() > largestSize) {
@@ -523,8 +574,8 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 		var smallestSize int64
 		var smallest matchCandidate
 		var smallestInfo os.FileInfo
-		for _, pattern := range m.TryFiles {
-			candidates := makeCandidates(pattern)
+		for i, pattern := range m.TryFiles {
+			candidates := makeCandidates(pattern, m.celLiteralFiles[i])
 			for _, c := range candidates {
 				info, err := fs.Stat(fileSystem, c.fullpath)
 				if err == nil && (smallestInfo == nil || info.Size() < smallestSize) {
@@ -543,8 +594,8 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 	case tryPolicyMostRecentlyMod:
 		var recent matchCandidate
 		var recentInfo os.FileInfo
-		for _, pattern := range m.TryFiles {
-			candidates := makeCandidates(pattern)
+		for i, pattern := range m.TryFiles {
+			candidates := makeCandidates(pattern, m.celLiteralFiles[i])
 			for _, c := range candidates {
 				info, err := fs.Stat(fileSystem, c.fullpath)
 				if err == nil &&
@@ -607,6 +658,31 @@ func (m MatchFile) strictFileExists(fileSystem fs.FS, file string) (os.FileInfo,
 	return info, !info.IsDir()
 }
 
+// cleanSplit cleans expanded, the expansion of pattern, and splits it if
+// configured. It keeps the trailing slash so that "/file/" or "/file/./"
+// cannot match a regular file, and reports false for a path ending in "/"
+// unless pattern does too, since only such patterns match a directory.
+func (m MatchFile) cleanSplit(pattern, expanded string) (beforeSplit, afterSplit string, ok bool) {
+	cleaned := caddyhttp.NormalizedPath(expanded, true)
+	if cleaned == "" {
+		// Preserve path.Clean's existing result for an empty path.
+		cleaned = "."
+	}
+	beforeSplit, afterSplit = m.firstSplit(cleaned)
+	patternHasTrailingSlash := strings.HasSuffix(pattern, "/")
+	// SanitizedPathJoin cleans the doubled slash but uses it to preserve
+	// the filesystem separator after the site root.
+	if beforeSplit == "/" && patternHasTrailingSlash {
+		beforeSplit += "/"
+	}
+
+	// with "{path}", a request for "/dir/" falls through to the next entry (e.g. "{path}/index.php")
+	if beforeSplit != "/" && strings.HasSuffix(beforeSplit, "/") && !patternHasTrailingSlash {
+		return "", "", false
+	}
+	return beforeSplit, afterSplit, true
+}
+
 // firstSplit returns the first result where the path
 // can be split in two by a value in m.SplitPath. The
 // return values are the first piece of the path that
@@ -658,7 +734,7 @@ func isCELTryFilesLiteral(e ast.Expr) bool {
 				if !isCELStringListLiteral(mapVal) {
 					return false
 				}
-			case "try_policy", "root":
+			case "try_policy", "root", "fs":
 				if !isCELStringExpr(mapVal) {
 					return false
 				}

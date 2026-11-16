@@ -54,6 +54,10 @@
 								{
 									"handler": "invoke",
 									"name": "b"
+								},
+								{
+									"body": "a",
+									"handler": "static_response"
 								}
 							]
 						},
@@ -62,6 +66,10 @@
 								{
 									"handler": "invoke",
 									"name": "c"
+								},
+								{
+									"body": "b",
+									"handler": "static_response"
 								}
 							]
 						},
@@ -95,6 +103,10 @@
 								{
 									"handler": "invoke",
 									"name": "loop2"
+								},
+								{
+									"body": "loop1",
+									"handler": "static_response"
 								}
 							]
 						},
@@ -103,6 +115,10 @@
 								{
 									"handler": "invoke",
 									"name": "loop1"
+								},
+								{
+									"body": "loop2",
+									"handler": "static_response"
 								}
 							]
 						}

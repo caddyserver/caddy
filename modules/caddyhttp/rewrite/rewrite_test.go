@@ -15,13 +15,16 @@
 package rewrite
 
 import (
+	"context"
 	"net/http"
+	"net/url"
 	"reflect"
 	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
 func TestRewrite(t *testing.T) {
@@ -59,7 +62,7 @@ func TestRewrite(t *testing.T) {
 		{
 			rule:   Rewrite{URI: "foo"},
 			input:  newRequest(t, "GET", "/"),
-			expect: newRequest(t, "GET", "foo"),
+			expect: newRequest(t, "GET", "/foo"),
 		},
 		{
 			rule:   Rewrite{URI: "{http.request.uri}"},
@@ -685,6 +688,66 @@ func TestRewriteEscapesFileMatcherRemainder(t *testing.T) {
 	}
 }
 
+func TestRewriteEscapesDecodedPathPlaceholders(t *testing.T) {
+	for _, name := range []string{
+		"http.request.uri.path",
+		"http.request.uri.path.dir",
+		"http.request.uri.path.file",
+		"http.request.uri.path.file.base",
+		"http.request.uri.path.file.ext",
+		"http.request.uri.path.1",
+		"http.request.orig_uri.path",
+		"http.request.orig_uri.path.dir",
+		"http.request.orig_uri.path.file",
+		"http.request.orig_uri.path.1",
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newRequest(t, http.MethodGet, "/pub/%252e%252e/a%3Fb%23c.%25txt")
+			repl := caddy.NewReplacer()
+			r = caddyhttp.PrepareRequest(r, repl, nil, &caddyhttp.Server{})
+			value, ok := repl.Get(name)
+			if !ok {
+				t.Fatalf("unknown placeholder: %s", name)
+			}
+			pathValue := caddy.ToString(value)
+			Rewrite{URI: "/files{" + name + "}?q={" + name + "}"}.Rewrite(r, repl)
+			if r.URL.Path != "/files"+pathValue {
+				t.Errorf("Path = %q; want %q", r.URL.Path, "/files"+pathValue)
+			}
+			if r.URL.RawQuery != "q="+url.QueryEscape(pathValue) || r.URL.Fragment != "" {
+				t.Errorf("incorrect query or injected fragment: %s", r.URL)
+			}
+		})
+	}
+	for _, tc := range []struct {
+		name, target, uri, want string
+	}{
+		{"original path traversal", "/pub/%252e%252e/priv/secret", "/files{http.request.orig_uri.path}", "/files/pub/%252e%252e/priv/secret"},
+		{"original after rewrite", "/pub/%252fsecret", "/files{http.request.orig_uri.path}", "/files/pub/%252fsecret"},
+		{"escaped file", "/pub/a%2Fb%3Fc%23d%25", "/files/{http.request.orig_uri.path.file_escaped}", "/files/a/b%3Fc%23d%25"},
+		{"whole URI", "/pub/a%3Fb?x=y", "{http.request.orig_uri}", "/pub/a%3Fb?x=y"},
+		{"escaped current path", "/pub/%252e%252e", "{http.request.uri.path_escaped}", "/pub/%252e%252e"},
+		{"literal escapes", "/pub", "/files/%2e%2e/public?x=y", "/public?x=y"},
+		{"encoded extension", "/pub/file.%252f", "/files/{http.request.uri.path.file.ext}", "/files/.%252f"},
+		{"literal placeholder text", "/pub/%7Benv.SCAN_PATH_TEST%7D", "/files{http.request.orig_uri.path}", "/files/pub/%7Benv.SCAN_PATH_TEST%7D"},
+		{"non-UTF-8 path", "/pub/%ff", "/files{http.request.orig_uri.path}", "/files/pub/%FF"},
+		{"Unicode path", "/pub/%C3%84pfel", "/files{http.request.orig_uri.path}", "/files/pub/%C3%84pfel"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRequest(t, http.MethodGet, tc.target)
+			repl := caddy.NewReplacer()
+			r = caddyhttp.PrepareRequest(r, repl, nil, &caddyhttp.Server{})
+			if tc.name == "original after rewrite" {
+				Rewrite{URI: "/changed"}.Rewrite(r, repl)
+			}
+			Rewrite{URI: tc.uri}.Rewrite(r, repl)
+			if r.RequestURI != tc.want {
+				t.Errorf("RequestURI = %q; want %q", r.RequestURI, tc.want)
+			}
+		})
+	}
+}
+
 func TestQueryOpsRenameNoOpCases(t *testing.T) {
 	repl := caddy.NewReplacer()
 
@@ -828,6 +891,49 @@ func TestStripPathPrefixCanonicalizesRemainder(t *testing.T) {
 	}
 }
 
+func TestPathReplacementsCanonicalizeRemainder(t *testing.T) {
+	for _, rule := range []struct {
+		name string
+		rule Rewrite
+	}{
+		{"substring", Rewrite{URISubstring: []substrReplacer{{Find: "/mount"}}}},
+		{"regexp", Rewrite{PathRegexp: []*regexReplacer{{Find: "^/mount", re: regexp.MustCompile("^/mount")}}}},
+	} {
+		t.Run(rule.name, func(t *testing.T) {
+			for _, tc := range []struct {
+				target, path, rawPath string
+			}{
+				{"/mount../secret", "/secret", ""},
+				{"/mount..%2fsecret", "/secret", ""},
+				{"/mount%2e%2e/secret", "/secret", ""},
+				{"/mount", "/", ""},
+				{"/mountain", "/ain", ""},
+				{"/mount/public", "/public", ""},
+				{"/mount/a%2Fb", "/a/b", "/a%2Fb"},
+				{"/mount/%252e%252e/secret", "/%2e%2e/secret", ""},
+				{"/mount/%ff", "/\xff", "/%ff"},
+				{"/unmatched", "/unmatched", ""},
+			} {
+				t.Run(tc.target, func(t *testing.T) {
+					r := newRequest(t, http.MethodGet, tc.target+"?keep=yes")
+					repl := caddy.NewReplacer()
+					r = r.WithContext(context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl))
+					rule.rule.Rewrite(r, repl)
+					if r.URL.Path != tc.path || r.URL.RawPath != tc.rawPath {
+						t.Errorf("Path/RawPath = %q/%q; want %q/%q", r.URL.Path, r.URL.RawPath, tc.path, tc.rawPath)
+					}
+					if r.URL.RawQuery != "keep=yes" || r.RequestURI != r.URL.EscapedPath()+"?keep=yes" {
+						t.Errorf("inconsistent request target: %q", r.RequestURI)
+					}
+					if tc.path == "/secret" && !(caddyhttp.MatchPath{"/secret*"}).Match(r) {
+						t.Error("rewritten secret does not match downstream path restriction")
+					}
+				})
+			}
+		})
+	}
+}
+
 func newRequest(t *testing.T, method, uri string) *http.Request {
 	req, err := http.NewRequest(method, uri, nil)
 	if err != nil {
@@ -863,4 +969,72 @@ func reqEqual(r1, r2 *http.Request) bool {
 		r1.URL.RawPath == r2.URL.RawPath &&
 		r1.URL.RawQuery == r2.URL.RawQuery &&
 		r1.URL.Fragment == r2.URL.Fragment
+}
+
+func TestRewriteURICanonicalizesChangedPath(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		method string
+		target string
+		header string
+		uri    string
+		want   string
+	}{
+		{name: "relative placeholder", target: "/x", header: "../secret", uri: "{http.request.header.X-Path}", want: "/secret"},
+		{name: "relative literal", target: "/x", uri: "secret", want: "/secret"},
+		{name: "dot segments from placeholder", target: "/x", header: "/public/../secret", uri: "{http.request.header.X-Path}", want: "/secret"},
+		{name: "query kept", target: "/x?a=b", header: "../secret", uri: "{http.request.header.X-Path}?{http.request.uri.query}", want: "/secret?a=b"},
+		{name: "repeated slashes preserved", target: "/x", uri: "/a//b/", want: "/a//b/"},
+		{name: "unchanged path left alone", target: "/a/../b", uri: "{http.request.uri.path}", want: "/a/../b"},
+		{name: "OPTIONS star preserved", method: http.MethodOptions, target: "/x", uri: "*", want: "*"},
+		{name: "star from placeholder is a path", target: "/x", header: "*", uri: "{http.request.header.X-Path}", want: "/%2A"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			method := tc.method
+			if method == "" {
+				method = http.MethodGet
+			}
+			r := newRequest(t, method, tc.target)
+			if tc.header != "" {
+				r.Header.Set("X-Path", tc.header)
+			}
+			repl := caddy.NewReplacer()
+			r = caddyhttp.PrepareRequest(r, repl, nil, &caddyhttp.Server{})
+			Rewrite{URI: tc.uri}.Rewrite(r, repl)
+			if r.RequestURI != tc.want {
+				t.Errorf("RequestURI = %q; want %q", r.RequestURI, tc.want)
+			}
+		})
+	}
+}
+
+func TestRewriteEscapesRegexpCaptures(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		target string
+		uri    string
+		want   string
+	}{
+		{name: "double-encoded traversal stays data", target: "/pub/%252e%252e%252fsecret", uri: "/files/{http.regexp.pub.1}", want: "/files/%252e%252e%252fsecret"},
+		{name: "decoded question mark stays in path", target: "/pub/a%3Fx=1", uri: "/files/{http.regexp.pub.1}", want: "/files/a%3Fx=1"},
+		{name: "slashes preserved", target: "/pub/a/b", uri: "/files/{http.regexp.pub.1}", want: "/files/a/b"},
+		{name: "configured query unaffected", target: "/pub/a", uri: "/files?id={http.regexp.pub.1}", want: "/files?id=a"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRequest(t, http.MethodGet, tc.target)
+			repl := caddy.NewReplacer()
+			r = caddyhttp.PrepareRequest(r, repl, nil, &caddyhttp.Server{})
+			m := caddyhttp.MatchPathRE{MatchRegexp: caddyhttp.MatchRegexp{Name: "pub", Pattern: "^/pub/(.*)$"}}
+			if err := m.Provision(caddy.Context{}); err != nil {
+				t.Fatal(err)
+			}
+			if ok, err := m.MatchWithError(r); err != nil || !ok {
+				t.Fatalf("path_regexp did not match: %v", err)
+			}
+			Rewrite{URI: tc.uri}.Rewrite(r, repl)
+			if r.RequestURI != tc.want {
+				t.Errorf("RequestURI = %q; want %q", r.RequestURI, tc.want)
+			}
+		})
+	}
 }

@@ -15,11 +15,37 @@
 package headers
 
 import (
+	"fmt"
 	"net/http"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
 )
+
+func BenchmarkDynamicHeaderReplacement(b *testing.B) {
+	for _, field := range []string{"Referer", "*"} {
+		for _, count := range []int{1, 150} {
+			b.Run(fmt.Sprintf("%s/values=%d", field, count), func(b *testing.B) {
+				ops := &HeaderOps{Replace: map[string][]Replacement{
+					field: {{SearchRegexp: "^https?://{host}/", Replace: "/"}},
+				}}
+				if err := ops.Provision(caddy.Context{}); err != nil {
+					b.Fatal(err)
+				}
+				repl := caddy.NewReplacer()
+				repl.Set("host", "example.test")
+				hdr := http.Header{"Referer": make([]string, count)}
+				b.ReportAllocs()
+				for b.Loop() {
+					for i := range hdr["Referer"] {
+						hdr["Referer"][i] = "https://example.test/path"
+					}
+					ops.ApplyTo(hdr, repl)
+				}
+			})
+		}
+	}
+}
 
 func BenchmarkHeaderOpsApplyToSet(b *testing.B) {
 	ops := &HeaderOps{

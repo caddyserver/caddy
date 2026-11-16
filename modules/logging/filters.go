@@ -52,6 +52,66 @@ type LogFieldFilter interface {
 	Filter(zapcore.Field) zapcore.Field
 }
 
+// filterStrings handles the string representations used by zap.Any and by
+// request placeholders. Always copy slices: they may belong to a certificate
+// or to another request's log fields.
+func filterStrings(in zapcore.Field, filter func(string) string) zapcore.Field {
+	var array internal.LoggableStringArray
+	switch value := in.Interface.(type) {
+	case internal.LoggableStringArray:
+		array = value
+	case []string:
+		array = value
+	case []net.IP:
+		array = make(internal.LoggableStringArray, len(value))
+		for i, ip := range value {
+			array[i] = ip.String()
+		}
+	case []*url.URL:
+		array = make(internal.LoggableStringArray, len(value))
+		for i, uri := range value {
+			if uri != nil {
+				array[i] = uri.String()
+			}
+		}
+	case zapcore.ArrayMarshaler:
+		in.Interface = filteredStringArray{value, filter}
+		return in
+	default:
+		in.String = filter(in.String)
+		return in
+	}
+	result := make(internal.LoggableStringArray, len(array))
+	for i, s := range array {
+		result[i] = filter(s)
+	}
+	in.Type = zapcore.ArrayMarshalerType
+	in.Interface = result
+	return in
+}
+
+type filteredStringArray struct {
+	array  zapcore.ArrayMarshaler
+	filter func(string) string
+}
+
+func (a filteredStringArray) MarshalLogArray(enc zapcore.ArrayEncoder) error {
+	return a.array.MarshalLogArray(filteredStringArrayEncoder{enc, a.filter})
+}
+
+type filteredStringArrayEncoder struct {
+	zapcore.ArrayEncoder
+	filter func(string) string
+}
+
+func (enc filteredStringArrayEncoder) AppendString(s string) {
+	enc.ArrayEncoder.AppendString(enc.filter(s))
+}
+
+func (enc filteredStringArrayEncoder) AppendByteString(s []byte) {
+	enc.ArrayEncoder.AppendString(enc.filter(string(s)))
+}
+
 // DeleteFilter is a Caddy log field filter that
 // deletes the field.
 type DeleteFilter struct{}
@@ -102,17 +162,7 @@ func (f *HashFilter) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 // Filter filters the input field with the replacement value.
 func (f *HashFilter) Filter(in zapcore.Field) zapcore.Field {
-	if array, ok := in.Interface.(internal.LoggableStringArray); ok {
-		newArray := make(internal.LoggableStringArray, len(array))
-		for i, s := range array {
-			newArray[i] = hash(s)
-		}
-		in.Interface = newArray
-	} else {
-		in.String = hash(in.String)
-	}
-
-	return in
+	return filterStrings(in, hash)
 }
 
 // ReplaceFilter is a Caddy log field filter that
@@ -250,17 +300,7 @@ func (m *IPMaskFilter) Provision(ctx caddy.Context) error {
 
 // Filter filters the input field.
 func (m IPMaskFilter) Filter(in zapcore.Field) zapcore.Field {
-	if array, ok := in.Interface.(internal.LoggableStringArray); ok {
-		newArray := make(internal.LoggableStringArray, len(array))
-		for i, s := range array {
-			newArray[i] = m.mask(s)
-		}
-		in.Interface = newArray
-	} else {
-		in.String = m.mask(in.String)
-	}
-
-	return in
+	return filterStrings(in, m.mask)
 }
 
 func (m IPMaskFilter) mask(s string) string {
@@ -801,17 +841,9 @@ func (m *RegexpFilter) Provision(ctx caddy.Context) error {
 
 // Filter filters the input field with the replacement value if it matches the regexp.
 func (f *RegexpFilter) Filter(in zapcore.Field) zapcore.Field {
-	if array, ok := in.Interface.(internal.LoggableStringArray); ok {
-		newArray := make(internal.LoggableStringArray, len(array))
-		for i, s := range array {
-			newArray[i] = f.regexp.ReplaceAllString(s, f.Value)
-		}
-		in.Interface = newArray
-	} else {
-		in.String = f.regexp.ReplaceAllString(in.String, f.Value)
-	}
-
-	return in
+	return filterStrings(in, func(s string) string {
+		return f.regexp.ReplaceAllString(s, f.Value)
+	})
 }
 
 // regexpFilterOperation represents a single regexp operation
@@ -971,17 +1003,7 @@ func (f *MultiRegexpFilter) Validate() error {
 // Filter applies all regexp operations sequentially to the input field.
 // Input is sanitized and validated for security.
 func (f *MultiRegexpFilter) Filter(in zapcore.Field) zapcore.Field {
-	if array, ok := in.Interface.(internal.LoggableStringArray); ok {
-		newArray := make(internal.LoggableStringArray, len(array))
-		for i, s := range array {
-			newArray[i] = f.processString(s)
-		}
-		in.Interface = newArray
-	} else {
-		in.String = f.processString(in.String)
-	}
-
-	return in
+	return filterStrings(in, f.processString)
 }
 
 // processString applies all regexp operations to a single string with input validation.

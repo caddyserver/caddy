@@ -20,9 +20,11 @@ import (
 	"net/http/httptest"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
+	"golang.org/x/sync/singleflight"
 )
 
 // testBasicAuthHash is a bcrypt hash (cost 4) of the plaintext "correct horse".
@@ -192,4 +194,49 @@ func TestBasicAuthHashCacheConcurrentRequests(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+type countingComparer struct {
+	calls atomic.Int64
+}
+
+func (c *countingComparer) Compare(hashed, plaintext []byte) (bool, error) {
+	c.calls.Add(1)
+	return string(hashed) == string(plaintext), nil
+}
+
+func TestBasicAuthHashCacheOnlyCachesSuccess(t *testing.T) {
+	comparer := new(countingComparer)
+	hba := HTTPBasicAuth{
+		Accounts:     map[string]Account{"alice": {Username: "alice", password: []byte("secret")}},
+		Hash:         comparer,
+		fakePassword: []byte("dummy"),
+		HashCache:    &Cache{cache: make(map[string]bool), mu: new(sync.RWMutex), g: new(singleflight.Group)},
+	}
+	for i, username := range []string{"missing-prime", "missing-probe", "alice", "missing-probe", "alice"} {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.SetBasicAuth(username, "wrong")
+		_, ok, err := hba.Authenticate(httptest.NewRecorder(), req)
+		if err != nil || ok {
+			t.Fatalf("unexpected authentication result for %q: %v, %v", username, ok, err)
+		}
+		if got := comparer.calls.Load(); got != int64(i+1) {
+			t.Fatalf("comparison skipped for %q: got %d calls, want %d", username, got, i+1)
+		}
+	}
+	if len(hba.HashCache.cache) != 0 {
+		t.Fatal("unsuccessful comparisons populated the cache")
+	}
+	before := comparer.calls.Load()
+	for range 2 {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.SetBasicAuth("alice", "secret")
+		_, ok, err := hba.Authenticate(httptest.NewRecorder(), req)
+		if err != nil || !ok {
+			t.Fatalf("valid credentials rejected: %v, %v", ok, err)
+		}
+	}
+	if got := comparer.calls.Load() - before; got != 1 {
+		t.Fatalf("successful comparison was not cached: %d calls", got)
+	}
 }

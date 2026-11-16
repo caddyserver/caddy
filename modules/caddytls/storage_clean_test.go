@@ -16,6 +16,7 @@ package caddytls
 
 import (
 	"context"
+	"encoding/json"
 	"io/fs"
 	"sync"
 	"testing"
@@ -138,10 +139,14 @@ func (s *blockingStorage) Stat(ctx context.Context, key string) (certmagic.KeyIn
 }
 
 type blockingPublisher struct {
+	key         string
 	publishFunc func(ctx context.Context, innerNames []string, echConfigList []byte) error
 }
 
 func (p *blockingPublisher) PublisherKey() string {
+	if p.key != "" {
+		return p.key
+	}
 	return "blocking_test_publisher"
 }
 
@@ -150,6 +155,103 @@ func (p *blockingPublisher) PublishECHConfigList(ctx context.Context, innerNames
 		return p.publishFunc(ctx, innerNames, echConfigList)
 	}
 	return nil
+}
+
+func TestTLSECHPublishTracksMultiplePublishers(t *testing.T) {
+	storedMetadata := make(map[string][]byte)
+	storage := &blockingStorage{
+		storeFunc: func(_ context.Context, key string, value []byte) error {
+			storedMetadata[key] = append([]byte(nil), value...)
+			return nil
+		},
+	}
+	ctx, cleanup := newTestContextWithStorage(t, storage)
+	defer cleanup()
+
+	publishCalls := make(map[string]int)
+	publisher1 := &blockingPublisher{
+		key: "publisher1",
+		publishFunc: func(context.Context, []string, []byte) error {
+			publishCalls["publisher1"]++
+			return nil
+		},
+	}
+	publisher2 := &blockingPublisher{
+		key: "publisher2",
+		publishFunc: func(context.Context, []string, []byte) error {
+			publishCalls["publisher2"]++
+			return nil
+		},
+	}
+
+	publicKey, _, err := hpke.KEM_X25519_HKDF_SHA256.Scheme().GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("GenerateKeyPair failed: %v", err)
+	}
+
+	ech := &ECH{
+		configsMu: new(sync.RWMutex),
+		Publication: []*ECHPublication{
+			{
+				Domains:    []string{"example.com"},
+				publishers: []ECHPublisher{publisher1, publisher2},
+			},
+		},
+		configs: map[string][]echConfig{
+			"example.com": {
+				{
+					PublicKey:     publicKey,
+					Version:       draftTLSESNI25,
+					ConfigID:      1,
+					RawPublicName: "example.com",
+					KEMID:         hpke.KEM_X25519_HKDF_SHA256,
+					CipherSuites: []hpkeSymmetricCipherSuite{
+						{
+							KDFID:  hpke.KDF_HKDF_SHA256,
+							AEADID: hpke.AEAD_AES128GCM,
+						},
+					},
+				},
+			},
+		},
+	}
+	tlsApp := &TLS{
+		ctx:                  ctx,
+		logger:               zap.NewNop(),
+		EncryptedClientHello: ech,
+		serverNames: map[string]serverNameRegistration{
+			"example.com": {},
+		},
+	}
+
+	for i := 0; i < 2; i++ {
+		if err := tlsApp.publishECHConfigs(ctx.Context, tlsApp.logger); err != nil {
+			t.Fatalf("publishECHConfigs call %d failed: %v", i+1, err)
+		}
+	}
+
+	for _, publisherKey := range []string{"publisher1", "publisher2"} {
+		if publishCalls[publisherKey] != 1 {
+			t.Errorf("%s was called %d times; want once", publisherKey, publishCalls[publisherKey])
+		}
+	}
+
+	assertPublicationHistory := func(t *testing.T, history publicationHistory) {
+		t.Helper()
+		for _, publisherKey := range []string{"publisher1", "publisher2"} {
+			if publishedAt := history[publisherKey]["example.com"]; publishedAt.IsZero() {
+				t.Errorf("missing publication history for %s", publisherKey)
+			}
+		}
+	}
+
+	assertPublicationHistory(t, ech.configs["example.com"][0].meta.Publications)
+
+	var storedMeta echConfigMeta
+	if err := json.Unmarshal(storedMetadata[echMetaKey(1)], &storedMeta); err != nil {
+		t.Fatalf("unmarshaling stored ECH metadata: %v", err)
+	}
+	assertPublicationHistory(t, storedMeta.Publications)
 }
 
 func TestTLSStorageCleanStopSynchronization(t *testing.T) {
@@ -359,9 +461,6 @@ func TestTLSECHPublishBlockingPublisherStopSynchronization(t *testing.T) {
 							AEADID: hpke.AEAD_AES128GCM,
 						},
 					},
-					meta: echConfigMeta{
-						Publications: make(publicationHistory),
-					},
 				},
 			},
 		},
@@ -428,8 +527,7 @@ func TestTLSECHRotateBlockingStorageStopSynchronization(t *testing.T) {
 					ConfigID:      1,
 					RawPublicName: "example.com",
 					meta: echConfigMeta{
-						Created:      time.Now().Add(-24 * time.Hour * 31), // > 30 days old so rotationNeeded returns true
-						Publications: make(publicationHistory),
+						Created: time.Now().Add(-24 * time.Hour * 31), // > 30 days old so rotationNeeded returns true
 					},
 				},
 			},

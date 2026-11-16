@@ -64,6 +64,12 @@ func TestFileMatcher(t *testing.T) {
 
 	for i, tc := range []testCase{
 		{
+			path:         "/",
+			expectedPath: "/",
+			expectedType: "directory",
+			matched:      true,
+		},
+		{
 			path:         "/.env",
 			expectedPath: "/.env",
 			expectedType: "file",
@@ -627,6 +633,20 @@ func TestFirstExistFallbackMatchesWhenFinalFileIsAbsent(t *testing.T) {
 			expectedPath: "/no-such-index.php",
 		},
 		{
+			name:     "fallback does not match a regular file with a trailing slash",
+			tryFiles: []string{"{http.request.uri.path}"},
+			policy:   tryPolicyFirstExistFallback,
+			path:     "/foo.txt/",
+			matched:  false,
+		},
+		{
+			name:     "fallback does not match a regular file with a trailing dot segment",
+			tryFiles: []string{"{http.request.uri.path}"},
+			policy:   tryPolicyFirstExistFallback,
+			path:     "/foo.txt/./",
+			matched:  false,
+		},
+		{
 			name:         "fallback still prefers an earlier candidate that exists",
 			tryFiles:     []string{"{http.request.uri.path}", "no-such-index.php"},
 			policy:       tryPolicyFirstExistFallback,
@@ -704,6 +724,39 @@ func TestFirstExistFallbackMatchesWhenFinalFileIsAbsent(t *testing.T) {
 				t.Errorf("Test %d: actual path: %v, expected: %v", i, rel, tc.expectedPath)
 			}
 		})
+	}
+}
+
+func TestFileMatcherRejectsWindowsSeparators(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("backslash is a path separator only on Windows")
+	}
+
+	for _, policy := range []string{tryPolicyFirstExist, tryPolicyFirstExistFallback} {
+		for _, requestTarget := range []string{
+			"/foo.txt%5c",
+			"/foo.txt%5C",
+			`/foo.txt\`,
+		} {
+			t.Run(policy+requestTarget, func(t *testing.T) {
+				m := &MatchFile{
+					fsmap:     &filesystems.FileSystemMap{},
+					Root:      "./testdata",
+					TryFiles:  []string{"{http.request.uri.path}"},
+					TryPolicy: policy,
+				}
+				req := httptest.NewRequest(http.MethodGet, requestTarget, nil)
+				caddyhttp.NewTestReplacer(req)
+
+				matched, err := m.MatchWithError(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if matched {
+					t.Fatal("separator-qualified regular file matched")
+				}
+			})
+		}
 	}
 }
 
@@ -866,6 +919,35 @@ func TestSizePoliciesWithEmptyFiles(t *testing.T) {
 			rel, _ := repl.Get("http.matchers.file.relative")
 			if rel != tc.expectedPath {
 				t.Errorf("actual path: %v, expected: %v", rel, tc.expectedPath)
+			}
+		})
+	}
+}
+
+func BenchmarkFileMatcher(b *testing.B) {
+	for _, bc := range []struct {
+		name string
+		path string
+	}{
+		{name: "existing file", path: "/index.php"},
+		{name: "front controller", path: "/blog/my-post"},
+	} {
+		b.Run(bc.name, func(b *testing.B) {
+			m := &MatchFile{
+				fsmap:     &filesystems.FileSystemMap{},
+				Root:      "./testdata",
+				TryFiles:  []string{"{http.request.uri.path}", "{http.request.uri.path}/index.php", "index.php"},
+				TryPolicy: tryPolicyFirstExist,
+				SplitPath: []string{".php"},
+			}
+			req := &http.Request{URL: &url.URL{Path: bc.path}}
+			caddyhttp.NewTestReplacer(req)
+
+			b.ReportAllocs()
+			for b.Loop() {
+				if ok, err := m.MatchWithError(req); !ok || err != nil {
+					b.Fatalf("expected match, got %t, %v", ok, err)
+				}
 			}
 		})
 	}

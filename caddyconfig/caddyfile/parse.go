@@ -315,14 +315,21 @@ func (p *parser) blockContents() error {
 		// single-server configs don't need curly braces
 		p.cursor--
 	}
+	braced := errOpenCurlyBrace == nil
 
-	err := p.directives()
+	closed, err := p.directives(braced)
 	if err != nil {
 		return err
 	}
 
 	// only look for close curly brace if there was an opening
-	if errOpenCurlyBrace == nil {
+	if braced {
+		if !closed {
+			// the tokens ran out before the server block was closed;
+			// the current token may be the closing brace of a nested
+			// directive block, which does not close this block
+			return p.EOFErr()
+		}
 		err = p.closeCurlyBrace()
 		if err != nil {
 			return err
@@ -335,20 +342,26 @@ func (p *parser) blockContents() error {
 // directives parses through all the lines for directives
 // and it expects the next token to be the first
 // directive. It goes until EOF or closing curly brace
-// which ends the server block.
-func (p *parser) directives() error {
+// which ends the server block. It reports whether it
+// stopped at the closing curly brace of a braced server
+// block (braced); a closing curly brace is an error if
+// the server block was not opened with one.
+func (p *parser) directives(braced bool) (bool, error) {
 	for p.Next() {
 		// end of server block
 		if isCloseCurlyBrace(p.Token()) {
+			if !braced {
+				return false, p.Err("Unexpected '}' because no matching opening brace")
+			}
 			// p.nesting has already been decremented
-			break
+			return true, nil
 		}
 
 		// special case: import directive replaces tokens during parse-time
 		if p.Val() == "import" {
 			err := p.doImport(1)
 			if err != nil {
-				return err
+				return false, err
 			}
 			p.cursor-- // cursor is advanced when we continue, so roll back one more
 			continue
@@ -359,11 +372,11 @@ func (p *parser) directives() error {
 		// and which ends at the end of the line or at the end of
 		// the block that is opened at the end of the line)
 		if err := p.directive(); err != nil {
-			return err
+			return false, err
 		}
 	}
 
-	return nil
+	return false, nil
 }
 
 // doImport swaps out the import directive and its argument

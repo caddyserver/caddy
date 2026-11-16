@@ -127,10 +127,11 @@ func (ctx Context) HoldCleanup() func() {
 // module Cleanup methods. Copies of ctx share the same callbacks.
 // Registration is allowed after cancellation while a cleanup hold remains.
 // OnCancel panics if cleanup has already started; acquire a hold before work
-// that may register callbacks concurrently with cancellation.
+// that may register callbacks concurrently with cancellation. A context not
+// created with NewContext has no cleanup lifecycle, so registration has no effect.
 func (ctx *Context) OnCancel(f func()) {
 	if ctx.cleanup == nil {
-		panic("caddy: OnCancel requires a context created with NewContext")
+		return
 	}
 	if !ctx.cleanup.Add(f) {
 		panic("caddy: OnCancel called after cleanup started")

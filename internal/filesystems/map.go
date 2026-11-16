@@ -18,6 +18,19 @@ type wrapperFs struct {
 	fs.FS
 }
 
+// Embedding fs.FS hides the wrapped FS's optional interfaces, so forward them.
+// Not GlobFS: OsFS.Glob uses filepath.Glob, whose semantics differ from fs.Glob.
+
+func (w *wrapperFs) Stat(name string) (fs.FileInfo, error)      { return fs.Stat(w.FS, name) }
+func (w *wrapperFs) ReadDir(name string) ([]fs.DirEntry, error) { return fs.ReadDir(w.FS, name) }
+func (w *wrapperFs) ReadFile(name string) ([]byte, error)       { return fs.ReadFile(w.FS, name) }
+
+var (
+	_ fs.StatFS     = (*wrapperFs)(nil)
+	_ fs.ReadDirFS  = (*wrapperFs)(nil)
+	_ fs.ReadFileFS = (*wrapperFs)(nil)
+)
+
 // FileSystemMap stores a map of filesystems
 // the empty key will be overwritten to be the default key
 // it includes a default filesystem, based off the os fs

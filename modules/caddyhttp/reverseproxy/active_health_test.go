@@ -218,3 +218,60 @@ func TestActiveHealthCheckBodyStillReplacesKnownPlaceholders(t *testing.T) {
 		t.Errorf("health check body = %q, want %q", got, want)
 	}
 }
+
+// schemeRecordingTransport keeps HTTPTransport's health check scheme
+// override but answers every request itself, recording the URL used.
+type schemeRecordingTransport struct {
+	HTTPTransport
+	got atomic.Value // string
+}
+
+func (rt *schemeRecordingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	rt.got.Store(req.URL.Scheme + "://" + req.URL.Host)
+	return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody, Request: req}, nil
+}
+
+// TestActiveHealthCheckSchemeUsesHealthCheckPort checks that tls_except_ports
+// is applied to the port the active health check connects to, so a
+// health_upstream or health_port on an excepted port is checked over plain
+// HTTP even though the upstream itself uses TLS.
+func TestActiveHealthCheckSchemeUsesHealthCheckPort(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		healthUpstream string
+		healthPort     int
+		want           string
+	}{
+		{name: "upstream port", want: "https://127.0.0.1:8443"},
+		{name: "health_upstream on excepted port", healthUpstream: "127.0.0.1:8080", want: "http://127.0.0.1:8080"},
+		{name: "health_upstream on TLS port", healthUpstream: "127.0.0.1:9443", want: "https://127.0.0.1:9443"},
+		{name: "health_port on excepted port", healthPort: 8080, want: "http://127.0.0.1:8080"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h, u, cancel := newActiveHandler(t, "127.0.0.1:8443", "/health", 1)
+			defer cancel()
+			defer drainHostsPool()
+
+			rt := &schemeRecordingTransport{HTTPTransport: HTTPTransport{TLS: &TLSConfig{ExceptPorts: []string{"8080"}}}}
+			h.Transport = rt
+			h.HealthChecks.Active.httpClient.Transport = rt
+			h.HealthChecks.Active.Upstream = tc.healthUpstream
+			h.HealthChecks.Active.Port = tc.healthPort
+
+			hostAddr := u.Dial
+			if tc.healthPort != 0 {
+				hostAddr = "127.0.0.1:8080" // what doActiveHealthCheckForAllHosts passes
+			}
+			dialInfo, err := u.fillDialInfo(caddy.NewReplacer())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := h.doActiveHealthCheck(dialInfo, hostAddr, u.Dial, u); err != nil {
+				t.Fatalf("active health check: %v", err)
+			}
+			if got, _ := rt.got.Load().(string); got != tc.want {
+				t.Errorf("health check URL = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

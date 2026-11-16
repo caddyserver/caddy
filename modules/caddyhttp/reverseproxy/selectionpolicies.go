@@ -142,46 +142,31 @@ func (r *WeightedRoundRobinSelection) Validate() error {
 
 // Select returns an available host, if any.
 func (r *WeightedRoundRobinSelection) Select(pool UpstreamPool, _ *http.Request, _ http.ResponseWriter) *Upstream {
-	if len(pool) == 0 {
-		return nil
+	type weightedUpstream struct {
+		upstream *Upstream
+		weight   int
 	}
-	if len(r.Weights) < 2 {
-		if !pool[0].Available() {
-			return nil
-		}
-		return pool[0]
-	}
-	var index, totalWeight int
-	weights := make([]int, 0, len(r.Weights))
-
-	for _, w := range r.Weights {
-		if w > 0 {
-			weights = append(weights, w)
-		}
-	}
-	currentWeight := int(r.index.Add(1)) % r.totalWeight
-	for i, weight := range weights {
-		totalWeight += weight
-		if currentWeight < totalWeight {
-			index = i
-			break
-		}
-	}
-
-	upstreams := make([]*Upstream, 0, len(weights))
+	upstreams := make([]weightedUpstream, 0, len(pool))
+	var totalWeight int
 	for i, upstream := range pool {
-		if i >= len(r.Weights) || !upstream.Available() || r.Weights[i] == 0 {
+		if i >= len(r.Weights) || r.Weights[i] <= 0 || !upstream.Available() {
 			continue
 		}
-		upstreams = append(upstreams, upstream)
-		if len(upstreams) == cap(upstreams) {
-			break
-		}
+		upstreams = append(upstreams, weightedUpstream{upstream, r.Weights[i]})
+		totalWeight += r.Weights[i]
 	}
-	if len(upstreams) == 0 {
+	if totalWeight == 0 {
 		return nil
 	}
-	return upstreams[index%len(upstreams)]
+
+	currentWeight := uint64(r.index.Add(1)) % uint64(totalWeight)
+	for _, upstream := range upstreams {
+		if currentWeight < uint64(upstream.weight) {
+			return upstream.upstream
+		}
+		currentWeight -= uint64(upstream.weight)
+	}
+	return nil
 }
 
 // RandomChoiceSelection is a policy that selects

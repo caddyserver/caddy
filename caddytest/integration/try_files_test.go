@@ -46,6 +46,32 @@ func TestTryFilesErrorCodeAfterQueryItem(t *testing.T) {
 	tester.AssertResponseCode(req, http.StatusNotFound)
 }
 
+func TestTryFilesMatchesSiteRootDirectory(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "index.html"), []byte("root"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	tester := caddytest.NewTester(t)
+	tester.InitServer(fmt.Sprintf(`
+	{
+		skip_install_trust
+		admin localhost:2999
+		http_port 9080
+		grace_period 1ns
+	}
+	http://localhost:9080 {
+		root * %q
+		route {
+			try_files {path} {path}/ =404
+			file_server
+		}
+	}
+	`, filepath.ToSlash(root)), "caddyfile")
+
+	tester.AssertGetResponse("http://localhost:9080/", http.StatusOK, "root")
+}
+
 func TestSkippedGroupedRouteKeepsRegexpCapture(t *testing.T) {
 	tester := caddytest.NewTester(t)
 	tester.InitServer(`

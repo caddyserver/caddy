@@ -341,6 +341,68 @@ func TestResponseRetryStatusCode(t *testing.T) {
 	}
 }
 
+// TestResponseRetryUnknownLengthEmptyBody verifies that a bodyless request with
+// an unknown length (as HTTP/3 GET requests have) remains retryable even though
+// the transport probes its body, while a non-empty streaming body does not.
+func TestResponseRetryUnknownLengthEmptyBody(t *testing.T) {
+	for _, tc := range []struct {
+		body     string
+		wantCode int
+		wantBad  int32
+		wantGood int32
+	}{
+		{body: "", wantCode: http.StatusOK, wantBad: 1, wantGood: 1},
+		{body: "synthetic", wantCode: http.StatusBadGateway, wantBad: 1, wantGood: 0},
+	} {
+		t.Run(fmt.Sprintf("body=%q", tc.body), func(t *testing.T) {
+			var badCalls, goodCalls atomic.Int32
+			badServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				badCalls.Add(1)
+				w.WriteHeader(http.StatusBadGateway)
+			}))
+			t.Cleanup(badServer.Close)
+			goodServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				goodCalls.Add(1)
+				if got, err := io.ReadAll(r.Body); err != nil || len(got) != 0 {
+					t.Errorf("good upstream body = %q, %v", got, err)
+				}
+				w.Write([]byte("ok"))
+			}))
+			t.Cleanup(goodServer.Close)
+
+			retryMatch := caddyhttp.MatcherSets{
+				caddyhttp.MatcherSet{
+					newExpressionMatcher(t, "{http.reverse_proxy.status_code} == 502"),
+				},
+			}
+			// RoundRobin picks index 1 first, then 0
+			h := minimalHandlerWithRetryMatch(1, retryMatch,
+				&Upstream{Host: new(Host), Dial: goodServer.Listener.Addr().String()},
+				&Upstream{Host: new(Host), Dial: badServer.Listener.Addr().String()})
+
+			req := httptest.NewRequest(http.MethodGet, "http://example.com/", io.NopCloser(strings.NewReader(tc.body)))
+			req.ContentLength = -1
+			req = prepareTestRequest(req)
+			rec := httptest.NewRecorder()
+			err := h.ServeHTTP(rec, req, caddyhttp.HandlerFunc(func(http.ResponseWriter, *http.Request) error {
+				return nil
+			}))
+
+			gotCode := rec.Code
+			if herr, ok := err.(caddyhttp.HandlerError); ok {
+				gotCode = herr.StatusCode
+			}
+			if gotCode != tc.wantCode {
+				t.Errorf("status = %d, want %d (err=%v)", gotCode, tc.wantCode, err)
+			}
+			if badCalls.Load() != tc.wantBad || goodCalls.Load() != tc.wantGood {
+				t.Errorf("upstream calls: bad=%d good=%d, want bad=%d good=%d",
+					badCalls.Load(), goodCalls.Load(), tc.wantBad, tc.wantGood)
+			}
+		})
+	}
+}
+
 // TestResponseRetryHeader verifies that response header matching triggers
 // retries via a CEL expression checking {rp.header.*}
 func TestResponseRetryHeader(t *testing.T) {

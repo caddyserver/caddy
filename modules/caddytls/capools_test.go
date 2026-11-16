@@ -2,8 +2,17 @@ package caddytls
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
+	"errors"
 	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
 	"time"
@@ -12,6 +21,103 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	_ "github.com/caddyserver/caddy/v2/modules/filestorage"
 )
+
+func TestTLSConfigServerName(t *testing.T) {
+	repl := caddy.NewReplacer()
+	repl.Set("test.server_name", "example.com")
+	for _, tc := range []struct {
+		name       string
+		serverName string
+		replacer   *caddy.Replacer
+		want       string
+	}{
+		{name: "default"},
+		{name: "literal", serverName: "example.com", want: "example.com"},
+		{name: "placeholder", serverName: "{test.server_name}", replacer: repl, want: "example.com"},
+		{name: "fallback replacer", serverName: "{env.CADDY_CA_POOL_SERVER_NAME}", want: "example.com"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("CADDY_CA_POOL_SERVER_NAME", "example.com")
+			ctx := caddy.Context{Context: context.Background()}
+			if tc.replacer != nil {
+				ctx.Context = context.WithValue(ctx.Context, caddy.ReplacerCtxKey, tc.replacer)
+			}
+			cfg, err := (&TLSConfig{ServerName: tc.serverName}).makeTLSClientConfig(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.want == "" {
+				if cfg != nil {
+					t.Fatalf("empty configuration should retain TLS defaults, got %+v", cfg)
+				}
+				return
+			}
+			if cfg == nil || cfg.ServerName != tc.want {
+				t.Fatalf("expected server name %q, got %+v", tc.want, cfg)
+			}
+			if cfg.InsecureSkipVerify {
+				t.Fatal("server name override must not disable verification")
+			}
+		})
+	}
+}
+
+func TestHTTPCertPoolServerNameVerification(t *testing.T) {
+	server := httptest.NewUnstartedServer(nil)
+	// Serve the endpoint's certificate as the fetched CA bundle.
+	server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.TLS.ServerName != "" && r.TLS.ServerName != "example.com" {
+			t.Errorf("unexpected SNI: %q", r.TLS.ServerName)
+		}
+		pem.Encode(w, &pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw})
+	})
+	server.Config.ErrorLog = log.New(io.Discard, "", 0)
+	server.StartTLS()
+	defer server.Close()
+
+	ca, err := json.Marshal(map[string]any{
+		"provider":         "inline",
+		"trusted_ca_certs": []string{base64.StdEncoding.EncodeToString(server.Certificate().Raw)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name       string
+		serverName string
+		wantErr    bool
+	}{
+		{name: "URL identity by default"},
+		{name: "override", serverName: "example.com"},
+		{name: "placeholder override", serverName: "{test.server_name}"},
+		{name: "override mismatch", serverName: "wrong.example", wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repl := caddy.NewReplacer()
+			repl.Set("test.server_name", "example.com")
+			ctx, cancel := caddy.NewContext(caddy.Context{
+				Context: context.WithValue(context.Background(), caddy.ReplacerCtxKey, repl),
+			})
+			defer cancel()
+			pool := HTTPCertPool{
+				Endpoints: []string{server.URL},
+				TLS:       &TLSConfig{CARaw: ca, ServerName: tc.serverName},
+			}
+			err := pool.Provision(ctx)
+			if tc.wantErr {
+				var verifyErr *tls.CertificateVerificationError
+				var hostnameErr x509.HostnameError
+				if !errors.As(err, &verifyErr) || !errors.As(err, &hostnameErr) {
+					t.Fatalf("expected hostname verification failure, got %v", err)
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			} else if len(pool.certs) != 1 || !pool.certs[0].Equal(server.Certificate()) {
+				t.Fatal("expected endpoint certificate in fetched CA pool")
+			}
+		})
+	}
+}
 
 const (
 	test_der_1       = `MIIDSzCCAjOgAwIBAgIUfIRObjWNUA4jxQ/0x8BOCvE2Vw4wDQYJKoZIhvcNAQELBQAwFjEUMBIGA1UEAwwLRWFzeS1SU0EgQ0EwHhcNMTkwODI4MTYyNTU5WhcNMjkwODI1MTYyNTU5WjAWMRQwEgYDVQQDDAtFYXN5LVJTQSBDQTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAK5m5elxhQfMp/3aVJ4JnpN9PUSz6LlP6LePAPFU7gqohVVFVtDkChJAG3FNkNQNlieVTja/bgH9IcC6oKbROwdY1h0MvNV8AHHigvl03WuJD8g2ReVFXXwsnrPmKXCFzQyMI6TYk3m2gYrXsZOU1GLnfMRC3KAMRgE2F45twOs9hqG169YJ6mM2eQjzjCHWI6S2/iUYvYxRkCOlYUbLsMD/AhgAf1plzg6LPqNxtdlwxZnA0ytgkmhK67HtzJu0+ovUCsMv0RwcMhsEo9T8nyFAGt9XLZ63X5WpBCTUApaAUhnG0XnerjmUWb6eUWw4zev54sEfY5F3x002iQaW6cECAwEAAaOBkDCBjTAdBgNVHQ4EFgQU4CBUbZsS2GaNIkGRz/cBsD5ivjswUQYDVR0jBEowSIAU4CBUbZsS2GaNIkGRz/cBsD5ivjuhGqQYMBYxFDASBgNVBAMMC0Vhc3ktUlNBIENBghR8hE5uNY1QDiPFD/THwE4K8TZXDjAMBgNVHRMEBTADAQH/MAsGA1UdDwQEAwIBBjANBgkqhkiG9w0BAQsFAAOCAQEAKB3V4HIzoiO/Ch6WMj9bLJ2FGbpkMrcb/Eq01hT5zcfKD66lVS1MlK+cRL446Z2b2KDP1oFyVs+qmrmtdwrWgD+nfe2sBmmIHo9m9KygMkEOfG3MghGTEcS+0cTKEcoHYWYyOqQh6jnedXY8Cdm4GM1hAc9MiL3/sqV8YCVSLNnkoNysmr06/rZ0MCUZPGUtRmfd0heWhrfzAKw2HLgX+RAmpOE2MZqWcjvqKGyaRiaZks4nJkP6521aC2Lgp0HhCz1j8/uQ5ldoDszCnu/iro0NAsNtudTMD+YoLQxLqdleIh6CW+illc2VdXwj7mn6J04yns9jfE2jRjW/yTLFuQ==`

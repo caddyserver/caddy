@@ -22,6 +22,7 @@ import (
 // are special file paths that require the use of syscall.FullPath
 // to handle correctly.
 // Just call stdlib's implementation which uses that function.
+// file_server's hide relies on it stripping trailing dots and spaces as Win32 opens do.
 func FastAbs(path string) (string, error) {
 	return filepath.Abs(path)
 }

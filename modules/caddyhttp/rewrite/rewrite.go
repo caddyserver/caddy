@@ -68,6 +68,19 @@ type Rewrite struct {
 	// key-value pairs you add to the query string will not overwrite
 	// existing values (individual pairs are append-only).
 	//
+	// Decoded path placeholders, such as {http.request.orig_uri.path},
+	// {http.request.uri.path.*}, and the file matcher's relative and
+	// remainder paths, as well as regular expression captures
+	// ({http.regexp.*}, from any matcher), are percent-encoded (except
+	// for slashes) when used before the "?", so characters like "?" or
+	// "%" from a request stay part of the new path instead of starting a
+	// query string or forming an escape sequence.
+	// Placeholders ending in "_escaped" are inserted unchanged.
+	//
+	// If the path changes, the result is made absolute and its dot
+	// segments are resolved (repeated slashes are preserved), so
+	// "foo.html" becomes "/foo.html".
+	//
 	// To clear the query string, explicitly set an empty one: "?"
 	URI string `json:"uri,omitempty"`
 
@@ -83,10 +96,12 @@ type Rewrite struct {
 	// to have that same escape at that position in order to match.
 	StripPathSuffix string `json:"strip_path_suffix,omitempty"`
 
-	// Performs substring replacements on the URI.
+	// Performs substring replacements on the URI. If a replacement
+	// changes the path, dot segments in the result are cleaned.
 	URISubstring []substrReplacer `json:"uri_substring,omitempty"`
 
 	// Performs regular expression replacements on the URI path.
+	// Dot segments are cleaned before matching and after replacement.
 	PathRegexp []*regexReplacer `json:"path_regexp,omitempty"`
 
 	// Mutates the query string of the URI.
@@ -211,8 +226,7 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 		var newPath, newQuery, newFrag string
 
 		if path != "" {
-			path = escapePathPlaceholders(path, r, repl)
-			newPath = repl.ReplaceAll(path, "")
+			newPath = replacePathPlaceholders(path, r, repl)
 		}
 
 		// a fragment may have snuck into the path component during
@@ -264,12 +278,22 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 		// update the URI with the new components
 		// only after building them
 		if pathStart >= 0 {
+			oldPath := r.URL.Path
 			if path, err := url.PathUnescape(newPath); err != nil {
 				r.URL.Path = newPath
 			} else {
 				r.URL.Path = path
 			}
 			r.URL.RawPath = "" // force recomputing when EscapedPath() is called
+
+			// a rewritten path can be relative or contain dot segments (often
+			// from a placeholder), which downstream matchers and handlers would
+			// interpret differently; so anchor and clean it, except for an
+			// explicitly configured OPTIONS * request target
+			optionsStar := r.Method == http.MethodOptions && path == "*" && newPath == "*"
+			if r.URL.Path != oldPath && !optionsStar {
+				canonicalizePath(r)
+			}
 		}
 		if qsStart >= 0 || queryInjected {
 			r.URL.RawQuery = newQuery
@@ -334,34 +358,28 @@ func (rewr Rewrite) Rewrite(r *http.Request, repl *caddy.Replacer) bool {
 	return r.Method != oldMethod || r.RequestURI != oldURI
 }
 
-func escapePathPlaceholders(path string, r *http.Request, repl *caddy.Replacer) string {
-	// Replace path-valued placeholders in escaped form before the URI is parsed,
-	// otherwise literal '?' and '%' bytes from the path can be interpreted as URI
-	// delimiters or percent-escape sequences during the rewrite.
-	pathPlaceholder := "{http.request.uri.path}"
-	if strings.Contains(path, pathPlaceholder) {
-		path = strings.ReplaceAll(path, pathPlaceholder, r.URL.EscapedPath())
-	}
-
-	fileMatchRelativePlaceholder := "{http.matchers.file.relative}"
-	if strings.Contains(path, fileMatchRelativePlaceholder) {
-		if val, ok := repl.Get("http.matchers.file.relative"); ok {
-			if relativePath, ok := val.(string); ok {
-				path = strings.ReplaceAll(path, fileMatchRelativePlaceholder, escapePathPreservingSlashes(relativePath))
-			}
+func replacePathPlaceholders(path string, r *http.Request, repl *caddy.Replacer) string {
+	// Decoded path fields must remain path data, not URI delimiters or a second
+	// layer of percent-encoding. Whole-URI and explicitly escaped placeholders
+	// retain their URI syntax; query components are escaped by buildQueryString.
+	result, _ := repl.ReplaceFunc(path, func(name string, val any) (any, error) {
+		if name == "http.request.uri.path" {
+			return r.URL.EscapedPath(), nil
 		}
-	}
-
-	fileMatchRemainderPlaceholder := "{http.matchers.file.remainder}"
-	if strings.Contains(path, fileMatchRemainderPlaceholder) {
-		if val, ok := repl.Get("http.matchers.file.remainder"); ok {
-			if remainder, ok := val.(string); ok {
-				path = strings.ReplaceAll(path, fileMatchRemainderPlaceholder, escapePathPreservingSlashes(remainder))
-			}
+		decodedPath := name == "http.request.orig_uri.path" ||
+			strings.HasPrefix(name, "http.request.uri.path.") ||
+			strings.HasPrefix(name, "http.request.orig_uri.path.") ||
+			name == "http.matchers.file.relative" ||
+			name == "http.matchers.file.remainder" ||
+			// regexp captures usually come from the decoded path (path_regexp),
+			// and their names don't say which value they were captured from
+			strings.HasPrefix(name, "http.regexp.")
+		if decodedPath && !strings.HasSuffix(name, "_escaped") {
+			return escapePathPreservingSlashes(caddy.ToString(val)), nil
 		}
-	}
-
-	return path
+		return val, nil
+	})
+	return result
 }
 
 func escapePathPreservingSlashes(path string) string {
@@ -581,9 +599,13 @@ func (rep substrReplacer) do(r *http.Request, repl *caddy.Replacer) {
 
 	mergeSlashes := !strings.Contains(rep.Find, "//")
 
+	oldPath := r.URL.Path
 	changePath(r, func(pathOrRawPath string) string {
 		return strings.Replace(caddyhttp.CleanPath(pathOrRawPath, mergeSlashes), find, replace, lim)
 	})
+	if r.URL.Path != oldPath {
+		canonicalizePath(r)
+	}
 
 	r.URL.RawQuery = strings.Replace(r.URL.RawQuery, find, replace, lim)
 }
@@ -605,9 +627,16 @@ func (rep regexReplacer) do(r *http.Request, repl *caddy.Replacer) {
 		return
 	}
 	replace := repl.ReplaceAll(rep.Replace, "")
+	// Match the same cleaned path that path guards and filesystem handlers use,
+	// before a replacement can change the depth at which dot segments resolve.
+	canonicalizePath(r)
+	oldPath := r.URL.Path
 	changePath(r, func(pathOrRawPath string) string {
 		return rep.re.ReplaceAllString(pathOrRawPath, replace)
 	})
+	if r.URL.Path != oldPath {
+		canonicalizePath(r)
+	}
 }
 
 func changePath(req *http.Request, newVal func(pathOrRawPath string) string) {
@@ -625,11 +654,10 @@ func changePath(req *http.Request, newVal func(pathOrRawPath string) string) {
 	}
 }
 
-// canonicalizePath anchors and cleans a stripped origin-form path while
+// canonicalizePath anchors and cleans a modified origin-form path while
 // preserving an alternate RawPath encoding when it still represents the
-// canonical Path. It is applied after prefix or suffix removal because stripping can
-// expose a relative path or dot segments that downstream handlers interpret
-// differently.
+// canonical Path. Removing or replacing path components can expose a relative
+// path or dot segments that downstream handlers interpret differently.
 func canonicalizePath(req *http.Request) {
 	p := req.URL.Path
 	if !strings.HasPrefix(p, "/") {
