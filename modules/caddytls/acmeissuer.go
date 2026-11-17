@@ -588,6 +588,18 @@ func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		case "trusted_roots":
 			iss.TrustedRootsPEMFiles = d.RemainingArgs()
 
+		case "network_proxy":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			modStem := d.Val()
+			modID := "caddy.network_proxy." + modStem
+			unm, err := caddyfile.UnmarshalModule(d, modID)
+			if err != nil {
+				return err
+			}
+			iss.NetworkProxyRaw = caddyconfig.JSONModuleObject(unm, "from", modStem, nil)
+
 		case "dns":
 			if iss.Challenges == nil {
 				iss.Challenges = new(ChallengesConfig)

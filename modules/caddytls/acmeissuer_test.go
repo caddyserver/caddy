@@ -6,6 +6,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	_ "github.com/caddyserver/caddy/v2/modules/internal/network"
 	"github.com/caddyserver/certmagic"
 	"github.com/mholt/acmez/v3/acme"
@@ -127,5 +129,32 @@ func TestACMEIssuerNetworkProxyAfterRebuildCertMagic(t *testing.T) {
 	}
 	if proxied.Load() == 0 {
 		t.Error("ACME request did not go through the configured network proxy")
+	}
+}
+
+func TestACMEIssuerUnmarshalCaddyfileNetworkProxy(t *testing.T) {
+	for _, caddyfileInput := range []string{
+		`acme {
+			network_proxy url http://localhost:8080
+		}`,
+		`acme https://acme.example.com/directory {
+			network_proxy url http://localhost:8080
+		}`,
+	} {
+		iss := new(ACMEIssuer)
+		if err := iss.UnmarshalCaddyfile(caddyfile.NewTestDispenser(caddyfileInput)); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+
+		var raw map[string]any
+		if err := json.Unmarshal(iss.NetworkProxyRaw, &raw); err != nil {
+			t.Fatalf("network_proxy JSON: %v (raw: %s)", err, iss.NetworkProxyRaw)
+		}
+		if got := raw["from"]; got != "url" {
+			t.Errorf("network_proxy from = %v, want url", got)
+		}
+		if got := raw["url"]; got != "http://localhost:8080" {
+			t.Errorf("network_proxy url = %v, want http://localhost:8080", got)
+		}
 	}
 }
