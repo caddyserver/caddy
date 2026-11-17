@@ -158,6 +158,12 @@ func (h CopyResponseHeadersHandler) ServeHTTP(rw http.ResponseWriter, req *http.
 	src := hrc.response.Header.Clone()
 	stripHopByHopHeaders(src)
 
+	// Content-Length describes the upstream body. Another handler in this
+	// handle_response route may replace the body with a different length,
+	// so never copy it; net/http sets the length from the body actually
+	// written.
+	src.Del("Content-Length")
+
 	for field, values := range src {
 		// Check the include list first, skip
 		// the header if it's _not_ in this list.

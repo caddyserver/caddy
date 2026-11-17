@@ -56,40 +56,64 @@ func TestCopyResponseHeadersStripsHopByHop(t *testing.T) {
 		return h
 	}
 
-	// The replacement body is the same length as the upstream body.
-	// copy_response_headers also copies Content-Length, and a shorter
-	// body makes the client report unexpected EOF. X-Replaced shows
-	// that static_response ran.
-	const replaced = `{"handler":"static_response","body":"from-upstream","headers":{"X-Replaced":["yes"]}}`
+	// static_response replaces the upstream body with a different length.
+	// copy_response_headers must not copy the upstream Content-Length, or
+	// the client reads a truncated body (shorter) or hangs (longer).
+	const replaced = `{"handler":"static_response","body":"short","headers":{"X-Replaced":["yes"]}}`
+	const replacedLong = `{"handler":"static_response","body":"from-upstream-but-much-longer","headers":{"X-Replaced":["yes"]}}`
+	const replacedEmpty = `{"handler":"static_response","body":"","headers":{"X-Replaced":["yes"]}}`
 	cases := []struct {
 		name        string
 		handles     []json.RawMessage
 		wantReplace bool
+		wantBody    string
 	}{
 		{
-			name: "default finalize",
+			name:     "default finalize",
+			wantBody: "from-upstream",
 		},
 		{
 			name: "copy_response",
 			handles: []json.RawMessage{
 				json.RawMessage(`{"handler":"copy_response"}`),
 			},
+			wantBody: "from-upstream",
 		},
 		{
-			name: "copy_response_headers",
+			name: "copy_response_headers with shorter replacement",
 			handles: []json.RawMessage{
 				json.RawMessage(`{"handler":"copy_response_headers"}`),
 				json.RawMessage(replaced),
 			},
 			wantReplace: true,
+			wantBody:    "short",
 		},
 		{
-			name: "include cannot copy hop-by-hop fields",
+			name: "copy_response_headers with longer replacement",
 			handles: []json.RawMessage{
-				json.RawMessage(`{"handler":"copy_response_headers","include":["Alt-Svc","X-Upstream","Keep-Alive"]}`),
+				json.RawMessage(`{"handler":"copy_response_headers"}`),
+				json.RawMessage(replacedLong),
+			},
+			wantReplace: true,
+			wantBody:    "from-upstream-but-much-longer",
+		},
+		{
+			name: "copy_response_headers with bodyless replacement",
+			handles: []json.RawMessage{
+				json.RawMessage(`{"handler":"copy_response_headers"}`),
+				json.RawMessage(replacedEmpty),
+			},
+			wantReplace: true,
+			wantBody:    "",
+		},
+		{
+			name: "include cannot copy Content-Length or hop-by-hop fields",
+			handles: []json.RawMessage{
+				json.RawMessage(`{"handler":"copy_response_headers","include":["Content-Length","Alt-Svc","X-Upstream","Keep-Alive"]}`),
 				json.RawMessage(replaced),
 			},
 			wantReplace: true,
+			wantBody:    "short",
 		},
 	}
 
@@ -118,8 +142,11 @@ func TestCopyResponseHeadersStripsHopByHop(t *testing.T) {
 			if resp.StatusCode != http.StatusOK {
 				t.Fatalf("status = %d, body = %q", resp.StatusCode, body)
 			}
-			if string(body) != "from-upstream" {
-				t.Fatalf("body = %q", body)
+			if string(body) != tc.wantBody {
+				t.Fatalf("body = %q, want %q", body, tc.wantBody)
+			}
+			if resp.ContentLength != int64(len(tc.wantBody)) {
+				t.Errorf("ContentLength = %d, want %d", resp.ContentLength, len(tc.wantBody))
 			}
 			if got := resp.Header.Get("X-Upstream"); got != "kept" {
 				t.Errorf("X-Upstream = %q, want kept", got)
