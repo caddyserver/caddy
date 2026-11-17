@@ -1484,16 +1484,16 @@ func TestMethodMatcher(t *testing.T) {
 			expect:   true,
 		},
 		{
-			scenario: "match lowercase get after Provision uppercases it",
+			scenario: "do not match lowercase get against GET",
 			match:    MatchMethod{"get"},
 			input:    http.MethodGet,
-			expect:   true,
+			expect:   false,
 		},
 		{
-			scenario: "match mixed case Post after Provision uppercases it",
+			scenario: "do not match mixed case Post against POST",
 			match:    MatchMethod{"Post"},
 			input:    http.MethodPost,
-			expect:   true,
+			expect:   false,
 		},
 		{
 			scenario: "no match for wrong method",
@@ -1503,9 +1503,21 @@ func TestMethodMatcher(t *testing.T) {
 		},
 		{
 			scenario: "match one of multiple methods",
-			match:    MatchMethod{"get", "post"},
+			match:    MatchMethod{"GET", "POST"},
 			input:    http.MethodPost,
 			expect:   true,
+		},
+		{
+			scenario: "match case-sensitive extension method",
+			match:    MatchMethod{"foo"},
+			input:    "foo",
+			expect:   true,
+		},
+		{
+			scenario: "do not change case of extension method",
+			match:    MatchMethod{"foo"},
+			input:    "FOO",
+			expect:   false,
 		},
 	} {
 		req := &http.Request{Method: tc.input}

@@ -985,12 +985,10 @@ func (MatchMethod) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-// Provision uppercases all configured methods to ensure case-insensitive
-// matching against incoming requests, whose methods are always uppercase.
+// Provision is a no-op: HTTP method tokens are case-sensitive (RFC 9110).
+// Standard methods are conventionally uppercase, and extension methods must
+// be compared exactly as configured.
 func (m MatchMethod) Provision(_ caddy.Context) error {
-	for i := range m {
-		m[i] = strings.ToUpper(m[i])
-	}
 	return nil
 }
 
