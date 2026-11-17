@@ -148,12 +148,15 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 
 			// evaluate regular expression if configured
 			if m.re != nil {
-				var result []byte
 				matches := m.re.FindStringSubmatchIndex(input)
 				if matches == nil {
 					continue
 				}
-				result = m.re.ExpandString(result, outputStr, input, matches)
+				// Expand configured placeholders before substituting
+				// regexp captures. Capture references such as ${1} are
+				// copied verbatim, and $ in placeholder values is escaped,
+				// so neither is reinterpreted.
+				result := m.re.ExpandString(nil, expandRegexpOutput(repl, outputStr), input, matches)
 				return string(result), true
 			}
 
@@ -172,6 +175,59 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 	})
 
 	return next.ServeHTTP(w, r)
+}
+
+// expandRegexpOutput expands placeholders in a regexp mapping output while
+// leaving regexp capture references such as $1 and ${name} untouched.
+func expandRegexpOutput(repl *caddy.Replacer, output string) string {
+	var b strings.Builder
+	b.Grow(len(output))
+
+	for i := 0; i < len(output); {
+		switch output[i] {
+		case '$':
+			b.WriteByte('$')
+			i++
+			if i < len(output) && output[i] == '$' {
+				b.WriteByte('$')
+				i++
+				continue
+			}
+			if i < len(output) && output[i] == '{' {
+				if j := strings.IndexByte(output[i:], '}'); j >= 0 {
+					b.WriteString(output[i : i+j+1])
+					i += j + 1
+					continue
+				}
+			}
+			for i < len(output) && isCaptureNameChar(output[i]) {
+				b.WriteByte(output[i])
+				i++
+			}
+		case '{':
+			j := strings.IndexByte(output[i:], '}')
+			if j < 0 {
+				b.WriteByte('{')
+				i++
+				continue
+			}
+			placeholder := output[i : i+j+1]
+			expanded, _ := repl.ReplaceFunc(placeholder, func(_ string, val any) (any, error) {
+				return strings.ReplaceAll(caddy.ToString(val), "$", "$$"), nil
+			})
+			b.WriteString(expanded)
+			i += j + 1
+		default:
+			b.WriteByte(output[i])
+			i++
+		}
+	}
+
+	return b.String()
+}
+
+func isCaptureNameChar(c byte) bool {
+	return c == '_' || (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
 }
 
 // Mapping describes a mapping from input to outputs.

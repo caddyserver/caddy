@@ -177,6 +177,54 @@ func TestHandler(t *testing.T) {
 			},
 		},
 		{
+			reqURI: "/abcdef",
+			handler: Handler{
+				Source:       "{http.request.uri.path}",
+				Destinations: []string{"{output}"},
+				Mappings: []Mapping{
+					{
+						InputRegexp: "(/abc)",
+						Outputs:     []any{"{testvar}-${1}"},
+					},
+				},
+			},
+			expect: map[string]any{
+				"output": "testing-/abc",
+			},
+		},
+		{
+			reqURI: "/abcdef",
+			handler: Handler{
+				Source:       "{http.request.uri.path}",
+				Destinations: []string{"{output}"},
+				Mappings: []Mapping{
+					{
+						InputRegexp: "(/abc)",
+						Outputs:     []any{"{dollar}"},
+					},
+				},
+			},
+			expect: map[string]any{
+				"output": "$1",
+			},
+		},
+		{
+			reqURI: "/abcdef",
+			handler: Handler{
+				Source:       "{http.request.uri.path}",
+				Destinations: []string{"{output}"},
+				Mappings: []Mapping{
+					{
+						InputRegexp: "(/abc)",
+						Outputs:     []any{"{brace}"},
+					},
+				},
+			},
+			expect: map[string]any{
+				"output": "{testvar}",
+			},
+		},
+		{
 			reqURI: "/foo",
 			handler: Handler{
 				Source:       "{http.request.uri.path}",
@@ -209,6 +257,8 @@ func TestHandler(t *testing.T) {
 		}
 		repl := caddyhttp.NewTestReplacer(req)
 		repl.Set("testvar", "testing")
+		repl.Set("dollar", "$1")
+		repl.Set("brace", "{testvar}")
 		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
 		req = req.WithContext(ctx)
 
