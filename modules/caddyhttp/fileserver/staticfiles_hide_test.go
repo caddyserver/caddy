@@ -212,3 +212,65 @@ func TestHideRelativeConfigDir(t *testing.T) {
 		t.Errorf("caddyfile.go is hidden; hide list: %v", fsrv.Hide)
 	}
 }
+
+func TestPrecompressedErrorResponseHasNoEncodingHeaders(t *testing.T) {
+	root := t.TempDir()
+	body := []byte("hello world\n")
+	if err := os.WriteFile(filepath.Join(root, "hello.txt"), body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "hello.txt.gz"), gzipBytes(t, body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	fsrv := FileServer{
+		Root:               root,
+		CanonicalURIs:      new(bool),
+		PrecompressedOrder: []string{"gzip"},
+	}
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+	if err := fsrv.Provision(ctx); err != nil {
+		t.Fatal(err)
+	}
+	fsrv.precompressors = map[string]encode.Precompressed{
+		"gzip": testPrecompressed{encoding: "gzip", suffix: ".gz"},
+	}
+
+	for _, tc := range []struct {
+		name       string
+		method     string
+		target     string
+		statusCode caddyhttp.WeakString
+	}{
+		{
+			name:   "method not allowed",
+			method: http.MethodPost,
+			target: "/hello.txt",
+		},
+		{
+			name:       "invalid status override",
+			method:     http.MethodGet,
+			target:     "/hello.txt?code=abc",
+			statusCode: "{query.code}",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fsrv.StatusCode = tc.statusCode
+			r := newPrecompressedRequest(t, tc.target)
+			r.Method = tc.method
+			r.Header.Set("Accept-Encoding", "gzip")
+			w := httptest.NewRecorder()
+
+			if err := fsrv.ServeHTTP(w, r, nil); err == nil {
+				t.Fatal("expected an error")
+			}
+			if got := w.Header().Get("Content-Encoding"); got != "" {
+				t.Errorf("Content-Encoding = %q, want no encoding on an error response", got)
+			}
+			if got := w.Header().Get("Content-Length"); got != "" {
+				t.Errorf("Content-Length = %q, want no length on an error response", got)
+			}
+		})
+	}
+}

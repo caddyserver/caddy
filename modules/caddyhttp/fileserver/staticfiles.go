@@ -457,6 +457,8 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	}
 
 	var file fs.File
+	var chosenEncoding string
+	var chosenSize int64
 	respHeader := w.Header()
 
 	// etag is usually unset, but if the user knows what they're doing, let them override it
@@ -501,15 +503,8 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 			continue
 		}
 		defer file.Close()
-		respHeader.Set("Content-Encoding", ae)
-
-		// stdlib won't set Content-Length for non-range requests if Content-Encoding is set.
-		// see: https://github.com/caddyserver/caddy/issues/7040
-		// Setting the Range header manually will result in 206 Partial Content.
-		// see: https://github.com/caddyserver/caddy/issues/7250
-		if r.Header.Get("Range") == "" {
-			respHeader.Set("Content-Length", strconv.FormatInt(compressedInfo.Size(), 10))
-		}
+		chosenEncoding = ae
+		chosenSize = compressedInfo.Size()
 
 		// try to get the etag from pre computed files if an etag suffix list was provided
 		if etag == "" && fsrv.EtagFileExtensions != nil {
@@ -613,6 +608,21 @@ func (fsrv *FileServer) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	// we wrap the response writer to intercept the WriteHeader call
 	if statusCodeOverride > 0 {
 		w = statusOverrideResponseWriter{ResponseWriter: w, code: statusCodeOverride}
+	}
+
+	// Only set the precompressed headers once every error path has been
+	// passed; an error response must not advertise the sidecar's encoding
+	// or length when the body is empty or comes from elsewhere.
+	if chosenEncoding != "" {
+		respHeader.Set("Content-Encoding", chosenEncoding)
+
+		// stdlib won't set Content-Length for non-range requests if Content-Encoding is set.
+		// see: https://github.com/caddyserver/caddy/issues/7040
+		// Setting the Range header manually will result in 206 Partial Content.
+		// see: https://github.com/caddyserver/caddy/issues/7250
+		if r.Header.Get("Range") == "" {
+			respHeader.Set("Content-Length", strconv.FormatInt(chosenSize, 10))
+		}
 	}
 
 	// let the standard library do what it does best; note, however,
