@@ -493,3 +493,29 @@ func TestPlaceholderInSearchRegexp(t *testing.T) {
 		t.Errorf("Expected header value %q, got %q", expected, result)
 	}
 }
+
+func TestEmptyReplacementIsRejected(t *testing.T) {
+	ops := HeaderOps{Replace: map[string][]Replacement{"X-Test": {{Replace: "-"}}}}
+	if err := ops.validate(); err == nil {
+		t.Fatal("expected an error for an empty search")
+	}
+}
+
+func TestEmptyExpandedSearchIsNoOp(t *testing.T) {
+	repl := caddy.NewReplacer()
+	repl.Set("missing", "")
+
+	for name, r := range map[string]Replacement{
+		"substring": {Search: "{missing}", Replace: "-"},
+		"regexp":    {SearchRegexp: "{missing}", Replace: "-"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ops := HeaderOps{Replace: map[string][]Replacement{"X-Test": {r}}}
+			hdr := http.Header{"X-Test": {"abc"}}
+			ops.ApplyTo(hdr, repl)
+			if got := hdr.Get("X-Test"); got != "abc" {
+				t.Fatalf("value = %q, want %q", got, "abc")
+			}
+		})
+	}
+}

@@ -193,6 +193,9 @@ func (ops HeaderOps) validate() error {
 			if r.Search != "" && r.SearchRegexp != "" {
 				return fmt.Errorf("cannot specify both a substring search and a regular expression search for field '%s'", fieldName)
 			}
+			if r.Search == "" && r.SearchRegexp == "" {
+				return fmt.Errorf("a replacement for field '%s' must specify a search or search_regexp", fieldName)
+			}
 		}
 	}
 	return nil
@@ -313,11 +316,18 @@ func (ops *HeaderOps) ApplyTo(hdr http.Header, repl *caddy.Replacer) {
 			replace := repl.ReplaceKnown(r.Replace, "")
 			re := r.re
 			if re == nil && r.SearchRegexp != "" {
+				expandedRegexp := repl.ReplaceKnown(r.SearchRegexp, "")
+				if expandedRegexp == "" {
+					continue
+				}
 				var err error
-				re, err = regexp.Compile(repl.ReplaceKnown(r.SearchRegexp, ""))
+				re, err = regexp.Compile(expandedRegexp)
 				if err != nil {
 					continue
 				}
+			}
+			if re == nil && search == "" {
+				continue
 			}
 			for hdrFieldName, vals := range hdr {
 				// see issue #4330 for why we don't simply use hdr[fieldName]

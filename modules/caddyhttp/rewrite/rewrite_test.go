@@ -1038,3 +1038,21 @@ func TestRewriteEscapesRegexpCaptures(t *testing.T) {
 		})
 	}
 }
+
+func TestQueryOpsReplaceEmptySearchIsRejected(t *testing.T) {
+	rep := &queryOpsReplacement{Key: "*", Replace: "bar"}
+	if err := rep.Provision(caddy.Context{}); err == nil {
+		t.Fatal("expected an error for an empty search")
+	}
+}
+
+func TestSubstrReplacerEmptyExpandedFindIsNoOp(t *testing.T) {
+	repl := caddy.NewReplacer()
+	repl.Set("missing", "")
+	r := newRequest(t, "GET", "/abc?x=yz")
+	rep := substrReplacer{Find: "{missing}", Replace: "-"}
+	rep.do(r, repl)
+	if r.URL.Path != "/abc" || r.URL.RawQuery != "x=yz" {
+		t.Fatalf("path = %q, query = %q; want unchanged", r.URL.Path, r.URL.RawQuery)
+	}
+}

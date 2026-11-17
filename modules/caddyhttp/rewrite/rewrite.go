@@ -595,6 +595,9 @@ func (rep substrReplacer) do(r *http.Request, repl *caddy.Replacer) {
 	}
 
 	find := repl.ReplaceAll(rep.Find, "")
+	if find == "" {
+		return
+	}
 	replace := repl.ReplaceAll(rep.Replace, "")
 
 	mergeSlashes := !strings.Contains(rep.Find, "//")
@@ -709,6 +712,9 @@ type queryOps struct {
 
 // Provision compiles the query replace operation regex.
 func (replacement *queryOpsReplacement) Provision(_ caddy.Context) error {
+	if replacement.Search == "" && replacement.SearchRegexp == "" {
+		return fmt.Errorf("replacement for query field '%s' must specify a search or search_regexp", replacement.Key)
+	}
 	if replacement.SearchRegexp != "" {
 		re, err := regexp.Compile(replacement.SearchRegexp)
 		if err != nil {
@@ -759,6 +765,9 @@ func (q *queryOps) do(r *http.Request, repl *caddy.Replacer) {
 	for _, replaceParam := range q.Replace {
 		key := repl.ReplaceAll(replaceParam.Key, "")
 		search := repl.ReplaceKnown(replaceParam.Search, "")
+		if replaceParam.re == nil && search == "" {
+			continue
+		}
 		replace := repl.ReplaceKnown(replaceParam.Replace, "")
 
 		// replace all query keys...
