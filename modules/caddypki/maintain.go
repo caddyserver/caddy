@@ -15,8 +15,11 @@
 package caddypki
 
 import (
+	"crypto"
 	"crypto/x509"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"runtime/debug"
 	"time"
@@ -60,41 +63,74 @@ func (p *PKI) renewCerts() {
 }
 
 func (p *PKI) renewCertsForCA(ca *CA) error {
-	ca.mu.Lock()
-	defer ca.mu.Unlock()
+	ca.mu.RLock()
+	rootCert, interCert := ca.root, ca.interChain[0]
+	ca.mu.RUnlock()
 
 	log := p.log.With(zap.String("ca", ca.ID))
 
 	// only maintain the root if it's not manually provided in the config
 	if ca.Root == nil {
-		if ca.needsRenewal(ca.root) {
+		if ca.needsRenewal(rootCert) {
 			// TODO: implement root renewal (use same key)
 			log.Warn("root certificate expiring soon (FIXME: ROOT RENEWAL NOT YET IMPLEMENTED)",
-				zap.Duration("time_remaining", time.Until(ca.interChain[0].NotAfter)),
+				zap.Duration("time_remaining", time.Until(rootCert.NotAfter)),
 			)
 		}
 	}
 
 	// only maintain the intermediate if it's not manually provided in the config
 	if ca.Intermediate == nil {
-		if ca.needsRenewal(ca.interChain[0]) {
+		if ca.needsRenewal(interCert) {
 			log.Info("intermediate expires soon; renewing",
-				zap.Duration("time_remaining", time.Until(ca.interChain[0].NotAfter)),
+				zap.Duration("time_remaining", time.Until(interCert.NotAfter)),
 			)
 
-			rootCert, rootKey, err := ca.loadOrGenRoot()
-			if err != nil {
-				return fmt.Errorf("loading root key: %v", err)
-			}
-			interCert, interKey, err := ca.genIntermediate(rootCert, rootKey)
-			if err != nil {
-				return fmt.Errorf("generating new certificate: %v", err)
-			}
-			ca.interChain, ca.interKey = []*x509.Certificate{interCert}, interKey
-
-			log.Info("renewed intermediate",
-				zap.Time("new_expiration", ca.interChain[0].NotAfter),
+			// Instances sharing this storage all reach the renewal window at about
+			// the same time: renew under the storage lock, and adopt the intermediate
+			// another instance stored while we were waiting for it, if any.
+			var (
+				interChain []*x509.Certificate
+				interKey   crypto.Signer
+				renewed    bool
 			)
+			err := ca.withStorageLock(func() error {
+				rootCert, rootKey, err := ca.loadOrGenRootLocked()
+				if err != nil {
+					return fmt.Errorf("loading root key: %v", err)
+				}
+				chain, key, err := ca.loadIntermediate(rootCert)
+				if err == nil && !ca.needsRenewal(chain[0]) {
+					interChain, interKey = chain, key
+					return nil
+				}
+				if err != nil && !errors.Is(err, fs.ErrNotExist) {
+					log.Error("intermediate in storage is unusable; replacing it", zap.Error(err))
+				}
+				newCert, newKey, err := ca.genIntermediate(rootCert, rootKey)
+				if err != nil {
+					return fmt.Errorf("generating new certificate: %v", err)
+				}
+				interChain, interKey, renewed = []*x509.Certificate{newCert}, newKey, true
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+
+			ca.mu.Lock()
+			ca.interChain, ca.interKey = interChain, interKey
+			ca.mu.Unlock()
+
+			if renewed {
+				log.Info("renewed intermediate",
+					zap.Time("new_expiration", interChain[0].NotAfter),
+				)
+			} else {
+				log.Info("loaded intermediate renewed by another instance",
+					zap.Time("new_expiration", interChain[0].NotAfter),
+				)
+			}
 		}
 	}
 
