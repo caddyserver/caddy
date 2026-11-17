@@ -16,6 +16,7 @@ package fileserver
 
 import (
 	"context"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -24,6 +25,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/internal/filesystems"
@@ -950,5 +952,49 @@ func BenchmarkFileMatcher(b *testing.B) {
 				}
 			}
 		})
+	}
+}
+
+type statCountingFS struct {
+	fs.FS
+	stats int
+}
+
+func (c *statCountingFS) Stat(name string) (fs.FileInfo, error) {
+	c.stats++
+	return fs.Stat(c.FS, name)
+}
+
+func TestTryFilesStatsExistingCandidateOnce(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Glob is already skipped on Windows")
+	}
+
+	counted := &statCountingFS{FS: fstest.MapFS{
+		"file.txt": &fstest.MapFile{Data: []byte("hello")},
+	}}
+	fsmap := &filesystems.FileSystemMap{}
+	fsmap.Register("count", counted)
+
+	m := &MatchFile{
+		fsmap:      fsmap,
+		FileSystem: "count",
+		Root:       ".",
+		TryFiles:   []string{"file.txt"},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	repl := caddyhttp.NewTestReplacer(req)
+	req = req.WithContext(context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl))
+
+	matched, err := m.MatchWithError(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !matched {
+		t.Fatal("expected file.txt to match")
+	}
+	if counted.stats != 1 {
+		t.Fatalf("stat calls = %d, want 1", counted.stats)
 	}
 }
