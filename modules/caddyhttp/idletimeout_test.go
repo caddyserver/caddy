@@ -1539,9 +1539,9 @@ func TestIdleTimeoutReaderFlushConnectionClose(t *testing.T) {
 			wantClose:       true,
 		},
 		{
-			name:            "HTTP/2 timeout",
-			body:            iotest.ErrReader(os.ErrDeadlineExceeded),
-			wantTimeout:     true,
+			name:        "HTTP/2 timeout",
+			body:        iotest.ErrReader(os.ErrDeadlineExceeded),
+			wantTimeout: true,
 		},
 		{
 			name:            "HTTP/1 successful read",
@@ -1608,6 +1608,38 @@ func TestIdleTimeoutReaderFlushClosesHTTP1Connection(t *testing.T) {
 	defer resp.Body.Close()
 	assert.Equal(t, 1, resp.ProtoMajor)
 	assert.True(t, resp.Close, "HTTP/1 must not reuse a connection after the body times out")
+}
+
+func TestIdleTimeoutReaderImplicitResponseClosesHTTP1Connection(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// Enable HTTP/1 full duplex: without a body drain, net/http can
+		// otherwise reuse the connection after an unsuccessful body read.
+		if err := http.NewResponseController(w).EnableFullDuplex(); err != nil {
+			t.Errorf("enable full duplex: %v", err)
+			return
+		}
+		reader := &IdleTimeoutReader{
+			ReadCloser:      io.NopCloser(iotest.ErrReader(os.ErrDeadlineExceeded)),
+			Ctrl:            http.NewResponseController(w),
+			Deadline:        IdleDeadline{Timeout: time.Minute},
+			Logger:          zap.NewNop(),
+			CloseConnection: true,
+		}
+		defer reader.HandlerDone()
+		_ = reader.WrapResponseWriter(w)
+		if _, err := reader.Read(make([]byte, 1)); !errors.Is(err, os.ErrDeadlineExceeded) {
+			t.Errorf("body read: %v, want deadline exceeded", err)
+		}
+		// Do not call WriteHeader/Write/Flush: net/http will write an
+		// implicit 200 after HandlerDone returns.
+	}))
+	defer srv.Close()
+
+	resp, err := srv.Client().Get(srv.URL)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.True(t, resp.Close, "implicit HTTP/1 response must close after read timeout")
 }
 
 // TestIdleTimeoutReaderHandlerDoneClearsReleasedHardDeadline checks

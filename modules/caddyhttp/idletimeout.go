@@ -180,6 +180,9 @@ type IdleTimeoutReader struct {
 	finished    bool
 	timedOut    atomic.Bool
 	terminalErr error
+	// responseHeader lets HandlerDone mark an unwritten HTTP/1 response for
+	// closure before net/http commits its implicit 200 status.
+	responseHeader http.Header
 
 	handlerDeadline time.Time
 }
@@ -290,7 +293,9 @@ func (r *IdleTimeoutReader) connectionMustClose() bool {
 func (r *IdleTimeoutReader) HandlerDone() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-
+	if r.connectionMustClose() && r.responseHeader != nil {
+		r.responseHeader.Set("Connection", "close")
+	}
 	if r.finished {
 		return
 	}
@@ -659,6 +664,7 @@ type readDeadlineWriter struct {
 // a terminal HTTP/1 body read timeout marks the response to close the
 // connection instead of reusing it with a canceled request context.
 func (r *IdleTimeoutReader) WrapResponseWriter(w http.ResponseWriter) http.ResponseWriter {
+	r.responseHeader = w.Header()
 	return &readDeadlineWriter{
 		ResponseWriterWrapper: ResponseWriterWrapper{ResponseWriter: w},
 		reader:                r,
