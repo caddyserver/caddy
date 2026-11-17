@@ -291,3 +291,81 @@ func TestMergeACMEIssuers(t *testing.T) {
 		t.Fatalf("expected base roots to remain unchanged, got %v", base.TrustedRootsPEMFiles)
 	}
 }
+
+func TestGlobalSessionTicketsOption(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		option string
+		check  func(*testing.T, *caddytls.SessionTicketService)
+	}{
+		{
+			name: "settings",
+			option: `session_tickets {
+				rotation_interval 1h
+				max_keys 2
+				disable_rotation
+			}`,
+			check: func(t *testing.T, st *caddytls.SessionTicketService) {
+				if got, want := time.Duration(st.RotationInterval), time.Hour; got != want {
+					t.Errorf("RotationInterval = %v, want %v", got, want)
+				}
+				if st.MaxKeys != 2 {
+					t.Errorf("MaxKeys = %d, want 2", st.MaxKeys)
+				}
+				if !st.DisableRotation {
+					t.Error("DisableRotation = false, want true")
+				}
+			},
+		},
+		{
+			name:   "off",
+			option: `session_tickets off`,
+			check: func(t *testing.T, st *caddytls.SessionTicketService) {
+				if !st.Disabled {
+					t.Error("Disabled = false, want true")
+				}
+			},
+		},
+		{
+			name: "disabled subdirective",
+			option: `session_tickets {
+	disabled
+}`,
+			check: func(t *testing.T, st *caddytls.SessionTicketService) {
+				if !st.Disabled {
+					t.Error("Disabled = false, want true")
+				}
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := `{
+` + tc.option + `
+}
+:8080 {
+	respond "ok"
+}
+`
+			adapter := caddyfile.Adapter{ServerType: ServerType{}}
+			out, _, err := adapter.Adapt([]byte(input), nil)
+			if err != nil {
+				t.Fatalf("adapting Caddyfile: %v", err)
+			}
+
+			var cfg struct {
+				Apps struct {
+					TLS struct {
+						SessionTickets *caddytls.SessionTicketService `json:"session_tickets"`
+					} `json:"tls"`
+				} `json:"apps"`
+			}
+			if err := json.Unmarshal(out, &cfg); err != nil {
+				t.Fatalf("unmarshaling JSON: %v", err)
+			}
+			if cfg.Apps.TLS.SessionTickets == nil {
+				t.Fatal("session_tickets missing from adapted config")
+			}
+			tc.check(t, cfg.Apps.TLS.SessionTickets)
+		})
+	}
+}
