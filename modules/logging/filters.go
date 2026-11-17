@@ -724,7 +724,13 @@ func (m SetCookieFilter) Filter(in zapcore.Field) zapcore.Field {
 func (m SetCookieFilter) filterLine(line string) (string, bool) {
 	cookie, err := http.ParseSetCookie(line)
 	if err != nil {
-		return line, true
+		// Browsers accept cookie values that Go's strict parser rejects
+		// (e.g. JSON, backslashes or non-ASCII bytes), so fall back to the
+		// raw name=value pair rather than logging the value unfiltered.
+		cookie = rawSetCookie(line)
+		if cookie == nil {
+			return line, true
+		}
 	}
 
 	for _, a := range m.Actions {
@@ -748,6 +754,18 @@ func (m SetCookieFilter) filterLine(line string) (string, bool) {
 	}
 
 	return line, true
+}
+
+// rawSetCookie splits the leading name=value pair of a Set-Cookie line
+// without validating it. It returns nil if there is no such pair.
+func rawSetCookie(line string) *http.Cookie {
+	head, _, _ := strings.Cut(line, ";")
+	name, value, ok := strings.Cut(head, "=")
+	name = strings.TrimSpace(name)
+	if !ok || name == "" {
+		return nil
+	}
+	return &http.Cookie{Name: name, Value: strings.TrimSpace(value)}
 }
 
 // replaceSetCookieValue keeps the original Set-Cookie suffix verbatim and only
