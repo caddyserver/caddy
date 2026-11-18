@@ -1666,6 +1666,47 @@ func TestServer_ServeHTTP_HandlerReadDeadline(t *testing.T) {
 	}
 }
 
+// An HTTP/1 request without a body should not retain a synthetic body read
+// deadline after the handler clears it, even if the handler never reads Body.
+func TestServer_ServeHTTP_NoBodyClearsReadDeadline(t *testing.T) {
+	result := make(chan error, 1)
+	const timeout = 100 * time.Millisecond
+	s := &Server{
+		ReadTimeout:     caddy.Duration(timeout),
+		ReadIdleTimeout: caddy.Duration(timeout),
+		logger:          zap.NewNop(),
+		errorLogger:     zap.NewNop(),
+		primaryHandlerChain: HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+			if r.ContentLength != 0 {
+				result <- fmt.Errorf("unexpected content length: %d", r.ContentLength)
+				return nil
+			}
+			if err := http.NewResponseController(w).SetReadDeadline(time.Time{}); err != nil {
+				result <- err
+				return nil
+			}
+			select {
+			case <-r.Context().Done():
+				result <- r.Context().Err()
+			case <-time.After(300 * time.Millisecond):
+				result <- nil
+				w.WriteHeader(http.StatusNoContent)
+			}
+			return nil
+		}),
+	}
+	ts := httptest.NewUnstartedServer(http.HandlerFunc(s.ServeHTTP))
+	ts.Config.ReadTimeout = timeout
+	ts.Start()
+	t.Cleanup(ts.Close)
+
+	resp, err := ts.Client().Get(ts.URL)
+	require.NoError(t, err)
+	t.Cleanup(func() { resp.Body.Close() })
+	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+	require.NoError(t, <-result, "the bodyless request context should survive its cleared deadline")
+}
+
 // TestServer_BuildHTTP3ServerEnablesWebTransport asserts that with
 // WebTransport set the http3.Server advertises WebTransport in
 // its SETTINGS and wires the prerequisites webtransport.Server.Upgrade
