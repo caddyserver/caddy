@@ -225,7 +225,7 @@ func cmdExportStorage(fl Flags) (int, error) {
 			}
 
 			hdr := &tar.Header{
-				Name:    k,
+				Name:    filepath.ToSlash(k),
 				Mode:    0o600,
 				Size:    int64(len(v)),
 				ModTime: info.Modified,
