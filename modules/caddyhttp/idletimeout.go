@@ -155,9 +155,10 @@ type IdleTimeoutReader struct {
 	// HTTP/2) for other protocols or requests without a body.
 	DrainDeadline bool
 
-	// CloseConnection makes a terminal read timeout mark the response as
-	// non-reusable for HTTP/1. It is false for HTTP/2, where cancellation is
-	// scoped to the stream.
+	// CloseConnection marks an HTTP/1 response as non-reusable after a
+	// terminal read timeout, provided the response headers are not already
+	// committed. A prior flush cannot be retroactively marked for closure.
+	// It is false for HTTP/2, where cancellation is scoped to the stream.
 	CloseConnection bool
 
 	// ClearBetweenReads makes the reader put back the earliest of
@@ -278,8 +279,8 @@ func (r *IdleTimeoutReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// connectionMustClose reports whether an HTTP/1 response must close the
-// connection because the request body reached a terminal read timeout.
+// connectionMustClose reports whether the response should request HTTP/1
+// connection closure. The header only takes effect before headers commit.
 func (r *IdleTimeoutReader) connectionMustClose() bool {
 	return r.CloseConnection && r.timedOut.Load()
 }
@@ -653,7 +654,8 @@ func (w *IdleTimeoutWriter) FlushError() error {
 // which would otherwise replace them before the next read. It also marks
 // an HTTP/1 response to close the connection if the body reached a
 // terminal read timeout, since net/http cancels the connection-level
-// context on any body read error and cannot restore it.
+// context on any body read error and cannot restore it. This only affects
+// responses whose headers have not already been committed.
 type readDeadlineWriter struct {
 	ResponseWriterWrapper
 	reader *IdleTimeoutReader
@@ -661,8 +663,8 @@ type readDeadlineWriter struct {
 
 // WrapResponseWriter returns w wrapped so that read deadlines set by
 // handlers through http.ResponseController reach this reader, and so that
-// a terminal HTTP/1 body read timeout marks the response to close the
-// connection instead of reusing it with a canceled request context.
+// a terminal HTTP/1 body read timeout marks an uncommitted response to close
+// the connection instead of reusing it with a canceled request context.
 func (r *IdleTimeoutReader) WrapResponseWriter(w http.ResponseWriter) http.ResponseWriter {
 	r.responseHeader = w.Header()
 	return &readDeadlineWriter{
