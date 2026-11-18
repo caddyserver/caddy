@@ -50,6 +50,7 @@ type Context struct {
 	moduleInstances   map[string][]Module
 	moduleInstancesMu *sync.Mutex
 	cleanup           *internal.Cleanup
+	cleanupScope      *internal.CleanupScope
 	cfg               *Config
 	ancestry          []Module
 	exitFuncs         []func(context.Context) // invoked at config unload ONLY IF the process is exiting (EXPERIMENTAL)
@@ -113,29 +114,36 @@ func NewContextWithCause(ctx Context) (Context, context.CancelCauseFunc) {
 //
 // A hold does not delay context cancellation. Copies of ctx, including those
 // returned by WithValue, share the same holds and cleanup callbacks.
-// Module cleanup still requires calling the cancel function from NewContext
-// or NewContextWithCause; cancellation of a parent alone does not trigger it.
+// Cleanup of successfully loaded modules requires calling the cancel function
+// from NewContext or NewContextWithCause.
+//
+// Holds taken through a module's provisioning context also defer that module's
+// cleanup if provisioning or validation fails. After a load fails, its
+// provisioning context stops accepting holds. Cleanup starts when its existing
+// holds are released or the module cleanup timeout expires.
 //
 // EXPERIMENTAL: This API is subject to change.
 func (ctx Context) HoldCleanup() func() {
-	release, _ := ctx.cleanup.Acquire(ctx.Context)
+	release, _ := ctx.cleanup.AcquireScoped(ctx.Context, ctx.cleanupScope)
 	return release
 }
 
 // OnCancel registers f to run when ctx is explicitly canceled and all cleanup
-// holds have been released. Callbacks run once in registration order, before
-// module Cleanup methods. Copies of ctx share the same callbacks.
+// holds have been released. Callbacks registered before cleanup starts run once
+// in registration order, before module Cleanup methods. Copies of ctx share the
+// same callbacks.
 // Registration is allowed after cancellation while a cleanup hold remains.
-// OnCancel panics if cleanup has already started; acquire a hold before work
-// that may register callbacks concurrently with cancellation. A context not
-// created with NewContext has no cleanup lifecycle, so registration has no effect.
+//
+// Once cleanup starts, OnCancel runs f synchronously in the caller. These
+// callbacks can overlap module Cleanup methods and are tracked while the
+// lifecycle is active. Acquire a hold before cancellation if f must run
+// before module Cleanup methods. A context without a cleanup lifecycle
+// ignores the callback.
 func (ctx *Context) OnCancel(f func()) {
 	if ctx.cleanup == nil {
 		return
 	}
-	if !ctx.cleanup.Add(f) {
-		panic("caddy: OnCancel called after cleanup started")
-	}
+	ctx.cleanup.Add(f)
 }
 
 // FileSystems returns a ref to the FilesystemMap.
@@ -466,18 +474,12 @@ func (ctx Context) LoadModuleByID(id string, rawMsg json.RawMessage) (any, error
 	}
 
 	ctx.ancestry = append(ctx.ancestry, val)
+	ctx.cleanupScope = new(internal.CleanupScope)
 
 	if prov, ok := val.(Provisioner); ok {
 		err = prov.Provision(ctx)
 		if err != nil {
-			// incomplete provisioning could have left state
-			// dangling, so make sure it gets cleaned up
-			if cleanerUpper, ok := val.(CleanerUpper); ok {
-				err2 := cleanerUpper.Cleanup()
-				if err2 != nil {
-					err = fmt.Errorf("%v; additionally, cleanup: %v", err, err2)
-				}
-			}
+			err = ctx.cleanupFailedModule(id, val, err)
 			return nil, fmt.Errorf("provision %s: %v", modInfo, err)
 		}
 	}
@@ -485,13 +487,7 @@ func (ctx Context) LoadModuleByID(id string, rawMsg json.RawMessage) (any, error
 	if validator, ok := val.(Validator); ok {
 		err = validator.Validate()
 		if err != nil {
-			// since the module was already provisioned, make sure we clean up
-			if cleanerUpper, ok := val.(CleanerUpper); ok {
-				err2 := cleanerUpper.Cleanup()
-				if err2 != nil {
-					err = fmt.Errorf("%v; additionally, cleanup: %v", err, err2)
-				}
-			}
+			err = ctx.cleanupFailedModule(id, val, err)
 			return nil, fmt.Errorf("%s: invalid configuration: %v", modInfo, err)
 		}
 	}
@@ -513,6 +509,26 @@ func (ctx Context) LoadModuleByID(id string, rawMsg json.RawMessage) (any, error
 	}
 
 	return val, nil
+}
+
+func (ctx Context) cleanupFailedModule(id string, module Module, loadErr error) error {
+	cleanup := func() error {
+		if cleaner, ok := module.(CleanerUpper); ok {
+			return cleaner.Cleanup()
+		}
+		return nil
+	}
+	if ctx.cleanup.DeferFailedCleanup(ctx.cleanupScope, moduleCleanupTimeout, func() {
+		if err := cleanup(); err != nil {
+			log.Printf("[ERROR] %s (%p): cleanup: %v", id, module, err)
+		}
+	}) {
+		return loadErr
+	}
+	if err := cleanup(); err != nil {
+		return fmt.Errorf("%v; additionally, cleanup: %v", loadErr, err)
+	}
+	return loadErr
 }
 
 // loadModuleInline loads a module from a JSON raw message which decodes to
@@ -725,6 +741,7 @@ func (ctx *Context) WithValue(key, value any) Context {
 		moduleInstances:   ctx.moduleInstances,
 		moduleInstancesMu: ctx.moduleInstancesMu,
 		cleanup:           ctx.cleanup,
+		cleanupScope:      ctx.cleanupScope,
 		cfg:               ctx.cfg,
 		ancestry:          ctx.ancestry,
 		exitFuncs:         ctx.exitFuncs,

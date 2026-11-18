@@ -23,6 +23,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/caddyserver/caddy/v2/internal"
@@ -342,6 +343,86 @@ func TestContextCleanupInFlightLoad(t *testing.T) {
 	}
 }
 
+func TestContextCleanupFailedLoadHonorsHold(t *testing.T) {
+	for _, failure := range []string{"provision", "validate"} {
+		t.Run(failure, func(t *testing.T) {
+			ctx, cancel, existing := cleanupTestContext(t)
+			var provisioned Context
+			var release, releaseCopy func()
+			type key struct{}
+			control := &cleanupTestControl{fail: failure, onProvision: func(ctx Context) {
+				provisioned = ctx.WithValue(key{}, true)
+				release = ctx.HoldCleanup()
+				releaseCopy = provisioned.HoldCleanup()
+			}}
+			if _, err := ctx.LoadModuleByID("test.cleanup_hold", cleanupTestConfig(t, control)); err == nil {
+				t.Fatal("expected load error")
+			}
+			if release == nil || releaseCopy == nil {
+				t.Fatal("module did not acquire holds")
+			}
+			t.Cleanup(release)
+			t.Cleanup(releaseCopy)
+			if control.cleaned.Load() != 0 {
+				t.Fatal("failed module was cleaned before its hold was released")
+			}
+
+			lateRelease := provisioned.HoldCleanup()
+			t.Cleanup(lateRelease)
+			release()
+			if control.cleaned.Load() != 0 {
+				t.Fatal("failed module was cleaned with a hold on a context copy")
+			}
+			releaseCopy()
+			if control.cleaned.Load() != 1 || existing.cleaned.Load() != 0 {
+				t.Fatal("releasing the hold must clean just the failed module")
+			}
+			cancel(nil)
+			if control.cleaned.Load() != 1 || existing.cleaned.Load() != 1 {
+				t.Fatal("a failed module's context retained cleanup or ran it twice")
+			}
+		})
+	}
+}
+
+func TestContextCleanupFailedLoadExpiresHold(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel, existing := cleanupTestContext(t)
+		releaseConfig := ctx.HoldCleanup()
+		t.Cleanup(releaseConfig)
+		var releaseFailed func()
+		control := &cleanupTestControl{fail: "provision", onProvision: func(ctx Context) {
+			releaseFailed = ctx.HoldCleanup()
+		}}
+		if _, err := ctx.LoadModuleByID("test.cleanup_hold", cleanupTestConfig(t, control)); err == nil {
+			t.Fatal("expected provisioning error")
+		}
+		if releaseFailed == nil {
+			t.Fatal("module did not acquire a hold")
+		}
+		t.Cleanup(releaseFailed)
+		cancel(nil)
+
+		time.Sleep(moduleCleanupTimeout - time.Nanosecond)
+		if control.cleaned.Load() != 0 || existing.cleaned.Load() != 0 {
+			t.Fatal("cleanup ran before the failed module's hold expired")
+		}
+		time.Sleep(time.Nanosecond)
+		synctest.Wait()
+		if control.cleaned.Load() != 1 || existing.cleaned.Load() != 0 {
+			t.Fatal("only the failed module should be cleaned after its hold expires")
+		}
+		releaseConfig()
+		if existing.cleaned.Load() != 1 {
+			t.Fatal("expired hold still blocked configuration cleanup")
+		}
+		releaseFailed()
+		if control.cleaned.Load() != 1 || existing.cleaned.Load() != 1 {
+			t.Fatal("releasing an expired hold repeated cleanup")
+		}
+	})
+}
+
 func TestContextCleanupLoadErrorsReleaseHold(t *testing.T) {
 	for _, tc := range []struct {
 		id  string
@@ -512,7 +593,7 @@ func TestContextCleanupConcurrentLateRegistration(t *testing.T) {
 			copyCtx := ctx
 			release := ctx.HoldCleanup()
 			entered, proceed := make(chan struct{}), make(chan struct{})
-			lateProceed := make(chan struct{})
+			lateEntered, lateProceed := make(chan struct{}), make(chan struct{})
 			var resume, resumeLate sync.Once
 			unblock := func() { resume.Do(func() { close(proceed) }) }
 			unblockLate := func() { resumeLate.Do(func() { close(lateProceed) }) }
@@ -526,55 +607,74 @@ func TestContextCleanupConcurrentLateRegistration(t *testing.T) {
 			cleaned := make(chan struct{})
 			go func() { release(); close(cleaned) }()
 			<-entered
-			var lateCalls atomic.Int32
-			result := make(chan any, 1)
+			lateDone := make(chan struct{})
+			var latePanic any
 			go func() {
-				defer func() { result <- recover() }()
-				copyCtx.OnCancel(func() { lateCalls.Add(1); <-lateProceed })
+				defer close(lateDone)
+				defer func() { latePanic = recover() }()
+				copyCtx.OnCancel(func() {
+					close(lateEntered)
+					<-lateProceed
+				})
 			}()
-			defer func() { unblock(); unblockLate(); <-cleaned }()
-			select {
-			case rejected := <-result:
-				if rejected == nil {
-					t.Error("late registration was not explicitly rejected")
-				}
-			case <-time.After(time.Second):
-				// Unblock an incorrectly executed callback so the failing
-				// negative control cannot leak a goroutine or lifecycle.
+			defer func() {
+				unblock()
 				unblockLate()
-				<-result
-				t.Error("late registration executed an untracked callback")
-			}
-			if lateCalls.Load() != 0 {
-				t.Error("rejected callback executed")
-			}
-			deadline, stop := context.WithTimeout(context.Background(), 20*time.Millisecond)
-			defer stop()
-			if err := internal.WaitForCleanup(deadline); !errors.Is(err, context.DeadlineExceeded) {
-				t.Fatalf("exit wait omitted blocked cleanup: %v", err)
+				<-cleaned
+				<-lateDone
+			}()
+			select {
+			case <-lateEntered:
+			case <-lateDone:
+				t.Fatalf("OnCancel returned before the callback started: panic = %v", latePanic)
+			case <-time.After(time.Second):
+				t.Fatal("late callback did not run during cleanup")
 			}
 			if phase == "callback" && control.cleaned.Load() != 0 {
 				t.Error("module cleanup ran alongside a blocked callback")
 			}
 			unblock()
 			<-cleaned
-			if err := internal.WaitForCleanup(context.Background()); err != nil {
-				t.Fatal(err)
-			}
 			if control.cleaned.Load() != 1 {
 				t.Fatal("module cleanup was omitted or repeated")
+			}
+			select {
+			case <-lateDone:
+				t.Fatalf("OnCancel returned with a blocked callback: panic = %v", latePanic)
+			default:
+			}
+			waitCtx, stop := context.WithCancel(context.Background())
+			stop()
+			if err := internal.WaitForCleanup(waitCtx); !errors.Is(err, context.Canceled) {
+				t.Fatalf("exit wait omitted blocked late callback: %v", err)
+			}
+			unblockLate()
+			<-lateDone
+			if latePanic != nil {
+				t.Fatalf("OnCancel panicked: %v", latePanic)
+			}
+			deadline, stop := context.WithTimeout(context.Background(), time.Second)
+			defer stop()
+			if err := internal.WaitForCleanup(deadline); err != nil {
+				t.Fatal(err)
 			}
 		})
 	}
 }
 
-func TestContextCleanupCompletedRegistrationRejected(t *testing.T) {
+func TestContextCleanupCompletedRegistrationRunsImmediately(t *testing.T) {
 	ctx, cancel, _ := cleanupTestContext(t)
 	cancel(nil)
-	defer func() {
-		if recover() == nil {
-			t.Error("registration after cleanup completion was not rejected")
+	waitCtx, stop := context.WithCancel(context.Background())
+	stop()
+	result := make(chan error, 1)
+	ctx.OnCancel(func() { result <- internal.WaitForCleanup(waitCtx) })
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatalf("callback reopened completed cleanup: %v", err)
 		}
-	}()
-	ctx.OnCancel(func() { t.Error("callback ran after lifecycle completion") })
+	default:
+		t.Fatal("callback did not run synchronously after cleanup completed")
+	}
 }

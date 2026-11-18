@@ -18,6 +18,7 @@ import (
 	"context"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // Cleanup coordinates holds on a cleanup callback and tracks retired callbacks
@@ -29,7 +30,17 @@ type Cleanup struct {
 	holds     int
 	retired   bool
 	cleaning  bool
+	running   int // the cleanup pass and any in-flight late callbacks
 	done      chan struct{}
+}
+
+// CleanupScope groups holds acquired through the context of a module load.
+// Its state is protected by the owning Cleanup's mutex.
+type CleanupScope struct {
+	holds     int
+	failed    bool
+	onFailure func()
+	timer     *time.Timer
 }
 
 // NewCleanup returns a coordinator for cleanup, which runs once after retirement
@@ -38,46 +49,112 @@ func NewCleanup(cleanup func()) *Cleanup {
 	return &Cleanup{cleanup: cleanup, done: make(chan struct{})}
 }
 
-// Add registers a callback to run before the constructor's cleanup function.
-// Callbacks run in registration order, synchronously without locks held.
-// Registration remains possible while a retired coordinator still has holds.
-// Once cleanup starts, Add returns false without registering or running callback.
-func (c *Cleanup) Add(callback func()) bool {
+// Add registers a callback to run in registration order before the cleanup
+// function. Once cleanup starts, Add runs the callback synchronously in the
+// caller and tracks it if the lifecycle is still active. Callbacks run without
+// locks held.
+func (c *Cleanup) Add(callback func()) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.cleaning {
-		return false
+	if !c.cleaning {
+		c.callbacks = append(c.callbacks, callback)
+		c.mu.Unlock()
+		return
 	}
-	c.callbacks = append(c.callbacks, callback)
-	return true
+	tracked := c.running > 0
+	if tracked {
+		c.running++
+	}
+	c.mu.Unlock()
+	if tracked {
+		defer c.finishWork()
+	}
+	callback()
 }
 
 // Acquire retains cleanup until the returned idempotent release is called.
 // It rejects retired coordinators and canceled contexts. A nil coordinator
 // returns a no-op release for contexts without a cleanup lifecycle.
 func (c *Cleanup) Acquire(ctx context.Context) (func(), bool) {
+	return c.AcquireScoped(ctx, nil)
+}
+
+// AcquireScoped retains cleanup and associates the hold with scope when set.
+func (c *Cleanup) AcquireScoped(ctx context.Context, scope *CleanupScope) (func(), bool) {
 	if c == nil {
 		return func() {}, ctx == nil || ctx.Err() == nil
 	}
 	c.mu.Lock()
-	if c.retired || ctx.Err() != nil {
+	if c.retired || ctx.Err() != nil || (scope != nil && scope.failed) {
 		c.mu.Unlock()
 		return func() {}, false
 	}
 	c.holds++
+	if scope != nil {
+		scope.holds++
+	}
 	c.mu.Unlock()
 	var released atomic.Bool
 	return func() {
 		if released.CompareAndSwap(false, true) {
-			c.mu.Lock()
-			c.holds--
-			clean := c.reserveCleanup()
-			c.mu.Unlock()
-			if clean {
-				c.clean()
-			}
+			c.release(scope)
 		}
 	}, true
+}
+
+func (c *Cleanup) release(scope *CleanupScope) {
+	c.mu.Lock()
+	if scope != nil {
+		scope.holds--
+		if scope.failed {
+			ready := scope.holds == 0
+			c.mu.Unlock()
+			if ready {
+				c.finishFailedCleanup(scope)
+			}
+			return
+		}
+	}
+	c.holds--
+	clean := c.reserveCleanup()
+	c.mu.Unlock()
+	if clean {
+		c.clean()
+	}
+}
+
+// DeferFailedCleanup closes scope to new holds. It returns true if cleanup will
+// run after the scoped holds release or timeout expires. Otherwise the caller
+// runs cleanup synchronously.
+func (c *Cleanup) DeferFailedCleanup(scope *CleanupScope, timeout time.Duration, cleanup func()) bool {
+	if c == nil || scope == nil {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	scope.failed = true
+	if scope.holds == 0 {
+		return false
+	}
+	// Keep one configuration hold until the failed module finishes cleanup.
+	c.holds -= scope.holds - 1
+	scope.onFailure = cleanup
+	scope.timer = time.AfterFunc(timeout, func() { c.finishFailedCleanup(scope) })
+	return true
+}
+
+func (c *Cleanup) finishFailedCleanup(scope *CleanupScope) {
+	c.mu.Lock()
+	cleanup := scope.onFailure
+	if cleanup == nil {
+		c.mu.Unlock()
+		return
+	}
+	scope.onFailure = nil
+	scope.timer.Stop()
+	scope.timer = nil
+	c.mu.Unlock()
+	defer c.release(nil)
+	cleanup()
 }
 
 // Retire prevents new holds and runs cleanup once the existing holds release.
@@ -104,6 +181,7 @@ func (c *Cleanup) reserveCleanup() bool {
 		return false
 	}
 	c.cleaning = true
+	c.running = 1
 	return true
 }
 
@@ -116,6 +194,16 @@ func (c *Cleanup) clean() {
 		callback()
 	}
 	c.cleanup()
+	c.finishWork()
+}
+
+func (c *Cleanup) finishWork() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.running--
+	if c.running != 0 {
+		return
+	}
 	retiredCleanups.Lock()
 	close(c.done)
 	delete(retiredCleanups.pending, c)
@@ -128,9 +216,8 @@ var retiredCleanups = struct {
 }{pending: make(map[*Cleanup]struct{})}
 
 // WaitForCleanup waits until all explicitly retired lifecycles finish,
-// including lifecycles retired by other cleanup callbacks. Cleanup is performed
-// by Retire or the final release, never by the waiter, so ctx can bound even a
-// blocked cleanup callback.
+// including lifecycles retired by other cleanup callbacks. The caller's context
+// bounds the wait even if a cleanup callback is blocked.
 func WaitForCleanup(ctx context.Context) error {
 	for {
 		retiredCleanups.Lock()

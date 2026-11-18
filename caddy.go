@@ -1337,5 +1337,5 @@ var errSameConfig = errors.New("config is unchanged")
 // This identifier may be removed in the future.
 const ImportPath = "github.com/caddyserver/caddy/v2"
 
-// moduleCleanupTimeout bounds process-exit waiting for retired module cleanup.
+// moduleCleanupTimeout bounds process-exit cleanup waits and holds after a failed module load.
 const moduleCleanupTimeout = 30 * time.Second
