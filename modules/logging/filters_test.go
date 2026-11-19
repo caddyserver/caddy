@@ -272,6 +272,36 @@ func TestSetCookieFilterInvalidHeaderPassesThrough(t *testing.T) {
 	}
 }
 
+func TestSetCookieFilterValueRejectedByParser(t *testing.T) {
+	f := SetCookieFilter{[]cookieFilterAction{
+		{replaceAction, "session", "REDACTED"},
+		{hashAction, "token", ""},
+		{deleteAction, "prefs", ""},
+	}}
+
+	// browsers accept these values, but http.ParseSetCookie rejects them
+	out := f.Filter(zapcore.Field{Interface: internal.LoggableStringArray{
+		`session={"id":"secret"}; Path=/; HttpOnly`,
+		`token=secret\x; Path=/`,
+		`prefs=sécret; Path=/`,
+		`other={"a":1}; Path=/`,
+	}})
+	outval := out.Interface.(internal.LoggableStringArray)
+	expected := internal.LoggableStringArray{
+		`session=REDACTED; Path=/; HttpOnly`,
+		"token=" + hash(`secret\x`) + "; Path=/",
+		`other={"a":1}; Path=/`,
+	}
+	if len(outval) != len(expected) {
+		t.Fatalf("unexpected number of Set-Cookie values: got %q, want %q", outval, expected)
+	}
+	for i := range expected {
+		if outval[i] != expected[i] {
+			t.Fatalf("Set-Cookie entry %d has not been filtered correctly: got %q, want %q", i, outval[i], expected[i])
+		}
+	}
+}
+
 func TestSetCookieFilterHashWithoutAttributes(t *testing.T) {
 	f := SetCookieFilter{[]cookieFilterAction{
 		{hashAction, "session", ""},
