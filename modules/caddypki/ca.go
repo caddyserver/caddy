@@ -15,6 +15,7 @@
 package caddypki
 
 import (
+	"context"
 	"crypto"
 	"crypto/x509"
 	"encoding/json"
@@ -282,36 +283,64 @@ func (ca CA) loadOrGenRoot() (rootCert *x509.Certificate, rootKey crypto.Signer,
 		}
 		return rootChain[0], rootSigner, nil
 	}
-	rootCertPEM, err := ca.storage.Load(ca.ctx, ca.storageKeyRootCert())
-	if err != nil {
-		if !errors.Is(err, fs.ErrNotExist) {
-			return nil, nil, fmt.Errorf("loading root cert: %v", err)
-		}
 
+	rootCert, rootKey, err = ca.loadRoot()
+	if !errors.Is(err, fs.ErrNotExist) {
+		return rootCert, rootKey, err
+	}
+
+	// instances sharing this storage must not generate competing roots
+	err = ca.withStorageLock(func() error {
+		rootCert, rootKey, err = ca.loadOrGenRootLocked()
+		return err
+	})
+	return rootCert, rootKey, err
+}
+
+// loadOrGenRootLocked loads the root from storage, or generates and
+// stores a new one if there is none. The caller must hold the CA's
+// storage lock.
+func (ca CA) loadOrGenRootLocked() (*x509.Certificate, crypto.Signer, error) {
+	rootCert, rootKey, err := ca.loadRoot()
+	if errors.Is(err, fs.ErrNotExist) {
 		// TODO: should we require that all or none of the assets are required before overwriting anything?
 		rootCert, rootKey, err = ca.genRoot()
 		if err != nil {
 			return nil, nil, fmt.Errorf("generating root: %v", err)
 		}
 	}
+	return rootCert, rootKey, err
+}
 
-	if rootCert == nil {
-		rootCert, err = pemDecodeCertificate(rootCertPEM)
-		if err != nil {
-			return nil, nil, fmt.Errorf("parsing root certificate PEM: %v", err)
+// loadRoot loads the root certificate and key from storage and
+// verifies that they belong together. It returns an error wrapping
+// fs.ErrNotExist if there is no root certificate in storage.
+func (ca CA) loadRoot() (*x509.Certificate, crypto.Signer, error) {
+	rootCertPEM, err := ca.storage.Load(ca.ctx, ca.storageKeyRootCert())
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil, err
 		}
+		return nil, nil, fmt.Errorf("loading root cert: %v", err)
 	}
-	if rootKey == nil {
-		rootKeyPEM, err := ca.storage.Load(ca.ctx, ca.storageKeyRootKey())
-		if err != nil {
-			return nil, nil, fmt.Errorf("loading root key: %v", err)
-		}
-		rootKey, err = certmagic.PEMDecodePrivateKey(rootKeyPEM)
-		if err != nil {
-			return nil, nil, fmt.Errorf("decoding root key: %v", err)
-		}
+	rootCert, err := pemDecodeCertificate(rootCertPEM)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parsing root certificate PEM: %v", err)
 	}
-
+	rootKeyPEM, err := ca.storage.Load(ca.ctx, ca.storageKeyRootKey())
+	if err != nil {
+		return nil, nil, fmt.Errorf("loading root key: %v", err)
+	}
+	rootKey, err := certmagic.PEMDecodePrivateKey(rootKeyPEM)
+	if err != nil {
+		return nil, nil, fmt.Errorf("decoding root key: %v", err)
+	}
+	// regenerating a root would invalidate every certificate it signed
+	// and every trust store it was installed in, so do not repair it
+	if err := verifyKeysMatch(rootCert, rootKey); err != nil {
+		return nil, nil, fmt.Errorf("root certificate and key in storage (%s) do not belong together: %v",
+			ca.storageKeyCAPrefix(), err)
+	}
 	return rootCert, rootKey, nil
 }
 
@@ -343,38 +372,78 @@ func (ca CA) genRoot() (rootCert *x509.Certificate, rootKey crypto.Signer, err e
 }
 
 func (ca CA) loadOrGenIntermediate(rootCert *x509.Certificate, rootKey crypto.Signer) (interCertChain []*x509.Certificate, interKey crypto.Signer, err error) {
-	var interCert *x509.Certificate
+	interCertChain, interKey, err = ca.loadIntermediate(rootCert)
+	if err == nil {
+		return interCertChain, interKey, nil
+	}
+
+	// The intermediate is missing, or unusable: another instance sharing
+	// this storage may be writing it right now. Check again under the
+	// storage lock, and only generate one if it is still needed.
+	err = ca.withStorageLock(func() error {
+		interCertChain, interKey, err = ca.loadOrGenIntermediateLocked(rootCert, rootKey)
+		return err
+	})
+	return interCertChain, interKey, err
+}
+
+// loadOrGenIntermediateLocked loads the intermediate from storage, or
+// generates and stores a new one if it is missing or does not match
+// its key or the root. The caller must hold the CA's storage lock.
+func (ca CA) loadOrGenIntermediateLocked(rootCert *x509.Certificate, rootKey crypto.Signer) ([]*x509.Certificate, crypto.Signer, error) {
+	interCertChain, interKey, err := ca.loadIntermediate(rootCert)
+	if err == nil {
+		return interCertChain, interKey, nil
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		if ca.log != nil {
+			ca.log.Error("intermediate in storage is unusable; replacing it", zap.Error(err))
+		}
+	}
+
+	// TODO: should we require that all or none of the assets are required before overwriting anything?
+	interCert, interKey, err := ca.genIntermediate(rootCert, rootKey)
+	if err != nil {
+		return nil, nil, fmt.Errorf("generating new intermediate cert: %v", err)
+	}
+	return []*x509.Certificate{interCert}, interKey, nil
+}
+
+// loadIntermediate loads the intermediate certificate chain and key from
+// storage, and verifies that the key belongs to the leaf of the chain and
+// that the chain was issued by rootCert. It returns an error wrapping
+// fs.ErrNotExist if there is no intermediate certificate in storage.
+func (ca CA) loadIntermediate(rootCert *x509.Certificate) ([]*x509.Certificate, crypto.Signer, error) {
 	interCertPEM, err := ca.storage.Load(ca.ctx, ca.storageKeyIntermediateCert())
 	if err != nil {
-		if !errors.Is(err, fs.ErrNotExist) {
-			return nil, nil, fmt.Errorf("loading intermediate cert: %v", err)
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil, err
 		}
-
-		// TODO: should we require that all or none of the assets are required before overwriting anything?
-		interCert, interKey, err = ca.genIntermediate(rootCert, rootKey)
-		if err != nil {
-			return nil, nil, fmt.Errorf("generating new intermediate cert: %v", err)
-		}
-
-		interCertChain = append(interCertChain, interCert)
+		return nil, nil, fmt.Errorf("loading intermediate cert: %v", err)
 	}
-
+	interCertChain, err := pemDecodeCertificateChain(interCertPEM)
+	if err != nil {
+		return nil, nil, fmt.Errorf("decoding intermediate certificate PEM: %v", err)
+	}
 	if len(interCertChain) == 0 {
-		interCertChain, err = pemDecodeCertificateChain(interCertPEM)
-		if err != nil {
-			return nil, nil, fmt.Errorf("decoding intermediate certificate PEM: %v", err)
-		}
+		return nil, nil, errors.New("no intermediate certificate in storage PEM")
+	}
+	interKeyPEM, err := ca.storage.Load(ca.ctx, ca.storageKeyIntermediateKey())
+	if err != nil {
+		return nil, nil, fmt.Errorf("loading intermediate key: %v", err)
+	}
+	interKey, err := certmagic.PEMDecodePrivateKey(interKeyPEM)
+	if err != nil {
+		return nil, nil, fmt.Errorf("decoding intermediate key: %v", err)
 	}
 
-	if interKey == nil {
-		interKeyPEM, err := ca.storage.Load(ca.ctx, ca.storageKeyIntermediateKey())
-		if err != nil {
-			return nil, nil, fmt.Errorf("loading intermediate key: %v", err)
-		}
-		interKey, err = certmagic.PEMDecodePrivateKey(interKeyPEM)
-		if err != nil {
-			return nil, nil, fmt.Errorf("decoding intermediate key: %v", err)
-		}
+	// the certificate and the key are stored separately; make sure they
+	// come from the same intermediate, issued by this root
+	if err := verifyKeysMatch(interCertChain[0], interKey); err != nil {
+		return nil, nil, fmt.Errorf("intermediate certificate and key do not belong together: %v", err)
+	}
+	if err := interCertChain[len(interCertChain)-1].CheckSignatureFrom(rootCert); err != nil {
+		return nil, nil, fmt.Errorf("intermediate certificate was not issued by the root: %v", err)
 	}
 
 	return interCertChain, interKey, nil
@@ -405,6 +474,22 @@ func (ca CA) genIntermediate(rootCert *x509.Certificate, rootKey crypto.Signer) 
 	}
 
 	return interCert, interKey, nil
+}
+
+// withStorageLock runs fn while holding a storage lock specific to
+// this CA, so that instances sharing the same storage do not generate
+// and write the CA's certificates and keys concurrently.
+func (ca CA) withStorageLock(fn func() error) error {
+	lockName := "pki_ca_" + certmagic.StorageKeys.Safe(ca.ID)
+	if err := ca.storage.Lock(ca.ctx, lockName); err != nil {
+		return fmt.Errorf("acquiring storage lock %s: %v", lockName, err)
+	}
+	defer func() {
+		if err := ca.storage.Unlock(context.WithoutCancel(ca.ctx), lockName); err != nil && ca.log != nil {
+			ca.log.Error("releasing storage lock", zap.String("lock", lockName), zap.Error(err))
+		}
+	}()
+	return fn()
 }
 
 func (ca CA) storageKeyCAPrefix() string {
