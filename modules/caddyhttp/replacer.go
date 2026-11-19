@@ -622,6 +622,12 @@ func getTLSReplacement(state *tls.ConnectionState, key string) (any, bool) {
 		return state.ServerName, true
 	case "ech":
 		return state.ECHAccepted, true
+	case "curve":
+		// CurveID is 0 when no curve-based key exchange was recorded
+		if state.CurveID == 0 {
+			return "", true
+		}
+		return state.CurveID.String(), true
 	}
 	return nil, false
 }

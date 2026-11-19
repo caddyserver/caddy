@@ -47,7 +47,7 @@ func TestTLSPlaceholdersWithoutTLS(t *testing.T) {
 	req = req.WithContext(context.WithValue(req.Context(), VarsCtxKey, map[string]any{}))
 	repl := NewTestReplacer(req)
 	for _, field := range []string{
-		"version", "cipher_suite", "resumed", "proto", "proto_mutual", "server_name", "ech",
+		"version", "cipher_suite", "resumed", "proto", "proto_mutual", "server_name", "ech", "curve",
 		"client.fingerprint", "client.public_key", "client.public_key_sha256",
 		"client.issuer", "client.serial", "client.subject", "client.certificate_pem", "client.certificate_der_base64",
 		"client.san.dns_names", "client.san.emails", "client.san.ips", "client.san.uris",
@@ -63,6 +63,17 @@ func TestTLSPlaceholdersWithoutTLS(t *testing.T) {
 				t.Fatalf("replacement = %q, want %q", got, "before--after")
 			}
 		})
+	}
+}
+
+func TestTLSCurvePlaceholderWithoutKeyExchange(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.TLS = &tls.ConnectionState{Version: tls.VersionTLS12}
+	req = req.WithContext(context.WithValue(req.Context(), VarsCtxKey, map[string]any{}))
+	repl := NewTestReplacer(req)
+	value, known := repl.Get("http.request.tls.curve")
+	if !known || caddy.ToString(value) != "" {
+		t.Fatalf("Get(%q) = %v, %v; want empty, known", "http.request.tls.curve", value, known)
 	}
 }
 
@@ -123,6 +134,7 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 		HandshakeComplete:          true,
 		ServerName:                 "example.com",
 		CipherSuite:                tls.TLS_AES_256_GCM_SHA384,
+		CurveID:                    tls.X25519MLKEM768,
 		PeerCertificates:           []*x509.Certificate{cert},
 		NegotiatedProtocol:         "h2",
 		NegotiatedProtocolIsMutual: true,
@@ -251,6 +263,10 @@ eqp31wM9il1n+guTNyxJd+FzVAH+hCZE5K+tCgVDdVFUlDEHHbS/wqb2PSIoouLV
 		{
 			get:    "http.request.tls.cipher_suite",
 			expect: "TLS_AES_256_GCM_SHA384",
+		},
+		{
+			get:    "http.request.tls.curve",
+			expect: "X25519MLKEM768",
 		},
 		{
 			get:    "http.request.tls.proto",
