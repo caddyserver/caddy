@@ -18,10 +18,13 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
@@ -1019,5 +1022,268 @@ func TestWeightedRoundRobinPolicyAvailableWeights(t *testing.T) {
 	}
 	if counts[pool[0]] != 3 || counts[pool[2]] != 9 || len(counts) != 2 {
 		t.Fatalf("Expected a 1:3 distribution among available hosts, got %v", counts)
+	}
+}
+
+func TestCookieHashPolicyWithMaxAge(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		cookieName     string
+		maxAge         time.Duration
+		expectedMaxAge int
+		expectInHeader bool
+	}{
+		{
+			name:           "zero max_age defaults to session cookie",
+			cookieName:     "",
+			maxAge:         0,
+			expectedMaxAge: 0,
+			expectInHeader: false,
+		},
+		{
+			name:           "positive max_age 1 hour",
+			cookieName:     "",
+			maxAge:         time.Hour,
+			expectedMaxAge: 3600,
+			expectInHeader: true,
+		},
+		{
+			name:           "custom name and positive max_age 30 minutes",
+			cookieName:     "custom_lb",
+			maxAge:         30 * time.Minute,
+			expectedMaxAge: 1800,
+			expectInHeader: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+			defer cancel()
+
+			cookieHashPolicy := CookieHashSelection{
+				Name:   tc.cookieName,
+				MaxAge: caddy.Duration(tc.maxAge),
+			}
+			if err := cookieHashPolicy.Provision(ctx); err != nil {
+				t.Fatalf("Provision error: %v", err)
+			}
+
+			pool := testPool()
+			pool[0].setHealthy(true)
+			pool[1].setHealthy(false)
+			pool[2].setHealthy(false)
+
+			req := httptest.NewRequest(http.MethodGet, "/test", nil)
+			w := httptest.NewRecorder()
+
+			h := cookieHashPolicy.Select(pool, req, w)
+			if h != pool[0] {
+				t.Fatalf("expected host %v, got %v", pool[0], h)
+			}
+
+			cookies := w.Result().Cookies()
+			if len(cookies) == 0 {
+				t.Fatal("expected cookie to be set")
+			}
+			cookie := cookies[0]
+
+			expectedName := tc.cookieName
+			if expectedName == "" {
+				expectedName = "lb"
+			}
+			if cookie.Name != expectedName {
+				t.Errorf("expected cookie name %q, got %q", expectedName, cookie.Name)
+			}
+			if cookie.MaxAge != tc.expectedMaxAge {
+				t.Errorf("expected cookie MaxAge %d, got %d", tc.expectedMaxAge, cookie.MaxAge)
+			}
+
+			setCookieHeader := w.Header().Get("Set-Cookie")
+			hasMaxAge := strings.Contains(setCookieHeader, "Max-Age=")
+			if tc.expectInHeader && !hasMaxAge {
+				t.Errorf("expected Set-Cookie header to contain Max-Age, got: %s", setCookieHeader)
+			} else if !tc.expectInHeader && hasMaxAge {
+				t.Errorf("expected Set-Cookie header to not contain Max-Age, got: %s", setCookieHeader)
+			}
+		})
+	}
+}
+
+func TestCookieHashSelectionValidate(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		maxAge  time.Duration
+		wantErr bool
+	}{
+		{
+			name:    "zero max_age is valid",
+			maxAge:  0,
+			wantErr: false,
+		},
+		{
+			name:    "positive 1s max_age is valid",
+			maxAge:  time.Second,
+			wantErr: false,
+		},
+		{
+			name:    "positive 1h max_age is valid",
+			maxAge:  time.Hour,
+			wantErr: false,
+		},
+		{
+			name:    "negative max_age is invalid",
+			maxAge:  -time.Second,
+			wantErr: true,
+		},
+		{
+			name:    "sub-second max_age is invalid",
+			maxAge:  500 * time.Millisecond,
+			wantErr: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := CookieHashSelection{
+				MaxAge: caddy.Duration(tc.maxAge),
+			}
+			err := s.Validate()
+			if (err != nil) != tc.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestCookieHashUnmarshalCaddyfile(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		input          string
+		expectedName   string
+		expectedSecret string
+		expectedMaxAge time.Duration
+		hasFallback    bool
+		wantErr        bool
+	}{
+		{
+			name:           "default cookie policy",
+			input:          "cookie",
+			expectedName:   "",
+			expectedSecret: "",
+			expectedMaxAge: 0,
+			wantErr:        false,
+		},
+		{
+			name:           "cookie with custom name",
+			input:          "cookie my_cookie",
+			expectedName:   "my_cookie",
+			expectedSecret: "",
+			expectedMaxAge: 0,
+			wantErr:        false,
+		},
+		{
+			name:           "cookie with custom name and secret",
+			input:          "cookie my_cookie s3cret",
+			expectedName:   "my_cookie",
+			expectedSecret: "s3cret",
+			expectedMaxAge: 0,
+			wantErr:        false,
+		},
+		{
+			name:           "cookie with block max_age 1h",
+			input:          "cookie {\n\tmax_age 1h\n}",
+			expectedName:   "",
+			expectedSecret: "",
+			expectedMaxAge: time.Hour,
+			wantErr:        false,
+		},
+		{
+			name:           "cookie with name and max_age 3600s",
+			input:          "cookie my_cookie {\n\tmax_age 3600s\n}",
+			expectedName:   "my_cookie",
+			expectedSecret: "",
+			expectedMaxAge: 3600 * time.Second,
+			wantErr:        false,
+		},
+		{
+			name:           "cookie with name, secret, fallback, and max_age",
+			input:          "cookie my_cookie s3cret {\n\tfallback first\n\tmax_age 30m\n}",
+			expectedName:   "my_cookie",
+			expectedSecret: "s3cret",
+			expectedMaxAge: 30 * time.Minute,
+			hasFallback:    true,
+			wantErr:        false,
+		},
+		{
+			name:    "too many arguments",
+			input:   "cookie a b c d",
+			wantErr: true,
+		},
+		{
+			name:    "missing max_age argument",
+			input:   "cookie {\n\tmax_age\n}",
+			wantErr: true,
+		},
+		{
+			name:    "extra max_age argument",
+			input:   "cookie {\n\tmax_age 1h extra\n}",
+			wantErr: true,
+		},
+		{
+			name:    "invalid max_age format",
+			input:   "cookie {\n\tmax_age not_a_duration\n}",
+			wantErr: true,
+		},
+		{
+			name:    "negative max_age",
+			input:   "cookie {\n\tmax_age -10s\n}",
+			wantErr: true,
+		},
+		{
+			name:    "zero max_age",
+			input:   "cookie {\n\tmax_age 0s\n}",
+			wantErr: true,
+		},
+		{
+			name:    "sub-second max_age",
+			input:   "cookie {\n\tmax_age 500ms\n}",
+			wantErr: true,
+		},
+		{
+			name:    "duplicate max_age",
+			input:   "cookie {\n\tmax_age 1h\n\tmax_age 2h\n}",
+			wantErr: true,
+		},
+		{
+			name:    "duplicate fallback",
+			input:   "cookie {\n\tfallback first\n\tfallback random\n}",
+			wantErr: true,
+		},
+		{
+			name:    "unknown subdirective",
+			input:   "cookie {\n\tunknown_subdirective 123\n}",
+			wantErr: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := caddyfile.NewTestDispenser(tc.input)
+			s := new(CookieHashSelection)
+			err := s.UnmarshalCaddyfile(d)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("UnmarshalCaddyfile() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if tc.wantErr {
+				return
+			}
+			if s.Name != tc.expectedName {
+				t.Errorf("expected Name %q, got %q", tc.expectedName, s.Name)
+			}
+			if s.Secret != tc.expectedSecret {
+				t.Errorf("expected Secret %q, got %q", tc.expectedSecret, s.Secret)
+			}
+			if time.Duration(s.MaxAge) != tc.expectedMaxAge {
+				t.Errorf("expected MaxAge %v, got %v", tc.expectedMaxAge, time.Duration(s.MaxAge))
+			}
+			if tc.hasFallback && s.FallbackRaw == nil {
+				t.Errorf("expected FallbackRaw to be populated")
+			}
+		})
 	}
 }
