@@ -642,7 +642,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// being silently overwritten by the first read/write.
 	rc := http.NewResponseController(w)
 	var readHardDeadline, writeHardDeadline time.Time
-	if s.ReadTimeout > 0 {
+	// There is no body read to bound when net/http already supplied NoBody.
+	// Installing a synthetic deadline here can cancel a bodyless request
+	// after its handler explicitly clears the connection read deadline.
+	if s.ReadTimeout > 0 && r.Body != http.NoBody {
 		readHardDeadline = start.Add(time.Duration(s.ReadTimeout))
 	}
 	if s.WriteTimeout > 0 {
