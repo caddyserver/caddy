@@ -2037,3 +2037,45 @@ func TestServer_FullyReadRequestBodyPreservesHTTP1Connection(t *testing.T) {
 		})
 	}
 }
+
+func TestDedupeAltSvcHeader(t *testing.T) {
+	for name, tc := range map[string]struct {
+		input []string
+		want  []string
+	}{
+		"duplicate entries across one value": {
+			input: []string{`h3=":443"; ma=2592000,h3=":443"; ma=2592000`},
+			want:  []string{`h3=":443"; ma=2592000`},
+		},
+		"duplicate entries across multiple values": {
+			input: []string{`h3=":443"; ma=2592000`, `h3=":443"; ma=2592000,h3=":8443"; ma=2592000`},
+			want:  []string{`h3=":443"; ma=2592000,h3=":8443"; ma=2592000`},
+		},
+		"distinct ports are preserved": {
+			input: []string{`h3=":443"; ma=2592000`, `h3=":8443"; ma=2592000`},
+			want:  []string{`h3=":443"; ma=2592000,h3=":8443"; ma=2592000`},
+		},
+		"no alt-svc header is a no-op": {
+			input: nil,
+			want:  nil,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := http.Header{}
+			for _, v := range tc.input {
+				h.Add("Alt-Svc", v)
+			}
+			dedupeAltSvcHeader(h)
+			if tc.want == nil {
+				if _, ok := h["Alt-Svc"]; ok {
+					t.Fatalf("expected Alt-Svc to be removed, got %v", h.Values("Alt-Svc"))
+				}
+				return
+			}
+			got := h.Values("Alt-Svc")
+			if len(got) != 1 || strings.Join(got, "|") != strings.Join(tc.want, "|") {
+				t.Fatalf("Alt-Svc = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
