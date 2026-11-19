@@ -928,6 +928,7 @@ func parseInvoke(h Helper) (caddyhttp.MiddlewareHandler, error) {
 //	    hostnames <hostnames...>
 //	    output <writer_module> ...
 //	    core   <core_module> ...
+//	    otlp
 //	    format <encoder_module> ...
 //	    level  <level>
 //	}
@@ -1106,14 +1107,20 @@ func parseLogHelper(h Helper, globalLogNames map[string]struct{}) ([]ConfigValue
 
 			cl.Sampling = sampling
 
-		case "core":
+		case "core", "otlp":
 			if err := assertUnique(h.Val()); err != nil {
 				return nil, err
 			}
-			if !h.NextArg() {
-				return nil, h.ArgErr()
+			if cl.CoreRaw != nil {
+				return nil, h.Err("'core' and 'otlp' cannot be used in the same log block")
 			}
 			moduleName := h.Val()
+			if moduleName == "core" {
+				if !h.NextArg() {
+					return nil, h.ArgErr()
+				}
+				moduleName = h.Val()
+			}
 			moduleID := "caddy.logging.cores." + moduleName
 			unm, err := caddyfile.UnmarshalModule(h.Dispenser, moduleID)
 			if err != nil {

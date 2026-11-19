@@ -541,6 +541,7 @@ func parseOCSPStaplingOptions(d *caddyfile.Dispenser, _ any) (any, error) {
 //	log [name] {
 //	    output  <writer_module> ...
 //	    format  <encoder_module> ...
+//	    otlp
 //	    level   <level>
 //	    include <namespaces...>
 //	    exclude <namespaces...>
