@@ -27,6 +27,32 @@ import (
 	"testing"
 )
 
+func TestLoggingCanceledHeldOwnerIsNotRestored(t *testing.T) {
+	baseline, originalDefault := prepareLoggingLifecycle(t)
+	a, sinkA, defaultA := lifecycleLogging(t, true)
+	ctxA, cancelA := NewContext(Context{Context: context.Background()})
+	t.Cleanup(cancelA)
+	releaseA := ctxA.HoldCleanup()
+	t.Cleanup(releaseA)
+	if err := a.openLogs(ctxA); err != nil {
+		t.Fatal(err)
+	}
+	b, _, _ := lifecycleLogging(t, true)
+	cancelB := provisionLifecycleLogging(t, b)
+	cancelA()
+	cancelB()
+	if defaultLogger != originalDefault || log.Writer() != baseline {
+		t.Fatal("cleanup restored a canceled generation whose resources were held")
+	}
+	if sinkA.isClosed() || defaultA.isClosed() {
+		t.Fatal("canceled generation's writers closed before its hold released")
+	}
+	releaseA()
+	if !sinkA.isClosed() || !defaultA.isClosed() {
+		t.Fatal("released generation's writers leaked")
+	}
+}
+
 func TestLoggingSinkReloadLifecycle(t *testing.T) {
 	baseline, originalDefault := prepareLoggingLifecycle(t)
 	a, sinkA, _ := lifecycleLogging(t, true)
