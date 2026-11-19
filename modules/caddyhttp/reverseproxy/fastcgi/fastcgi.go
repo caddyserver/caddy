@@ -15,9 +15,11 @@
 package fastcgi
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -25,6 +27,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -91,6 +94,12 @@ type Transport struct {
 	// be used instead.
 	CaptureStderr bool `json:"capture_stderr,omitempty"`
 
+	// Maximum number of concurrent connections to each FastCGI upstream.
+	// Zero (the default) means no limit.
+	MaxConnsPerHost int `json:"max_conns_per_host,omitempty"`
+
+	pool *connPool
+
 	serverSoftware string
 	logger         *zap.Logger
 }
@@ -113,6 +122,8 @@ func (t *Transport) Provision(ctx caddy.Context) error {
 
 	version, _ := caddy.Version()
 	t.serverSoftware = "Caddy/" + version
+
+	t.pool = &connPool{conns: make(map[string]chan struct{})}
 
 	// Set a relatively short default dial timeout.
 	// This is helpful to make load-balancer retries more speedy.
@@ -211,6 +222,17 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 		)
 	}
 
+	release, err := t.acquireConn(ctx, address)
+	if err != nil {
+		return nil, reverseproxy.NewDialError(fmt.Errorf("waiting for connection slot: %w", err))
+	}
+	released := false
+	defer func() {
+		if !released {
+			release()
+		}
+	}()
+
 	// connect to the backend
 	dialer := net.Dialer{Timeout: time.Duration(t.DialTimeout)}
 	conn, err := dialer.DialContext(ctx, network, address)
@@ -260,7 +282,52 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 
+	if resp.Body == nil {
+		release()
+	} else {
+		resp.Body = &releaseBody{ReadCloser: resp.Body, release: release}
+	}
+	released = true
 	return resp, nil
+}
+
+type connPool struct {
+	mu    sync.Mutex
+	conns map[string]chan struct{}
+}
+
+func (t Transport) acquireConn(ctx context.Context, address string) (func(), error) {
+	if t.MaxConnsPerHost <= 0 || t.pool == nil {
+		return func() {}, nil
+	}
+
+	t.pool.mu.Lock()
+	sem := t.pool.conns[address]
+	if sem == nil {
+		sem = make(chan struct{}, t.MaxConnsPerHost)
+		t.pool.conns[address] = sem
+	}
+	t.pool.mu.Unlock()
+
+	select {
+	case sem <- struct{}{}:
+		var once sync.Once
+		return func() { once.Do(func() { <-sem }) }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+type releaseBody struct {
+	io.ReadCloser
+	release func()
+	once    sync.Once
+}
+
+func (b *releaseBody) Close() error {
+	err := b.ReadCloser.Close()
+	b.once.Do(b.release)
+	return err
 }
 
 // buildEnv returns a set of CGI environment variables for the request.
