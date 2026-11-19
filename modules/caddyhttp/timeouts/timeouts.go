@@ -116,10 +116,12 @@ func (t Timeouts) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 				},
 				Logger:            t.logger,
 				DrainDeadline:     r.ProtoMajor == 1 && r.ContentLength != 0,
+				CloseConnection:   r.ProtoMajor == 1,
 				ClearBetweenReads: r.ProtoMajor == 2,
 			}
 			defer idleReader.HandlerDone()
 			r.Body = idleReader
+			w = idleReader.WrapResponseWriter(w)
 			wrapped = true
 		}
 	}

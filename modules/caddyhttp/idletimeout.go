@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -154,6 +155,12 @@ type IdleTimeoutReader struct {
 	// HTTP/2) for other protocols or requests without a body.
 	DrainDeadline bool
 
+	// CloseConnection marks an HTTP/1 response as non-reusable after a
+	// terminal read timeout, provided the response headers are not already
+	// committed. A prior flush cannot be retroactively marked for closure.
+	// It is false for HTTP/2, where cancellation is scoped to the stream.
+	CloseConnection bool
+
 	// ClearBetweenReads makes the reader put back the earliest of
 	// HardDeadline and the deadline set by the handler (no deadline if
 	// there is neither) after every successful read, so the idle
@@ -172,7 +179,11 @@ type IdleTimeoutReader struct {
 	installed   time.Time // Last deadline successfully installed through Ctrl.
 	reading     bool
 	finished    bool
+	timedOut    atomic.Bool
 	terminalErr error
+	// responseHeader lets HandlerDone mark an unwritten HTTP/1 response for
+	// closure before net/http commits its implicit 200 status.
+	responseHeader http.Header
 
 	handlerDeadline time.Time
 }
@@ -261,6 +272,9 @@ func (r *IdleTimeoutReader) Read(p []byte) (int, error) {
 	r.Deadline.transferred += int64(n)
 	if err != nil {
 		r.terminalErr = err
+		if errors.Is(err, os.ErrDeadlineExceeded) {
+			r.timedOut.Store(true)
+		}
 		if !r.finished {
 			r.clearDeadlineLocked()
 		}
@@ -272,6 +286,12 @@ func (r *IdleTimeoutReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
+// connectionMustClose reports whether the response should request HTTP/1
+// connection closure. The header only takes effect before headers commit.
+func (r *IdleTimeoutReader) connectionMustClose() bool {
+	return r.CloseConnection && r.timedOut.Load()
+}
+
 // HandlerDone prevents later body reads from using the response controller.
 // If the body is not finished and DrainDeadline is set, it leaves an idle
 // deadline armed for net/http's post-handler drain. Otherwise, it clears a
@@ -281,7 +301,9 @@ func (r *IdleTimeoutReader) Read(p []byte) (int, error) {
 func (r *IdleTimeoutReader) HandlerDone() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-
+	if r.connectionMustClose() && r.responseHeader != nil {
+		r.responseHeader.Set("Connection", "close")
+	}
 	if r.finished {
 		return
 	}
@@ -636,10 +658,54 @@ func (w *IdleTimeoutWriter) FlushError() error {
 
 // readDeadlineWriter routes read deadlines set by handlers through
 // http.ResponseController to the IdleTimeoutReader of the request,
-// which would otherwise replace them before the next read.
+// which would otherwise replace them before the next read. It also marks
+// an HTTP/1 response to close the connection if the body reached a
+// terminal read timeout, since net/http cancels the connection-level
+// context on any body read error and cannot restore it. This only affects
+// responses whose headers have not already been committed.
 type readDeadlineWriter struct {
 	ResponseWriterWrapper
 	reader *IdleTimeoutReader
+}
+
+// WrapResponseWriter returns w wrapped so that read deadlines set by
+// handlers through http.ResponseController reach this reader, and so that
+// a terminal HTTP/1 body read timeout marks an uncommitted response to close
+// the connection instead of reusing it with a canceled request context.
+func (r *IdleTimeoutReader) WrapResponseWriter(w http.ResponseWriter) http.ResponseWriter {
+	r.responseHeader = w.Header()
+	return &readDeadlineWriter{
+		ResponseWriterWrapper: ResponseWriterWrapper{ResponseWriter: w},
+		reader:                r,
+	}
+}
+
+func (w *readDeadlineWriter) setConnectionClose() {
+	if w.reader.connectionMustClose() {
+		w.Header().Set("Connection", "close")
+	}
+}
+
+func (w *readDeadlineWriter) WriteHeader(status int) {
+	w.setConnectionClose()
+	w.ResponseWriterWrapper.WriteHeader(status)
+}
+
+func (w *readDeadlineWriter) Write(p []byte) (int, error) {
+	w.setConnectionClose()
+	return w.ResponseWriterWrapper.Write(p)
+}
+
+func (w *readDeadlineWriter) ReadFrom(r io.Reader) (int64, error) {
+	w.setConnectionClose()
+	return w.ResponseWriterWrapper.ReadFrom(r)
+}
+
+// FlushError marks the connection non-reusable before a flush commits the
+// response headers, including when a handler uses http.ResponseController.
+func (w *readDeadlineWriter) FlushError() error {
+	w.setConnectionClose()
+	return http.NewResponseController(w.ResponseWriter).Flush()
 }
 
 func (w *readDeadlineWriter) SetReadDeadline(deadline time.Time) error {
@@ -676,6 +742,8 @@ func ContextWithIdleTimeouts(ctx context.Context, reader *IdleTimeoutReader, wri
 var (
 	_ io.ReadCloser                   = (*IdleTimeoutReader)(nil)
 	_ http.ResponseWriter             = (*readDeadlineWriter)(nil)
+	_ io.ReaderFrom                   = (*readDeadlineWriter)(nil)
+	_ interface{ FlushError() error } = (*readDeadlineWriter)(nil)
 	_ http.ResponseWriter             = (*IdleTimeoutWriter)(nil)
 	_ io.ReaderFrom                   = (*IdleTimeoutWriter)(nil)
 	_ interface{ FlushError() error } = (*IdleTimeoutWriter)(nil)
