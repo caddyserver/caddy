@@ -19,10 +19,16 @@ import (
 	"io"
 )
 
+// maxStderr limits how much of the responder's stderr is kept for logging.
+const maxStderr = 64 << 10
+
 type streamReader struct {
 	c      *client
 	rec    record
 	stderr bytes.Buffer
+
+	// stderrDropped counts stderr bytes discarded beyond maxStderr.
+	stderrDropped int64
 }
 
 func (w *streamReader) Read(p []byte) (n int, err error) {
@@ -32,9 +38,20 @@ func (w *streamReader) Read(p []byte) (n int, err error) {
 			return 0, err
 		}
 
-		// standard error output
+		// standard error output; it is only kept if it will be logged
 		if w.rec.h.Type == Stderr {
-			if _, err = io.Copy(&w.stderr, &w.rec); err != nil {
+			if w.c.stderr {
+				room := max(maxStderr-int64(w.stderr.Len()), 0)
+				if _, err = io.Copy(&w.stderr, io.LimitReader(&w.rec, room)); err != nil {
+					return 0, err
+				}
+			}
+			var n int64
+			n, err = io.Copy(io.Discard, &w.rec)
+			if w.c.stderr {
+				w.stderrDropped += n
+			}
+			if err != nil {
 				return 0, err
 			}
 		}
