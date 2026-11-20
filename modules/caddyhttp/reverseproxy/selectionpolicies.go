@@ -20,6 +20,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	weakrand "math/rand/v2"
 	"net"
 	"net/http"
@@ -121,7 +122,14 @@ func (r *WeightedRoundRobinSelection) UnmarshalCaddyfile(d *caddyfile.Dispenser)
 
 // Provision sets up r.
 func (r *WeightedRoundRobinSelection) Provision(ctx caddy.Context) error {
+	r.totalWeight = 0
 	for _, weight := range r.Weights {
+		if weight < 0 {
+			return fmt.Errorf("weight of an upstream cannot be negative")
+		}
+		if weight > math.MaxInt-r.totalWeight {
+			return fmt.Errorf("sum of upstream weights exceeds the maximum int")
+		}
 		r.totalWeight += weight
 	}
 	return nil
