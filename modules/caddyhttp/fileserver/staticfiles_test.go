@@ -593,6 +593,30 @@ func TestServeHTTPTrailingSlashOnFile(t *testing.T) {
 	}
 }
 
+func TestRedirectEscapesBackslash(t *testing.T) {
+	for i, tc := range []struct {
+		toPath string
+		query  string
+		want   string
+	}{
+		{toPath: "/dir/", want: "/dir/"},
+		{toPath: "//evil.com/", want: "/evil.com/"},
+		{toPath: `/\evil.com/`, want: "/%5Cevil.com/"},
+		{toPath: `/\\evil.com/`, want: "/%5C%5Cevil.com/"},
+		{toPath: `/a/../\evil.com/`, want: "/%5Cevil.com/"},
+		{toPath: `/\evil.com/`, query: "x=1", want: "/%5Cevil.com/?x=1"},
+	} {
+		r := httptest.NewRequest(http.MethodGet, "/?"+tc.query, nil)
+		w := httptest.NewRecorder()
+		if err := redirect(w, r, tc.toPath); err != nil {
+			t.Fatal(err)
+		}
+		if got := w.Header().Get("Location"); got != tc.want {
+			t.Errorf("Test %d (%s): expected Location %q, got %q", i, tc.toPath, tc.want, got)
+		}
+	}
+}
+
 // The trailing separator of a filesystem root such as "/" or `C:\` must be
 // kept, else `C:` resolves to the current directory of the drive.
 func TestServeHTTPFilesystemRoot(t *testing.T) {
