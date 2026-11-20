@@ -21,6 +21,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -137,10 +138,14 @@ func (c *httpRedirectConn) Read(p []byte) (int, error) {
 		return 0, fmt.Errorf("couldn't read HTTP request")
 	}
 
-	// Build the redirect response, using the same Host and URL,
-	// but replacing the scheme with https.
+	// Build the redirect response, using the same Host and request URI,
+	// mapping asterisk-form (or non-origin URI) to "/", and replacing the scheme with https.
+	uri := req.URL.RequestURI()
+	if uri == "*" || !strings.HasPrefix(uri, "/") {
+		uri = "/"
+	}
 	headers := make(http.Header)
-	headers.Add("Location", "https://"+req.Host+req.URL.String())
+	headers.Add("Location", "https://"+req.Host+uri)
 	resp := &http.Response{
 		Proto:      "HTTP/1.0",
 		Status:     "308 Permanent Redirect",
