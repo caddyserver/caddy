@@ -1069,32 +1069,6 @@ func newBaseAutomationPolicy(
 // consolidateAutomationPolicies combines automation policies that are the same,
 // for a cleaner overall output.
 func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) ([]*caddytls.AutomationPolicy, error) {
-	// Consolidate merge-equivalent policies that can be combined without shadowing issues
-	// before validating topological ordering. This ensures merge-equivalent crossed policies
-	// are merged rather than falsely rejected as specificity cycles.
-outerPreMerge:
-	for i := 0; i < len(aps); i++ {
-		for j := i + 1; j < len(aps); j++ {
-			if reflect.DeepEqual(aps[i], aps[j]) {
-				aps = slices.Delete(aps, j, j+1)
-				i--
-				continue outerPreMerge
-			}
-			if len(aps[i].SubjectsRaw) > 0 && len(aps[j].SubjectsRaw) > 0 &&
-				automationPoliciesAreMergeEquivalent(aps[i], aps[j]) &&
-				!automationPolicyMergeShadows(i, j, aps) {
-				for _, subj := range aps[j].SubjectsRaw {
-					if !slices.Contains(aps[i].SubjectsRaw, subj) {
-						aps[i].SubjectsRaw = append(aps[i].SubjectsRaw, subj)
-					}
-				}
-				aps = slices.Delete(aps, j, j+1)
-				i--
-				continue outerPreMerge
-			}
-		}
-	}
-
 	var err error
 	aps, err = sortAutomationPoliciesBySpecificity(aps)
 	if err != nil {
@@ -1251,8 +1225,9 @@ func sortAutomationPoliciesBySpecificity(aps []*caddytls.AutomationPolicy) ([]*c
 
 // compareAutomationPolicies compares the specificity of two automation policies.
 // It returns -1 if a is strictly more specific than b, 1 if b is strictly more
-// specific than a, 0 if they are disjoint or equally specific, and an error if
-// their overlapping subjects have conflicting specificity.
+// specific than a, 0 if they are disjoint, equally specific, or merge-equivalent
+// with crossed subjects, and an error if their overlapping subjects have
+// conflicting specificity.
 func compareAutomationPolicies(a, b *caddytls.AutomationPolicy) (int, error) {
 	aSubjects := a.SubjectsRaw
 	bSubjects := b.SubjectsRaw
@@ -1285,6 +1260,9 @@ func compareAutomationPolicies(a, b *caddytls.AutomationPolicy) (int, error) {
 	}
 
 	if needABeforeB && needBBeforeA {
+		if automationPoliciesAreMergeEquivalent(a, b) {
+			return 0, nil
+		}
 		return 0, fmt.Errorf("ambiguous automation policies: overlapping subjects require conflicting ordering")
 	}
 	if needABeforeB {

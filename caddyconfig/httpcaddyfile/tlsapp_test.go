@@ -5,6 +5,8 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/caddyserver/certmagic"
+
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddytls"
 )
@@ -181,14 +183,41 @@ func TestConsolidateAutomationPoliciesSpecificity(t *testing.T) {
 		}
 	})
 
-	t.Run("merge-equivalent crossed policies that shadow intermediate policy returns error", func(t *testing.T) {
+	t.Run("merge-equivalent crossed policies with intermediate policy keep outer policies separate and middle policy wins", func(t *testing.T) {
 		p1 := &caddytls.AutomationPolicy{SubjectsRaw: []string{"foo.example.com", "*.other.com"}, KeyType: "rsa2048"}
 		p2 := &caddytls.AutomationPolicy{SubjectsRaw: []string{"baz.example.com"}, KeyType: "ed25519"}
 		p3 := &caddytls.AutomationPolicy{SubjectsRaw: []string{"*.example.com", "bar.other.com"}, KeyType: "rsa2048"}
 
-		_, err := consolidateAutomationPolicies([]*caddytls.AutomationPolicy{p1, p2, p3})
-		if err == nil {
-			t.Fatalf("expected error when merge would shadow intermediate policy, got nil")
+		res, err := consolidateAutomationPolicies([]*caddytls.AutomationPolicy{p1, p2, p3})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(res) != 3 {
+			t.Fatalf("expected 3 separate policies, got %d", len(res))
+		}
+		if res[0] != p1 || res[1] != p2 || res[2] != p3 {
+			t.Fatalf("expected [p1, p2, p3], got %v", res)
+		}
+
+		// Verify that the middle policy still wins for baz.example.com
+		// rather than being shadowed by the wildcard in p3.
+		var matchedPolicy *caddytls.AutomationPolicy
+		for _, policy := range res {
+			for _, subj := range policy.SubjectsRaw {
+				if certmagic.MatchWildcard("baz.example.com", subj) {
+					matchedPolicy = policy
+					break
+				}
+			}
+			if matchedPolicy != nil {
+				break
+			}
+		}
+		if matchedPolicy != p2 {
+			t.Fatalf("expected middle policy p2 to win for baz.example.com, got %v", matchedPolicy)
+		}
+		if matchedPolicy.KeyType != "ed25519" {
+			t.Errorf("expected key type ed25519 from middle policy, got %s", matchedPolicy.KeyType)
 		}
 	})
 }
