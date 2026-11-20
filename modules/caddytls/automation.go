@@ -406,7 +406,7 @@ func (ap *AutomationPolicy) makeCertMagicConfig(tlsApp *TLS, issuers []certmagic
 		RenewalWindowRatio: ap.RenewalWindowRatio,
 		KeySource:          keySource,
 		OnEvent:            tlsApp.onEvent,
-		ShouldEmitFunc:     tlsApp.events.ShouldEmit,
+		ShouldEmitFunc:     tlsApp.shouldEmit,
 		OnDemand:           ond,
 		ReusePrivateKeys:   ap.ReusePrivateKeys,
 		OCSP: certmagic.OCSPConfig{

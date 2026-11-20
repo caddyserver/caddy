@@ -258,7 +258,7 @@ func (t *TLS) Provision(ctx caddy.Context) error {
 		Storage:        ctx.Storage(),
 		Logger:         t.logger,
 		OnEvent:        t.onEvent,
-		ShouldEmitFunc: t.events.ShouldEmit,
+		ShouldEmitFunc: t.shouldEmit,
 		OCSP: certmagic.OCSPConfig{
 			DisableStapling: t.DisableOCSPStapling,
 		},
@@ -1087,9 +1087,31 @@ func (t *TLS) caddyContext(ctx context.Context) caddy.Context {
 	return caddyCtx
 }
 
+func (t *TLS) activeEventsApp() *caddyevents.App {
+	if activeCtx := caddy.ActiveContext(); activeCtx.Context != nil {
+		if iface, err := activeCtx.AppIfConfigured("events"); err == nil {
+			if app, ok := iface.(*caddyevents.App); ok {
+				return app
+			}
+		}
+	}
+	return t.events
+}
+
+func (t *TLS) shouldEmit(eventName string) bool {
+	if app := t.activeEventsApp(); app != nil {
+		return app.ShouldEmit(eventName)
+	}
+	return false
+}
+
 // onEvent translates CertMagic events into Caddy events then dispatches them.
 func (t *TLS) onEvent(ctx context.Context, eventName string, data map[string]any) error {
-	evt := t.events.Emit(t.ctx, eventName, data)
+	eventsApp := t.activeEventsApp()
+	if eventsApp == nil {
+		return nil
+	}
+	evt := eventsApp.Emit(t.caddyContext(ctx), eventName, data)
 	return evt.Aborted
 }
 
