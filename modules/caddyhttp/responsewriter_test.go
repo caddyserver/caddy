@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -245,6 +246,9 @@ func TestResponseRecorderSwitchingProtocolsIsHijackAware(t *testing.T) {
 	}
 	defer conn.Close()
 
+	if err := http.NewResponseController(rr).Flush(); !errors.Is(err, http.ErrHijacked) {
+		t.Fatalf("Flush() after hijack = %v, want http.ErrHijacked", err)
+	}
 	if rr.Buffered() {
 		t.Fatal("hijacked response should not remain buffered")
 	}
