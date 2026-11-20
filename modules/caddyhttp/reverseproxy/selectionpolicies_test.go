@@ -16,6 +16,7 @@ package reverseproxy
 
 import (
 	"context"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -30,6 +31,13 @@ func testPool() UpstreamPool {
 		{Host: new(Host), Dial: "0.0.0.1"},
 		{Host: new(Host), Dial: "0.0.0.2"},
 		{Host: new(Host), Dial: "0.0.0.3"},
+	}
+}
+
+func TestWeightedRoundRobinRejectsWeightOverflow(t *testing.T) {
+	policy := WeightedRoundRobinSelection{Weights: []int{math.MaxInt, 1}}
+	if err := policy.Provision(caddy.Context{}); err == nil {
+		t.Fatal("expected an error for weights whose sum overflows int")
 	}
 }
 
