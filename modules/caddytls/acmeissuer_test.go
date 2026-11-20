@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	_ "github.com/caddyserver/caddy/v2/modules/internal/network"
 	"github.com/caddyserver/certmagic"
 	"github.com/mholt/acmez/v3/acme"
@@ -127,5 +128,60 @@ func TestACMEIssuerNetworkProxyAfterRebuildCertMagic(t *testing.T) {
 	}
 	if proxied.Load() == 0 {
 		t.Error("ACME request did not go through the configured network proxy")
+	}
+}
+
+func TestACMEIssuerUnmarshalCaddyfileNetworkProxy(t *testing.T) {
+	for i, tc := range []struct {
+		name    string
+		input   string
+		wantRaw string
+		wantErr bool
+	}{
+		{
+			name:    "url",
+			input:   "acme {\n\tnetwork_proxy url http://localhost:8080\n}",
+			wantRaw: `{"from":"url","url":"http://localhost:8080"}`,
+		},
+		{
+			name:    "url with placeholder",
+			input:   "acme {\n\tnetwork_proxy url {env.ACME_PROXY}\n}",
+			wantRaw: `{"from":"url","url":"{env.ACME_PROXY}"}`,
+		},
+		{
+			name:    "none",
+			input:   "acme {\n\tnetwork_proxy none\n}",
+			wantRaw: `{"from":"none"}`,
+		},
+		{
+			name:  "not set",
+			input: "acme {\n\temail admin@example.com\n}",
+		},
+		{
+			name:    "missing module name",
+			input:   "acme {\n\tnetwork_proxy\n}",
+			wantErr: true,
+		},
+		{
+			name:    "unknown module name",
+			input:   "acme {\n\tnetwork_proxy bogus\n}",
+			wantErr: true,
+		},
+	} {
+		var iss ACMEIssuer
+		err := iss.UnmarshalCaddyfile(caddyfile.NewTestDispenser(tc.input))
+		if tc.wantErr {
+			if err == nil {
+				t.Errorf("Test %d (%s): expected error but got none", i, tc.name)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("Test %d (%s): unexpected error: %v", i, tc.name, err)
+			continue
+		}
+		if got := string(iss.NetworkProxyRaw); got != tc.wantRaw {
+			t.Errorf("Test %d (%s): NetworkProxyRaw = %q, want %q", i, tc.name, got, tc.wantRaw)
+		}
 	}
 }
