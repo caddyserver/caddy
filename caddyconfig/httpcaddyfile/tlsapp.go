@@ -26,6 +26,7 @@ import (
 
 	"github.com/caddyserver/certmagic"
 	"github.com/mholt/acmez/v3/acme"
+	"golang.org/x/net/idna"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -1225,9 +1226,8 @@ func sortAutomationPoliciesBySpecificity(aps []*caddytls.AutomationPolicy) ([]*c
 
 // compareAutomationPolicies compares the specificity of two automation policies.
 // It returns -1 if a is strictly more specific than b, 1 if b is strictly more
-// specific than a, 0 if they are disjoint, equally specific, or merge-equivalent
-// with crossed subjects, and an error if their overlapping subjects have
-// conflicting specificity.
+// specific than a, 0 if they are disjoint, equally specific, or merge-equivalent,
+// and an error if their overlapping subjects have conflicting specificity.
 func compareAutomationPolicies(a, b *caddytls.AutomationPolicy) (int, error) {
 	aSubjects := a.SubjectsRaw
 	bSubjects := b.SubjectsRaw
@@ -1244,9 +1244,19 @@ func compareAutomationPolicies(a, b *caddytls.AutomationPolicy) (int, error) {
 		return 1, nil
 	}
 
+	// Equivalent policies share the same settings; no precedence edge is required
+	// between them regardless of whether their subjects are disjoint or overlap
+	// (one-way or bidirectional).
+	if automationPoliciesAreMergeEquivalent(a, b) {
+		return 0, nil
+	}
+
+	aSubjectsNorm := normalizeAutomationSubjects(aSubjects)
+	bSubjectsNorm := normalizeAutomationSubjects(bSubjects)
+
 	var needABeforeB, needBBeforeA bool
-	for _, aSubj := range aSubjects {
-		for _, bSubj := range bSubjects {
+	for _, aSubj := range aSubjectsNorm {
+		for _, bSubj := range bSubjectsNorm {
 			if strings.EqualFold(aSubj, bSubj) {
 				continue
 			}
@@ -1260,9 +1270,6 @@ func compareAutomationPolicies(a, b *caddytls.AutomationPolicy) (int, error) {
 	}
 
 	if needABeforeB && needBBeforeA {
-		if automationPoliciesAreMergeEquivalent(a, b) {
-			return 0, nil
-		}
 		return 0, fmt.Errorf("ambiguous automation policies: overlapping subjects require conflicting ordering")
 	}
 	if needABeforeB {
@@ -1275,7 +1282,7 @@ func compareAutomationPolicies(a, b *caddytls.AutomationPolicy) (int, error) {
 }
 
 // automationPolicyIsSubset returns true if a's subjects are a subset
-// of b's subjects.
+// of b's subjects after IDNA normalisation.
 func automationPolicyIsSubset(a, b *caddytls.AutomationPolicy) bool {
 	if len(b.SubjectsRaw) == 0 {
 		return true
@@ -1283,8 +1290,9 @@ func automationPolicyIsSubset(a, b *caddytls.AutomationPolicy) bool {
 	if len(a.SubjectsRaw) == 0 {
 		return false
 	}
-	for _, aSubj := range a.SubjectsRaw {
-		inSuperset := slices.ContainsFunc(b.SubjectsRaw, func(bSubj string) bool {
+	bSubjectsNorm := normalizeAutomationSubjects(b.SubjectsRaw)
+	for _, aSubj := range normalizeAutomationSubjects(a.SubjectsRaw) {
+		inSuperset := slices.ContainsFunc(bSubjectsNorm, func(bSubj string) bool {
 			return certmagic.MatchWildcard(aSubj, bSubj)
 		})
 		if !inSuperset {
@@ -1324,11 +1332,14 @@ func automationPolicyShadows(i int, aps []*caddytls.AutomationPolicy) int {
 // A merge should not change the result, so it is skipped here as well.
 //
 // This uses certmagic.MatchWildcard, which the TLS app also uses to pick
-// a policy for a name.
+// a policy for a name, after normalising subjects using the same IDNA rules
+// as TLS provisioning.
 func automationPolicyMergeShadows(i, j int, aps []*caddytls.AutomationPolicy) bool {
+	jSubjectsNorm := normalizeAutomationSubjects(aps[j].SubjectsRaw)
 	for k := i + 1; k < j; k++ {
-		for _, kSubj := range aps[k].SubjectsRaw {
-			for _, jSubj := range aps[j].SubjectsRaw {
+		kSubjectsNorm := normalizeAutomationSubjects(aps[k].SubjectsRaw)
+		for _, kSubj := range kSubjectsNorm {
+			for _, jSubj := range jSubjectsNorm {
 				if certmagic.MatchWildcard(kSubj, jSubj) ||
 					certmagic.MatchWildcard(jSubj, kSubj) {
 					return true
@@ -1337,6 +1348,25 @@ func automationPolicyMergeShadows(i, j int, aps []*caddytls.AutomationPolicy) bo
 		}
 	}
 	return false
+}
+
+// normalizeAutomationSubjects normalizes policy subjects using the same rules
+// as TLS provisioning: replacing placeholders and converting IDN names to Punycode ASCII.
+func normalizeAutomationSubjects(rawSubjects []string) []string {
+	if len(rawSubjects) == 0 {
+		return nil
+	}
+	repl := caddy.NewReplacer()
+	normalized := make([]string, len(rawSubjects))
+	for i, sub := range rawSubjects {
+		sub = repl.ReplaceAll(sub, "")
+		if ascii, err := idna.ToASCII(sub); err == nil {
+			normalized[i] = strings.ToLower(ascii)
+		} else {
+			normalized[i] = strings.ToLower(sub)
+		}
+	}
+	return normalized
 }
 
 // subjectQualifiesForPublicCert is like certmagic.SubjectQualifiesForPublicCert() except
