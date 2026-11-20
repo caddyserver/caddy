@@ -402,6 +402,25 @@ block {
 `,
 		},
 		{
+			description: "keep heredoc whose body contains the marker mid-line",
+			input: `block {
+	heredoc <<HEREDOC
+	line one
+	prefix HEREDOC suffix
+	line three
+	HEREDOC
+}
+`,
+			expect: `block {
+	heredoc <<HEREDOC
+	line one
+	prefix HEREDOC suffix
+	line three
+	HEREDOC
+}
+`,
+		},
+		{
 			description: "Mixing heredoc with regular part",
 			input: `block {
 	heredoc <<HEREDOC
