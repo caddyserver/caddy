@@ -419,7 +419,11 @@ func (cl *BaseLog) provisionCommon(ctx Context, logging *Logging) error {
 		if err != nil {
 			return fmt.Errorf("loading log writer module: %v", err)
 		}
-		cl.writerOpener = mod.(WriterOpener)
+		wo, ok := mod.(WriterOpener)
+		if !ok {
+			return fmt.Errorf("loading log writer module: %T is not a WriterOpener", mod)
+		}
+		cl.writerOpener = wo
 	}
 	if cl.writerOpener == nil {
 		cl.writerOpener = StderrWriter{}
