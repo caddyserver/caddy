@@ -68,6 +68,7 @@ func init() {
 	RegisterGlobalOption("tls_automate_names", parseOptAutomateNames)
 	RegisterGlobalOption("ech", parseOptECH)
 	RegisterGlobalOption("renewal_window_ratio", parseOptRenewalWindowRatio)
+	RegisterGlobalOption("session_tickets", parseOptSessionTickets)
 }
 
 func parseOptTrue(d *caddyfile.Dispenser, _ any) (any, error) { return true, nil }
@@ -657,6 +658,71 @@ func parseOptECH(d *caddyfile.Dispenser, _ any) (any, error) {
 	}
 
 	return ech, nil
+}
+
+func parseOptSessionTickets(d *caddyfile.Dispenser, _ any) (any, error) {
+	d.Next() // consume option name
+
+	st := new(caddytls.SessionTicketService)
+
+	if d.NextArg() {
+		if d.Val() != "off" {
+			return nil, d.Errf("session_tickets: unknown argument '%s'", d.Val())
+		}
+		st.Disabled = true
+		if d.NextArg() {
+			return nil, d.ArgErr()
+		}
+	}
+
+	for nesting := d.Nesting(); d.NextBlock(nesting); {
+		switch d.Val() {
+		case "rotation_interval":
+			if !d.NextArg() {
+				return nil, d.ArgErr()
+			}
+			interval, err := caddy.ParseDuration(d.Val())
+			if err != nil {
+				return nil, d.Errf("session_tickets: invalid rotation_interval '%s': %v", d.Val(), err)
+			}
+			if interval <= 0 {
+				return nil, d.Errf("session_tickets: rotation_interval must be positive")
+			}
+			st.RotationInterval = caddy.Duration(interval)
+			if d.NextArg() {
+				return nil, d.ArgErr()
+			}
+		case "max_keys":
+			if !d.NextArg() {
+				return nil, d.ArgErr()
+			}
+			maxKeys, err := strconv.Atoi(d.Val())
+			if err != nil {
+				return nil, d.Errf("session_tickets: invalid max_keys '%s': %v", d.Val(), err)
+			}
+			if maxKeys <= 0 {
+				return nil, d.Errf("session_tickets: max_keys must be positive")
+			}
+			st.MaxKeys = maxKeys
+			if d.NextArg() {
+				return nil, d.ArgErr()
+			}
+		case "disable_rotation":
+			if d.NextArg() {
+				return nil, d.ArgErr()
+			}
+			st.DisableRotation = true
+		case "disabled":
+			if d.NextArg() {
+				return nil, d.ArgErr()
+			}
+			st.Disabled = true
+		default:
+			return nil, d.Errf("session_tickets: unrecognized subdirective '%s'", d.Val())
+		}
+	}
+
+	return st, nil
 }
 
 func parseOptRenewalWindowRatio(d *caddyfile.Dispenser, _ any) (any, error) {

@@ -339,6 +339,11 @@ func (st ServerType) buildTLSApp(
 		tlsApp.Resolvers = globalResolvers.([]string)
 	}
 
+	// set up session ticket options from Caddyfile
+	if sessionTickets, ok := options["session_tickets"].(*caddytls.SessionTicketService); ok {
+		tlsApp.SessionTickets = sessionTickets
+	}
+
 	// set up ECH from Caddyfile options
 	if ech, ok := options["ech"].(*caddytls.ECH); ok {
 		tlsApp.EncryptedClientHello = ech
