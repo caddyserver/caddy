@@ -153,7 +153,21 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 				if matches == nil {
 					continue
 				}
-				result = m.re.ExpandString(result, outputStr, input, matches)
+				// Expand the configured placeholders before the captures, so
+				// that a capture containing "{...}" is never evaluated. Escape
+				// "$" in the placeholder values so that a value such as "$1" is
+				// not taken as a capture reference.
+				template, err := repl.ReplaceFunc(outputStr, func(key string, val any) (any, error) {
+					// "${1}" and "${name}" are capture references, not placeholders
+					if isCaptureRef(m.re, key) {
+						return "{" + key + "}", nil
+					}
+					return strings.ReplaceAll(caddy.ToString(val), "$", "$$"), nil
+				})
+				if err != nil {
+					return nil, false
+				}
+				result = m.re.ExpandString(result, template, input, matches)
 				return string(result), true
 			}
 
@@ -172,6 +186,18 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 	})
 
 	return next.ServeHTTP(w, r)
+}
+
+// isCaptureRef reports whether key, as in "${key}", refers to a capture
+// group of re: either a group number or the name of a named group.
+func isCaptureRef(re *regexp.Regexp, key string) bool {
+	if key == "" {
+		return false
+	}
+	if strings.Trim(key, "0123456789") == "" {
+		return true
+	}
+	return re.SubexpIndex(key) >= 0
 }
 
 // Mapping describes a mapping from input to outputs.

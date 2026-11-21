@@ -198,6 +198,89 @@ func TestHandler(t *testing.T) {
 				"output": "testing",
 			},
 		},
+		{
+			// placeholders in the output are expanded for a regexp match too (#8292)
+			reqURI: "/abc",
+			handler: Handler{
+				Source:       "{http.request.uri.path}",
+				Destinations: []string{"{output}"},
+				Mappings: []Mapping{
+					{
+						InputRegexp: "^/abc$",
+						Outputs:     []any{"{testvar}"},
+					},
+				},
+			},
+			expect: map[string]any{
+				"output": "testing",
+			},
+		},
+		{
+			reqURI: "/foo",
+			handler: Handler{
+				Source:       "{http.request.uri.path}",
+				Destinations: []string{"{output}"},
+				Mappings: []Mapping{
+					{
+						InputRegexp: "^/(.*)$",
+						Outputs:     []any{"${1}-{testvar}"},
+					},
+				},
+			},
+			expect: map[string]any{
+				"output": "foo-testing",
+			},
+		},
+		{
+			// a placeholder value is not reinterpreted as a regexp capture reference
+			reqURI: "/foo",
+			handler: Handler{
+				Source:       "{http.request.uri.path}",
+				Destinations: []string{"{output}"},
+				Mappings: []Mapping{
+					{
+						InputRegexp: "^/(foo)$",
+						Outputs:     []any{"{dollarvar}"},
+					},
+				},
+			},
+			expect: map[string]any{
+				"output": "cost $1",
+			},
+		},
+		{
+			reqURI: "/foo",
+			handler: Handler{
+				Source:       "{http.request.uri.path}",
+				Destinations: []string{"{output}"},
+				Mappings: []Mapping{
+					{
+						InputRegexp: "^/(?P<name>.*)$",
+						Outputs:     []any{"${name}-{testvar}"},
+					},
+				},
+			},
+			expect: map[string]any{
+				"output": "foo-testing",
+			},
+		},
+		{
+			// a regexp capture is not evaluated as a placeholder
+			reqURI: "/%7Btestvar%7D",
+			handler: Handler{
+				Source:       "{http.request.uri.path}",
+				Destinations: []string{"{output}"},
+				Mappings: []Mapping{
+					{
+						InputRegexp: "^/(.*)$",
+						Outputs:     []any{"${1}"},
+					},
+				},
+			},
+			expect: map[string]any{
+				"output": "{testvar}",
+			},
+		},
 	} {
 		if err := tc.handler.Provision(caddy.Context{}); err != nil {
 			t.Fatalf("Test %d: Provisioning handler: %v", i, err)
@@ -209,6 +292,7 @@ func TestHandler(t *testing.T) {
 		}
 		repl := caddyhttp.NewTestReplacer(req)
 		repl.Set("testvar", "testing")
+		repl.Set("dollarvar", "cost $1")
 		ctx := context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl)
 		req = req.WithContext(ctx)
 
