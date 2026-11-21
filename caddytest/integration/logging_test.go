@@ -39,7 +39,7 @@ func TestLoggerNamesCaseInsensitive(t *testing.T) {
 
 	tester := caddytest.NewTester(t)
 	// Load a config without the file logger on cleanup so the log file is
-	// closed before t.TempDir removes it; Windows cant delete open files.
+	// closed before t.TempDir removes it; Windows can't delete open files.
 	t.Cleanup(func() {
 		tester.InitServer(`{"admin": {"listen": "localhost:2999"}}`, "json")
 	})
