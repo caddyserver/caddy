@@ -33,7 +33,7 @@ import (
 
 // Config store any configuration required to make the tests run
 type Config struct {
-	// Port we expect caddy to listening on
+	// Port we expect caddy to be listening on
 	AdminPort int
 	// Certificates we expect to be loaded before attempting to run the tests
 	Certificates []string
