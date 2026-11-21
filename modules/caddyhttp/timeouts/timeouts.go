@@ -120,6 +120,12 @@ func (t Timeouts) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 			}
 			defer idleReader.HandlerDone()
 			r.Body = idleReader
+			// route read deadlines set by handlers to the reader,
+			// like the server does for its own IdleTimeoutReader:
+			// otherwise they land on the connection directly and
+			// the reader replaces them before the next read, so a
+			// handler deadline can't cap the idle timeout (#8284)
+			w = caddyhttp.NewReadDeadlineWriter(w, idleReader)
 			wrapped = true
 		}
 	}
