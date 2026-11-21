@@ -590,6 +590,9 @@ func (s *Server) isHyphenatedVariant(key string) bool {
 
 var defaultProtocols = []string{"h1", "h2", "h3"}
 
+// errInvalidHost is returned for a request whose Host is not safe to use.
+var errInvalidHost = errors.New("invalid host")
+
 var (
 	ServerHeader = "Caddy"
 	serverHeader = []string{ServerHeader}
@@ -805,7 +808,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r = s.Errors.WithError(r, err)
 
 	var fields []zapcore.Field
-	if s.Errors != nil && len(s.Errors.Routes) > 0 {
+	// a rejected Host must not reach error routes either, since they can
+	// use {host} in a file path or upstream address just like normal routes
+	if s.Errors != nil && len(s.Errors.Routes) > 0 && !errors.Is(err, errInvalidHost) {
 		// execute user-defined error handling route
 		if err2 := s.errorHandlerChain.ServeHTTP(w, r); err2 == nil {
 			// user's error route handled the error response successfully, so now just log the error
@@ -964,7 +969,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) error {
 	}
 	if !httpguts.ValidHostHeader(r.Host) || (host != "" && strings.Trim(host, ".") == "") {
 		return HandlerError{
-			Err:        errors.New("invalid host"),
+			Err:        errInvalidHost,
 			StatusCode: http.StatusBadRequest,
 		}
 	}
