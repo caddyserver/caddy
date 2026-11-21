@@ -882,6 +882,9 @@ func redirect(w http.ResponseWriter, r *http.Request, toPath string) error {
 		// prevent path-based open redirects
 		toPath = strings.TrimPrefix(toPath, "/")
 	}
+	// browsers treat "\" as "/", so "/\evil.com" would be followed as
+	// "//evil.com"; escaping it still leads back to the same path
+	toPath = strings.ReplaceAll(toPath, `\`, "%5C")
 	// preserve the query string if present
 	if r.URL.RawQuery != "" {
 		toPath += "?" + r.URL.RawQuery
