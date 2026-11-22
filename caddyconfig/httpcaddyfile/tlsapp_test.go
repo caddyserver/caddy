@@ -306,6 +306,36 @@ func TestConsolidateAutomationPoliciesSpecificity(t *testing.T) {
 			t.Fatalf("expected [p1, p2, p3], got %v", res)
 		}
 	})
+
+	t.Run("uts46 label separators with wildcard and exact domain sorted by specificity in both insertion orders", func(t *testing.T) {
+		pWildcard := &caddytls.AutomationPolicy{SubjectsRaw: []string{"*。مثال。com"}, KeyType: "rsa2048"}
+		pExact := &caddytls.AutomationPolicy{SubjectsRaw: []string{"foo.xn--mgbh0fb.com"}, KeyType: "ed25519"}
+
+		res1, err := consolidateAutomationPolicies([]*caddytls.AutomationPolicy{pWildcard, pExact})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(res1) != 2 || res1[0] != pExact || res1[1] != pWildcard {
+			t.Fatalf("expected [pExact, pWildcard], got %v", res1)
+		}
+
+		res2, err := consolidateAutomationPolicies([]*caddytls.AutomationPolicy{pExact, pWildcard})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(res2) != 2 || res2[0] != pExact || res2[1] != pWildcard {
+			t.Fatalf("expected [pExact, pWildcard], got %v", res2)
+		}
+	})
+
+	t.Run("idna lookup profile normalizes mapped characters and label separators", func(t *testing.T) {
+		raw := []string{"*。BÜCHER。example", "FOO。مثال。com", "127.0.0.1", "[::1]"}
+		got := normalizeAutomationSubjects(raw)
+		want := []string{"*.xn--bcher-kva.example", "foo.xn--mgbh0fb.com", "127.0.0.1", "[::1]"}
+		if !slices.Equal(got, want) {
+			t.Fatalf("normalizeAutomationSubjects(%v) = %v, want %v", raw, got, want)
+		}
+	})
 }
 
 func TestConsolidateAutomationPoliciesCaddyfileAdapt(t *testing.T) {
@@ -481,6 +511,52 @@ foo.xn--mgbh0fb.com {
 		}
 		if !slices.Contains(policies[1].Subjects, "*.مثال.com") {
 			t.Errorf("expected policy 1 to contain *.مثال.com, got %v", policies[1].Subjects)
+		}
+	})
+
+	t.Run("unicode wildcard and punycode exact domain with idna lookup profile adapts with exact policy first", func(t *testing.T) {
+		input := `*.bücher.example {
+	tls {
+		key_type rsa2048
+	}
+}
+
+foo.xn--bcher-kva.example {
+	tls {
+		key_type ed25519
+	}
+}
+`
+		adapter := caddyfile.Adapter{ServerType: ServerType{}}
+		cfgJSON, _, err := adapter.Adapt([]byte(input), nil)
+		if err != nil {
+			t.Fatalf("unexpected error adapting Caddyfile: %v", err)
+		}
+
+		var parsedCfg struct {
+			Apps struct {
+				TLS struct {
+					Automation struct {
+						Policies []struct {
+							Subjects []string `json:"subjects"`
+						} `json:"policies"`
+					} `json:"automation"`
+				} `json:"tls"`
+			} `json:"apps"`
+		}
+		if err := json.Unmarshal(cfgJSON, &parsedCfg); err != nil {
+			t.Fatalf("unmarshaling config: %v", err)
+		}
+
+		policies := parsedCfg.Apps.TLS.Automation.Policies
+		if len(policies) < 2 {
+			t.Fatalf("expected at least 2 automation policies, got %d", len(policies))
+		}
+		if !slices.Contains(policies[0].Subjects, "foo.xn--bcher-kva.example") {
+			t.Errorf("expected policy 0 to contain foo.xn--bcher-kva.example, got %v", policies[0].Subjects)
+		}
+		if !slices.Contains(policies[1].Subjects, "*.bücher.example") {
+			t.Errorf("expected policy 1 to contain *.bücher.example, got %v", policies[1].Subjects)
 		}
 	})
 }
