@@ -684,3 +684,13 @@ func testReplacer() Replacer {
 		mapMutex:  &sync.RWMutex{},
 	}
 }
+
+func TestReplacerWithoutFileSet(t *testing.T) {
+	rep := NewReplacer()
+	nf := rep.WithoutFile()
+	nf.Set("b", "2")
+	got, ok := nf.Get("b")
+	if !ok || got != "2" {
+		t.Fatalf("expected set value on file-less replacer, got %v, %v", got, ok)
+	}
+}
