@@ -26,7 +26,6 @@ import (
 
 	"github.com/caddyserver/certmagic"
 	"github.com/mholt/acmez/v3/acme"
-	"golang.org/x/net/idna"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -1067,44 +1066,57 @@ func newBaseAutomationPolicy(
 	return ap, nil
 }
 
+type consolidatedPolicy struct {
+	policy       *caddytls.AutomationPolicy
+	normSubjects []string
+}
+
 // consolidateAutomationPolicies combines automation policies that are the same,
 // for a cleaner overall output.
 func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) ([]*caddytls.AutomationPolicy, error) {
+	policies := make([]*consolidatedPolicy, len(aps))
+	for i, ap := range aps {
+		policies[i] = &consolidatedPolicy{
+			policy:       ap,
+			normSubjects: caddytls.NormalizeAutomationSubjects(ap.SubjectsRaw),
+		}
+	}
+
 	var err error
-	aps, err = sortAutomationPoliciesBySpecificity(aps)
+	policies, err = sortAutomationPoliciesBySpecificity(policies)
 	if err != nil {
 		return nil, err
 	}
 
 	emptyAPCount := 0
-	origLenAPs := len(aps)
+	origLenAPs := len(policies)
 	// compute the number of empty policies (disregarding subjects) - see #4128
 	// while we're at it,
 	emptyAP := new(caddytls.AutomationPolicy)
-	for i := 0; i < len(aps); i++ {
-		emptyAP.SubjectsRaw = aps[i].SubjectsRaw
+	for i := 0; i < len(policies); i++ {
+		emptyAP.SubjectsRaw = policies[i].policy.SubjectsRaw
 		emptyAP.ManagersRaw = nil
-		if reflect.DeepEqual(aps[i], emptyAP) {
+		if reflect.DeepEqual(policies[i].policy, emptyAP) {
 			// AP is empty
 			emptyAPCount++
 
 			// see if this AP shadows something later
-			shadowIdx := automationPolicyShadows(i, aps)
+			shadowIdx := automationPolicyShadows(i, policies)
 			emptyAP.SubjectsRaw = nil
 			if shadowIdx >= 0 {
-				emptyAP.SubjectsRaw = aps[shadowIdx].SubjectsRaw
+				emptyAP.SubjectsRaw = policies[shadowIdx].policy.SubjectsRaw
 				// allow the later policy, which is likely for a wildcard, to have cert
 				// managers ("get_certificate"), since wildcards now cover specific
 				// subdomains by default, when configured (see discussion in #7559)
-				emptyAP.ManagersRaw = aps[shadowIdx].ManagersRaw
+				emptyAP.ManagersRaw = policies[shadowIdx].policy.ManagersRaw
 			}
 
 			// if this is the last AP, we can delete it, since auto-https should
 			// pick it up; if it shadows something later that is also empty, we
 			// can similarly delete this; but if it shadows something that is NOT
 			// empty, we must not delete it since the shadowing has a purpose
-			if i == len(aps)-1 || (shadowIdx >= 0 && reflect.DeepEqual(aps[shadowIdx], emptyAP)) {
-				aps = slices.Delete(aps, i, i+1)
+			if i == len(policies)-1 || (shadowIdx >= 0 && reflect.DeepEqual(policies[shadowIdx].policy, emptyAP)) {
+				policies = slices.Delete(policies, i, i+1)
 				i--
 			}
 		}
@@ -1116,12 +1128,12 @@ func consolidateAutomationPolicies(aps []*caddytls.AutomationPolicy) ([]*caddytl
 
 	// remove or combine duplicate policies
 outer:
-	for i := 0; i < len(aps); i++ {
+	for i := 0; i < len(policies); i++ {
 		// compare only with next policies; we sorted by specificity so we must not delete earlier policies
-		for j := i + 1; j < len(aps); j++ {
+		for j := i + 1; j < len(policies); j++ {
 			// if they're exactly equal in every way, just keep one of them
-			if reflect.DeepEqual(aps[i], aps[j]) {
-				aps = slices.Delete(aps, j, j+1)
+			if reflect.DeepEqual(policies[i].policy, policies[j].policy) {
+				policies = slices.Delete(policies, j, j+1)
 				// must re-evaluate current i against next j; can't skip it!
 				// even if i decrements to -1, will be incremented to 0 immediately
 				i--
@@ -1134,8 +1146,8 @@ outer:
 			// otherwise the one without any subjects (a catch-all) would be
 			// eaten up by the one with subjects; and if both have subjects, we
 			// need to combine their lists
-			if automationPoliciesAreMergeEquivalent(aps[i], aps[j]) {
-				if len(aps[i].SubjectsRaw) > 0 && len(aps[j].SubjectsRaw) == 0 {
+			if automationPoliciesAreMergeEquivalent(policies[i].policy, policies[j].policy) {
+				if len(policies[i].policy.SubjectsRaw) > 0 && len(policies[j].policy.SubjectsRaw) == 0 {
 					// later policy (at j) has no subjects ("catch-all"), so we can
 					// remove the identical-but-more-specific policy that comes first
 					// AS LONG AS it is not shadowed by another policy before it; e.g.
@@ -1143,26 +1155,35 @@ outer:
 					// j is catch-all, we cannot remove policy i because that would
 					// cause example.com to be served by the less specific policy for
 					// '*.com', which might be different (yes we've seen this happen)
-					if automationPolicyShadows(i, aps) >= j {
-						aps = slices.Delete(aps, i, i+1)
+					if automationPolicyShadows(i, policies) >= j {
+						policies = slices.Delete(policies, i, i+1)
 						i--
 						continue outer
 					}
-				} else if !automationPolicyMergeShadows(i, j, aps) {
+				} else if !automationPolicyMergeShadows(i, j, policies) {
 					// merge only if it won't change which policy handles a name
 					// avoid repeated subjects
-					for _, subj := range aps[j].SubjectsRaw {
-						if !slices.Contains(aps[i].SubjectsRaw, subj) {
-							aps[i].SubjectsRaw = append(aps[i].SubjectsRaw, subj)
+					for _, subj := range policies[j].policy.SubjectsRaw {
+						if !slices.Contains(policies[i].policy.SubjectsRaw, subj) {
+							policies[i].policy.SubjectsRaw = append(policies[i].policy.SubjectsRaw, subj)
 						}
 					}
-					aps = slices.Delete(aps, j, j+1)
+					for _, normSubj := range policies[j].normSubjects {
+						if !slices.Contains(policies[i].normSubjects, normSubj) {
+							policies[i].normSubjects = append(policies[i].normSubjects, normSubj)
+						}
+					}
+					policies = slices.Delete(policies, j, j+1)
 					j--
 				}
 			}
 		}
 	}
 
+	aps = make([]*caddytls.AutomationPolicy, len(policies))
+	for i, cp := range policies {
+		aps[i] = cp.policy
+	}
 	return aps, nil
 }
 
@@ -1170,10 +1191,10 @@ outer:
 // to least specific using a stable topological sort over the partial order defined
 // by pairwise specificity constraints. Disjoint or incomparable policies preserve
 // their original declaration order.
-func sortAutomationPoliciesBySpecificity(aps []*caddytls.AutomationPolicy) ([]*caddytls.AutomationPolicy, error) {
-	n := len(aps)
+func sortAutomationPoliciesBySpecificity(policies []*consolidatedPolicy) ([]*consolidatedPolicy, error) {
+	n := len(policies)
 	if n <= 1 {
-		return aps, nil
+		return policies, nil
 	}
 
 	adj := make([][]int, n)
@@ -1181,24 +1202,24 @@ func sortAutomationPoliciesBySpecificity(aps []*caddytls.AutomationPolicy) ([]*c
 
 	for i := 0; i < n; i++ {
 		for j := i + 1; j < n; j++ {
-			cmp, err := compareAutomationPolicies(aps[i], aps[j])
+			cmp, err := compareAutomationPolicies(policies[i], policies[j])
 			if err != nil {
 				return nil, err
 			}
 			switch {
 			case cmp < 0:
-				// aps[i] is more specific than aps[j]; aps[i] must precede aps[j]
+				// policies[i] is more specific than policies[j]; policies[i] must precede policies[j]
 				adj[i] = append(adj[i], j)
 				inDegree[j]++
 			case cmp > 0:
-				// aps[j] is more specific than aps[i]; aps[j] must precede aps[i]
+				// policies[j] is more specific than policies[i]; policies[j] must precede policies[i]
 				adj[j] = append(adj[j], i)
 				inDegree[i]++
 			}
 		}
 	}
 
-	sorted := make([]*caddytls.AutomationPolicy, 0, n)
+	sorted := make([]*consolidatedPolicy, 0, n)
 	visited := make([]bool, n)
 
 	for step := 0; step < n; step++ {
@@ -1214,7 +1235,7 @@ func sortAutomationPoliciesBySpecificity(aps []*caddytls.AutomationPolicy) ([]*c
 		}
 
 		visited[next] = true
-		sorted = append(sorted, aps[next])
+		sorted = append(sorted, policies[next])
 
 		for _, neighbor := range adj[next] {
 			inDegree[neighbor]--
@@ -1228,9 +1249,9 @@ func sortAutomationPoliciesBySpecificity(aps []*caddytls.AutomationPolicy) ([]*c
 // It returns -1 if a is strictly more specific than b, 1 if b is strictly more
 // specific than a, 0 if they are disjoint, equally specific, or merge-equivalent,
 // and an error if their overlapping subjects have conflicting specificity.
-func compareAutomationPolicies(a, b *caddytls.AutomationPolicy) (int, error) {
-	aSubjects := a.SubjectsRaw
-	bSubjects := b.SubjectsRaw
+func compareAutomationPolicies(a, b *consolidatedPolicy) (int, error) {
+	aSubjects := a.policy.SubjectsRaw
+	bSubjects := b.policy.SubjectsRaw
 
 	// A policy without subjects acts as a catch-all/default policy and matches
 	// any subject. A policy with subjects is strictly more specific than a catch-all.
@@ -1247,12 +1268,12 @@ func compareAutomationPolicies(a, b *caddytls.AutomationPolicy) (int, error) {
 	// Equivalent policies share the same settings; no precedence edge is required
 	// between them regardless of whether their subjects are disjoint or overlap
 	// (one-way or bidirectional).
-	if automationPoliciesAreMergeEquivalent(a, b) {
+	if automationPoliciesAreMergeEquivalent(a.policy, b.policy) {
 		return 0, nil
 	}
 
-	aSubjectsNorm := normalizeAutomationSubjects(aSubjects)
-	bSubjectsNorm := normalizeAutomationSubjects(bSubjects)
+	aSubjectsNorm := a.normSubjects
+	bSubjectsNorm := b.normSubjects
 
 	var needABeforeB, needBBeforeA bool
 	for _, aSubj := range aSubjectsNorm {
@@ -1281,17 +1302,15 @@ func compareAutomationPolicies(a, b *caddytls.AutomationPolicy) (int, error) {
 	return 0, nil
 }
 
-// automationPolicyIsSubset returns true if a's subjects are a subset
-// of b's subjects after IDNA normalisation.
-func automationPolicyIsSubset(a, b *caddytls.AutomationPolicy) bool {
-	if len(b.SubjectsRaw) == 0 {
+func consolidatedPolicyIsSubset(a, b *consolidatedPolicy) bool {
+	if len(b.policy.SubjectsRaw) == 0 {
 		return true
 	}
-	if len(a.SubjectsRaw) == 0 {
+	if len(a.policy.SubjectsRaw) == 0 {
 		return false
 	}
-	bSubjectsNorm := normalizeAutomationSubjects(b.SubjectsRaw)
-	for _, aSubj := range normalizeAutomationSubjects(a.SubjectsRaw) {
+	bSubjectsNorm := b.normSubjects
+	for _, aSubj := range a.normSubjects {
 		inSuperset := slices.ContainsFunc(bSubjectsNorm, func(bSubj string) bool {
 			return certmagic.MatchWildcard(aSubj, bSubj)
 		})
@@ -1302,25 +1321,33 @@ func automationPolicyIsSubset(a, b *caddytls.AutomationPolicy) bool {
 	return true
 }
 
-// automationPolicyShadows returns the index of a policy that aps[i] shadows;
+// automationPolicyIsSubset returns true if a's subjects are a subset
+// of b's subjects after IDNA normalisation.
+func automationPolicyIsSubset(a, b *caddytls.AutomationPolicy) bool {
+	cpA := &consolidatedPolicy{policy: a, normSubjects: caddytls.NormalizeAutomationSubjects(a.SubjectsRaw)}
+	cpB := &consolidatedPolicy{policy: b, normSubjects: caddytls.NormalizeAutomationSubjects(b.SubjectsRaw)}
+	return consolidatedPolicyIsSubset(cpA, cpB)
+}
+
+// automationPolicyShadows returns the index of a policy that policies[i] shadows;
 // in other words, for all policies after position i, if that policy covers
 // the same subjects but is less specific, that policy's position is returned,
 // or -1 if no shadowing is found. For example, if policy i is for
 // "foo.example.com" and policy i+2 is for "*.example.com", then i+2 will be
 // returned, since that policy is shadowed by i, which is in front.
-func automationPolicyShadows(i int, aps []*caddytls.AutomationPolicy) int {
-	for j := i + 1; j < len(aps); j++ {
-		if automationPolicyIsSubset(aps[i], aps[j]) {
+func automationPolicyShadows(i int, policies []*consolidatedPolicy) int {
+	for j := i + 1; j < len(policies); j++ {
+		if consolidatedPolicyIsSubset(policies[i], policies[j]) {
 			return j
 		}
 	}
 	return -1
 }
 
-// automationPolicyMergeShadows returns true if merging aps[j] into aps[i]
+// automationPolicyMergeShadows returns true if merging policies[j] into policies[i]
 // (where i < j) would change which policy handles a name. This happens
 // when a subject of a policy between i and j overlaps with a subject of
-// aps[j], in either direction.
+// policies[j], in either direction.
 //
 // For example, say the policies are for "example.com" (i),
 // "foo.example.com" (i+1), and "*.example.com" (j). Merging j into i moves
@@ -1334,10 +1361,10 @@ func automationPolicyShadows(i int, aps []*caddytls.AutomationPolicy) int {
 // This uses certmagic.MatchWildcard, which the TLS app also uses to pick
 // a policy for a name, after normalising subjects using the same IDNA rules
 // as TLS provisioning.
-func automationPolicyMergeShadows(i, j int, aps []*caddytls.AutomationPolicy) bool {
-	jSubjectsNorm := normalizeAutomationSubjects(aps[j].SubjectsRaw)
+func automationPolicyMergeShadows(i, j int, policies []*consolidatedPolicy) bool {
+	jSubjectsNorm := policies[j].normSubjects
 	for k := i + 1; k < j; k++ {
-		kSubjectsNorm := normalizeAutomationSubjects(aps[k].SubjectsRaw)
+		kSubjectsNorm := policies[k].normSubjects
 		for _, kSubj := range kSubjectsNorm {
 			for _, jSubj := range jSubjectsNorm {
 				if certmagic.MatchWildcard(kSubj, jSubj) ||
@@ -1350,58 +1377,11 @@ func automationPolicyMergeShadows(i, j int, aps []*caddytls.AutomationPolicy) bo
 	return false
 }
 
-// normalizeAutomationSubject uses the same IDNA profile as CertMagic's
-// handshake name normalization and TLS provisioning, while allowing
-// wildcard policy labels.
-func normalizeAutomationSubject(name string) (string, error) {
-	if ascii, err := idna.Lookup.ToASCII(name); err == nil {
-		return ascii, nil
-	}
-	if strings.Contains(name, "*") {
-		// Lookup rejects wildcards, so normalize the other labels independently.
-		dottedName := strings.Map(func(r rune) rune {
-			switch r {
-			case '\u3002', '\uff0e', '\uff61': // UTS #46 label separators
-				return '.'
-			}
-			return r
-		}, name)
-		labels := strings.Split(dottedName, ".")
-		for i, label := range labels {
-			if label == "*" {
-				continue
-			}
-			ascii, err := idna.Lookup.ToASCII(label)
-			if err != nil {
-				return idna.ToASCII(name)
-			}
-			labels[i] = ascii
-		}
-		return strings.Join(labels, "."), nil
-	}
-	// Preserve provisioning's existing handling of non-DNS subjects (e.g. IPv6)
-	// and invalid names. CertMagic still validates names before issuing.
-	return idna.ToASCII(name)
-}
-
 // normalizeAutomationSubjects normalizes policy subjects using the same rules
 // as TLS provisioning: replacing placeholders and converting IDN names to Punycode ASCII
 // using the idna.Lookup profile with wildcard support.
 func normalizeAutomationSubjects(rawSubjects []string) []string {
-	if len(rawSubjects) == 0 {
-		return nil
-	}
-	repl := caddy.NewReplacer()
-	normalized := make([]string, len(rawSubjects))
-	for i, sub := range rawSubjects {
-		sub = repl.ReplaceAll(sub, "")
-		if ascii, err := normalizeAutomationSubject(sub); err == nil {
-			normalized[i] = strings.ToLower(ascii)
-		} else {
-			normalized[i] = strings.ToLower(sub)
-		}
-	}
-	return normalized
+	return caddytls.NormalizeAutomationSubjects(rawSubjects)
 }
 
 // subjectQualifiesForPublicCert is like certmagic.SubjectQualifiesForPublicCert() except

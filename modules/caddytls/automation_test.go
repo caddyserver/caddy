@@ -13,6 +13,7 @@ import (
 	"math/big"
 	"net"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -342,5 +343,48 @@ func TestAutomationPolicyImplicitTailscaleManagersOnlyCatchAll(t *testing.T) {
 	}
 	if ap.implicitTailscaleManagersOnly() {
 		t.Fatal("expected catch-all manager policy to remain outside tailscale-only special case")
+	}
+}
+
+func TestNormalizeAutomationSubject(t *testing.T) {
+	for i, tc := range []struct {
+		input   string
+		want    string
+		wantErr bool
+	}{
+		{input: "example.com", want: "example.com"},
+		{input: "EXAMPLE.COM", want: "example.com"},
+		{input: "*.example.com", want: "*.example.com"},
+		{input: "*.EXAMPLE.COM", want: "*.example.com"},
+		{input: "*。مثال。com", want: "*.xn--mgbh0fb.com"},
+		{input: "FOO。مثال。com", want: "foo.xn--mgbh0fb.com"},
+		{input: "*。BÜCHER。example", want: "*.xn--bcher-kva.example"},
+		{input: "127.0.0.1", want: "127.0.0.1"},
+		{input: "[::1]", want: "[::1]"},
+		{input: "\xff\xfe", wantErr: true},
+	} {
+		got, err := NormalizeAutomationSubject(tc.input)
+		if tc.wantErr {
+			if err == nil {
+				t.Errorf("test %d: NormalizeAutomationSubject(%q) expected error, got nil", i, tc.input)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("test %d: NormalizeAutomationSubject(%q) unexpected error: %v", i, tc.input, err)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("test %d: NormalizeAutomationSubject(%q) = %q, want %q", i, tc.input, got, tc.want)
+		}
+	}
+}
+
+func TestNormalizeAutomationSubjects(t *testing.T) {
+	raw := []string{"*。BÜCHER。example", "FOO。مثال。com", "127.0.0.1", "[::1]"}
+	got := NormalizeAutomationSubjects(raw)
+	want := []string{"*.xn--bcher-kva.example", "foo.xn--mgbh0fb.com", "127.0.0.1", "[::1]"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("NormalizeAutomationSubjects(%v) = %v, want %v", raw, got, want)
 	}
 }

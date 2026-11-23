@@ -336,6 +336,24 @@ func TestConsolidateAutomationPoliciesSpecificity(t *testing.T) {
 			t.Fatalf("normalizeAutomationSubjects(%v) = %v, want %v", raw, got, want)
 		}
 	})
+
+	t.Run("merged policies update normalized subjects", func(t *testing.T) {
+		p1 := &caddytls.AutomationPolicy{SubjectsRaw: []string{"FOO。مثال。com"}, KeyType: "rsa2048"}
+		p2 := &caddytls.AutomationPolicy{SubjectsRaw: []string{"bar.xn--mgbh0fb.com"}, KeyType: "rsa2048"}
+		p3 := &caddytls.AutomationPolicy{SubjectsRaw: []string{"baz.xn--mgbh0fb.com"}, KeyType: "rsa2048"}
+
+		res, err := consolidateAutomationPolicies([]*caddytls.AutomationPolicy{p1, p2, p3})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(res) != 1 {
+			t.Fatalf("expected 1 merged policy, got %d", len(res))
+		}
+		expectedSubjects := []string{"FOO。مثال。com", "bar.xn--mgbh0fb.com", "baz.xn--mgbh0fb.com"}
+		if !slices.Equal(res[0].SubjectsRaw, expectedSubjects) {
+			t.Fatalf("expected subjects %v, got %v", expectedSubjects, res[0].SubjectsRaw)
+		}
+	})
 }
 
 func TestConsolidateAutomationPoliciesCaddyfileAdapt(t *testing.T) {

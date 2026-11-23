@@ -191,7 +191,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 	subjects := make([]string, len(ap.SubjectsRaw))
 	for i, sub := range ap.SubjectsRaw {
 		sub = repl.ReplaceAll(sub, "")
-		subASCII, err := normalizeAutomationSubject(sub)
+		subASCII, err := NormalizeAutomationSubject(sub)
 		if err != nil {
 			return fmt.Errorf("could not convert automation policy subject '%s' to punycode: %v", sub, err)
 		}
@@ -275,34 +275,7 @@ func (ap *AutomationPolicy) Provision(tlsApp *TLS) error {
 // normalizeAutomationSubject uses the same IDNA profile as CertMagic's
 // handshake name normalization, while allowing wildcard policy labels.
 func normalizeAutomationSubject(name string) (string, error) {
-	if ascii, err := idna.Lookup.ToASCII(name); err == nil {
-		return ascii, nil
-	}
-	if strings.Contains(name, "*") {
-		// Lookup rejects wildcards, so normalize the other labels independently.
-		dottedName := strings.Map(func(r rune) rune {
-			switch r {
-			case '\u3002', '\uff0e', '\uff61': // UTS #46 label separators
-				return '.'
-			}
-			return r
-		}, name)
-		labels := strings.Split(dottedName, ".")
-		for i, label := range labels {
-			if label == "*" {
-				continue
-			}
-			ascii, err := idna.Lookup.ToASCII(label)
-			if err != nil {
-				return idna.ToASCII(name)
-			}
-			labels[i] = ascii
-		}
-		return strings.Join(labels, "."), nil
-	}
-	// Preserve provisioning's existing handling of non-DNS subjects (e.g. IPv6)
-	// and invalid names. CertMagic still validates names before issuing.
-	return idna.ToASCII(name)
+	return NormalizeAutomationSubject(name)
 }
 
 // makeCertMagicConfig constructs a certmagic.Config for this policy using the
@@ -513,6 +486,59 @@ func (ap *AutomationPolicy) isWildcardOrDefault() bool {
 		}
 	}
 	return isWildcardOrDefault
+}
+
+// NormalizeAutomationSubject normalizes a subject name using the same IDNA profile as
+// CertMagic's handshake name normalization, while allowing wildcard policy labels.
+func NormalizeAutomationSubject(name string) (string, error) {
+	if ascii, err := idna.Lookup.ToASCII(name); err == nil {
+		return ascii, nil
+	}
+	if strings.Contains(name, "*") {
+		// Lookup rejects wildcards, so normalize the other labels independently.
+		dottedName := strings.Map(func(r rune) rune {
+			switch r {
+			case '\u3002', '\uff0e', '\uff61': // UTS #46 label separators
+				return '.'
+			}
+			return r
+		}, name)
+		labels := strings.Split(dottedName, ".")
+		for i, label := range labels {
+			if label == "*" {
+				continue
+			}
+			ascii, err := idna.Lookup.ToASCII(label)
+			if err != nil {
+				return idna.ToASCII(name)
+			}
+			labels[i] = ascii
+		}
+		return strings.Join(labels, "."), nil
+	}
+	// Preserve provisioning's existing handling of non-DNS subjects (e.g. IPv6)
+	// and invalid names. CertMagic still validates names before issuing.
+	return idna.ToASCII(name)
+}
+
+// NormalizeAutomationSubjects normalizes policy subjects using the same rules
+// as TLS provisioning: replacing placeholders and converting IDN names to Punycode ASCII
+// using the idna.Lookup profile with wildcard support.
+func NormalizeAutomationSubjects(rawSubjects []string) []string {
+	if len(rawSubjects) == 0 {
+		return nil
+	}
+	repl := caddy.NewReplacer()
+	normalized := make([]string, len(rawSubjects))
+	for i, sub := range rawSubjects {
+		sub = repl.ReplaceAll(sub, "")
+		if ascii, err := NormalizeAutomationSubject(sub); err == nil {
+			normalized[i] = strings.ToLower(ascii)
+		} else {
+			normalized[i] = strings.ToLower(sub)
+		}
+	}
+	return normalized
 }
 
 // DefaultIssuers returns empty Issuers (not provisioned) to be used as defaults.
