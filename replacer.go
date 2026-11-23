@@ -75,7 +75,7 @@ type Replacer struct {
 //
 // EXPERIMENTAL: Subject to change or removal.
 func (r *Replacer) WithoutFile() *Replacer {
-	rep := &Replacer{static: r.static}
+	rep := &Replacer{static: r.static, mapMutex: r.mapMutex}
 	for _, v := range r.providers {
 		if _, ok := v.(fileReplacementProvider); ok {
 			continue

@@ -486,6 +486,48 @@ func TestReplacerNewWithoutFile(t *testing.T) {
 	}
 }
 
+func TestReplacerWithoutFileMutators(t *testing.T) {
+	repl := NewReplacer()
+	repl.Set("test.key1", "val1")
+	repl.Set("test.key2", "val2")
+	repl.Set("other.key", "val3")
+
+	nf := repl.WithoutFile()
+
+	// Set on the copy must not panic (the copy previously had a nil
+	// mapMutex), and the value must be visible through Get on both the
+	// copy and the original, since they share the static map.
+	nf.Set("test.key3", "val4")
+	if val, ok := nf.Get("test.key3"); !ok || val != "val4" {
+		t.Errorf("expected Get on copy to return 'val4' for 'test.key3', got '%v', %v", val, ok)
+	}
+	if val, ok := repl.Get("test.key3"); !ok || val != "val4" {
+		t.Errorf("expected Get on original to return 'val4' for 'test.key3', got '%v', %v", val, ok)
+	}
+
+	// Delete on the copy must not panic, and must remove the key for both.
+	nf.Delete("test.key1")
+	if _, ok := nf.Get("test.key1"); ok {
+		t.Errorf("expected 'test.key1' to be deleted from copy")
+	}
+	if _, ok := repl.Get("test.key1"); ok {
+		t.Errorf("expected 'test.key1' to be deleted from original")
+	}
+
+	// DeleteByPrefix on the copy must not panic, and must remove only
+	// keys with the given prefix.
+	nf.DeleteByPrefix("test.")
+	if _, ok := nf.Get("test.key2"); ok {
+		t.Errorf("expected 'test.key2' to be deleted from copy by prefix")
+	}
+	if _, ok := repl.Get("test.key2"); ok {
+		t.Errorf("expected 'test.key2' to be deleted from original by prefix")
+	}
+	if val, ok := nf.Get("other.key"); !ok || val != "val3" {
+		t.Errorf("expected 'other.key' to survive DeleteByPrefix, got '%v', %v", val, ok)
+	}
+}
+
 func TestReplacerTimeNowRFC3339(t *testing.T) {
 	originalNowFunc := nowFunc
 	t.Cleanup(func() { nowFunc = originalNowFunc })
