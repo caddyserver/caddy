@@ -15,6 +15,7 @@
 package caddy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -33,6 +34,10 @@ import (
 )
 
 func init() {
+	// Capture standard-library logs before any configuration is loaded.
+	// Subsequent changes belong to individual configuration generations.
+	_ = zap.RedirectStdLog(defaultLogger.logger)
+
 	RegisterModule(StdoutWriter{})
 	RegisterModule(StderrWriter{})
 	RegisterModule(DiscardWriter{})
@@ -83,7 +88,7 @@ type Logging struct {
 }
 
 // openLogs sets up the config and opens all the configured writers.
-// It closes its logs when ctx is canceled, so it should clean up
+// It closes its logs when ctx is cleaned up, so it should clean up
 // after itself.
 func (logging *Logging) openLogs(ctx Context) error {
 	// make sure to deallocate resources when context is done
@@ -105,7 +110,7 @@ func (logging *Logging) openLogs(ctx Context) error {
 	if logging.Sink != nil {
 		sink = logging.Sink.logger
 	}
-	logging.owner = claimLogging(sink)
+	logging.owner = claimLogging(ctx.Context, sink)
 
 	// as a special case, set up the default structured Caddy log next
 	if err := logging.setupNewDefault(ctx); err != nil {
@@ -230,6 +235,7 @@ func (logging *Logging) closeLogs() error {
 // provisioned. Old configuration cleanup must not undo newer redirects, and a
 // failed new configuration must restore the most recent still-live owner.
 type loggingOwner struct {
+	ctx        context.Context
 	defaultLog *defaultCustomLog
 	stdLog     stdLogState
 }
@@ -250,13 +256,13 @@ func (s stdLogState) restore() {
 	log.SetPrefix(s.prefix)
 }
 
-func claimLogging(sink *zap.Logger) *loggingOwner {
+func claimLogging(ctx context.Context, sink *zap.Logger) *loggingOwner {
 	defaultLoggerMu.Lock()
 	defer defaultLoggerMu.Unlock()
 	if len(loggingOwners) == 0 {
-		loggingBaseline = loggingOwner{defaultLogger, currentStdLog()}
+		loggingBaseline = loggingOwner{defaultLog: defaultLogger, stdLog: currentStdLog()}
 	}
-	owner := &loggingOwner{defaultLog: defaultLogger, stdLog: loggingBaseline.stdLog}
+	owner := &loggingOwner{ctx: ctx, defaultLog: defaultLogger, stdLog: loggingBaseline.stdLog}
 	if sink != nil {
 		// zap's undo function always restores stderr, not the previous writer.
 		// Save the full state ourselves so failed provisioning can roll back.
@@ -279,8 +285,11 @@ func (o *loggingOwner) release() {
 		loggingOwners = slices.Delete(loggingOwners, i, i+1)
 		if i == len(loggingOwners) {
 			restore := &loggingBaseline
-			if i > 0 {
-				restore = loggingOwners[i-1]
+			for _, candidate := range slices.Backward(loggingOwners) {
+				if candidate.ctx.Err() == nil {
+					restore = candidate
+					break
+				}
 			}
 			defaultLogger = restore.defaultLog
 			restore.stdLog.restore()
@@ -538,6 +547,14 @@ func (sll *SinkLog) provision(ctx Context, logging *Logging) error {
 
 	sll.logger = zap.New(sll.core, options...)
 	return nil
+}
+
+// releaseLogging restores the previous live configuration before failed
+// candidates are canceled, even when resource cleanup remains held.
+func (logging *Logging) releaseLogging() {
+	if logging != nil && logging.owner != nil {
+		logging.owner.release()
+	}
 }
 
 // CustomLog represents a custom logger configuration.
@@ -802,10 +819,6 @@ func newDefaultProductionLog() (*defaultCustomLog, error) {
 	cl.buildCore()
 
 	logger := zap.New(cl.core)
-
-	// capture logs from other libraries which
-	// may not be using zap logging directly
-	_ = zap.RedirectStdLog(logger)
 
 	return &defaultCustomLog{
 		CustomLog: cl,

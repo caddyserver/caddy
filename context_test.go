@@ -26,6 +26,7 @@ import (
 
 func TestContextCancellationCallbacks(t *testing.T) {
 	ctx, cancel := NewContextWithCause(Context{Context: context.Background()})
+	release := ctx.HoldCleanup()
 	copy := ctx
 	derived := ctx.WithValue("key", "value")
 	var count atomic.Int32
@@ -36,6 +37,7 @@ func TestContextCancellationCallbacks(t *testing.T) {
 	cancel(cause)
 	cancel(errors.New("second cancellation"))
 	copy.OnCancel(func() { count.Add(1) })
+	release()
 	if got := count.Load(); got != 4 {
 		t.Fatalf("callbacks ran %d times, want 4", got)
 	}
@@ -68,6 +70,7 @@ func TestContextOnCancelZeroValue(t *testing.T) {
 
 func TestContextCancellationConcurrent(t *testing.T) {
 	ctx, cancel := NewContext(Context{Context: context.Background()})
+	release := ctx.HoldCleanup()
 	cleaner := new(contextTestCleaner)
 	ctx.moduleInstances["test"] = []Module{cleaner}
 	var count atomic.Int32
@@ -80,6 +83,7 @@ func TestContextCancellationConcurrent(t *testing.T) {
 		})
 	}
 	wg.Wait()
+	release()
 	if count.Load() != 50 {
 		t.Fatalf("callbacks ran %d times, want 50", count.Load())
 	}
