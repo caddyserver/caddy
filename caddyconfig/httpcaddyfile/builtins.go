@@ -722,6 +722,7 @@ func parseRedir(h Helper) (caddyhttp.MiddlewareHandler, error) {
 
 	var body string
 	var hdr http.Header
+	var escapeHTML bool
 	switch code {
 	case "permanent":
 		code = "301"
@@ -730,21 +731,24 @@ func parseRedir(h Helper) (caddyhttp.MiddlewareHandler, error) {
 		code = "302"
 
 	case "html":
-		// Script tag comes first since that will better imitate a redirect in the browser's
-		// history, but the meta tag is a fallback for most non-JS clients.
+		// The script uses location.replace() to better imitate a redirect in the browser's
+		// history; the meta tag is a fallback for most non-JS clients. The script reads the
+		// target back from the link so that it only appears in HTML, where escaping is enough:
+		// literal text is escaped here, and placeholder values (which may be decoded request
+		// data, e.g. {path}) are escaped by the handler on each request.
 		const metaRedir = `<!DOCTYPE html>
 <html>
 	<head>
 		<title>Redirecting...</title>
-		<script>window.location.replace("%s");</script>
 		<meta http-equiv="refresh" content="0; URL='%s'">
 	</head>
-	<body>Redirecting to <a href="%s">%s</a>...</body>
+	<body>Redirecting to <a href="%s">%s</a>...<script>window.location.replace(document.querySelector("a").href);</script></body>
 </html>
 `
 		safeTo := html.EscapeString(to)
-		body = fmt.Sprintf(metaRedir, safeTo, safeTo, safeTo, safeTo)
+		body = fmt.Sprintf(metaRedir, safeTo, safeTo, safeTo)
 		hdr = http.Header{"Content-Type": []string{"text/html; charset=utf-8"}}
+		escapeHTML = true
 		code = "200" // don't redirect non-browser clients
 
 	default:
@@ -778,6 +782,7 @@ func parseRedir(h Helper) (caddyhttp.MiddlewareHandler, error) {
 		StatusCode: caddyhttp.WeakString(code),
 		Headers:    hdr,
 		Body:       body,
+		EscapeHTML: escapeHTML,
 	}, nil
 }
 

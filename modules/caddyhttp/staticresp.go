@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/textproto"
@@ -111,6 +112,12 @@ type StaticResponse struct {
 	// is disabled for safety.
 	Body string `json:"body,omitempty"`
 
+	// If true, the values of placeholders in the body are HTML-escaped
+	// when the body is written; the rest of the body is written as-is.
+	// Enable this when the body is HTML and its placeholders may carry
+	// request data, so that data can't add markup or script to the page.
+	EscapeHTML bool `json:"escape_html,omitempty"`
+
 	// If true, the server will close the client's connection
 	// after writing the response.
 	Close bool `json:"close,omitempty"`
@@ -202,10 +209,15 @@ func (s StaticResponse) ServeHTTP(w http.ResponseWriter, r *http.Request, next H
 		w.Header()[field] = newVals
 	}
 
+	bodyRepl := repl
+	if s.EscapeHTML {
+		bodyRepl = htmlEscapingReplacer(repl)
+	}
+
 	// implicitly set Content-Type header if we can do so safely
 	// (this allows templates handler to eval templates successfully
 	// or for clients to render JSON properly which is very common)
-	body := repl.ReplaceKnown(s.Body, "")
+	body := bodyRepl.ReplaceKnown(s.Body, "")
 	if body != "" && w.Header().Get("Content-Type") == "" {
 		content := strings.TrimSpace(body)
 		if len(content) > 2 &&
@@ -255,6 +267,20 @@ func (s StaticResponse) ServeHTTP(w http.ResponseWriter, r *http.Request, next H
 	}
 
 	return nil
+}
+
+// htmlEscapingReplacer returns a replacer that knows the same
+// placeholders as repl, but yields their values HTML-escaped.
+func htmlEscapingReplacer(repl *caddy.Replacer) *caddy.Replacer {
+	escaped := caddy.NewEmptyReplacer()
+	escaped.Map(func(key string) (any, bool) {
+		val, ok := repl.Get(key)
+		if !ok {
+			return nil, false
+		}
+		return html.EscapeString(caddy.ToString(val)), true
+	})
+	return escaped
 }
 
 func buildHTTPServer(
