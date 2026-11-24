@@ -1055,6 +1055,104 @@ func TestSnippetAcrossMultipleFiles(t *testing.T) {
 	}
 }
 
+func TestSnippetRedeclaredWithIdenticalContent(t *testing.T) {
+	// Declaring the same snippet twice is not a conflict as long as the bodies
+	// are identical: the second definition is simply redundant.
+	p := testParser(`
+		(common) {
+			gzip foo
+			errors stderr
+		}
+		(common) {
+			gzip foo
+			errors stderr
+		}
+		http://example.com {
+			import common
+		}
+	`)
+	blocks, err := p.parseAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blocks) != 1 {
+		t.Fatalf("Expect exactly one server block. Got %d.", len(blocks))
+	}
+	if len(blocks[0].Segments) != 2 {
+		t.Fatalf("Expect the snippet's two tokens exactly once, got: %+v", blocks[0].Segments)
+	}
+	if actual, expected := blocks[0].Segments[0][0].Text, "gzip"; expected != actual {
+		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
+	}
+}
+
+func TestSnippetRedeclaredWithDifferentContent(t *testing.T) {
+	for i, tc := range []struct {
+		name   string
+		second string
+	}{
+		{name: "different argument", second: "gzip bar"},
+		{name: "extra token", second: "gzip foo bar"},
+		{name: "quoted argument", second: `gzip "foo"`},
+	} {
+		p := testParser(`
+			(common) {
+				gzip foo
+			}
+			(common) {
+				` + tc.second + `
+			}
+			http://example.com {
+				import common
+			}
+		`)
+		_, err := p.parseAll()
+		if err == nil {
+			t.Errorf("Test %d (%s): expected a redeclaration error, got nil", i, tc.name)
+			continue
+		}
+		expected := "redeclaration of previously declared snippet common"
+		if !strings.HasPrefix(err.Error(), expected) {
+			t.Errorf("Test %d (%s): expected error starting with '%s' but got '%v'", i, tc.name, expected, err)
+		}
+	}
+}
+
+func TestSnippetRedeclaredAcrossImportedFiles(t *testing.T) {
+	// Two imported files may each define the same snippet; the second
+	// definition must not be reported as a conflict when the bodies match.
+	first := writeStringToTempFileOrDie(t, `
+		(common) {
+			gzip foo
+		}
+	`)
+	second := writeStringToTempFileOrDie(t, `
+		(common) {
+			gzip foo
+		}
+	`)
+	p := testParser(`
+		import ` + first + `
+		import ` + second + `
+		http://example.com {
+			import common
+		}
+	`)
+	blocks, err := p.parseAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blocks) != 1 {
+		t.Fatalf("Expect exactly one server block. Got %d.", len(blocks))
+	}
+	if len(blocks[0].Segments) != 1 {
+		t.Fatalf("Expect the snippet's token exactly once, got: %+v", blocks[0].Segments)
+	}
+	if actual, expected := blocks[0].Segments[0][0].Text, "gzip"; expected != actual {
+		t.Errorf("Expected argument to be '%s' but was '%s'", expected, actual)
+	}
+}
+
 func TestRejectsGlobalMatcher(t *testing.T) {
 	p := testParser(`
 		@rejected path /foo
