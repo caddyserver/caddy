@@ -41,6 +41,10 @@ func init() {
 // It is most useful for adding information about the Caddy
 // instance that is producing the log entries, possibly via
 // an environment variable.
+//
+// The otlp log core does NOT export these fields. Set them as
+// OpenTelemetry resource attributes with OTEL_RESOURCE_ATTRIBUTES
+// instead.
 type AppendEncoder struct {
 	// The underlying encoder that actually encodes the
 	// log entries. If not specified, defaults to "json",

@@ -125,14 +125,15 @@ func (logging *Logging) openLogs(ctx Context) error {
 		}
 
 		// Any other logs that use the discard writer can be deleted
-		// entirely. This avoids encoding and processing of each
+		// entirely, unless their core module honors the log's level
+		// and sampling. This avoids encoding and processing of each
 		// log entry that would just be thrown away anyway. Notably,
 		// we do not reach this point for the default log, which MUST
 		// exist, otherwise core log emissions would panic because
 		// they use the Log() function directly which expects a non-nil
-		// logger. Even if we keep logs with a discard writer, they
-		// have a nop core, and keeping them at all seems unnecessary.
-		if _, ok := l.writerOpener.(*DiscardWriter); ok {
+		// logger.
+		_, discards := l.writerOpener.(*DiscardWriter)
+		if _, exports := l.coreModule.(HonorsLogLevelAndSampling); discards && !exports {
 			delete(logging.Logs, name)
 			continue
 		}
@@ -380,6 +381,8 @@ type BaseLog struct {
 
 	// Tees entries through a zap.Core module which can extract
 	// log entry metadata and fields for further processing.
+	// The module receives every entry, regardless of the log's
+	// level and sampling, unless it opts in to them.
 	CoreRaw json.RawMessage `json:"core,omitempty" caddy:"namespace=caddy.logging.cores inline_key=module"`
 
 	// Level is the minimum level to emit, and is inclusive.
@@ -410,6 +413,7 @@ type BaseLog struct {
 	writer       io.WriteCloser
 	encoder      zapcore.Encoder
 	levelEnabler zapcore.LevelEnabler
+	coreModule   zapcore.Core
 	core         zapcore.Core
 }
 
@@ -455,43 +459,59 @@ func (cl *BaseLog) provisionCommon(ctx Context, logging *Logging) error {
 	if cl.encoder == nil {
 		cl.encoder = newDefaultProductionLogEncoder(cl.writerOpener)
 	}
-	cl.buildCore()
+	var extra zapcore.Core
 	if cl.CoreRaw != nil {
 		mod, err := ctx.LoadModule(cl, "CoreRaw")
 		if err != nil {
 			return fmt.Errorf("loading log core module: %v", err)
 		}
-		core := mod.(zapcore.Core)
-		cl.core = zapcore.NewTee(cl.core, core)
+		extra = mod.(zapcore.Core)
+		cl.coreModule = extra
+		if c, ok := extra.(ConfiguresFromLogEncoder); ok {
+			if err := c.ConfigureFromLogEncoder(cl.encoder); err != nil {
+				return fmt.Errorf("configuring log core module: %v", err)
+			}
+		}
 	}
+	cl.buildCore(extra)
 	return nil
 }
 
-func (cl *BaseLog) buildCore() {
+func (cl *BaseLog) buildCore(extra zapcore.Core) {
+	var cores []zapcore.Core
+	if _, ok := cl.writerOpener.(*DiscardWriter); !ok {
+		cores = append(cores, zapcore.NewCore(
+			cl.encoder,
+			zapcore.AddSync(cl.writer),
+			cl.levelEnabler,
+		))
+	}
+	if _, ok := extra.(HonorsLogLevelAndSampling); ok {
+		cores = append(cores, &levelFilteredCore{Core: extra, level: cl.levelEnabler})
+		extra = nil
+	}
 	// logs which only discard their output don't need
 	// to perform encoding or any other processing steps
 	// at all, so just shortcut to a nop core instead
-	if _, ok := cl.writerOpener.(*DiscardWriter); ok {
-		cl.core = zapcore.NewNopCore()
-		return
+	c := zapcore.NewNopCore()
+	if len(cores) > 0 {
+		c = zapcore.NewTee(cores...)
+		if cl.Sampling != nil {
+			if cl.Sampling.Interval == 0 {
+				cl.Sampling.Interval = 1 * time.Second
+			}
+			if cl.Sampling.First == 0 {
+				cl.Sampling.First = 100
+			}
+			if cl.Sampling.Thereafter == 0 {
+				cl.Sampling.Thereafter = 100
+			}
+			c = zapcore.NewSamplerWithOptions(c, cl.Sampling.Interval,
+				cl.Sampling.First, cl.Sampling.Thereafter)
+		}
 	}
-	c := zapcore.NewCore(
-		cl.encoder,
-		zapcore.AddSync(cl.writer),
-		cl.levelEnabler,
-	)
-	if cl.Sampling != nil {
-		if cl.Sampling.Interval == 0 {
-			cl.Sampling.Interval = 1 * time.Second
-		}
-		if cl.Sampling.First == 0 {
-			cl.Sampling.First = 100
-		}
-		if cl.Sampling.Thereafter == 0 {
-			cl.Sampling.Thereafter = 100
-		}
-		c = zapcore.NewSamplerWithOptions(c, cl.Sampling.Interval,
-			cl.Sampling.First, cl.Sampling.Thereafter)
+	if extra != nil {
+		c = zapcore.NewTee(c, extra)
 	}
 	cl.core = c
 }
@@ -672,6 +692,27 @@ func (cl *CustomLog) loggerAllowed(name string, isModule bool) bool {
 		(len(cl.Include) == 0 && longestReject == 0)
 }
 
+// levelFilteredCore applies the log's level to a core module, which otherwise receives every entry.
+type levelFilteredCore struct {
+	zapcore.Core
+	level zapcore.LevelEnabler
+}
+
+func (c *levelFilteredCore) Enabled(lvl zapcore.Level) bool {
+	return c.level.Enabled(lvl) && c.Core.Enabled(lvl)
+}
+
+func (c *levelFilteredCore) With(fields []zapcore.Field) zapcore.Core {
+	return &levelFilteredCore{Core: c.Core.With(fields), level: c.level}
+}
+
+func (c *levelFilteredCore) Check(ent zapcore.Entry, ce *zapcore.CheckedEntry) *zapcore.CheckedEntry {
+	if !c.level.Enabled(ent.Level) {
+		return ce
+	}
+	return c.Core.Check(ent, ce)
+}
+
 // filteringCore filters log entries based on logger name,
 // according to the rules of a CustomLog.
 type filteringCore struct {
@@ -718,7 +759,9 @@ type (
 	// StderrWriter writes logs to standard error.
 	StderrWriter struct{}
 
-	// DiscardWriter discards all writes.
+	// DiscardWriter discards all writes. Entries still reach
+	// the log's core module if it honors the log's level and
+	// sampling, as the otlp core does.
 	DiscardWriter struct{}
 )
 
@@ -799,7 +842,7 @@ func newDefaultProductionLog() (*defaultCustomLog, error) {
 	cl.encoder = newDefaultProductionLogEncoder(cl.writerOpener)
 	cl.levelEnabler = zapcore.InfoLevel
 
-	cl.buildCore()
+	cl.buildCore(nil)
 
 	logger := zap.New(cl.core)
 
@@ -908,6 +951,21 @@ var writers = NewUsagePool()
 // in order to determine the correct default.
 type ConfiguresFormatterDefault interface {
 	ConfigureDefaultFormat(WriterOpener) error
+}
+
+// ConfiguresFromLogEncoder is an optional interface that core
+// modules can implement to get the encoder of their log, for
+// instance to apply the same field filters.
+type ConfiguresFromLogEncoder interface {
+	ConfigureFromLogEncoder(zapcore.Encoder) error
+}
+
+// HonorsLogLevelAndSampling is an optional interface that core
+// modules can implement to only receive the entries that pass
+// their log's level and sampling, including when the log's
+// output is discard.
+type HonorsLogLevelAndSampling interface {
+	HonorsLogLevelAndSampling()
 }
 
 const DefaultLoggerName = "default"
