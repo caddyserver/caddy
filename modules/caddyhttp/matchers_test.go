@@ -1069,6 +1069,30 @@ func TestQueryMatcher(t *testing.T) {
 			expect:   true,
 		},
 		{
+			scenario: "empty matcher should match a query of only separators",
+			match:    MatchQuery{},
+			input:    "/?&",
+			expect:   true,
+		},
+		{
+			scenario: "empty matcher should NOT match a query with an unescaped semicolon",
+			match:    MatchQuery{},
+			input:    "/?a=1;b=2",
+			expect:   false,
+		},
+		{
+			scenario: "empty matcher should NOT match a query with a bad escape sequence",
+			match:    MatchQuery{},
+			input:    "/?a=%zz",
+			expect:   false,
+		},
+		{
+			scenario: "empty matcher should NOT match a semicolon-only query",
+			match:    MatchQuery{},
+			input:    "/?;",
+			expect:   false,
+		},
+		{
 			scenario: "nil matcher value should NOT match a non-empty query",
 			match:    MatchQuery{},
 			input:    "/?foo=bar",

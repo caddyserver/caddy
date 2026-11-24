@@ -1080,14 +1080,6 @@ func (m MatchQuery) Match(r *http.Request) bool {
 // MatchWithError returns true if r matches m.
 // An empty m matches an empty query string.
 func (m MatchQuery) MatchWithError(r *http.Request) (bool, error) {
-	// If no query keys are configured, this only
-	// matches an empty query string.
-	if len(m) == 0 {
-		return len(r.URL.Query()) == 0, nil
-	}
-
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
-
 	// parse query string just once, for efficiency
 	parsed, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil {
@@ -1102,6 +1094,14 @@ func (m MatchQuery) MatchWithError(r *http.Request) (bool, error) {
 		// We regard the Go team's decision as sound and thus reject malformed query strings.
 		return false, nil
 	}
+
+	// If no query keys are configured, this only
+	// matches an empty query string.
+	if len(m) == 0 {
+		return len(parsed) == 0, nil
+	}
+
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
 	// Count the amount of matched keys, to ensure we AND
 	// between all configured query keys; all keys must
