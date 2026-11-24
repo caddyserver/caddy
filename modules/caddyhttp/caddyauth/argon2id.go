@@ -147,6 +147,14 @@ func DecodeHash(hash []byte) (*Argon2idHash, []byte, error) {
 		return nil, nil, fmt.Errorf("invalid parallelism parameter: %w", err)
 	}
 
+	// argon2.IDKey panics on either of these
+	if iter < 1 {
+		return nil, nil, fmt.Errorf("invalid iterations parameter: must be at least 1")
+	}
+	if threads < 1 {
+		return nil, nil, fmt.Errorf("invalid parallelism parameter: must be at least 1")
+	}
+
 	salt, err := base64.RawStdEncoding.Strict().DecodeString(parts[4])
 	if err != nil {
 		return nil, nil, fmt.Errorf("decode salt: %w", err)

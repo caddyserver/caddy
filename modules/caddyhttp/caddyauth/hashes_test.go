@@ -300,3 +300,16 @@ func TestHashPasswordCommandErrors(t *testing.T) {
 		t.Errorf("expected an error for a hash module that cannot hash, got: %v", err)
 	}
 }
+
+func TestArgon2idCompareRejectsZeroParams(t *testing.T) {
+	// salt and key from FakeHash; only t or p is changed
+	for _, hash := range []string{
+		"$argon2id$v=19$m=47104,t=0,p=1$P2nzckEdTZ3bxCiBCkRTyA$xQL3Z32eo5jKl7u5tcIsnEKObYiyNZQQf5/4sAau6Pg",
+		"$argon2id$v=19$m=47104,t=1,p=0$P2nzckEdTZ3bxCiBCkRTyA$xQL3Z32eo5jKl7u5tcIsnEKObYiyNZQQf5/4sAau6Pg",
+	} {
+		ok, err := Argon2idHash{}.Compare([]byte(hash), []byte("antitiming"))
+		if ok || err == nil {
+			t.Errorf("Compare(%q) = %v, %v; want false and an error", hash, ok, err)
+		}
+	}
+}
