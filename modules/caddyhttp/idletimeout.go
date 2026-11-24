@@ -642,6 +642,17 @@ type readDeadlineWriter struct {
 	reader *IdleTimeoutReader
 }
 
+// NewReadDeadlineWriter returns a ResponseWriter that routes read
+// deadlines set by handlers through http.ResponseController to
+// reader, which would otherwise replace them before the next read.
+// The server wraps the response writer this way when it installs an
+// IdleTimeoutReader; any other installer of one, like the timeouts
+// handler, must do the same, or handler read deadlines bypass the
+// reader and are silently overwritten by its next idle reset.
+func NewReadDeadlineWriter(w http.ResponseWriter, reader *IdleTimeoutReader) http.ResponseWriter {
+	return &readDeadlineWriter{ResponseWriterWrapper: ResponseWriterWrapper{ResponseWriter: w}, reader: reader}
+}
+
 func (w *readDeadlineWriter) SetReadDeadline(deadline time.Time) error {
 	return w.reader.SetReadDeadline(deadline)
 }

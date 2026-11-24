@@ -348,3 +348,46 @@ func TestTimeoutsRearmReadDeadlineHTTP2(t *testing.T) {
 	require.Equal(t, 2, resp.ProtoMajor)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
+
+// TestTimeoutsHandlerReadDeadlineCapsIdleReset checks that a read
+// deadline set by a handler through http.ResponseController caps the
+// idle deadline the timeouts handler installs before reads, like it
+// does for the server-wide idle timeout (see #8284). The timeouts
+// handler created the IdleTimeoutReader itself here (no server-wide
+// read idle timeout), so the handler's deadline must still reach it.
+func TestTimeoutsHandlerReadDeadlineCapsIdleReset(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		handler time.Duration // deadline the handler sets, relative to now
+		wantCap bool          // whether it must cap the idle deadline
+	}{
+		{name: "earlier handler deadline caps the idle reset", handler: time.Minute, wantCap: true},
+		{name: "later handler deadline does not loosen the idle timeout", handler: 2 * time.Hour, wantCap: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := &readDeadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+			tm := Timeouts{ReadTimeout: time.Hour, logger: zap.NewNop()}
+			req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("body"))
+
+			var handlerDeadline time.Time
+			err := tm.ServeHTTP(rec, req, caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+				handlerDeadline = time.Now().Add(tc.handler)
+				require.NoError(t, http.NewResponseController(w).SetReadDeadline(handlerDeadline))
+				_, err := r.Body.Read(make([]byte, 1))
+				require.NoError(t, err)
+				return nil
+			}))
+			require.NoError(t, err)
+			require.NotEmpty(t, rec.deadlines)
+
+			installed := rec.deadlines[len(rec.deadlines)-1]
+			if tc.wantCap {
+				assert.Equal(t, handlerDeadline, installed,
+					"the deadline installed for the read must be capped by the handler's deadline")
+			} else {
+				assert.True(t, installed.Before(handlerDeadline),
+					"the idle deadline must not be loosened by the handler's later deadline")
+			}
+		})
+	}
+}
