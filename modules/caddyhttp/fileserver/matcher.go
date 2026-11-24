@@ -446,11 +446,13 @@ func (m MatchFile) selectFile(r *http.Request) (bool, error) {
 		}
 		fullPattern := caddyhttp.SanitizedPathJoin(globRoot, beforeSplit)
 
-		// expand glob expressions, but not on Windows because Glob() doesn't
-		// support escaping on Windows due to path separator)
+		// Expand glob expressions, but not on Windows because Glob() doesn't
+		// support escaping on Windows due to path separator. Skip Glob on any
+		// platform when the pattern has no meta characters: Glob would stat the
+		// file, and strictFileExists stats it again.
 		var globResults []string
-		if runtime.GOOS == "windows" {
-			globResults = []string{fullPattern} // precious Windows
+		if runtime.GOOS == "windows" || !strings.ContainsAny(fullPattern, `*?[\`) {
+			globResults = []string{fullPattern}
 		} else {
 			globResults, err = fs.Glob(fileSystem, fullPattern)
 			if err != nil {
