@@ -703,6 +703,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if c := s.logger.Check(lvl, "setting HTTP/3 Alt-Svc header"); c != nil {
 				c.Write(zap.Error(err))
 			}
+		} else {
+			dedupeAltSvcHeader(h)
 		}
 	}
 
@@ -2083,4 +2085,36 @@ func getHTTP3Network(originalNetwork string) (string, error) {
 		return "", fmt.Errorf("network '%s' cannot handle HTTP/3 connections", originalNetwork)
 	}
 	return h3Network, nil
+}
+
+// dedupeAltSvcHeader collapses duplicate entries in the Alt-Svc header while
+// preserving their order. The HTTP/3 server generates one advertisement per
+// QUIC listener, so serving the same port on several bind addresses (e.g.
+// 0.0.0.0:443 and [::]:443) yields repeated identical entries such as
+// h3=":443"; ma=2592000. See issue #8412.
+func dedupeAltSvcHeader(h http.Header) {
+	values, ok := h["Alt-Svc"]
+	if !ok {
+		return
+	}
+	seen := make(map[string]struct{})
+	var kept []string
+	for _, value := range values {
+		for _, entry := range strings.Split(value, ",") {
+			entry = strings.TrimSpace(entry)
+			if entry == "" {
+				continue
+			}
+			if _, dup := seen[entry]; dup {
+				continue
+			}
+			seen[entry] = struct{}{}
+			kept = append(kept, entry)
+		}
+	}
+	if len(kept) > 0 {
+		h.Set("Alt-Svc", strings.Join(kept, ","))
+	} else {
+		delete(h, "Alt-Svc")
+	}
 }
