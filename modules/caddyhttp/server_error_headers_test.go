@@ -10,7 +10,7 @@ import (
 )
 
 func TestServerErrorRoutesReceiveSanitizedHeaders(t *testing.T) {
-	for _, invalid := range []string{"method", "missing host", "invalid host"} {
+	for _, invalid := range []string{"method", "missing host"} {
 		t.Run(invalid, func(t *testing.T) {
 			reachedErrorRoute := false
 			server := &Server{
@@ -50,13 +50,38 @@ func TestServerErrorRoutesReceiveSanitizedHeaders(t *testing.T) {
 				req.Method = strings.Repeat("A", 33)
 			case "missing host":
 				req.Host = ""
-			case "invalid host":
-				req.Host = "..."
 			}
 			rec := httptest.NewRecorder()
 			server.ServeHTTP(rec, req)
 			if !reachedErrorRoute || rec.Code != http.StatusForbidden {
 				t.Fatalf("error route not reached: status %d", rec.Code)
+			}
+		})
+	}
+}
+
+func TestServerErrorRoutesSkipInvalidHost(t *testing.T) {
+	for _, host := range []string{"..", "...", "..:80", "[..]:80"} {
+		t.Run(host, func(t *testing.T) {
+			server := &Server{
+				logger: zap.NewNop(), errorLogger: zap.NewNop(), accessLogger: zap.NewNop(),
+				Errors: &HTTPErrorConfig{Routes: RouteList{{}}},
+				primaryHandlerChain: HandlerFunc(func(http.ResponseWriter, *http.Request) error {
+					t.Fatal("invalid host reached primary routes")
+					return nil
+				}),
+				errorHandlerChain: HandlerFunc(func(http.ResponseWriter, *http.Request) error {
+					// error routes can use {host} in a file path, e.g. root /srv/{host}
+					t.Fatal("invalid host reached error routes")
+					return nil
+				}),
+			}
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.Host = host
+			rec := httptest.NewRecorder()
+			server.ServeHTTP(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
 			}
 		})
 	}

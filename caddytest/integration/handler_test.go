@@ -1,8 +1,15 @@
 package integration
 
 import (
+	"bufio"
 	"bytes"
+	"fmt"
+	"io"
+	"net"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2/caddytest"
@@ -169,4 +176,68 @@ func TestRequestBodyMaxSizeLimitsErrorRoute(t *testing.T) {
 	// the declared length is rejected before respond runs, and the error
 	// route reading the body must still be held to max_size
 	tester.AssertPostResponseBody("http://localhost:9080/", nil, bytes.NewBufferString("abcdefghijklm"), http.StatusRequestEntityTooLarge, "request body: http: request body too large")
+}
+
+func TestErrorRoutesDoNotServeInvalidHostPath(t *testing.T) {
+	base := t.TempDir()
+	sites := filepath.Join(base, "sites")
+	if err := os.MkdirAll(filepath.Join(sites, "a.example"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sites, "a.example", "index.txt"), []byte("site a"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(base, "secret.txt"), []byte("OUTSIDE SITES ROOT"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	tester := caddytest.NewTester(t)
+	tester.InitServer(fmt.Sprintf(`
+	{
+		skip_install_trust
+		admin localhost:2999
+		http_port 9080
+		grace_period 1ns
+	}
+	:9080 {
+		root * %[1]q
+		file_server
+		handle_errors {
+			root * %[1]q
+			file_server
+		}
+	}
+	`, filepath.ToSlash(sites)+"/{host}"), "caddyfile")
+
+	get := func(host, path string) (int, string) {
+		conn, err := net.Dial("tcp", "127.0.0.1:9080")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		// raw request: http.Client won't send a dot-only Host
+		if _, err := fmt.Fprintf(conn, "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", path, host); err != nil {
+			t.Fatal(err)
+		}
+		resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp.StatusCode, string(body)
+	}
+
+	if code, body := get("a.example", "/index.txt"); code != http.StatusOK || body != "site a" {
+		t.Fatalf("valid host: got %d %q", code, body)
+	}
+	for _, host := range []string{"..", "[..]:9080"} {
+		code, body := get(host, "/secret.txt")
+		if code != http.StatusBadRequest || strings.Contains(body, "OUTSIDE SITES ROOT") {
+			t.Errorf("host %q: got %d %q", host, code, body)
+		}
+	}
 }
