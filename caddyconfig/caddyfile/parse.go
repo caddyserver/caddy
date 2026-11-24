@@ -201,13 +201,22 @@ func (p *parser) begin() error {
 		if p.definedSnippets == nil {
 			p.definedSnippets = map[string][]Token{}
 		}
-		if _, found := p.definedSnippets[name]; found {
-			return p.Errf("redeclaration of previously declared snippet %s", name)
-		}
 		// consume all tokens til matched close brace
 		tokens, err := p.blockTokens(false)
 		if err != nil {
 			return err
+		}
+		// The body has to be read before the redeclaration can be judged: only a
+		// genuinely different body is a conflict. Two copies of the same snippet
+		// are legitimate, for example when the same file is imported twice or
+		// when two imported files each define the same snippet.
+		if existingTokens, found := p.definedSnippets[name]; found {
+			if !snippetsHaveSameContent(existingTokens, tokens) {
+				return p.Errf("redeclaration of previously declared snippet %s", name)
+			}
+			// Keep the first definition; the second one is identical.
+			p.block.Keys = nil
+			return nil
 		}
 		// Just as we need to track which file the token comes from, we need to
 		// keep track of which snippet the token comes from. This is helpful
@@ -812,6 +821,21 @@ func (p *parser) isSnippet() (bool, string) {
 		return true, strings.TrimSuffix(keys[0].Text[1:], ")")
 	}
 	return false, ""
+}
+
+// snippetsHaveSameContent reports whether two snippet bodies are equivalent.
+// Only the token values are compared: the file name, line number and import
+// chain legitimately differ between two copies of the same snippet.
+func snippetsHaveSameContent(a, b []Token) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].Text != b[i].Text || a[i].wasQuoted != b[i].wasQuoted {
+			return false
+		}
+	}
+	return true
 }
 
 // read and store everything in a block for later replay.
