@@ -88,7 +88,8 @@ type Transport struct {
 
 	// Capture and log any messages sent by the upstream on stderr. Logs at WARN
 	// level by default. If the response has a 4xx or 5xx status ERROR level will
-	// be used instead.
+	// be used instead. At most 64 KiB is logged per response; the number of
+	// bytes beyond that is logged as dropped_bytes.
 	CaptureStderr bool `json:"capture_stderr,omitempty"`
 
 	serverSoftware string

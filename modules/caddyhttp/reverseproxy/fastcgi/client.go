@@ -229,7 +229,11 @@ func (f clientCloser) Close() error {
 	}
 
 	if c := f.logger.Check(logLevel, "stderr"); c != nil {
-		c.Write(zap.ByteString("body", stderr))
+		fields := []zap.Field{zap.ByteString("body", stderr)}
+		if f.r.stderrDropped > 0 {
+			fields = append(fields, zap.Int64("dropped_bytes", f.r.stderrDropped))
+		}
+		c.Write(fields...)
 	}
 
 	return f.rwc.Close()
