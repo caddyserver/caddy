@@ -78,6 +78,9 @@ func (t LoggableTLSConnState) MarshalLogObject(enc zapcore.ObjectEncoder) error 
 	enc.AddString("proto", t.NegotiatedProtocol)
 	enc.AddString("server_name", t.ServerName)
 	enc.AddBool("ech", t.ECHAccepted)
+	if t.CurveID != 0 {
+		enc.AddUint16("curve", uint16(t.CurveID))
+	}
 	if len(t.PeerCertificates) > 0 {
 		enc.AddString("client_common_name", t.PeerCertificates[0].Subject.CommonName)
 		enc.AddString("client_serial", t.PeerCertificates[0].SerialNumber.String())
