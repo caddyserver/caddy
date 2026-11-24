@@ -33,7 +33,7 @@ import (
 
 // Config store any configuration required to make the tests run
 type Config struct {
-	// Port we expect caddy to listening on
+	// Port we expect caddy to be listening on
 	AdminPort int
 	// Certificates we expect to be loaded before attempting to run the tests
 	Certificates []string
@@ -113,7 +113,7 @@ func timeElapsed(start time.Time, name string) {
 	log.Printf("%s took %s", name, elapsed)
 }
 
-// InitServer this will configure the server with a configurion of a specific
+// InitServer this will configure the server with a configuration of a specific
 // type. The configType must be either "json" or the adapter type.
 func (tc *Tester) InitServer(rawConfig string, configType string) {
 	if err := tc.initServer(rawConfig, configType); err != nil {
@@ -126,7 +126,7 @@ func (tc *Tester) InitServer(rawConfig string, configType string) {
 	}
 }
 
-// InitServer this will configure the server with a configurion of a specific
+// InitServer this will configure the server with a configuration of a specific
 // type. The configType must be either "json" or the adapter type.
 func (tc *Tester) initServer(rawConfig string, configType string) error {
 	if testing.Short() {
