@@ -2,12 +2,14 @@ package fastcgi
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -664,4 +666,37 @@ func TestBuildEnvEscapedPathCannotSelectAnotherScript(t *testing.T) {
 			assert.Equal(t, http.StatusBadRequest, herr.StatusCode)
 		})
 	}
+}
+
+func TestTransportMaxConnsPerHost(t *testing.T) {
+	tr := Transport{
+		MaxConnsPerHost: 1,
+		pool:            &connPool{conns: make(map[string]chan struct{})},
+	}
+
+	release1, err := tr.acquireConn(context.Background(), "127.0.0.1:9000")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if _, err := tr.acquireConn(ctx, "127.0.0.1:9000"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("second acquire error = %v, want context deadline exceeded", err)
+	}
+
+	// A different upstream has its own limit and must not block.
+	releaseOther, err := tr.acquireConn(context.Background(), "127.0.0.1:9001")
+	if err != nil {
+		t.Fatalf("acquire for a different address: %v", err)
+	}
+	releaseOther()
+
+	// Releasing the first slot allows another acquire.
+	release1()
+	release2, err := tr.acquireConn(context.Background(), "127.0.0.1:9000")
+	if err != nil {
+		t.Fatalf("acquire after release: %v", err)
+	}
+	release2()
 }
