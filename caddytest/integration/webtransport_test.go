@@ -1195,6 +1195,7 @@ func newWTDialer(protocols []string) *webtransport.Transport {
 		QUICConfig: &quic.Config{
 			EnableDatagrams:                  true,
 			EnableStreamResetPartialDelivery: true,
+			RequireStreamCreditRelease:       true,
 		},
 		ApplicationProtocols: protocols,
 	}

@@ -225,6 +225,7 @@ func dialUpstreamWebTransport(ctx context.Context, tlsCfg *tls.Config, urlStr st
 		QUICConfig: &quic.Config{
 			EnableDatagrams:                  true,
 			EnableStreamResetPartialDelivery: true,
+			RequireStreamCreditRelease:       true,
 		},
 		DialAddr: func(ctx context.Context, _ string, tlsCfg *tls.Config, cfg *quic.Config) (*quic.Conn, error) {
 			return quic.DialAddrEarly(ctx, dialAddr, tlsCfg, cfg)
