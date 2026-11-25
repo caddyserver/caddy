@@ -17,6 +17,7 @@ package fastcgi
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 )
 
 // streamWriter abstracts out the separation of a stream into discrete records.
@@ -76,6 +77,15 @@ func (w *streamWriter) endStream() error {
 }
 
 func (w *streamWriter) writePairs(pairs map[string]string) error {
+	// A name that cannot fit in a record, even with an empty value, cannot
+	// be sent. Check every name before writing anything, so the backend
+	// never receives a partial set of params.
+	for k := range pairs {
+		if len(k) > maxWrite-8 {
+			return fmt.Errorf("%w: %d bytes, max %d", errParamNameTooLong, len(k), maxWrite-8)
+		}
+	}
+
 	b := make([]byte, 8)
 	nn := 0
 	// init headers
