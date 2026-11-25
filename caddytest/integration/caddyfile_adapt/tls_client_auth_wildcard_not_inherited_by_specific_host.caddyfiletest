@@ -11,6 +11,11 @@
 }
 
 public.example.com {
+	tls {
+		client_auth {
+			mode off
+		}
+	}
 	respond "public"
 }
 ----------
