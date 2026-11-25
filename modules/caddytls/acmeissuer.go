@@ -448,7 +448,11 @@ func (iss *ACMEIssuer) generateZeroSSLEABCredentials(ctx context.Context, acct a
 //	        root_common_name <common_names...>
 //	        any_common_name  <common_names...>
 //	    }
+//	    network_proxy <module_name> [<options>]
 //	}
+//
+// The network_proxy module (for example, "url <proxy_url>" or "none") sets
+// the forward proxy used for this issuer's requests to the ACME server.
 func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	d.Next() // consume issuer name
 
@@ -692,6 +696,18 @@ func (iss *ACMEIssuer) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return err
 			}
 			iss.PreferredChains = chainPref
+
+		case "network_proxy":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			modStem := d.Val()
+			modID := "caddy.network_proxy." + modStem
+			unm, err := caddyfile.UnmarshalModule(d, modID)
+			if err != nil {
+				return err
+			}
+			iss.NetworkProxyRaw = caddyconfig.JSONModuleObject(unm, "from", modStem, nil)
 
 		default:
 			return d.Errf("unrecognized ACME issuer property: %s", d.Val())
