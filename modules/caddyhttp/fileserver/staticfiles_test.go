@@ -193,6 +193,51 @@ func TestFileHidden(t *testing.T) {
 	}
 }
 
+func TestRedirectEscapesPath(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		toPath   string
+		rawQuery string
+		want     string
+	}{
+		{
+			name:   "decoded delimiters",
+			toPath: `/../\github.com/?/../../`,
+			want:   "/",
+		},
+		{
+			name:   "leading slashes",
+			toPath: "///github.com/path",
+			want:   "/github.com/path",
+		},
+		{
+			name:   "literal percent encoding",
+			toPath: "/%2F/",
+			want:   "/%252F/",
+		},
+		{
+			name:     "query preserved",
+			toPath:   "/dir/",
+			rawQuery: "sort=name",
+			want:     "/dir/?sort=name",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+			r.URL.RawQuery = tc.rawQuery
+			w := httptest.NewRecorder()
+
+			if err := redirect(w, r, tc.toPath); err != nil {
+				t.Fatal(err)
+			}
+			got := w.Header().Get("Location")
+			if got != tc.want {
+				t.Fatalf("Location = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // Win32 path normalization strips trailing dots and spaces, so Windows opens
 // hidden files under these aliases; fileHidden relies on FastAbs normalizing alike.
 func TestHideWindowsTrailingDotSpace(t *testing.T) {
@@ -589,6 +634,27 @@ func TestServeHTTPTrailingSlashOnFile(t *testing.T) {
 		}
 		if got := w.Header().Get("Location"); got != tc.wantLocation {
 			t.Errorf("Test %d (%s): expected Location %q, got %q", i, tc.path, tc.wantLocation, got)
+		}
+	}
+}
+
+func TestRedirectEscapesBackslash(t *testing.T) {
+	for i, tc := range []struct {
+		toPath string
+		query  string
+		want   string
+	}{
+		{toPath: `/\evil.com/`, want: "/%5Cevil.com/"},
+		{toPath: `/\\evil.com/`, want: "/%5C%5Cevil.com/"},
+		{toPath: `/\evil.com/`, query: "x=1", want: "/%5Cevil.com/?x=1"},
+	} {
+		r := httptest.NewRequest(http.MethodGet, "/?"+tc.query, nil)
+		w := httptest.NewRecorder()
+		if err := redirect(w, r, tc.toPath); err != nil {
+			t.Fatal(err)
+		}
+		if got := w.Header().Get("Location"); got != tc.want {
+			t.Errorf("Test %d (%s): expected Location %q, got %q", i, tc.toPath, tc.want, got)
 		}
 	}
 }

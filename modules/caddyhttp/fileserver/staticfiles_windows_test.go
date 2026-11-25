@@ -86,3 +86,44 @@ func TestFileServerRejectsShortNameInParentComponent(t *testing.T) {
 		})
 	}
 }
+
+// A backslash cleans away to the site root on Windows, and browsers follow a
+// Location starting with "/\" as "//", so the canonical redirect must not
+// echo it back raw.
+func TestFileServerCanonicalRedirectBackslash(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "index.html"), []byte("index"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		target       string
+		wantLocation string
+	}{
+		{target: "/%5Cevil.com", wantLocation: "/%5Cevil.com/"},
+		{target: "/%5C%5Cevil.com", wantLocation: "/%5C%5Cevil.com/"},
+	} {
+		fsrv := FileServer{Root: root}
+		ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+		if err := fsrv.Provision(ctx); err != nil {
+			t.Fatal(err)
+		}
+
+		r := httptest.NewRequest(http.MethodGet, tc.target, nil)
+		reqCtx := context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer())
+		reqCtx = context.WithValue(reqCtx, caddyhttp.OriginalRequestCtxKey, *r)
+		r = r.WithContext(reqCtx)
+		w := httptest.NewRecorder()
+		err := fsrv.ServeHTTP(w, r, caddyhttp.HandlerFunc(func(http.ResponseWriter, *http.Request) error { return nil }))
+		cancel()
+		if err != nil {
+			t.Fatalf("%s: unexpected error: %v", tc.target, err)
+		}
+		if w.Code != http.StatusPermanentRedirect {
+			t.Fatalf("%s: expected status %d, got %d", tc.target, http.StatusPermanentRedirect, w.Code)
+		}
+		if got := w.Header().Get("Location"); got != tc.wantLocation {
+			t.Errorf("%s: expected Location %q, got %q", tc.target, tc.wantLocation, got)
+		}
+	}
+}
