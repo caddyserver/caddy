@@ -16,6 +16,7 @@ package logging
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -23,6 +24,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DeRuina/timberjack"
@@ -100,7 +102,9 @@ type FileWriter struct {
 	DirMode string `json:"dir_mode,omitempty"`
 
 	// Roll toggles log rolling or rotation, which is
-	// enabled by default.
+	// enabled by default. When disabled, reloading the configuration reopens
+	// the file if an external rotator has moved it. Use `caddy reload --force`
+	// when the configuration is unchanged.
 	Roll *bool `json:"roll,omitempty"`
 
 	// When a log file reaches approximately this size,
@@ -183,15 +187,11 @@ func (fw FileWriter) WriterKey() string {
 	return "file:" + fw.Filename
 }
 
-// OpenWriter opens a new file writer.
-func (fw FileWriter) OpenWriter() (io.WriteCloser, error) {
+func (fw FileWriter) openFile() (*os.File, error) {
 	modeIfCreating := os.FileMode(fw.Mode)
 	if modeIfCreating == 0 {
 		modeIfCreating = 0o600
 	}
-
-	// roll log files as a sensible default to avoid disk space exhaustion
-	roll := fw.Roll == nil || *fw.Roll
 
 	// Ensure directory exists before opening the file.
 	dirPath := filepath.Dir(fw.Filename)
@@ -224,38 +224,31 @@ func (fw FileWriter) OpenWriter() (io.WriteCloser, error) {
 	if err != nil {
 		return nil, err
 	}
-	closeFile := true
-	defer func() {
-		if closeFile {
-			_ = file.Close()
+	if mode := os.FileMode(fw.Mode); mode != 0 {
+		info, err := file.Stat()
+		if err == nil && info.Mode().Perm() != mode.Perm() {
+			err = file.Chmod(mode)
 		}
-	}()
-	info, err := file.Stat()
-	if roll {
-		_ = file.Close() // timberjack will reopen it on its own
-		closeFile = false
-	}
-
-	// Ensure already existing files have the right mode, since OpenFile will not set the mode in such case.
-	if configuredMode := os.FileMode(fw.Mode); configuredMode != 0 {
 		if err != nil {
-			return nil, fmt.Errorf("unable to stat log file to see if we need to set permissions: %v", err)
-		}
-		// only chmod if the configured mode is different
-		if info.Mode()&os.ModePerm != configuredMode&os.ModePerm {
-			if err = os.Chmod(fw.Filename, configuredMode); err != nil {
-				return nil, err
-			}
+			_ = file.Close()
+			return nil, err
 		}
 	}
+	return file, nil
+}
 
-	// if not rolling, then the plain file handle is all we need
-	if !roll {
-		closeFile = false
-		return file, nil
+// OpenWriter opens a new file writer.
+func (fw FileWriter) OpenWriter() (io.WriteCloser, error) {
+	file, err := fw.openFile()
+	if err != nil {
+		return nil, err
 	}
+	if fw.Roll != nil && !*fw.Roll {
+		return &reopenableFile{config: fw, file: file}, nil
+	}
+	_ = file.Close() // timberjack will reopen it on its own
 
-	// otherwise, return a rolling log
+	// Apply the defaults for a rolling log.
 	if fw.RollSizeMB == 0 {
 		fw.RollSizeMB = 100
 	}
@@ -300,6 +293,57 @@ func (fw FileWriter) OpenWriter() (io.WriteCloser, error) {
 		RotateAt:         fw.RollAt,
 		BackupTimeFormat: fw.BackupTimeFormat,
 		FileMode:         os.FileMode(fw.Mode),
+	}, nil
+}
+
+// reopenableFile is shared by loggers in overlapping configurations.
+type reopenableFile struct {
+	config FileWriter
+	mu     sync.RWMutex
+	file   *os.File
+}
+
+func (w *reopenableFile) Write(p []byte) (int, error) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.file.Write(p)
+}
+
+func (w *reopenableFile) Close() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.file.Close()
+}
+
+// PrepareReopen opens the new destination before a reload can retire the old
+// one. The caller completes or discards the switch while it owns a pool reference.
+func (w *reopenableFile) PrepareReopen() (func(bool) error, error) {
+	w.mu.RLock()
+	old, err := w.file.Stat()
+	w.mu.RUnlock()
+	if err != nil {
+		return nil, err
+	}
+	current, err := os.Stat(w.config.Filename)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	if os.SameFile(old, current) {
+		return nil, nil
+	}
+	replacement, err := w.config.openFile()
+	if err != nil {
+		return nil, err
+	}
+	return func(commit bool) error {
+		if !commit {
+			return replacement.Close()
+		}
+		w.mu.Lock()
+		old := w.file
+		w.file = replacement
+		w.mu.Unlock()
+		return old.Close()
 	}, nil
 }
 

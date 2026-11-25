@@ -77,7 +77,8 @@ type Logging struct {
 	// that are opened to provision this logging config
 	// must have their keys added to this list so they
 	// can be closed when cleaning up
-	writerKeys []string
+	writerKeys  []string
+	reusedFiles map[string]reopenableLogWriter
 
 	owner *loggingOwner
 }
@@ -331,7 +332,22 @@ func (logging *Logging) openWriter(opener WriterOpener) (io.WriteCloser, bool, e
 		return nil, false, err
 	}
 	logging.writerKeys = append(logging.writerKeys, key)
-	return writer.(io.WriteCloser), !loaded, nil
+	pooled := writer.(writerDestructor)
+	if loaded {
+		if file, ok := pooled.WriteCloser.(reopenableLogWriter); ok {
+			if logging.reusedFiles == nil {
+				logging.reusedFiles = make(map[string]reopenableLogWriter)
+			}
+			logging.reusedFiles[key] = file
+		}
+	}
+	return pooled, !loaded, nil
+}
+
+// A reopenableLogWriter returns a callback for a pending switch, or nil if
+// the open file still matches the configured path.
+type reopenableLogWriter interface {
+	PrepareReopen() (func(commit bool) error, error)
 }
 
 // WriterOpener is a module that can open a log writer.

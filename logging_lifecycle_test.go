@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -216,19 +217,72 @@ func (w *lifecycleLogWriter) Write(p []byte) (int, error) {
 	}
 	return w.buffer.Write(p)
 }
+
 func (w *lifecycleLogWriter) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.closed = true
 	return nil
 }
+
 func (w *lifecycleLogWriter) contents() string {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.buffer.String()
 }
+
 func (w *lifecycleLogWriter) isClosed() bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.closed
+}
+
+func TestLoggingReopenSharedWriters(t *testing.T) {
+	prepareLoggingLifecycle(t)
+	first := &lifecycleReopener{lifecycleLogWriter: lifecycleLogWriter{key: t.Name() + "/first"}}
+	second := &lifecycleReopener{lifecycleLogWriter: lifecycleLogWriter{key: t.Name() + "/second"}}
+	config := func() *Config {
+		return &Config{Admin: &AdminConfig{Disabled: true}, Logging: &Logging{Logs: map[string]*CustomLog{
+			DefaultLoggerName: {BaseLog: BaseLog{writerOpener: first}},
+			"shared":          {BaseLog: BaseLog{writerOpener: first}},
+			"second":          {BaseLog: BaseLog{writerOpener: second}},
+		}}}
+	}
+	provisionLifecycleLogging(t, config().Logging)
+	if err := Validate(config()); err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range []*lifecycleReopener{first, second} {
+		if len(w.outcomes) != 0 || w.prepared != 0 {
+			t.Fatal("validation reopened a writer")
+		}
+	}
+	// Fail final setup after both replacements have been prepared.
+	broken := config()
+	broken.Admin.Config = &ConfigSettings{LoadRaw: json.RawMessage(`{"module":"nonexistent"}`)}
+	if _, err := run(broken, true); err == nil {
+		t.Fatal("expected missing config loader to fail")
+	}
+	ctx, err := run(config(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ctx.cfg.cancelFunc(nil)
+	for _, w := range []*lifecycleReopener{first, second} {
+		if w.prepared != 2 || !slices.Equal(w.outcomes, []bool{false, true}) {
+			t.Errorf("%s prepared %d times with commits %v", w.key, w.prepared, w.outcomes)
+		}
+	}
+}
+
+type lifecycleReopener struct {
+	lifecycleLogWriter
+	prepared int
+	outcomes []bool
+}
+
+func (w *lifecycleReopener) OpenWriter() (io.WriteCloser, error) { return w, nil }
+func (w *lifecycleReopener) PrepareReopen() (func(bool) error, error) {
+	w.prepared++
+	return func(commit bool) error { w.outcomes = append(w.outcomes, commit); return nil }, nil
 }
