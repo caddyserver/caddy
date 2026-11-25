@@ -18,9 +18,13 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -106,4 +110,98 @@ func TestLoggerNamesCaseInsensitive(t *testing.T) {
 		}
 	}
 	t.Errorf("no access log entry from logger %q for host %q, got %q", "http.log.access.mixed", "MIXED.example.org", logs)
+}
+
+func TestAccessLogExternalRotation(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("cannot rename this open file on Windows")
+	}
+	filename := filepath.Join(t.TempDir(), "access.log")
+	archive := filename + ".1"
+	config := fmt.Sprintf(`{
+	admin localhost:2999
+}
+
+http://localhost:9080 {
+	respond "ok"
+	log {
+		format json
+		output file %q {
+			roll_disabled
+		}
+	}
+}
+`, filename)
+	tester := caddytest.NewTester(t)
+	tester.InitServer(config, "caddyfile")
+	t.Cleanup(func() { tester.InitServer(`{"admin":{"listen":"localhost:2999"}}`, "json") })
+	requestAndCheck := func(uri, file string) {
+		t.Helper()
+		tester.AssertGetResponse("http://localhost:9080"+uri, http.StatusOK, "ok")
+		// Access logging may finish after the response reaches the client.
+		marker := []byte(`"uri":"` + uri + `"`)
+		for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+			data, err := os.ReadFile(file)
+			if err == nil && bytes.Count(data, marker) == 1 {
+				return
+			}
+		}
+		t.Fatalf("expected one entry for %s in %s", uri, file)
+	}
+	reload := func(candidate string, force bool, wantStatus int) {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodPost, "http://localhost:2999/load", strings.NewReader(candidate))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "text/caddyfile")
+		if force {
+			req.Header.Set("Cache-Control", "must-revalidate")
+		}
+		resp := tester.AssertResponseCode(req, wantStatus)
+		resp.Body.Close()
+	}
+	requestAndCheck("/before", filename)
+	if err := os.Rename(filename, archive); err != nil {
+		t.Fatal(err)
+	}
+	reload(config, false, http.StatusOK)
+	requestAndCheck("/unchanged", archive)
+	reload(config, true, http.StatusOK)
+	requestAndCheck("/after", filename)
+	data, err := os.ReadFile(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(data, []byte(`"uri":"/after"`)) {
+		t.Fatal("post-reload entry also reached archive")
+	}
+
+	// Some rotators create the replacement themselves.
+	secondArchive := filename + ".2"
+	if err := os.Rename(filename, secondArchive); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filename, []byte("existing\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// An app start failure after preparing the replacement must leave the
+	// active logger writing to the archive.
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	broken := config + fmt.Sprintf("\nhttp://%s {\n respond busy\n}\n", listener.Addr())
+	reload(broken, false, http.StatusBadRequest)
+	requestAndCheck("/failed", secondArchive)
+	reload(config, true, http.StatusOK)
+	requestAndCheck("/retry", filename)
+	data, err = os.ReadFile(filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.HasPrefix(data, []byte("existing\n")) {
+		t.Fatal("reopen truncated the replacement file")
+	}
 }

@@ -440,6 +440,25 @@ func run(newCfg *Config, start bool) (Context, error) {
 		}
 	}()
 
+	// Stage external log rotations before starting apps. A failed reload must
+	// leave every shared writer usable by the still-running configuration.
+	var commitLogReopens bool
+	for key, file := range ctx.cfg.Logging.reusedFiles {
+		var finish func(bool) error
+		finish, err = file.PrepareReopen()
+		if err != nil {
+			return ctx, fmt.Errorf("reopening log %s: %w", key, err)
+		}
+		if finish != nil {
+			defer func() {
+				if closeErr := finish(commitLogReopens); closeErr != nil {
+					Log().Error("closing log file after reopen", zap.String("writer", key), zap.Error(closeErr))
+				}
+			}()
+		}
+	}
+	ctx.cfg.Logging.reusedFiles = nil
+
 	// Start
 	err = func() error {
 		started := make([]string, 0, len(ctx.cfg.apps))
@@ -473,6 +492,7 @@ func run(newCfg *Config, start bool) (Context, error) {
 	// now that the user's config is running, finish setting up anything else,
 	// such as remote admin endpoint, config loader, etc.
 	err = finishSettingUp(ctx, ctx.cfg)
+	commitLogReopens = err == nil
 	return ctx, err
 }
 
