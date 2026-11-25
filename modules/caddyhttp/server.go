@@ -35,7 +35,7 @@ import (
 	"github.com/caddyserver/certmagic"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
-	h3qlog "github.com/quic-go/quic-go/http3/qlog"
+	"github.com/quic-go/quic-go/qlog"
 	"github.com/quic-go/webtransport-go"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -1240,11 +1240,12 @@ func (s *Server) http3ServerForListener(h3ln http3.QUICListener) *http3.Server {
 // buildHTTP3Server constructs the http3.Server used by this server for
 // HTTP/3. When WebTransport is enabled, the server is additionally
 // configured for WebTransport: WT enablement is advertised in SETTINGS,
-// DATAGRAMs are enabled, QUIC stream-reset partial delivery is enabled,
-// and a ConnContext hook stashes the *quic.Conn in each request's context
-// so handlers can call webtransport.Server.Upgrade. When disabled, none of
-// those modifications are applied and the returned server is
-// bit-for-bit identical to the pre-WebTransport implementation.
+// DATAGRAMs are enabled, QUIC stream-reset partial delivery and explicit
+// stream-credit release are enabled, and a ConnContext hook stashes the
+// *quic.Conn in each request's context so handlers can call
+// webtransport.Server.Upgrade. When disabled, none of those modifications
+// are applied and the returned server is bit-for-bit identical to the
+// pre-WebTransport implementation.
 func (s *Server) buildHTTP3Server(tlsCfg *tls.Config) *http3.Server {
 	return s.buildHTTP3ServerWithWebTransport(tlsCfg, s.webTransportEnabled())
 }
@@ -1253,7 +1254,7 @@ func (s *Server) buildHTTP3ServerWithWebTransport(tlsCfg *tls.Config, enableWT b
 	qc := &quic.Config{
 		Versions:          []quic.Version{quic.Version1, quic.Version2},
 		InitialPacketSize: 1200,
-		Tracer:            h3qlog.DefaultConnectionTracer,
+		Tracer:            qlog.DefaultConnectionTracer,
 	}
 	h3 := &http3.Server{
 		Handler:        s,
@@ -1264,6 +1265,7 @@ func (s *Server) buildHTTP3ServerWithWebTransport(tlsCfg *tls.Config, enableWT b
 	}
 	if enableWT {
 		qc.EnableStreamResetPartialDelivery = true
+		qc.RequireStreamCreditRelease = true
 		// Stash the conn before ConfigureHTTP3Server wraps ConnContext, so
 		// ServeHTTP can attribute the request to this raw connection.
 		h3.ConnContext = func(ctx context.Context, c *quic.Conn) context.Context {

@@ -31,7 +31,7 @@ import (
 
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
-	h3qlog "github.com/quic-go/quic-go/http3/qlog"
+	"github.com/quic-go/quic-go/qlog"
 	"go.uber.org/zap"
 	"golang.org/x/time/rate"
 
@@ -501,16 +501,18 @@ func (na NetworkAddress) ListenQUIC(ctx context.Context, portOffset uint, config
 		if opts.Allow0RTT != nil {
 			allow0rtt = *opts.Allow0RTT
 		}
-		// EnableDatagrams and EnableStreamResetPartialDelivery are required by
-		// WebTransport; only enable them when WebTransport support is requested.
+		// EnableDatagrams, EnableStreamResetPartialDelivery, and
+		// RequireStreamCreditRelease are required by WebTransport; only
+		// enable them when WebTransport support is requested.
 		earlyLn, err := tr.ListenEarly(
 			http3.ConfigureTLSConfig(quicTlsConfig),
 			&quic.Config{
 				InitialPacketSize:                1200,
 				Allow0RTT:                        allow0rtt,
-				Tracer:                           h3qlog.DefaultConnectionTracer,
+				Tracer:                           qlog.DefaultConnectionTracer,
 				EnableDatagrams:                  opts.EnableWebTransport,
 				EnableStreamResetPartialDelivery: opts.EnableWebTransport,
+				RequireStreamCreditRelease:       opts.EnableWebTransport,
 			},
 		)
 		if err != nil {

@@ -1711,8 +1711,8 @@ func TestServer_ServeHTTP_NoBodyClearsReadDeadline(t *testing.T) {
 // WebTransport set the http3.Server advertises WebTransport in
 // its SETTINGS and wires the prerequisites webtransport.Server.Upgrade
 // relies on: DATAGRAM support, a non-nil ConnContext hook (used to stash
-// the underlying *quic.Conn for Upgrade to retrieve), and QUIC
-// stream-reset partial delivery.
+// the underlying *quic.Conn for Upgrade to retrieve), QUIC stream-reset
+// partial delivery, and explicit stream-credit release.
 func TestServer_BuildHTTP3ServerEnablesWebTransport(t *testing.T) {
 	s := &Server{WebTransport: new(WebTransportConfig)}
 	h3 := s.buildHTTP3Server(&tls.Config{})
@@ -1723,6 +1723,7 @@ func TestServer_BuildHTTP3ServerEnablesWebTransport(t *testing.T) {
 	assert.NotNil(t, h3.ConnContext, "ConnContext must be set so webtransport.Server.Upgrade can retrieve the *quic.Conn")
 	assert.NotNil(t, h3.QUICConfig, "QUICConfig must be set")
 	assert.True(t, h3.QUICConfig.EnableStreamResetPartialDelivery, "EnableStreamResetPartialDelivery is required by webtransport-go")
+	assert.True(t, h3.QUICConfig.RequireStreamCreditRelease, "RequireStreamCreditRelease is required by webtransport-go")
 }
 
 // TestServer_BuildHTTP3ServerWithoutWebTransport asserts that with
@@ -1740,6 +1741,7 @@ func TestServer_BuildHTTP3ServerWithoutWebTransport(t *testing.T) {
 	assert.Nil(t, h3.ConnContext, "ConnContext must be nil when WebTransport is disabled")
 	assert.NotNil(t, h3.QUICConfig)
 	assert.False(t, h3.QUICConfig.EnableStreamResetPartialDelivery, "EnableStreamResetPartialDelivery must be false when WebTransport is disabled")
+	assert.False(t, h3.QUICConfig.RequireStreamCreditRelease, "RequireStreamCreditRelease must be false when WebTransport is disabled")
 }
 
 // TestServer_BuildHTTP3ServerAppliesHandlerAndTLS is a smoke test for the
@@ -1823,6 +1825,7 @@ func TestHTTP3ServerForListenerOmitsWebTransportSettingsWhenListenerLacksSupport
 	assert.Empty(t, plain.AdditionalSettings, "fallback must not advertise WebTransport SETTINGS")
 	assert.Nil(t, plain.ConnContext)
 	assert.False(t, plain.QUICConfig.EnableStreamResetPartialDelivery)
+	assert.False(t, plain.QUICConfig.RequireStreamCreditRelease)
 	if logs.FilterMessageSnippet("WebTransport unavailable").Len() != 1 {
 		t.Errorf("expected fallback warning to be logged, got logs: %v", logs.All())
 	}
