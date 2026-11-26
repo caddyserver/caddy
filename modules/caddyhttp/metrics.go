@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -290,7 +289,7 @@ func (m *Metrics) shouldAllowHostMetrics(host string) bool {
 }
 
 func metricsHost(host string) string {
-	if hostname, _, err := net.SplitHostPort(host); err == nil {
+	if hostname, _, err := splitHostPort(host); err == nil {
 		host = hostname
 	}
 	return strings.ToLower(strings.Trim(host, "[]"))

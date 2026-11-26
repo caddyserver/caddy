@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"net/textproto"
 	"net/url"
@@ -307,7 +306,7 @@ func (m MatchHost) Match(r *http.Request) bool {
 
 // MatchWithError returns true if r matches m.
 func (m MatchHost) MatchWithError(r *http.Request) (bool, error) {
-	reqHost, _, err := net.SplitHostPort(r.Host)
+	reqHost, _, err := splitHostPort(r.Host)
 	if err != nil {
 		// OK; probably didn't have a port
 		reqHost = r.Host

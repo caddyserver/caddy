@@ -1,6 +1,7 @@
 package caddyhttp
 
 import (
+	"net"
 	"net/url"
 	"path/filepath"
 	"runtime"
@@ -260,6 +261,21 @@ func TestCleanPath(t *testing.T) {
 		if actual != tc.expect {
 			t.Errorf("Test %d [input='%s' mergeSlashes=%t]: Got '%s', expected '%s'",
 				i, tc.input, tc.mergeSlashes, actual, tc.expect)
+		}
+	}
+}
+
+func TestSplitHostPort(t *testing.T) {
+	for _, input := range []string{
+		"", ":", "::", ":80", "example.com", "example.com:", "example.com:443",
+		"127.0.0.1", "127.0.0.1:80", "::1", "[::1]", "[::1]:", "[::1]:443",
+		"[fe80::1%en0]:8080", "[", "]", "[]", "a:b:c", "[a]b:c", "[a:b]:c",
+	} {
+		host, port, err := splitHostPort(input)
+		wantHost, wantPort, wantErr := net.SplitHostPort(input)
+		if host != wantHost || port != wantPort || (err == nil) != (wantErr == nil) {
+			t.Errorf("splitHostPort(%q) = (%q, %q, %v); want (%q, %q, %v)",
+				input, host, port, err, wantHost, wantPort, wantErr)
 		}
 	}
 }

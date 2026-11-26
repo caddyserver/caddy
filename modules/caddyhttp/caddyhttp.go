@@ -17,6 +17,7 @@ package caddyhttp
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -329,6 +330,18 @@ func cleanPath(p string) string {
 	}
 	return cleaned
 }
+
+// splitHostPort is like net.SplitHostPort, but it does not allocate
+// an error when hostport has no colon. Request hosts often have no port,
+// and the callers do not use the error value.
+func splitHostPort(hostport string) (host, port string, err error) {
+	if strings.IndexByte(hostport, ':') < 0 {
+		return "", "", errMissingPort
+	}
+	return net.SplitHostPort(hostport)
+}
+
+var errMissingPort = errors.New("missing port in address")
 
 // tlsPlaceholderWrapper is a no-op listener wrapper that marks
 // where the TLS listener should be in a chain of listener wrappers.
