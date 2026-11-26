@@ -20,7 +20,6 @@ import (
 	"errors"
 	"log/slog"
 	"maps"
-	"net"
 	"net/http"
 	"slices"
 	"strings"
@@ -112,7 +111,7 @@ func (slc ServerLogConfig) wrapLogger(logger *zap.Logger, req *http.Request) []*
 	}
 
 	// get the hostname from the request, with the port number stripped
-	host, _, err := net.SplitHostPort(req.Host)
+	host, _, err := splitHostPort(req.Host)
 	if err != nil {
 		host = req.Host
 	}

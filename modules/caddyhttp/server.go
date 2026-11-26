@@ -958,7 +958,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) error {
 
 	// The host may be used in a file path. HTTP/2 and HTTP/3 don't validate
 	// :authority, and Windows trims trailing dots, so "..." can act like "..".
-	host, _, err := net.SplitHostPort(r.Host)
+	host, _, err := splitHostPort(r.Host)
 	if err != nil {
 		host = r.Host
 	}
@@ -990,7 +990,7 @@ func (s *Server) enforcementHandler(w http.ResponseWriter, r *http.Request, next
 	// with servers that do not; if not enforced, client could
 	// bypass by sending benign SNI then restricted Host header
 	if s.StrictSNIHost != nil && *s.StrictSNIHost && r.TLS != nil {
-		hostname, _, err := net.SplitHostPort(r.Host)
+		hostname, _, err := splitHostPort(r.Host)
 		if err != nil {
 			hostname = r.Host // OK; probably lacked port
 		}
@@ -1380,7 +1380,7 @@ func (s *Server) shouldLogRequest(r *http.Request) bool {
 	}
 
 	// strip off the port if any, logger names are host only
-	hostWithoutPort, _, err := net.SplitHostPort(r.Host)
+	hostWithoutPort, _, err := splitHostPort(r.Host)
 	if err != nil {
 		hostWithoutPort = r.Host
 	}

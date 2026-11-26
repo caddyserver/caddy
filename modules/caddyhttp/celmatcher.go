@@ -19,7 +19,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -795,7 +794,7 @@ func celMatchLiteral(matcher any, data ref.Val, r *http.Request) (bool, bool, er
 				}
 			case MatchHost:
 				if CELMatcherIsLiteral(v) {
-					host, _, splitErr := net.SplitHostPort(r.Host)
+					host, _, splitErr := splitHostPort(r.Host)
 					if splitErr != nil {
 						host = r.Host
 					}

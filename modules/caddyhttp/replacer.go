@@ -115,13 +115,13 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 				}
 				return req.Proto, true
 			case "http.request.host":
-				host, _, err := net.SplitHostPort(req.Host)
+				host, _, err := splitHostPort(req.Host)
 				if err != nil {
 					return req.Host, true // OK; there probably was no port
 				}
 				return host, true
 			case "http.request.port":
-				_, port, _ := net.SplitHostPort(req.Host)
+				_, port, _ := splitHostPort(req.Host)
 				if portNum, err := strconv.Atoi(port); err == nil {
 					return portNum, true
 				}
@@ -323,7 +323,7 @@ func addHTTPVarsToReplacer(repl *caddy.Replacer, req *http.Request, w http.Respo
 				if err != nil || idx < 0 {
 					return "", false
 				}
-				reqHost, _, err := net.SplitHostPort(req.Host)
+				reqHost, _, err := splitHostPort(req.Host)
 				if err != nil {
 					reqHost = req.Host // OK; assume there was no port
 				}
