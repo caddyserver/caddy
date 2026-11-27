@@ -53,23 +53,20 @@ func TestHandlerCopyResponse(t *testing.T) {
 }
 
 func TestSwitchProtocolCopierBufferSize(t *testing.T) {
+	const bufferSize = 7
 	var wg sync.WaitGroup
 	var errc = make(chan error, 1)
 	var dst bytes.Buffer
 	var sent, received int64
+	user := &streamBufferTestConn{nopReadWriteCloser: nopReadWriteCloser{Reader: strings.NewReader("hello")}}
 
 	copier := switchProtocolCopier{
-		user:       nopReadWriteCloser{Reader: strings.NewReader("hello")},
+		user:       user,
 		backend:    nopReadWriteCloser{Writer: &dst},
 		wg:         &wg,
-		bufferSize: 7,
+		bufferSize: bufferSize,
 		sent:       &sent,
 		received:   &received,
-	}
-
-	buf := copier.buffer()
-	if got := len(buf); got != 7 {
-		t.Fatalf("buffer len = %d, want 7", got)
 	}
 
 	wg.Add(1)
@@ -83,6 +80,23 @@ func TestSwitchProtocolCopierBufferSize(t *testing.T) {
 	if got := dst.String(); got != "hello" {
 		t.Fatalf("copied data = %q, want %q", got, "hello")
 	}
+	if user.readSize != bufferSize {
+		t.Fatalf("copyToBackend() read buffer = %d bytes, want %d", user.readSize, bufferSize)
+	}
+}
+
+type streamBufferTestConn struct {
+	nopReadWriteCloser
+	readSize int
+}
+
+func (c *streamBufferTestConn) Read(p []byte) (int, error) {
+	c.readSize = len(p)
+	return c.Reader.Read(p)
+}
+
+func (c *streamBufferTestConn) WriteTo(w io.Writer) (int64, error) {
+	return io.Copy(w, c.Reader)
 }
 
 // A clean EOF in one direction must be propagated to the destination as a
