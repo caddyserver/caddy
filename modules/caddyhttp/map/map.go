@@ -153,7 +153,8 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 				if matches == nil {
 					continue
 				}
-				result = m.re.ExpandString(result, outputStr, input, matches)
+				expanded := expandPlaceholdersForRegexp(repl, outputStr)
+				result = m.re.ExpandString(result, expanded, input, matches)
 				return string(result), true
 			}
 
@@ -172,6 +173,52 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhtt
 	})
 
 	return next.ServeHTTP(w, r)
+}
+
+// expandPlaceholdersForRegexp expands configured placeholders before regexp
+// captures and escapes '$' only in inserted placeholder values so captures
+// containing '{...}' are not re-evaluated and placeholder values containing
+// '$1' are kept literal.
+func expandPlaceholdersForRegexp(repl *caddy.Replacer, s string) string {
+	if !strings.Contains(s, "{") {
+		return s
+	}
+
+	escapeDollars := func(_ string, val any) (any, error) {
+		return strings.ReplaceAll(caddy.ToString(val), "$", "$$"), nil
+	}
+
+	var sb strings.Builder
+	sb.Grow(len(s))
+	last := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] != '$' || i+1 >= len(s) {
+			continue
+		}
+		var verbatimEnd int
+		switch s[i+1] {
+		case '$':
+			verbatimEnd = i + 2
+		case '{':
+			end := strings.IndexByte(s[i+2:], '}')
+			if end < 0 {
+				continue
+			}
+			verbatimEnd = i + 2 + end + 1
+		default:
+			continue
+		}
+		out, _ := repl.ReplaceFunc(s[last:i], escapeDollars)
+		sb.WriteString(out)
+		sb.WriteString(s[i:verbatimEnd])
+		i = verbatimEnd - 1
+		last = verbatimEnd
+	}
+	if last < len(s) {
+		out, _ := repl.ReplaceFunc(s[last:], escapeDollars)
+		sb.WriteString(out)
+	}
+	return sb.String()
 }
 
 // Mapping describes a mapping from input to outputs.
