@@ -228,3 +228,120 @@ func TestHandler(t *testing.T) {
 		}
 	}
 }
+
+func TestHandlerInputRegexpPlaceholders(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		source      string
+		reqURI      string
+		headers     http.Header
+		replVars    map[string]any
+		inputRegexp string
+		output      string
+		want        string
+	}{
+		{
+			name:        "expands placeholder without captures",
+			source:      "{http.request.uri.path}",
+			reqURI:      "/foo",
+			inputRegexp: "^/foo$",
+			output:      "{http.request.method}",
+			want:        "GET",
+		},
+		{
+			name:        "expands placeholder and regexp capture",
+			source:      "{http.request.uri.path}",
+			reqURI:      "/foo/bar",
+			replVars:    map[string]any{"testvar": "testing"},
+			inputRegexp: "^/foo/(.*)$",
+			output:      "{testvar}-$1",
+			want:        "testing-bar",
+		},
+		{
+			name:        "does not evaluate placeholders in captured input",
+			source:      "{http.request.header.X-Key}",
+			reqURI:      "/",
+			headers:     http.Header{"X-Key": []string{"{testvar}"}},
+			replVars:    map[string]any{"testvar": "testing"},
+			inputRegexp: "^(.*)$",
+			output:      "prefix-$1",
+			want:        "prefix-{testvar}",
+		},
+		{
+			name:        "escapes dollar signs in expanded placeholder values",
+			source:      "{http.request.uri.path}",
+			reqURI:      "/foo/bar",
+			replVars:    map[string]any{"dollarvar": "$1-${1}-$$"},
+			inputRegexp: "^/foo/(.*)$",
+			output:      "{dollarvar}:$1",
+			want:        "$1-${1}-$$:bar",
+		},
+		{
+			name:        "preserves literal dollar escapes in output",
+			source:      "{http.request.uri.path}",
+			reqURI:      "/foo/bar",
+			replVars:    map[string]any{"testvar": "testing"},
+			inputRegexp: "^/foo/(.*)$",
+			output:      "$$1-{testvar}-$1",
+			want:        "$1-testing-bar",
+		},
+		{
+			name:        "unknown placeholder expands to empty before capture substitution",
+			source:      "{http.request.uri.path}",
+			reqURI:      "/foo/bar",
+			inputRegexp: "^/foo/(.*)$",
+			output:      "{unknown}-$1",
+			want:        "-bar",
+		},
+		{
+			name:        "preserves braced and named regexp captures alongside placeholders",
+			source:      "{http.request.uri.path}",
+			reqURI:      "/foo/bar",
+			replVars:    map[string]any{"testvar": "testing", "part": "wrong"},
+			inputRegexp: "^/foo/(?P<part>.*)$",
+			output:      "{testvar}-${1}-${part}",
+			want:        "testing-bar-bar",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := Handler{
+				Source:       tc.source,
+				Destinations: []string{"{output}"},
+				Mappings: []Mapping{
+					{
+						InputRegexp: tc.inputRegexp,
+						Outputs:     []any{tc.output},
+					},
+				},
+			}
+			if err := h.Provision(caddy.Context{}); err != nil {
+				t.Fatalf("Provisioning handler: %v", err)
+			}
+
+			req, err := http.NewRequest(http.MethodGet, tc.reqURI, nil)
+			if err != nil {
+				t.Fatalf("Creating request: %v", err)
+			}
+			for k, vals := range tc.headers {
+				req.Header[k] = vals
+			}
+
+			repl := caddyhttp.NewTestReplacer(req)
+			for k, v := range tc.replVars {
+				repl.Set(k, v)
+			}
+			req = req.WithContext(context.WithValue(req.Context(), caddy.ReplacerCtxKey, repl))
+
+			rr := httptest.NewRecorder()
+			noop := caddyhttp.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) error { return nil })
+			if err := h.ServeHTTP(rr, req, noop); err != nil {
+				t.Fatalf("Handler returned error: %v", err)
+			}
+
+			actual, _ := repl.Get("output")
+			if actual != tc.want {
+				t.Errorf("Expected %q but got %#v", tc.want, actual)
+			}
+		})
+	}
+}
