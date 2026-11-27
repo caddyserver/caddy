@@ -916,7 +916,7 @@ var errCopyDone = errors.New("hijacked connection copy complete")
 
 func (c switchProtocolCopier) copyFromBackend(errc chan<- error) {
 	defer c.wg.Done()
-	n, err := io.CopyBuffer(c.user, c.backend, c.buffer())
+	n, err := c.copy(c.user, c.backend)
 	*c.received = n
 	if err != nil {
 		errc <- err
@@ -934,7 +934,7 @@ func (c switchProtocolCopier) copyFromBackend(errc chan<- error) {
 
 func (c switchProtocolCopier) copyToBackend(errc chan<- error) {
 	defer c.wg.Done()
-	n, err := io.CopyBuffer(c.backend, c.user, c.buffer())
+	n, err := c.copy(c.backend, c.user)
 	*c.sent = n
 	if err != nil {
 		errc <- err
@@ -948,6 +948,14 @@ func (c switchProtocolCopier) copyToBackend(errc chan<- error) {
 	}
 
 	errc <- errCopyDone
+}
+
+func (c switchProtocolCopier) copy(dst io.Writer, src io.Reader) (int64, error) {
+	if c.bufferSize > 0 {
+		// Expose only Read and Write so io.CopyBuffer uses the configured buffer.
+		return io.CopyBuffer(struct{ io.Writer }{dst}, struct{ io.Reader }{src}, c.buffer())
+	}
+	return io.CopyBuffer(dst, src, c.buffer())
 }
 
 func (c switchProtocolCopier) buffer() []byte {
