@@ -1239,6 +1239,74 @@ func TestResolveImportGlob(t *testing.T) {
 	}
 }
 
+func TestImportSnippetStartingWithBlockAtTopLevel(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		input string
+	}{
+		{
+			name: "unsubstituted {block}",
+			input: `
+				(s) {
+					{block}
+					respond "ok"
+				}
+
+				import s
+			`,
+		},
+		{
+			name: "unsubstituted {blocks.name}",
+			input: `
+				(s) {
+					{blocks.name}
+					respond "ok"
+				}
+
+				import s
+			`,
+		},
+		{
+			name: "unsubstituted {block} before site block",
+			input: `
+				(s) {
+					{block}
+					localhost {
+						respond "ok"
+					}
+				}
+
+				import s
+			`,
+		},
+		{
+			name: "multiple empty {block} placeholders before site block",
+			input: `
+				(s) {
+					{block}
+					{blocks.extra}
+					localhost {
+						respond "ok"
+					}
+				}
+
+				import s
+			`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := testParser(tc.input)
+			blocks, err := p.parseAll()
+			if err != nil {
+				t.Fatalf("unexpected parse error: %v", err)
+			}
+			if len(blocks) != 1 {
+				t.Fatalf("expected 1 block, got %d", len(blocks))
+			}
+		})
+	}
+}
+
 func testParser(input string) parser {
 	return parser{Dispenser: NewTestDispenser(input)}
 }

@@ -504,7 +504,7 @@ func (p *parser) doImport(nesting int) error {
 	// run the argument replacer on the tokens
 	// golang for range slice return a copy of value
 	// similarly, append also copy value
-	for i, token := range importedTokens {
+	for _, token := range importedTokens {
 		if p.importObserver != nil && p.definedSnippets[importPattern] != nil {
 			// A snippet executes in its caller's ancestry, not the ancestry
 			// of the file expansion where it was originally declared.
@@ -521,7 +521,7 @@ func (p *parser) doImport(nesting int) error {
 		// format, won't check for nesting correctness or any other error, that's what parser does.
 		if !maybeSnippet && nesting == 0 {
 			// first of the line
-			if i == 0 || isNextOnNewLine(tokensCopy[len(tokensCopy)-1], token) {
+			if len(tokensCopy) == 0 || isNextOnNewLine(tokensCopy[len(tokensCopy)-1], token) {
 				index = 0
 			} else {
 				index++
